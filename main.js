@@ -44,3 +44,29 @@ function enterProjectWorkspace(projectId) {
     listenToMaterials();
     listenToLaborRecords(projectId);
 }
+function loadProjectList() {
+    const listContainer = document.getElementById('projectListContainer'); // Siguraduhin na may ganito kang ID sa HTML
+    
+    if (!listContainer) return; // Iwas error kung wala sa page
+
+    firebase.database().ref('projects').on('value', (snapshot) => {
+        listContainer.innerHTML = ''; // Linisin muna ang listahan
+        
+        snapshot.forEach((child) => {
+            const projectId = child.key; // Pangalan ng project
+            
+            // Gumawa ng button para sa bawat project
+            const btn = document.createElement('button');
+            btn.className = "w-full p-4 mb-2 bg-slate-800 text-white rounded hover:bg-slate-700";
+            btn.innerText = `📁 ${projectId}`;
+            btn.onclick = () => enterProjectWorkspace(projectId);
+            
+            listContainer.appendChild(btn);
+        });
+    });
+}
+
+// Tawagin ang function na ito kapag nag-load ang window
+window.onload = () => {
+    loadProjectList();
+};
