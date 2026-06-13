@@ -3,238 +3,208 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ACPM - Art & Choi Project Management</title>
+    <title>ACPM Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        slate: {
-                            750: '#1e293b',
-                            850: '#0f172a'
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased p-4 md:p-8">
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen">
 
-    <div class="max-w-7xl mx-auto space-y-6">
-
-        <div id="projectHubView" class="block space-y-6">
+    <header class="bg-slate-900 border-b border-slate-800 p-6 sticky top-0 z-50 shadow-2xl">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h1 class="text-xl font-black text-white tracking-tight">ACPM Dashboard</h1>
+                <p class="text-xs text-slate-400 mt-0.5">Art and Choi Project Management Dashboard</p>
+            </div>
             
-            <div class="p-6 bg-slate-900 rounded-2xl border border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xl">
-                <div>
-                    <h1 class="text-2xl font-bold tracking-tight text-white">ACPM Dashboard</h1>
-                    <p class="text-slate-400 text-xs mt-0.5">Global Multi-Site Cloud Portal Hub</p>
-                </div>
-                <div class="flex space-x-2">
-                    <span class="bg-emerald-950/80 text-emerald-400 border border-emerald-800 text-xs font-semibold px-3 py-1.5 rounded-full shadow-sm">☁️ Cloud Synced</span>
-                    <span class="bg-blue-950/80 text-blue-400 border border-blue-800 text-xs font-semibold px-3 py-1.5 rounded-full shadow-sm">💾 Local Backup</span>
+            <div class="flex flex-wrap items-center gap-3">
+                <button onclick="exitToHub()" id="navProjectHubBtn" class="px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white shadow transition">
+                    📂 Project Hub
+                </button>
+                <div class="inline-flex space-x-2 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[11px] font-bold">
+                    <span class="px-2 py-1 bg-emerald-950 text-emerald-400 rounded border border-emerald-900/50">☁️ Cloud Synced</span>
+                    <span class="px-2 py-1 bg-blue-950 text-blue-400 rounded border border-blue-900/50">💾 Local Backup</span>
                 </div>
             </div>
+        </div>
+    </header>
 
-            <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800 shadow-xl">
-                <span class="text-[10px] uppercase tracking-widest font-bold text-slate-500 block mb-4">Initialize New Project Site</span>
+    <main class="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+
+        <section id="projectHubView" class="space-y-6 block">
+            <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl space-y-4">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Initialize New Project Site</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="space-y-1.5">
-                        <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Project Site Name</label>
+                    <div class="space-y-1">
+                        <label class="text-[11px] font-bold text-slate-500 uppercase">Project Site Name</label>
                         <input type="text" id="newProjectName" placeholder="e.g., Project Batangas, ACPM Phase 2" 
-                            class="w-full bg-slate-950 border border-slate-800 focus:border-blue-600 rounded-xl p-3 text-sm text-white placeholder-slate-600 outline-none transition">
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white placeholder-slate-600 outline-none focus:border-blue-500 transition">
                     </div>
-                    <div class="space-y-1.5">
-                        <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Allotted Contract Labor Budget (₱)</label>
-                        <div class="flex gap-2">
-                            <input type="number" id="newProjectBudget" placeholder="e.g., 150000" 
-                                class="w-full bg-slate-950 border border-slate-800 focus:border-blue-600 rounded-xl p-3 text-sm text-white placeholder-slate-600 outline-none transition">
-                            <button onclick="createNewProjectSite()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-5 rounded-xl shadow-lg shadow-blue-900/20 whitespace-nowrap transition">
-                                + Launch Project Workspace
-                            </button>
-                        </div>
+                    <div class="space-y-1">
+                        <label class="text-[11px] font-bold text-slate-500 uppercase">Allotted Contract Labor Budget (₱)</label>
+                        <input type="number" id="newProjectBudget" placeholder="e.g., 150000" 
+                            class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-sm text-white placeholder-slate-600 outline-none focus:border-blue-500 transition">
                     </div>
+                </div>
+                <div class="flex justify-end pt-2">
+                    <button onclick="createNewProjectSite()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-6 py-2.5 rounded-xl shadow transition">
+                        + Launch Project Workspace
+                    </button>
                 </div>
             </div>
 
             <div class="space-y-3">
-                <span class="text-[10px] uppercase tracking-widest font-bold text-slate-500 block">Active Monitoring Registry</span>
-                <div id="projectRegistryGrid" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Monitoring Registry</h2>
+                <div id="projectRegistryGrid" class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     </div>
             </div>
+        </section>
 
-        </div>
 
-
-        <div id="activeWorkspaceView" class="hidden space-y-6">
+        <section id="activeWorkspaceView" class="space-y-6 hidden">
             
-            <div class="p-6 bg-slate-900 rounded-2xl border border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-xl">
+            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-wrap justify-between items-center gap-4 shadow-md">
                 <div>
-                    <h2 id="workspaceTitle" class="text-xl font-bold tracking-tight text-white">Active Site Workspace</h2>
-                    <p class="text-slate-400 text-xs mt-0.5">Managing Site: <span id="activeSiteNameLabel" class="text-blue-400 font-bold">None</span></p>
+                    <span class="text-[11px] font-bold text-blue-500 uppercase tracking-wider block">Active Environment</span>
+                    <h2 class="text-lg font-black text-white">Managing Site: <span id="activeSiteNameLabel" class="text-amber-400">---</span></h2>
                 </div>
-                <button onclick="exitToHub()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 transition">
-                    ← Exit to Global Hub
-                </button>
-            </div>
-
-            <div class="flex space-x-2 border-b border-slate-800 pb-2">
-                <button id="tabLaborBtn" onclick="switchTab('labor')"class="px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white shadow transition">
-                    👷‍♂️ Labor & Payroll
-                </button>
-                <button id="tabMaterialsBtn" onclick="switchTab('materials')" class="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-900 text-slate-400 hover:text-slate-200 transition">
-                    📦 Materials & Procurement
-                </button>
-                <button id="tabMiscBtn" onclick="switchTab('misc')" class="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-900 text-slate-400 hover:text-slate-200 transition">
-                    🏷️ Misc
-                </button>
-            </div>
-
-            <div id="laborPanel" class="block space-y-6">
                 
+                <div class="inline-flex bg-slate-950 p-1.5 rounded-xl border border-slate-800 space-x-1">
+                    <button id="tabLaborBtn" onclick="switchTab('labor')" class="px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white transition">
+                        👷 Labor & Payroll
+                    </button>
+                    <button id="tabMaterialsBtn" onclick="switchTab('materials')" class="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-900 text-slate-400 hover:text-slate-200 transition">
+                        📦 Materials & Procurement
+                    </button>
+                    <button onclick="exitToHub()" class="px-3 py-2 text-sm font-medium text-slate-400 hover:text-red-400 transition">
+                        ← Back to Hub
+                    </button>
+                </div>
+            </div>
+
+            <div id="laborPanel" class="space-y-6 block">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800">
-                        <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">Contract Labor Budget</span>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Contract Labor Budget</span>
                         <span id="scopeLaborBudget" class="text-base font-bold text-white mt-1 block">₱0.00</span>
                     </div>
-                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800">
-                        <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">Total Labor Spent to Date</span>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Labor Spent To Date</span>
                         <span id="scopeLaborSpent" class="text-base font-bold text-red-400 mt-1 block">₱0.00</span>
                     </div>
-                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800">
-                        <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold block">Remaining Available Margin</span>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Remaining Available Margin</span>
                         <span id="scopeLaborMargin" class="text-base font-bold text-emerald-400 mt-1 block">₱0.00</span>
                     </div>
                 </div>
 
-                <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 flex flex-wrap gap-4 items-center text-xs">
-                    <div class="flex items-center space-x-2">
-                        <span class="text-slate-400 font-medium">Cutoff Start:</span>
-                        <input type="date" id="cutoffStart" class="bg-slate-950 border border-slate-800 rounded p-1.5 text-white outline-none">
+                <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-wrap justify-between items-center gap-4">
+                    <div class="flex items-center space-x-4">
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Cutoff Start Date</label>
+                            <input type="date" id="cutoffStart" class="bg-slate-950 border border-slate-800 text-xs rounded-lg p-2 text-white outline-none">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-bold text-slate-500 uppercase block mb-1">Cutoff End Date</label>
+                            <input type="date" id="cutoffEnd" class="bg-slate-950 border border-slate-800 text-xs rounded-lg p-2 text-white outline-none">
+                        </div>
                     </div>
-                    <div class="flex items-center space-x-2">
-                        <span class="text-slate-400 font-medium">Cutoff End:</span>
-                        <input type="date" id="cutoffEnd" class="bg-slate-950 border border-slate-800 rounded p-1.5 text-white outline-none">
-                    </div>
-                    <div class="flex space-x-1 ml-auto">
-                        <button onclick="fillAllEightHours()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-medium px-3 py-1.5 rounded transition">⚡ Fill All 8s</button>
-                        <button onclick="clearTimecardGrid()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-medium px-3 py-1.5 rounded transition">Clear Hours</button>
+                    <div class="space-x-2">
+                        <button onclick="fillAllEightHours()" class="bg-slate-950 hover:bg-slate-850 border border-slate-800 text-white text-xs font-bold px-4 py-2 rounded-lg transition">⚡ Fill All 8s</button>
+                        <button onclick="clearTimecardGrid()" class="bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-400 text-xs font-bold px-4 py-2 rounded-lg transition">Clear Hours</button>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-6 items-start">
-                    
-                    <div class="md:col-span-1 space-y-4">
-                        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
-                            <span class="text-[10px] uppercase font-bold text-blue-400 tracking-wider block">1. Scopes & Accounts</span>
-                            <input type="text" id="scopeNameInput" placeholder="Scope Name" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-white">
-                            <input type="text" id="scopeLeaderInput" placeholder="Recipient / Leader Name" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-white">
-                            <input type="text" id="scopeBankInput" placeholder="Bank / Routing Account" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-white">
-                            <button onclick="saveScopeAccount()" class="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 rounded transition">Save Scope Info</button>
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    <div class="lg:col-span-3 space-y-6">
+                        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3 shadow">
+                            <h3 class="text-xs font-black text-blue-500 uppercase tracking-wider">1. Scopes & Accounts</h3>
+                            <input type="text" id="scopeNameInput" placeholder="Scope Name" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white outline-none focus:border-slate-700">
+                            <input type="text" id="scopeLeaderInput" placeholder="Recipient / Leader Name" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white outline-none focus:border-slate-700">
+                            <input type="text" id="scopeBankInput" placeholder="Bank / Destination Routing" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white outline-none focus:border-slate-700">
+                            <button onclick="saveScopeAccount()" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 rounded-lg shadow transition">Save Scope Info</button>
                         </div>
 
-                        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
-                            <span class="text-[10px] uppercase font-bold text-emerald-400 tracking-wider block">2. Staff Roster</span>
-                            <input type="text" id="workerNameInput" placeholder="Worker Full Name" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-white">
-                            <input type="number" id="workerRateInput" placeholder="Daily Rate (e.g., 750)" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-white">
-                            <select id="workerScopeSelect" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs text-white">
-                                </select>
-                            <button onclick="deployWorkerToRoster()" class="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-bold py-2 rounded transition">+ Deploy Worker</button>
+                        <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-3 shadow">
+                            <h3 class="text-xs font-black text-emerald-500 uppercase tracking-wider">2. Staff Roster</h3>
+                            <input type="text" id="workerNameInput" placeholder="Worker Name" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white outline-none focus:border-slate-700">
+                            <div class="grid grid-cols-2 gap-2">
+                                <input type="number" id="workerRateInput" value="750" placeholder="Daily Rate" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white outline-none focus:border-slate-700">
+                                <select id="workerScopeSelect" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-white outline-none focus:border-slate-700">
+                                    </select>
+                            </div>
+                            <button onclick="deployWorkerToRoster()" class="w-full bg-slate-950 hover:bg-slate-850 border border-slate-800 text-white text-xs font-bold py-2 rounded-lg transition">+ Deploy Worker</button>
                         </div>
                     </div>
 
-                    <div class="md:col-span-3 space-y-4">
-                        <button onclick="compileTimecardPayouts()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-widest py-3 rounded-xl transition shadow-lg shadow-emerald-900/10">
+                    <div class="lg:col-span-9 space-y-4">
+                        <button onclick="compileTimecardPayouts()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs py-3 rounded-xl shadow transition tracking-wider uppercase">
                             Compile Project Scopes & Update History Record
                         </button>
                         
-                        <div id="timecardGridContainer" class="space-y-4"></div>
+                        <div id="timecardGridContainer" class="space-y-3">
+                            </div>
                     </div>
                 </div>
-
             </div>
 
-            <div id="materialsPanel" class="hidden space-y-6">
-                
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow-md">
-                        <span class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Architectural Balance</span>
+            <div id="materialsPanel" class="space-y-6 hidden">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Architectural Balance</span>
                         <span id="balArch" class="text-base font-bold text-emerald-400 mt-1 block">₱822,900.00</span>
                     </div>
-                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow-md">
-                        <span class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Plumbing Balance</span>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Plumbing Balance</span>
                         <span id="balPlumb" class="text-base font-bold text-emerald-400 mt-1 block">₱117,200.00</span>
                     </div>
-                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow-md">
-                        <span class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Electrical Balance</span>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Electrical Balance</span>
                         <span id="balElec" class="text-base font-bold text-emerald-400 mt-1 block">₱432,840.00</span>
                     </div>
-                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow-md">
-                        <span class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Cabinets Balance</span>
+                    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 shadow">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Cabinets Balance</span>
                         <span id="balCabinets" class="text-base font-bold text-emerald-400 mt-1 block">₱456,575.00</span>
                     </div>
                 </div>
 
-                <div class="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-lg">
-                    <h3 class="text-xs font-bold uppercase tracking-wider text-white mb-4 flex items-center gap-1.5">🛒 Log New Material Request</h3>
-                    <div class="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs">
-                        <div class="col-span-2 space-y-1.5">
-                            <label class="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Item Description</label>
-                            <input type="text" id="matDesc" placeholder="e.g., Tile Adhesive, Skim Coat" class="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-2.5 outline-none focus:border-slate-700">
-                        </div>
-                        <div class="space-y-1.5">
-                            <label class="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Size Configuration</label>
-                            <input type="text" id="matSize" placeholder="e.g., 5-inch / 12mm" class="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-2.5 outline-none focus:border-slate-700">
-                        </div>
-                        <div class="space-y-1.5">
-                            <label class="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Quantity</label>
-                            <input type="number" id="matQty" placeholder="0" class="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-2.5 outline-none focus:border-slate-700">
-                        </div>
-                        <div class="space-y-1.5">
-                            <label class="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Unit Measure</label>
-                            <input type="text" id="matUnit" placeholder="pcs / bags / bags" class="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-2.5 outline-none focus:border-slate-700">
-                        </div>
-                        <div class="space-y-1.5">
-                            <label class="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Cost Category Matrix</label>
-                            <select id="matCat" class="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-2.5 outline-none focus:border-slate-700">
-                                <option value="Architectural">Architectural</option>
-                                <option value="Plumbing">Plumbing</option>
-                                <option value="Electrical">Electrical</option>
-                                <option value="Cabinets">Cabinets</option>
-                            </select>
-                        </div>
+                <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl space-y-4 shadow shadow-xl">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">🛒 New Material Purchase Request</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <input type="text" id="matDesc" placeholder="Description (e.g., Skim Coat)" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-slate-700">
+                        <input type="text" id="matSize" placeholder="Size (e.g., 5px/12mm)" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-slate-700">
+                        <input type="number" id="matQty" placeholder="Qty" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-slate-700">
+                        <input type="text" id="matUnit" placeholder="Unit (pcs/bags)" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-slate-700">
+                        <select id="matCat" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-slate-700">
+                            <option value="Architectural">Architectural</option>
+                            <option value="Plumbing">Plumbing</option>
+                            <option value="Electrical">Electrical</option>
+                            <option value="Cabinets">Cabinets</option>
+                        </select>
                     </div>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mt-3">
-                        <div class="space-y-1.5">
-                            <label class="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Unit Base Procurement Cost (₱)</label>
-                            <input type="number" id="matCost" placeholder="0.00" class="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-2.5 outline-none focus:border-slate-700">
-                        </div>
-                        <div class="flex items-end">
-                            <button onclick="addMaterialOrder()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg py-2.5 shadow-md shadow-emerald-900/10 transition">
-                                ➕ Append Order
-                            </button>
-                        </div>
+                    <div class="flex flex-wrap justify-between items-center gap-2 pt-1">
+                        <input type="number" id="matCost" placeholder="Unit Cost (₱)" class="w-48 bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-white outline-none focus:border-slate-700">
+                        <button onclick="addMaterialOrder()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-6 py-2.5 rounded-lg shadow transition">+ Add Order</button>
                     </div>
                 </div>
 
-                <div class="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+                <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow">
                     <div class="p-4 bg-slate-900/50 border-b border-slate-800 flex justify-between items-center">
-                        <span class="text-xs font-bold uppercase tracking-wider text-slate-300">Project Material Tracking Ledger</span>
-                        <span class="text-xs font-bold text-white bg-slate-950 px-3 py-1.5 rounded-full border border-slate-800">Combined Total: <span id="matTotalLabel" class="text-amber-400 font-bold">₱0.00</span></span>
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Materials Tracking Ledger</h3>
+                        <span class="text-xs font-medium text-slate-400">Total Cost: <span id="matTotalLabel" class="font-bold text-amber-400">₱0.00</span></span>
                     </div>
                     <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse text-xs text-slate-300">
-                            <thead class="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
-                                <tr>
-                                    <th class="p-4">Description</th>
-                                    <th class="p-4">Size</th>
-                                    <th class="p-4 text-center">Qty / Unit</th>
-                                    <th class="p-4 text-right">Unit Cost</th>
-                                    <th class="p-4 text-right">Total Cost</th>
-                                    <th class="p-4 text-center">Status Grid (Check-Check)</th>
-                                    <th class="p-4">Remarks / Auditing Log</th>
-                                    <th class="p-4 text-center">Action</th>
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr class="bg-slate-950 border-b border-slate-800 text-slate-400 font-bold">
+                                    <th class="p-4">DESCRIPTION</th>
+                                    <th class="p-4">SIZE</th>
+                                    <th class="p-4 text-center">QTY/UNIT</th>
+                                    <th class="p-4 text-right">UNIT COST</th>
+                                    <th class="p-4 text-right">TOTAL COST</th>
+                                    <th class="p-4 text-center">STATUS (CHECK-CHECK)</th>
+                                    <th class="p-4">REMARKS</th>
+                                    <th class="p-4 text-center">ACTION</th>
                                 </tr>
                             </thead>
                             <tbody id="materialsTableBody">
@@ -242,18 +212,10 @@
                         </table>
                     </div>
                 </div>
-
             </div>
 
-            <div id="miscPanel" class="hidden">
-                <div class="p-12 text-center bg-slate-900 rounded-2xl border border-slate-800 border-dashed shadow-inner">
-                    <p class="text-slate-500 text-xs font-medium uppercase tracking-wider">Miscellaneous Site Expense Tracker coming soon...</p>
-                </div>
-            </div>
-
-        </div>
-
-    </div>
+        </section>
+    </main>
 
     <script src="ACPM.js"></script>
 </body>
