@@ -15,7 +15,7 @@ function createNewProjectSite() {
     const budget = parseFloat(budgetInput.value) || 0;
 
     if (!name || budget <= 0) {
-        alert("Pakisulat ang wastong pangalan ng site at budget framework!");
+        alert("State name of site and budget allocated");
         return;
     }
 
@@ -35,6 +35,17 @@ function createNewProjectSite() {
     // Siguraduhing walang typos dito at nasa loob ito ng file na na-save
     console.log("Function is working!"); 
     // ... rest of your code
+    // Bagong input sa HTML para sa Material Budget
+const materialBudget = parseFloat(document.getElementById('newMaterialBudget').value) || 0;
+
+// Update sa pag-save sa Firebase
+await firebase.database().ref(`projects/${name}`).set({
+    allottedLaborBudget: budget,
+    totalMaterialBudget: materialBudget, // Bago: Isang budget lang para sa materials
+    totalLaborSpent: 0,
+    totalMaterialSpent: 0,
+    timestamp: Date.now()
+});
 }
 // =======================================================================
 // 1. FIREBASE INITIALIZATION & CONFIGURATION BLOCK
@@ -370,6 +381,16 @@ async function addMaterialOrder() {
 }
 
 function listenToMaterials() {
+    // Imbis na hiwa-hiwalay na spent per category:
+let overallTotalCost = 0;
+
+// Sa loob ng loop (pag-compute ng items):
+if (mat.status === 'paid' || mat.status === 'delivered') {
+    overallTotalCost += mat.totalCost;
+}
+
+// I-update ang Firebase para sa Global Material Spent
+firebase.database().ref(`projects/${currentActiveProjectId}`).update({ totalMaterialSpent: overallTotalCost });
     if (!currentActiveProjectId) return;
     firebase.database().ref(`projects/${currentActiveProjectId}/materials`).on('value', (snapshot) => {
         const materialsTableBody = document.getElementById('materialsTableBody');
