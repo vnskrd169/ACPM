@@ -1,4 +1,3 @@
-// materials.js
 async function addMaterialOrder() {
     if (!currentActiveProjectId) return;
     const desc = document.getElementById('matDesc').value.trim();
@@ -36,9 +35,14 @@ function listenToMaterials() {
             if (mat.status === 'paid' || mat.status === 'delivered') globalSpent += mat.totalCost;
             
             // I-render ang table row...
+            tbody.innerHTML += `<tr>
+                <td>${mat.description}</td>
+                <td>${mat.qty}</td>
+                <td>₱${mat.totalCost.toLocaleString()}</td>
+                <td><button onclick="updateMatStatus('${key}', 'paid')">Mark Paid</button></td>
+            </tr>`;
         });
 
-        // Update Global
         await firebase.database().ref(`projects/${currentActiveProjectId}`).update({ totalMaterialSpent: globalSpent });
         if(document.getElementById('matTotalLabel')) {
             document.getElementById('matTotalLabel').innerText = `₱${globalSpent.toLocaleString()}`;
