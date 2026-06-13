@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Art and Choi Project Management</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="E:\00. Line17 Studios\Payroll\ACPM.js"></script>
+
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen p-4 md:p-6">
+
+    <div class="max-w-6xl mx-auto space-y-6">
+        
+        <!-- ================= MASTER LOGO & TOP CONTROL NAV ================= -->
+        <header class="bg-slate-900 text-white p-6 rounded-xl shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+                <h1 class="text-xl font-bold tracking-tight">Project Management</h1>
+                <p id="subHeaderContext" class="text-slate-400 text-xs mt-0.5">Art and Choi Projects</p>
+            </div>
+            
+            <div class="flex gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700">
+                <button id="navHubBtn" onclick="switchToGlobalHub()" class="px-3 py-1.5 text-xs font-semibold rounded-md bg-blue-600 text-white cursor-pointer transition">
+                    📁 Project Hub
+                </button>
+                <button id="navTrackerBtn" onclick="switchToProjectView('tracker')" class="hidden px-3 py-1.5 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">
+                    Timecard Entry
+                </button>
+                <button id="navHistoryBtn" onclick="switchToProjectView('history')" class="hidden px-3 py-1.5 text-xs font-semibold rounded-md text-slate-400 hover:text-white cursor-pointer transition">
+                    Expenses & History
+                </button>
+            </div>
+        </header>
+
+        <!-- ================= VIEW 1: GLOBAL MULTI-PROJECT PORTFOLIO DASHBOARD ================= -->
+        <div id="viewGlobalHub" class="space-y-6">
+            <!-- Project Creation Panel with Original Contract Budget Allocation -->
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Initialize New Project Site</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Project Site Name</label>
+                        <input id="newProjectNameInput" type="text" placeholder="e.g., Project Batangas, Wolflink Phase 2" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 font-medium">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Allotted Contract Labor Budget (₱)</label>
+                        <input id="newProjectBudgetInput" type="number" placeholder="e.g., 150000" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 font-bold text-emerald-700">
+                    </div>
+                </div>
+                <div class="flex justify-end">
+                    <button onclick="createNewProjectSite()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-5 py-2.5 rounded-lg shadow-sm transition whitespace-nowrap cursor-pointer">
+                        + Launch Project Workspace
+                    </button>
+                </div>
+            </div>
+
+            <!-- Dashboard Monitoring Grid -->
+            <div>
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Active Monitoring Registry</h3>
+                <div id="projectGridSummary" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+            </div>
+        </div>
+
+        <!-- ================= VIEW 2: ISOLATED PROJECT INSTANCE WORKSPACE ================= -->
+        <div id="viewProjectWorkspace" class="hidden space-y-6">
+            
+            <!-- Context Header Banner & Budget Summary Widget -->
+            <div class="bg-blue-50 border border-blue-200 text-blue-900 p-4 rounded-xl space-y-3">
+                <div class="flex justify-between items-center text-xs">
+                    <div>Active Environment: Working inside <strong id="activeWorkspaceBadge" class="underline">None</strong></div>
+                    <button onclick="switchToGlobalHub()" class="text-blue-700 hover:underline font-bold">← Back to Hub</button>
+                </div>
+                <!-- Live Speedometer Matrix Breakdown -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-white p-3 rounded-lg border border-blue-100 font-mono text-xs">
+                    <div class="p-2 bg-slate-50 rounded">
+                        <span class="text-[10px] uppercase text-slate-400 font-sans font-bold block">Contract Labor Budget</span>
+                        <strong id="barContractBudget" class="text-slate-800 text-sm font-black">₱0.00</strong>
+                    </div>
+                    <div class="p-2 bg-red-50 rounded">
+                        <span class="text-[10px] uppercase text-red-400 font-sans font-bold block">Total Labor Spent to Date</span>
+                        <strong id="barLaborSpent" class="text-red-600 text-sm font-black">₱0.00</strong>
+                    </div>
+                    <div class="p-2 bg-emerald-50 rounded">
+                        <span class="text-[10px] uppercase text-emerald-400 font-sans font-bold block">Remaining Available Margin</span>
+                        <strong id="barRemainingBudget" class="text-emerald-600 text-sm font-black">₱0.00</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Backtrack Overwrite Alert Banner -->
+            <div id="editAlertBanner" class="hidden bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 rounded-xl flex justify-between items-center text-xs font-medium">
+                <div class="flex items-center gap-2">
+                    <span class="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span>Modifying an archived ledger sheet from <strong id="editBannerDate">--/--/----</strong>. Re-compiling will overwrite this history.</span>
+                </div>
+                <button onclick="cancelActiveEditingMode()" class="bg-amber-200 hover:bg-amber-300 px-2 py-1 rounded text-amber-950 font-bold uppercase tracking-wide cursor-pointer">Cancel Edit</button>
+            </div>
+
+            <!-- INNER TAB A: TIMECARD ENTRY PANEL -->
+            <div id="innerTabTracker" class="space-y-6">
+                <!-- Date Cutoffs & Global Presets Frame -->
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm items-end">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Cutoff Start Date</label>
+                        <input id="metaCutoffStart" type="date" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Cutoff End Date</label>
+                        <input id="metaCutoffEnd" type="date" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs">
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="applyGlobalHoursPreset(8)" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-bold py-2 rounded-lg cursor-pointer transition text-center">
+                            ⚡ Fill All 8s
+                        </button>
+                        <button onclick="applyGlobalHoursPreset(0)" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[11px] font-bold py-2 rounded-lg cursor-pointer transition text-center">
+                            Clear Hours
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                    <!-- Left Sidebar Management Config -->
+                    <div class="lg:col-span-1 space-y-6">
+                        <!-- Scope Bank Form -->
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+                            <h3 class="text-xs font-bold text-blue-600 uppercase tracking-wide border-b pb-1.5">1. Scopes & Accounts</h3>
+                            <div>
+                                <input id="newScopeInput" type="text" placeholder="Scope Name" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs mb-1.5">
+                                <input id="scopeLeaderInput" type="text" placeholder="Recipient / Leader Name" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs mb-1.5">
+                                <input id="scopeBankInput" type="text" placeholder="Bank / Destination Routing" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs mb-2">
+                                <button onclick="addNewScope()" class="w-full bg-blue-600 text-white text-[11px] font-bold py-1.5 rounded-lg hover:bg-blue-700 cursor-pointer">Save Scope Info</button>
+                            </div>
+                            <div id="scopeChipsContainer" class="space-y-1.5 max-h-32 overflow-y-auto pt-1.5 border-t border-slate-100"></div>
+                        </div>
+
+                        <!-- Worker Roster Form -->
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+                            <h3 class="text-xs font-bold text-emerald-600 uppercase tracking-wide border-b pb-1.5">2. Staff Roster</h3>
+                            <div>
+                                <input id="wName" type="text" placeholder="Worker Name" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs mb-1.5">
+                                <div class="grid grid-cols-2 gap-1.5 mb-2">
+                                    <input id="wRate" type="number" placeholder="Rate" value="750" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs">
+                                    <select id="wGroupSelect" class="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs bg-white"></select>
+                                </div>
+                                <button onclick="addNewWorkerToRoster()" class="w-full bg-slate-800 text-white text-[11px] font-bold py-1.5 rounded-lg hover:bg-slate-700 cursor-pointer">+ Deploy Worker</button>
+                            </div>
+                            <div id="rosterListContainer" class="space-y-1.5 max-h-32 overflow-y-auto pt-1.5 border-t border-slate-100"></div>
+                        </div>
+                    </div>
+
+                    <!-- Matrix Area Tables -->
+                    <div class="lg:col-span-3 space-y-6">
+                        <div id="matrixTablesWrapper" class="space-y-6"></div>
+                        <button onclick="processWeeklyTimecard()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg shadow text-xs uppercase tracking-wider cursor-pointer">
+                            Compile Project Scopes & Update History Record
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Single / Split Document Outputs -->
+                <div id="outputContainer" class="hidden bg-slate-200 p-5 rounded-xl border border-slate-300 space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 id="outputHeading" class="text-sm font-black text-slate-800 uppercase tracking-wide">Generated RFP Documents</h3>
+                        <button onclick="document.getElementById('outputContainer').classList.add('hidden')" class="text-xs font-bold text-slate-500 hover:text-slate-800">Clear Panels ✕</button>
+                    </div>
+                    <div id="splitRFPsWrapper" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+                </div>
+            </div>
+
+            <!-- INNER TAB B: GASTOS HISTORY ARCHIVE -->
+            <div id="innerTabHistory" class="hidden space-y-4">
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wide">Historical Labor Expense Logs for this Project</h3>
+                        <button onclick="wipeActiveProjectLogs()" class="text-[10px] text-red-500 font-bold hover:underline">Wipe This Project's Records</button>
+                    </div>
+                    <div class="overflow-x-auto border border-slate-200 rounded-lg">
+                        <table class="w-full text-left border-collapse text-xs">
+                            <thead>
+                                <tr class="bg-slate-100 border-b border-slate-200 font-bold text-slate-600 uppercase">
+                                    <th class="p-3">RFP Date</th>
+                                    <th class="p-3">Cutoff Frame</th>
+                                    <th class="p-3">Scope Breakdown</th>
+                                    <th class="p-3 text-right">Total Payout</th>
+                                    <th class="p-3 text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody" class="divide-y divide-slate-100 font-mono"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- ================= MODAL DIALOG: CASH ADVANCE TRACKER SYSTEM ================= -->
+    <div id="cashAdvanceModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div class="bg-white w-full max-w-lg rounded-xl shadow-xl overflow-hidden border border-slate-200">
+            <!-- Modal Header -->
+            <div class="bg-slate-900 text-white p-4 flex justify-between items-center">
+                <div>
+                    <h3 id="modalWorkerName" class="text-sm font-black tracking-wide">Worker Cash Advance Ledger</h3>
+                    <p id="modalWorkerSub" class="text-[10px] text-slate-400 font-mono">Loading data...</p>
+                </div>
+                <button onclick="closeCashAdvanceModal()" class="text-slate-400 hover:text-white text-base font-bold cursor-pointer">✕</button>
+            </div>
+            
+            <!-- Quick Entry Row -->
+            <div class="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-3 gap-2 items-end">
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Day</label>
+                    <select id="vDaySelect" class="w-full text-xs p-1.5 border border-slate-300 rounded bg-white font-medium">
+                        <option value="Mon">Monday (Mon)</option>
+                        <option value="Tue">Tuesday (Tue)</option>
+                        <option value="Wed">Wednesday (Wed)</option>
+                        <option value="Thu">Thursday (Thu)</option>
+                        <option value="Fri">Friday (Fri)</option>
+                        <option value="Sat">Saturday (Sat)</option>
+                        <option value="Sun">Sunday (Sun)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Amount (₱)</label>
+                    <input id="vAmountInput" type="number" placeholder="e.g., 500" class="w-full text-xs p-1.5 border border-slate-300 rounded font-bold">
+                </div>
+                <button onclick="saveCashAdvanceEntryToWorker()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs p-2 rounded shadow-xs cursor-pointer transition h-[32px]">
+                    + Add Advance
+                </button>
+            </div>
+
+            <!-- Active Cash Advance Logs Table -->
+            <div class="p-4 space-y-2">
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Cash Advances for this Cutoff:</span>
+                <div class="max-h-48 overflow-y-auto border border-slate-200 rounded-lg">
+                    <table class="w-full text-left border-collapse text-xs">
+                        <thead>
+                            <tr class="bg-slate-100 font-bold border-b border-slate-200 text-slate-600">
+                                <th class="p-2">Day</th>
+                                <th class="p-2 text-right">Amount</th>
+                                <th class="p-2 text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cashAdvanceModalTableBody" class="divide-y divide-slate-100 font-mono"></tbody>
+                    </table>
+                </div>
+                
+                <!-- Running Total Footer -->
+                <div class="bg-red-50 border border-red-200 p-2.5 rounded-lg flex justify-between items-center text-xs mt-2">
+                    <span class="font-bold text-red-900">Total Deductions (Cash Advances):</span>
+                    <strong id="modalCashAdvanceGrandTotal" class="text-red-700 text-sm font-black">₱0.00</strong>
+                </div>
+            </div>
+
+            <!-- Modal Footer Controls -->
+            <div class="bg-slate-50 p-3 border-t border-slate-200 flex justify-end">
+                <button onclick="closeCashAdvanceModal()" class="bg-slate-800 text-white text-xs font-bold px-4 py-1.5 rounded-lg hover:bg-slate-700 cursor-pointer">
+                    Done / Sync to Table
+                </button>
+            </div>
+        </div>
+    </div>
+
+   
+    
+</body>
+</html>
