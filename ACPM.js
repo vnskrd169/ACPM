@@ -668,4 +668,31 @@ function switchTab(tabName) {
         tabMaterialsBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white transition";
         tabLaborBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
     }
+    // TAB SWITCHING FUNCTION
+function switchTab(tabName) {
+    const laborPanel = document.getElementById('laborPanel');
+    const materialsPanel = document.getElementById('materialsPanel');
+    const tabLaborBtn = document.getElementById('tabLaborBtn');
+    const tabMaterialsBtn = document.getElementById('tabMaterialsBtn');
+
+    if (tabName === 'labor') {
+        laborPanel.classList.remove('hidden');
+        laborPanel.classList.add('block');
+        materialsPanel.classList.remove('block');
+        materialsPanel.classList.add('hidden');
+
+        // Button colors
+        tabLaborBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white transition";
+        tabMaterialsBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
+    } else {
+        materialsPanel.classList.remove('hidden');
+        materialsPanel.classList.add('block');
+        laborPanel.classList.remove('block');
+        laborPanel.classList.add('hidden');
+
+        // Button colors
+        tabMaterialsBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white transition";
+        tabLaborBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
+    }
+}
 }
