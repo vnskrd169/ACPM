@@ -696,3 +696,190 @@ function switchTab(tabName) {
     }
 }
 }
+// GLOBAL VARIABLE REFERENCE FOR THE ACTIVE SITE
+let currentActiveProjectId = "Wolflink"; // Fallback identifier for testing
+
+// INITIAL COST BUDGETS (From your Excel Category Matrix)
+const initialBudgets = {
+    Architectural: 822900,
+    Plumbing: 117200,
+    Electrical: 432840,
+    Cabinets: 456575
+};
+
+// TAB NAVIGATION CONTROL
+function switchTab(tabName) {
+    const laborPanel = document.getElementById('laborPanel');
+    const materialsPanel = document.getElementById('materialsPanel');
+    const tabLaborBtn = document.getElementById('tabLaborBtn');
+    const tabMaterialsBtn = document.getElementById('tabMaterialsBtn');
+
+    if (tabName === 'labor') {
+        laborPanel.classList.remove('hidden');
+        laborPanel.classList.add('block');
+        materialsPanel.classList.remove('block');
+        materialsPanel.classList.add('hidden');
+
+        tabLaborBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white transition";
+        tabMaterialsBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
+    } else {
+        materialsPanel.classList.remove('hidden');
+        materialsPanel.classList.add('block');
+        laborPanel.classList.remove('block');
+        laborPanel.classList.add('hidden');
+
+        tabMaterialsBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white transition";
+        tabLaborBtn.className = "px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
+    }
+}
+
+// ACTION: ADD NEW PURCHASE ORDER ENTRY
+async function addMaterialOrder() {
+    const desc = document.getElementById('matDesc').value.trim();
+    const size = document.getElementById('matSize').value.trim();
+    const qty = parseFloat(document.getElementById('matQty').value) || 0;
+    const unit = document.getElementById('matUnit').value.trim();
+    const category = document.getElementById('matCat').value;
+    const unitCost = parseFloat(document.getElementById('matCost').value) || 0;
+    const totalCost = qty * unitCost;
+
+    if (!desc || qty <= 0) {
+        alert("Please input a valid Description and Quantity!");
+        return;
+    }
+
+    const newMaterial = {
+        description: desc,
+        size: size,
+        qty: qty,
+        unit: unit,
+        category: category,
+        unitCost: unitCost,
+        totalCost: totalCost,
+        status: 'ordered', // Initial state inside lifecycle grid
+        remarks: '',
+        timestamp: Date.now()
+    };
+
+    try {
+        await firebase.database().ref(`projects/${currentActiveProjectId}/materials`).push(newMaterial);
+        
+        // Clear inputs upon success
+        document.getElementById('matDesc').value = '';
+        document.getElementById('matSize').value = '';
+        document.getElementById('matQty').value = '';
+        document.getElementById('matUnit').value = '';
+        document.getElementById('matCost').value = '';
+        
+        alert("Material Order successfully logged to Cloud!");
+        listenToMaterials();
+    } catch (error) {
+        console.error("Database connection error:", error);
+    }
+}
+
+// REALTIME LISTENER: RENDER RE-COMPUTED MATRIX AND TRACKING SHEET
+function listenToMaterials() {
+    firebase.database().ref(`projects/${currentActiveProjectId}/materials`).on('value', (snapshot) => {
+        const materialsTableBody = document.getElementById('materialsTableBody');
+        materialsTableBody.innerHTML = ''; 
+
+        let overallTotalCost = 0;
+        let spent = { Architectural: 0, Plumbing: 0, Electrical: 0, Cabinets: 0 };
+
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            
+            Object.keys(data).forEach((key) => {
+                const mat = data[key];
+                overallTotalCost += mat.totalCost;
+
+                // Budget deduction fires if status is cleared or payment is released
+                if (mat.status === 'paid' || mat.status === 'delivered') {
+                    spent[mat.category] += mat.totalCost;
+                }
+
+                // Row highlighting logic (Red color variant for critical hold items)
+                let rowBgClass = "border-b border-slate-700 hover:bg-slate-750 transition";
+                if (mat.status === 'hold') {
+                    rowBgClass = "bg-red-950/40 border-b border-red-900 text-red-200 animate-pulse";
+                }
+
+                // Badge generation logic for the check-check toggle controls
+                const getStatusBtnClass = (currentStatus, targetStatus, activeColor) => {
+                    return currentStatus === targetStatus 
+                        ? `px-2 py-1 rounded font-bold text-[10px] ${activeColor} text-white shadow-md` 
+                        : `px-2 py-1 rounded font-medium text-[10px] bg-slate-900 text-slate-500 hover:text-slate-300`;
+                };
+
+                const tr = document.createElement('tr');
+                tr.className = rowBgClass;
+                tr.innerHTML = `
+                    <td class="p-3 font-medium text-white">${mat.description}</td>
+                    <td class="p-3 text-slate-400">${mat.size || '-'}</td>
+                    <td class="p-3 text-center font-semibold">${mat.qty} <span class="text-slate-500 font-normal">${mat.unit}</span></td>
+                    <td class="p-3 text-right">₱${mat.unitCost.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="p-3 text-right font-bold text-amber-400">₱${mat.totalCost.toLocaleString('en-US', {minimumFractionDigits: 2})}</td>
+                    <td class="p-3 text-center">
+                        <div class="inline-flex space-x-1 bg-slate-900 p-1 rounded-lg border border-slate-700">
+                            <button onclick="updateMatStatus('${key}', 'ordered')" class="${getStatusBtnClass(mat.status, 'ordered', 'bg-blue-600')}">Ordered</button>
+                            <button onclick="updateMatStatus('${key}', 'paid')" class="${getStatusBtnClass(mat.status, 'paid', 'bg-amber-500')}">Paid</button>
+                            <button onclick="updateMatStatus('${key}', 'delivered')" class="${getStatusBtnClass(mat.status, 'delivered', 'bg-emerald-600')}">Delivered</button>
+                            <button onclick="updateMatStatus('${key}', 'hold')" class="${getStatusBtnClass(mat.status, 'hold', 'bg-red-600')}">Hold</button>
+                        </div>
+                    </td>
+                    <td class="p-3">
+                        <input type="text" value="${mat.remarks || ''}" placeholder="Add remarks..." 
+                            onchange="updateMatRemarks('${key}', this.value)"
+                            class="bg-transparent hover:bg-slate-900 focus:bg-slate-900 border border-transparent focus:border-slate-600 text-xs text-slate-300 rounded p-1 w-full transition">
+                    </td>
+                    <td class="p-3 text-center">
+                        <button onclick="deleteMaterial('${key}')" class="text-red-400 hover:text-red-500 font-bold transition">✕</button>
+                    </td>
+                `;
+                materialsTableBody.appendChild(tr);
+            });
+        }
+
+        document.getElementById('matTotalLabel').innerText = `₱${overallTotalCost.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+        
+        // Refresh live balances with structural deduction tracking
+        updateDashboardCard('balArch', initialBudgets.Architectural - spent.Architectural);
+        updateDashboardCard('balPlumb', initialBudgets.Plumbing - spent.Plumbing);
+        updateDashboardCard('balElec', initialBudgets.Electrical - spent.Electrical);
+        updateDashboardCard('balCabinets', initialBudgets.Cabinets - spent.Cabinets);
+    });
+}
+
+// UPDATE FINANCIAL WIDGETS WITH AUTO CRITICAL BALANCE WARNING
+function updateDashboardCard(elementId, finalBalance) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    
+    el.innerText = `₱${finalBalance.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+    
+    // Changes balance color to warning state if category falls below ₱20,000
+    if (finalBalance <= 20000) { 
+        el.className = "text-lg font-bold text-red-500 animate-pulse";
+    } else {
+        el.className = "text-lg font-bold text-emerald-400";
+    }
+}
+
+// INLINE CLOUD UPDATES FOR INTERACTIVE ACTIONS
+function updateMatStatus(key, newStatus) {
+    firebase.database().ref(`projects/${currentActiveProjectId}/materials/${key}`).update({ status: newStatus });
+}
+
+function updateMatRemarks(key, newRemarks) {
+    firebase.database().ref(`projects/${currentActiveProjectId}/materials/${key}`).update({ remarks: newRemarks });
+}
+
+function deleteMaterial(key) {
+    if (confirm("Are you sure you want to delete this material entry?")) {
+        firebase.database().ref(`projects/${currentActiveProjectId}/materials/${key}`).remove();
+    }
+}
+
+// Initialize on app load
+listenToMaterials();
