@@ -39,13 +39,63 @@ function createNewProjectSite() {
 const materialBudget = parseFloat(document.getElementById('newMaterialBudget').value) || 0;
 
 // Update sa pag-save sa Firebase
-await firebase.database().ref(`projects/${name}`).set({
-    allottedLaborBudget: budget,
-    totalMaterialBudget: materialBudget, // Bago: Isang budget lang para sa materials
-    totalLaborSpent: 0,
-    totalMaterialSpent: 0,
-    timestamp: Date.now()
-});
+async function addMaterialOrder() {
+    if (!currentActiveProjectId) return;
+    
+    const desc = document.getElementById('matDesc').value.trim();
+    const qty = parseFloat(document.getElementById('matQty').value) || 0;
+    const unitCost = parseFloat(document.getElementById('matCost').value) || 0;
+    const category = document.getElementById('matCat').value;
+    
+    if (!desc || qty <= 0) {
+        alert("Pakisulat ang wastong description at quantity!");
+        return;
+    }
+
+    const newMaterial = { 
+        description: desc, 
+        qty: qty, 
+        unitCost: unitCost, 
+        totalCost: qty * unitCost, 
+        category: category, 
+        status: 'ordered', 
+        timestamp: Date.now() 
+    };
+
+    // Paggamit ng await para siguradong tapos bago mag-clear
+    await firebase.database().ref(`projects/${currentActiveProjectId}/materials`).push(newMaterial);
+    
+    // I-clear ang inputs
+    document.getElementById('matDesc').value = '';
+    document.getElementById('matQty').value = '';
+    document.getElementById('matCost').value = '';
+}
+
+// 2. LISTEN TO MATERIALS (Simplified Tracking)
+function listenToMaterials() {
+    if (!currentActiveProjectId) return;
+    
+    firebase.database().ref(`projects/${currentActiveProjectId}/materials`).on('value', async (snapshot) => {
+        let totalSpent = 0;
+
+        if (snapshot.exists()) {
+            snapshot.forEach((child) => {
+                const mat = child.val();
+                if (mat.status === 'paid' || mat.status === 'delivered') {
+                    totalSpent += mat.totalCost;
+                }
+            });
+        }
+
+        // I-save ang total spent sa project node para laging updated
+        await firebase.database().ref(`projects/${currentActiveProjectId}`).update({
+            totalMaterialSpent: totalSpent
+        });
+        
+        // I-update ang UI (Global budget vs Spent)
+        updateMaterialUI(totalSpent);
+    });
+}
 }
 // =======================================================================
 // 1. FIREBASE INITIALIZATION & CONFIGURATION BLOCK
