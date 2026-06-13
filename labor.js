@@ -1,11 +1,19 @@
 // labor.js
 function listenToLaborRecords(projectId) {
-    // Load Roster
+    // 1. Load Roster & Timecard Grid
     firebase.database().ref(`projects/${projectId}/roster`).on('value', (snap) => {
-        // I-render ang timecards dito...
+        const container = document.getElementById('timecardGridContainer');
+        if (!container) return;
+        container.innerHTML = '';
+        
+        snap.forEach(child => {
+            const workerId = child.key;
+            const worker = child.val();
+            // ... (I-render dito yung timecard card mo)
+        });
     });
 
-    // Load History Tab (Dito ito lalabas)
+    // 2. Load History Tab
     firebase.database().ref(`projects/${projectId}/payrollHistory`).on('value', (snap) => {
         const historyContainer = document.getElementById('historyTableBody');
         if (!historyContainer) return;
@@ -20,8 +28,9 @@ function listenToLaborRecords(projectId) {
 
 async function compileTimecardPayouts() {
     if (!currentActiveProjectId) return;
-    // Compute total (dito yung computation logic mo)
-    const totalAmount = 5000; // Halimbawa
+    // Dito ang logic para sa computation ng total
+    const totalAmount = 5000; // Ilagay ang iyong dynamic calculation dito
+    
     await firebase.database().ref(`projects/${currentActiveProjectId}/payrollHistory`).push({
         date: new Date().toLocaleDateString(),
         amount: totalAmount

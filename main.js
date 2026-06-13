@@ -1,33 +1,18 @@
-// 1. Firebase Setup
+// main.js
 const firebaseConfig = {
-    apiKey: "AIzaSyAs-YOUR-ACTUAL-API-KEY-HERE",
-    authDomain: "acpm-project-management.firebaseapp.com",
-    databaseURL: "https://acpm-project-system-default-rtdb.asia-southeast1.firebasedatabase.app/",
-    projectId: "acpm-project-management",
-    storageBucket: "acpm-project-management.appspot.com",
-    messagingSenderId: "123456789012",
-    appId: "1:123456789012:web:abcdef1234567890"
+    apiKey: "AIzaSyA7xFArtly4jCZZEt34TTmfNfK94RoWMaA",
+    authDomain: "acpm-project-system.firebaseapp.com",
+    databaseURL: "https://acpm-project-system-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "acpm-project-system",
+    storageBucket: "acpm-project-system.firebasestorage.app",
+    messagingSenderId: "330800177544",
+    appId: "1:330800177544:web:8f29dcd81ca39976849a3d"
 };
-
 
 if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
 
 let currentActiveProjectId = null;
 
-// 2. Navigation: Pag-click ng button sa Dashboard
-function enterProjectWorkspace(projectId) {
-    currentActiveProjectId = projectId;
-    
-    // Ipakita ang Workspace (i-hide ang Dashboard)
-    document.getElementById('projectHubView').classList.add('hidden');
-    document.getElementById('activeWorkspaceView').classList.remove('hidden');
-    
-    // Dito natin tinatawag ang mga functions mula sa ibang files
-    listenToMaterials(); 
-    listenToLaborRecords(projectId); 
-}
-
-// 3. Project Creation
 async function createNewProjectSite() {
     const nameInput = document.getElementById('newProjectName');
     const budgetInput = document.getElementById('newProjectBudget');
@@ -45,8 +30,17 @@ async function createNewProjectSite() {
         totalMaterialSpent: 0,
         timestamp: Date.now()
     });
-    
+    alert("Project " + name + " initialized!");
     nameInput.value = ''; 
     budgetInput.value = '';
-    alert("Project " + name + " created!");
+}
+
+function enterProjectWorkspace(projectId) {
+    currentActiveProjectId = projectId;
+    document.getElementById('projectHubView').classList.add('hidden');
+    document.getElementById('activeWorkspaceView').classList.remove('hidden');
+    
+    // Simulan ang listeners
+    listenToMaterials();
+    listenToLaborRecords(projectId);
 }
