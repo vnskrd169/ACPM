@@ -1,3 +1,8 @@
+function createNewProjectSite() {
+    // Siguraduhing walang typos dito at nasa loob ito ng file na na-save
+    console.log("Function is working!"); 
+    // ... rest of your code
+}
 // =======================================================================
 // 1. FIREBASE INITIALIZATION & CONFIGURATION BLOCK
 // =======================================================================
