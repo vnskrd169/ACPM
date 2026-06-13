@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ACPM Multi-Project Portfolio Master - Cloud Edition</title>
+    <title>Art and Choi Project Management</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -15,9 +15,20 @@
         
         <header class="bg-slate-900 text-white p-6 rounded-xl shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-                <h1 class="text-xl font-bold tracking-tight">ACPM Labor Command Center</h1>
-                <p id="subHeaderContext" class="text-slate-400 text-xs mt-0.5">Global Multi-Site Cloud Portal Hub</p>
+                <h1 class="text-xl font-bold tracking-tight">ACPM Dashboard</h1>
+<p id="subHeaderContext" class="text-slate-400 text-xs mt-0.5">Art and Choi Project Management Dashboard</p>
+
+<!-- 1. NAVIGATION TABS BUTTONS -->
+<div class="flex space-x-2 mt-4 border-b border-slate-700 pb-2">
+    <button id="tabLaborBtn" onclick="switchTab('labor')" class="px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white transition">
+        👷‍♂️ Labor & Payroll
+    </button>
+    <button id="tabMaterialsBtn" onclick="switchTab('materials')" class="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
+        📦 Materials & Procurement
+    </button>
+</div>
             </div>
+            <div id="laborPanel" class="mt-4 block">
             
             <div class="flex items-center gap-2 bg-slate-800 p-1.5 rounded-lg border border-slate-700 text-xs font-mono">
                 <span id="cloudStatusBadge" class="bg-amber-600 px-2 py-1 text-[11px] font-bold rounded-md text-white animate-pulse">
@@ -245,6 +256,80 @@
             </div>
         </div>
     </div>
+</div>
+<div id="materialsPanel" class="mt-4 hidden">
+    
+    <!-- DASHBOARD SUMMARY CARDS (Galing sa Excel Dashboard mo) -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <span class="text-xs text-slate-400 block font-medium">Architectural Balance</span>
+            <span id="balArch" class="text-lg font-bold text-emerald-400">₱0.00</span>
+        </div>
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <span class="text-xs text-slate-400 block font-medium">Plumbing Balance</span>
+            <span id="balPlumb" class="text-lg font-bold text-emerald-400">₱0.00</span>
+        </div>
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <span class="text-xs text-slate-400 block font-medium">Electrical Balance</span>
+            <span id="balElec" class="text-lg font-bold text-emerald-400">₱0.00</span>
+        </div>
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+            <span class="text-xs text-slate-400 block font-medium">Cabinets Balance</span>
+            <span id="balCabinets" class="text-lg font-bold text-emerald-400">₱0.00</span>
+        </div>
+    </div>
+
+    <!-- MATERIAL ORDERING INPUT FORM -->
+    <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-6">
+        <h3 class="text-sm font-bold text-white mb-3">🛒 New Material Purchase Request</h3>
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+            <input type="text" id="matDesc" placeholder="Description (e.g., Skim Coat)" class="bg-slate-900 border border-slate-700 text-white rounded p-2 md:col-span-2">
+            <input type="text" id="matSize" placeholder="Size (e.g., 5px/12mm)" class="bg-slate-900 border border-slate-700 text-white rounded p-2">
+            <input type="number" id="matQty" placeholder="Qty" class="bg-slate-900 border border-slate-700 text-white rounded p-2">
+            <input type="text" id="matUnit" placeholder="Unit (pcs/bags)" class="bg-slate-900 border border-slate-700 text-white rounded p-2">
+            <select id="matCat" class="bg-slate-900 border border-slate-700 text-white rounded p-2">
+                <option value="Architectural">Architectural</option>
+                <option value="Plumbing">Plumbing</option>
+                <option value="Electrical">Electrical</option>
+                <option value="Cabinets">Cabinets</option>
+            </select>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mt-2">
+            <input type="number" id="matCost" placeholder="Unit Cost (₱)" class="bg-slate-900 border border-slate-700 text-white rounded p-2">
+            <button onclick="addMaterialOrder()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded py-2 transition">
+                ➕ Add Order
+            </button>
+        </div>
+    </div>
+
+    <!-- AUTOMATED CHECK-CHECK TABLE -->
+    <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-xl">
+        <div class="p-3 bg-slate-750 border-b border-slate-700 flex justify-between items-center">
+            <span class="text-xs font-bold text-slate-300">Materials Tracking Ledger</span>
+            <span class="text-xs font-bold text-white bg-slate-900 px-3 py-1 rounded-full">Total Cost: <span id="matTotalLabel" class="text-amber-400">₱0.00</span></span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs text-slate-300">
+                <thead class="bg-slate-900 text-slate-400 uppercase text-[10px] tracking-wider">
+                    <tr>
+                        <th class="p-3">Description</th>
+                        <th class="p-3">Size</th>
+                        <th class="p-3 text-center">Qty/Unit</th>
+                        <th class="p-3 text-right">Unit Cost</th>
+                        <th class="p-3 text-right">Total Cost</th>
+                        <th class="p-3 text-center">Status (Check-Check)</th>
+                        <th class="p-3">Remarks</th>
+                        <th class="p-3 text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="materialsTableBody">
+                    <!-- Dito awtomatikong sasaksak ang mga rows galing sa JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
 
     <script src="ACPM.js"></script>
 </body>
