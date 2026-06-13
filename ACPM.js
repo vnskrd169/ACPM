@@ -1,109 +1,10 @@
-
-console.log("ACPM System Loading..."); // Para malaman natin sa F12 kung nagload ang file
-
-function createNewProjectSite() {
-    console.log("Create button clicked!"); // Check kung gumagana na ang button
-    const nameInput = document.getElementById('newProjectName');
-    const budgetInput = document.getElementById('newProjectBudget');
-    
-    if (!nameInput || !budgetInput) {
-        console.error("Inputs not found!");
-        return;
-    }
-    
-    const name = nameInput.value.trim();
-    const budget = parseFloat(budgetInput.value) || 0;
-
-    if (!name || budget <= 0) {
-        alert("State name of site and budget allocated");
-        return;
-    }
-
-    // Firebase write command
-    firebase.database().ref('projects/' + name).set({
-        allottedLaborBudget: budget,
-        totalLaborSpent: 0,
-        timestamp: Date.now()
-    }).then(() => {
-        alert("Project " + name + " initialized successfully!");
-        nameInput.value = '';
-        budgetInput.value = '';
-    }).catch((error) => {
-        console.error("Firebase Error:", error);
-    });
-}function createNewProjectSite() {
-    // Siguraduhing walang typos dito at nasa loob ito ng file na na-save
-    console.log("Function is working!"); 
-    // ... rest of your code
-    // Bagong input sa HTML para sa Material Budget
-const materialBudget = parseFloat(document.getElementById('newMaterialBudget').value) || 0;
-
-// Update sa pag-save sa Firebase
-async function addMaterialOrder() {
-    if (!currentActiveProjectId) return;
-    
-    const desc = document.getElementById('matDesc').value.trim();
-    const qty = parseFloat(document.getElementById('matQty').value) || 0;
-    const unitCost = parseFloat(document.getElementById('matCost').value) || 0;
-    const category = document.getElementById('matCat').value;
-    
-    if (!desc || qty <= 0) {
-        alert("Pakisulat ang wastong description at quantity!");
-        return;
-    }
-
-    const newMaterial = { 
-        description: desc, 
-        qty: qty, 
-        unitCost: unitCost, 
-        totalCost: qty * unitCost, 
-        category: category, 
-        status: 'ordered', 
-        timestamp: Date.now() 
-    };
-
-    // Paggamit ng await para siguradong tapos bago mag-clear
-    await firebase.database().ref(`projects/${currentActiveProjectId}/materials`).push(newMaterial);
-    
-    // I-clear ang inputs
-    document.getElementById('matDesc').value = '';
-    document.getElementById('matQty').value = '';
-    document.getElementById('matCost').value = '';
-}
-
-// 2. LISTEN TO MATERIALS (Simplified Tracking)
-function listenToMaterials() {
-    if (!currentActiveProjectId) return;
-    
-    firebase.database().ref(`projects/${currentActiveProjectId}/materials`).on('value', async (snapshot) => {
-        let totalSpent = 0;
-
-        if (snapshot.exists()) {
-            snapshot.forEach((child) => {
-                const mat = child.val();
-                if (mat.status === 'paid' || mat.status === 'delivered') {
-                    totalSpent += mat.totalCost;
-                }
-            });
-        }
-
-        // I-save ang total spent sa project node para laging updated
-        await firebase.database().ref(`projects/${currentActiveProjectId}`).update({
-            totalMaterialSpent: totalSpent
-        });
-        
-        // I-update ang UI (Global budget vs Spent)
-        updateMaterialUI(totalSpent);
-    });
-}
-}
 // =======================================================================
-// 1. FIREBASE INITIALIZATION & CONFIGURATION BLOCK
+// 1. FIREBASE INITIALIZATION
 // =======================================================================
 const firebaseConfig = {
     apiKey: "AIzaSyAs-YOUR-ACTUAL-API-KEY-HERE",
     authDomain: "acpm-project-management.firebaseapp.com",
-    databaseURL: "https://acpm-project-system-default-rtdb.asia-southeast1.firebasedatabase.app/", // <-- PALITAN MO ITO NG TOTOONG FIREBASE REALTIME URL MO!
+    databaseURL: "https://acpm-project-system-default-rtdb.asia-southeast1.firebasedatabase.app/",
     projectId: "acpm-project-management",
     storageBucket: "acpm-project-management.appspot.com",
     messagingSenderId: "123456789012",
@@ -114,82 +15,116 @@ if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
 
-// Global System Scope Memory
 let currentActiveProjectId = null; 
-let projectScopesDataMemory = {}; 
 
-const initialBudgets = {
-    Architectural: 822900,
-    Plumbing: 117200,
-    Electrical: 432840,
-    Cabinets: 456575
-};
+// =======================================================================
+// 2. PROCUREMENT MATRIX (MATERIALS MODULE - CLEANED)
+// =======================================================================
 
-// Automatic load global tracker triggers on launch loop
-document.addEventListener("DOMContentLoaded", () => {
-    // Set system default date indicators to active modern dates
-    const todayStr = new Date().toISOString().split('T')[0];
-    if(document.getElementById('cutoffStart')) document.getElementById('cutoffStart').value = todayStr;
-    if(document.getElementById('cutoffEnd')) document.getElementById('cutoffEnd').value = todayStr;
+async function addMaterialOrder() {
+    if (!currentActiveProjectId) return;
+    const desc = document.getElementById('matDesc').value.trim();
+    const qty = parseFloat(document.getElementById('matQty').value) || 0;
+    const unitCost = parseFloat(document.getElementById('matCost').value) || 0;
+    const category = document.getElementById('matCat').value;
     
-    listenToGlobalHubRegistry();
-});
-
-// =======================================================================
-// 2. PRIMARY TAB ROUTERS AND GATEWAYS ENGINE
-// =======================================================================
-
-function enterProjectWorkspace(projectId) {
-    currentActiveProjectId = projectId; 
-
-    document.getElementById('activeSiteNameLabel').innerText = projectId;
-    document.getElementById('projectHubView').classList.add('hidden');
-    document.getElementById('activeWorkspaceView').classList.remove('hidden');
-
-    // Default target sub-screen interface state is Labor Management
-    switchTab('labor');
-
-    // Fire data streaming sync loops instantly
-    listenToMaterials();
-    listenToLaborRecords(projectId);
+    if (!desc || qty <= 0) { alert("Pakisulat ang wastong description at quantity!"); return; }
+    
+    const newMaterial = { 
+        description: desc, 
+        qty: qty, 
+        unitCost: unitCost, 
+        totalCost: qty * unitCost, 
+        category: category, 
+        status: 'ordered', 
+        timestamp: Date.now() 
+    };
+    
+    await firebase.database().ref(`projects/${currentActiveProjectId}/materials`).push(newMaterial);
+    
+    document.getElementById('matDesc').value = ''; 
+    document.getElementById('matQty').value = ''; 
+    document.getElementById('matCost').value = '';
 }
 
-function switchTab(tabName) {
-    const panels = {
-        labor: document.getElementById('laborPanel'),
-        materials: document.getElementById('materialsPanel')
-    };
-    const buttons = {
-        labor: document.getElementById('tabLaborBtn'),
-        materials: document.getElementById('tabMaterialsBtn')
-    };
+function listenToMaterials() {
+    if (!currentActiveProjectId) return;
+    
+    firebase.database().ref(`projects/${currentActiveProjectId}/materials`).on('value', async (snapshot) => {
+        const materialsTableBody = document.getElementById('materialsTableBody');
+        if (!materialsTableBody) return;
+        materialsTableBody.innerHTML = ''; 
 
-    Object.keys(panels).forEach(key => {
-        if (!panels[key] || !buttons[key]) return;
-        
-        if (key === tabName) {
-            panels[key].classList.remove('hidden');
-            panels[key].classList.add('block');
-            buttons[key].className = "px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white shadow transition";
-        } else {
-            panels[key].classList.remove('block');
-            panels[key].classList.add('hidden');
-            buttons[key].className = "px-4 py-2 text-sm font-semibold rounded-lg bg-slate-900 text-slate-400 hover:text-slate-200 transition";
+        let overallTotalSpent = 0; // Ito yung global spent
+
+        if (snapshot.exists()) {
+            snapshot.forEach((child) => {
+                const key = child.key;
+                const mat = child.val();
+                
+                // Compute total spent para sa global tracker
+                if (mat.status === 'paid' || mat.status === 'delivered') {
+                    overallTotalSpent += mat.totalCost;
+                }
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="p-4 text-white">${mat.description}</td>
+                    <td class="p-4 text-center">${mat.qty}</td>
+                    <td class="p-4 text-right">₱${mat.totalCost.toLocaleString()}</td>
+                    <td class="p-4 text-center">
+                        <button onclick="updateMatStatus('${key}', 'paid')" class="bg-amber-600 px-2 py-1 rounded text-[10px]">Mark Paid</button>
+                    </td>
+                    <td class="p-4 text-center"><button onclick="deleteMaterial('${key}')" class="text-red-500">✕</button></td>
+                `;
+                materialsTableBody.appendChild(tr);
+            });
+        }
+
+        // I-update ang global material spent sa project node
+        await firebase.database().ref(`projects/${currentActiveProjectId}`).update({
+            totalMaterialSpent: overallTotalSpent
+        });
+
+        if(document.getElementById('matTotalLabel')) {
+            document.getElementById('matTotalLabel').innerText = `₱${overallTotalSpent.toLocaleString()}`;
         }
     });
 }
 
-function exitToHub() {
-    if (currentActiveProjectId) {
-        firebase.database().ref(`projects/${currentActiveProjectId}/materials`).off();
-        firebase.database().ref(`projects/${currentActiveProjectId}/roster`).off();
-        firebase.database().ref(`projects/${currentActiveProjectId}/scopes`).off();
+// =======================================================================
+// 3. CORE SYSTEM HELPERS
+// =======================================================================
+
+async function createNewProjectSite() {
+    const nameInput = document.getElementById('newProjectName');
+    const budgetInput = document.getElementById('newProjectBudget');
+    const name = nameInput.value.trim();
+    const budget = parseFloat(budgetInput.value) || 0;
+
+    if (!name || budget <= 0) {
+        alert("Paki-fill ang pangalan at budget!");
+        return;
     }
-    document.getElementById('activeWorkspaceView').classList.add('hidden');
-    document.getElementById('projectHubView').classList.remove('hidden');
-    currentActiveProjectId = null;
+    await firebase.database().ref(`projects/${name}`).set({ 
+        allottedLaborBudget: budget, 
+        totalLaborSpent: 0, 
+        totalMaterialSpent: 0,
+        timestamp: Date.now() 
+    });
+    nameInput.value = ''; 
+    budgetInput.value = '';
 }
 
+function updateMatStatus(key, newStatus) { 
+    if (currentActiveProjectId) firebase.database().ref(`projects/${currentActiveProjectId}/materials/${key}`).update({ status: newStatus }); 
+}
+
+function deleteMaterial(key) { 
+    if (currentActiveProjectId) firebase.database().ref(`projects/${currentActiveProjectId}/materials/${key}`).remove(); 
+}
+
+// (Ilagay mo dito ang iba pang functions gaya ng laborRecords...)
 // =======================================================================
 // 3. LABOR CALCULATIONS & PAYROLL TIMECARD STRUCTURAL LOOPS
 // =======================================================================
