@@ -1,5 +1,5 @@
 
-onsole.log("ACPM System Loading..."); // Para malaman natin sa F12 kung nagload ang file
+console.log("ACPM System Loading..."); // Para malaman natin sa F12 kung nagload ang file
 
 function createNewProjectSite() {
     console.log("Create button clicked!"); // Check kung gumagana na ang button
