@@ -18,7 +18,78 @@ let portfolio = {};
 let activeProjectKey = null;
 let currentEditingRecordId = null;
 let activeModalWorkerId = null;
-let currentActiveProjectId = null;
+let currentActiveProjectId = null; 
+
+const initialBudgets = {
+    Architectural: 822900,
+    Plumbing: 117200,
+    Electrical: 432840,
+    Cabinets: 456575
+};
+
+// 1. DYNAMIC ENTRY WAY INTO PROJECT SCOPE
+function enterProjectWorkspace(projectId) {
+    currentActiveProjectId = projectId; // Bind state directly to workspace name
+
+    // Set UI Header Context Labels dynamically
+    document.getElementById('activeSiteNameLabel').innerText = projectId;
+
+    // Toggle viewport screens
+    document.getElementById('projectHubView').classList.add('hidden');
+    document.getElementById('activeWorkspaceView').classList.remove('hidden');
+
+    // Default tab inside workspace is always Labor
+    switchTab('labor');
+
+    // Fire data streams targeting this unique node path
+    listenToMaterials();
+    if (typeof listenToLaborRecords === "function") {
+        listenToLaborRecords(projectId); 
+    }
+}
+
+// 2. INNER WORKSPACE TAB CONTROLLER
+function switchTab(tabName) {
+    const panels = {
+        labor: document.getElementById('laborPanel'),
+        materials: document.getElementById('materialsPanel'),
+        misc: document.getElementById('miscPanel')
+    };
+    const buttons = {
+        labor: document.getElementById('tabLaborBtn'),
+        materials: document.getElementById('tabMaterialsBtn'),
+        misc: document.getElementById('tabMiscBtn')
+    };
+
+    Object.keys(panels).forEach(key => {
+        if (!panels[key] || !buttons[key]) return;
+        
+        if (key === tabName) {
+            panels[key].classList.remove('hidden');
+            panels[key].classList.add('block');
+            buttons[key].className = "px-4 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white shadow transition";
+        } else {
+            panels[key].classList.remove('block');
+            panels[key].classList.add('hidden');
+            buttons[key].className = "px-4 py-2 text-sm font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
+        }
+    });
+}
+
+// 3. SECURE EXIT OUT OF PROJECT SUB-PANEL
+function exitToHub() {
+    // Terminate data streams to prevent cross-leakage when opening other project instances
+    if (currentActiveProjectId) {
+        firebase.database().ref(`projects/${currentActiveProjectId}/materials`).off();
+        firebase.database().ref(`projects/${currentActiveProjectId}/labor`).off();
+    }
+
+    // Toggle viewport displays
+    document.getElementById('activeWorkspaceView').classList.add('hidden');
+    document.getElementById('projectHubView').classList.remove('hidden');
+
+    currentActiveProjectId = null; // Re-zero global state safely
+}
 // ====== REALTIME CLOUD LISTENER (Awtomatikong kumukuha ng bago at real-time data) ======
 db.ref("payroll_portfolio").on("value", (snapshot) => {
     const cloudData = snapshot.val();
