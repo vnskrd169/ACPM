@@ -18,7 +18,7 @@ let portfolio = {};
 let activeProjectKey = null;
 let currentEditingRecordId = null;
 let activeModalWorkerId = null;
-
+let currentActiveProjectId = null;
 // ====== REALTIME CLOUD LISTENER (Awtomatikong kumukuha ng bago at real-time data) ======
 db.ref("payroll_portfolio").on("value", (snapshot) => {
     const cloudData = snapshot.val();
