@@ -1,4 +1,37 @@
+
+onsole.log("ACPM System Loading..."); // Para malaman natin sa F12 kung nagload ang file
+
 function createNewProjectSite() {
+    console.log("Create button clicked!"); // Check kung gumagana na ang button
+    const nameInput = document.getElementById('newProjectName');
+    const budgetInput = document.getElementById('newProjectBudget');
+    
+    if (!nameInput || !budgetInput) {
+        console.error("Inputs not found!");
+        return;
+    }
+    
+    const name = nameInput.value.trim();
+    const budget = parseFloat(budgetInput.value) || 0;
+
+    if (!name || budget <= 0) {
+        alert("Pakisulat ang wastong pangalan ng site at budget framework!");
+        return;
+    }
+
+    // Firebase write command
+    firebase.database().ref('projects/' + name).set({
+        allottedLaborBudget: budget,
+        totalLaborSpent: 0,
+        timestamp: Date.now()
+    }).then(() => {
+        alert("Project " + name + " initialized successfully!");
+        nameInput.value = '';
+        budgetInput.value = '';
+    }).catch((error) => {
+        console.error("Firebase Error:", error);
+    });
+}function createNewProjectSite() {
     // Siguraduhing walang typos dito at nasa loob ito ng file na na-save
     console.log("Function is working!"); 
     // ... rest of your code
