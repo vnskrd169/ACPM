@@ -9,7 +9,7 @@ function createNewProjectSite() {
 const firebaseConfig = {
     apiKey: "AIzaSyAs-YOUR-ACTUAL-API-KEY-HERE",
     authDomain: "acpm-project-management.firebaseapp.com",
-    databaseURL: "https://acpm-project-management-default-rtdb.firebaseio.com", // <-- PALITAN MO ITO NG TOTOONG FIREBASE REALTIME URL MO!
+    databaseURL: "https://console.firebase.google.com/u/2/project/acpm-project-system/database/acpm-project-system-default-rtdb/data/", // <-- PALITAN MO ITO NG TOTOONG FIREBASE REALTIME URL MO!
     projectId: "acpm-project-management",
     storageBucket: "acpm-project-management.appspot.com",
     messagingSenderId: "123456789012",
