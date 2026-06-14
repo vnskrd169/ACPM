@@ -1,7 +1,7 @@
-// ============================================================
-//  ACPM — main.js  |  Global Hub & Navigation
-//  Load order: main.js → labor.js → materials.js
-// ============================================================
+// ═══════════════════════════════════════════════════════════════
+//  ACPM v3 — main.js  |  Firebase · Hub · Navigation
+//  Script order: main.js → labor.js → materials.js
+// ═══════════════════════════════════════════════════════════════
 
 const firebaseConfig = {
     apiKey: "AIzaSyA7xFArtly4jCZZEt34TTmfNfK94RoWMaA",
@@ -11,207 +11,136 @@ const firebaseConfig = {
     storageBucket: "acpm-project-system.firebasestorage.app",
     messagingSenderId: "330800177544",
     appId: "1:330800177544:web:8f29dcd81ca39976849a3d"
-};
-
-if (!firebase.apps.length) { firebase.initializeApp(firebaseConfig); }
-
-// ── Global State ────────────────────────────────────────────
-let currentActiveProjectId = null;
-let activeListeners = [];   // track refs so we can .off() them on exit
-
-// ── Helpers ─────────────────────────────────────────────────
-function fmt(n) {
+  };
+  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+  
+  // ── Global state ─────────────────────────────────────────────────
+  let currentProjectId = null;
+  let _listeners = [];
+  
+  // ── Helpers ──────────────────────────────────────────────────────
+  function peso(n) {
     return '₱' + (parseFloat(n) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function detachAllListeners() {
-    activeListeners.forEach(ref => ref.off());
-    activeListeners = [];
-}
-
-// ── Dashboard / Project Hub ──────────────────────────────────
-function loadProjectList() {
-    const grid = document.getElementById('projectRegistryGrid');
+  }
+  function pct(spent, budget) {
+    if (!budget) return 0;
+    return Math.min(100, Math.round((spent / budget) * 100));
+  }
+  function listen(ref, cb) {
+    ref.on('value', cb);
+    _listeners.push(ref);
+  }
+  function detachAll() {
+    _listeners.forEach(r => r.off());
+    _listeners = [];
+  }
+  function $(id) { return document.getElementById(id); }
+  
+  // ── Hub boot ─────────────────────────────────────────────────────
+  window.onload = () => renderHub();
+  
+  function renderHub() {
+    const grid = $('projectGrid');
     if (!grid) return;
-
-    const ref = firebase.database().ref('projects');
-    activeListeners.push(ref);
-
-    ref.on('value', (snapshot) => {
-        grid.innerHTML = '';
-        if (!snapshot.exists()) {
-            grid.innerHTML = '<p class="text-slate-500 text-sm col-span-3 text-center py-8">No projects yet. Initialize one above.</p>';
-            return;
-        }
-        snapshot.forEach((child) => {
-            const pid  = child.key;
-            const data = child.val() || {};
-            const budget  = parseFloat(data.allottedLaborBudget)  || 0;
-            const lSpent  = parseFloat(data.totalLaborSpent)       || 0;
-            const mSpent  = parseFloat(data.totalMaterialSpent)    || 0;
-            const pctUsed = budget > 0 ? Math.min(100, Math.round((lSpent / budget) * 100)) : 0;
-
-            const card = document.createElement('div');
-            card.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col gap-3 hover:border-blue-700 transition cursor-pointer';
-            card.innerHTML = `
-                <div class="flex justify-between items-start">
-                    <h3 class="font-black text-white text-sm leading-tight">📁 ${pid}</h3>
-                    <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-900/50">ACTIVE</span>
-                </div>
-                <div class="space-y-1 text-[11px] text-slate-400">
-                    <div class="flex justify-between"><span>Labor Budget</span><span class="text-white font-bold">${fmt(budget)}</span></div>
-                    <div class="flex justify-between"><span>Labor Spent</span><span class="text-red-400 font-bold">${fmt(lSpent)}</span></div>
-                    <div class="flex justify-between"><span>Materials Spent</span><span class="text-amber-400 font-bold">${fmt(mSpent)}</span></div>
-                </div>
-                <div>
-                    <div class="flex justify-between text-[10px] text-slate-500 mb-1">
-                        <span>Labor Budget Used</span><span>${pctUsed}%</span>
-                    </div>
-                    <div class="w-full bg-slate-800 rounded-full h-1.5">
-                        <div class="h-1.5 rounded-full ${pctUsed >= 90 ? 'bg-red-500' : pctUsed >= 60 ? 'bg-amber-500' : 'bg-emerald-500'}" style="width:${pctUsed}%"></div>
-                    </div>
-                </div>
-                <button onclick="enterProjectWorkspace('${pid}')" class="w-full mt-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 rounded-lg shadow transition">
-                    Open Workspace →
-                </button>`;
-            grid.appendChild(card);
-        });
+  
+    listen(firebase.database().ref('projects'), snap => {
+      grid.innerHTML = '';
+      if (!snap.exists()) {
+        grid.innerHTML = `<p class="hub-empty">No projects yet — create one above.</p>`;
+        return;
+      }
+      snap.forEach(child => {
+        const id = child.key;
+        const d  = child.val() || {};
+        const lb = parseFloat(d.laborBudget)    || 0;
+        const mb = parseFloat(d.materialBudget) || 0;
+        const ls = parseFloat(d.laborSpent)     || 0;
+        const ms = parseFloat(d.materialSpent)  || 0;
+        const lp = pct(ls, lb);
+        const mp = pct(ms, mb);
+  
+        const barClass = p => p >= 90 ? 'bar-danger' : p >= 60 ? 'bar-warn' : 'bar-ok';
+  
+        grid.innerHTML += `
+          <div class="proj-card">
+            <div class="proj-card-top">
+              <div>
+                <p class="proj-label">PROJECT</p>
+                <h3 class="proj-name">${id}</h3>
+                <p class="proj-date">Created ${d.created || '—'}</p>
+              </div>
+              <span class="proj-status">ACTIVE</span>
+            </div>
+            <div class="proj-budgets">
+              <div class="budget-row">
+                <span class="budget-label">👷 Labor</span>
+                <span class="budget-val">${peso(lb)}</span>
+              </div>
+              <div class="mini-bar"><div class="mini-fill ${barClass(lp)}" style="width:${lp}%"></div></div>
+              <p class="budget-sub">${peso(ls)} spent · ${lp}% used</p>
+              <div class="budget-row" style="margin-top:10px">
+                <span class="budget-label">📦 Materials</span>
+                <span class="budget-val">${peso(mb)}</span>
+              </div>
+              <div class="mini-bar"><div class="mini-fill ${barClass(mp)}" style="width:${mp}%"></div></div>
+              <p class="budget-sub">${peso(ms)} spent · ${mp}% used</p>
+            </div>
+            <button class="proj-open-btn" onclick="enterProject('${id}')">Open Workspace →</button>
+          </div>`;
+      });
     });
-}
-
-// ── Create New Project ───────────────────────────────────────
-async function createNewProjectSite() {
-    const nameInput   = document.getElementById('newProjectName');
-    const budgetInput = document.getElementById('newProjectBudget');
-    const name        = nameInput.value.trim();
-    const budget      = parseFloat(budgetInput.value) || 0;
-
-    if (!name)       { alert('Pakisulat ang Project Name!'); return; }
-    if (budget <= 0) { alert('Pakilagay ang valid na Labor Budget!'); return; }
-
-    // Check if already exists
+  }
+  
+  // ── Create project ────────────────────────────────────────────────
+  async function createProject() {
+    const name = $('newName').value.trim();
+    const lb   = parseFloat($('newLaborBudget').value)    || 0;
+    const mb   = parseFloat($('newMaterialBudget').value) || 0;
+  
+    if (!name) { alert('Enter a project name.'); return; }
+    if (lb <= 0) { alert('Enter a valid Labor Budget.'); return; }
+    if (mb <= 0) { alert('Enter a valid Materials Budget.'); return; }
+  
     const snap = await firebase.database().ref(`projects/${name}`).once('value');
-    if (snap.exists()) { alert(`Project "${name}" ay mayroon na!`); return; }
-
+    if (snap.exists()) { alert(`"${name}" already exists.`); return; }
+  
     await firebase.database().ref(`projects/${name}`).set({
-        allottedLaborBudget : budget,
-        totalLaborSpent     : 0,
-        totalMaterialSpent  : 0,
-        timestamp           : Date.now()
+      laborBudget:    lb,
+      materialBudget: mb,
+      laborSpent:     0,
+      materialSpent:  0,
+      created: new Date().toLocaleDateString('en-PH')
     });
-
-    nameInput.value   = '';
-    budgetInput.value = '';
-    alert(`✅ Project "${name}" initialized!`);
-}
-
-// ── Enter Workspace ──────────────────────────────────────────
-function enterProjectWorkspace(projectId) {
-    detachAllListeners();
-    currentActiveProjectId = projectId;
-
-    document.getElementById('projectHubView').classList.add('hidden');
-    document.getElementById('activeWorkspaceView').classList.remove('hidden');
-
-    const label = document.getElementById('activeSiteNameLabel');
-    if (label) label.textContent = projectId;
-
-    // Default to Labor tab
+  
+    $('newName').value = '';
+    $('newLaborBudget').value = '';
+    $('newMaterialBudget').value = '';
+  }
+  
+  // ── Workspace enter/exit ──────────────────────────────────────────
+  function enterProject(id) {
+    detachAll();
+    currentProjectId = id;
+    $('hubView').classList.add('hidden');
+    $('workspaceView').classList.remove('hidden');
+    $('wsName').textContent = id;
     switchTab('labor');
-
-    // Fire module listeners
-    if (typeof listenToLaborRecords   === 'function') listenToLaborRecords(projectId);
-    if (typeof listenToMaterials      === 'function') listenToMaterials();
-    if (typeof loadProjectScopeStats  === 'function') loadProjectScopeStats(projectId);
-}
-
-// ── Exit to Hub ──────────────────────────────────────────────
-function exitToHub() {
-    detachAllListeners();
-    currentActiveProjectId = null;
-
-    document.getElementById('activeWorkspaceView').classList.add('hidden');
-    document.getElementById('projectHubView').classList.remove('hidden');
-
-    loadProjectList();
-}
-
-// ── Tab Switcher ─────────────────────────────────────────────
-function switchTab(tab) {
-    const laborPanel     = document.getElementById('laborPanel');
-    const materialsPanel = document.getElementById('materialsPanel');
-    const laborBtn       = document.getElementById('tabLaborBtn');
-    const materialsBtn   = document.getElementById('tabMaterialsBtn');
-
-    if (tab === 'labor') {
-        laborPanel.classList.remove('hidden');
-        materialsPanel.classList.add('hidden');
-        laborBtn.classList.replace('bg-slate-900', 'bg-blue-600');
-        laborBtn.classList.replace('text-slate-400', 'text-white');
-        materialsBtn.classList.replace('bg-blue-600', 'bg-slate-900');
-        materialsBtn.classList.replace('text-white', 'text-slate-400');
-    } else {
-        materialsPanel.classList.remove('hidden');
-        laborPanel.classList.add('hidden');
-        materialsBtn.classList.replace('bg-slate-900', 'bg-blue-600');
-        materialsBtn.classList.replace('text-slate-400', 'text-white');
-        laborBtn.classList.replace('bg-blue-600', 'bg-slate-900');
-        laborBtn.classList.replace('text-white', 'text-slate-400');
-    }
-}
-
-// ── Scope Account Management ─────────────────────────────────
-async function saveScopeAccount() {
-    if (!currentActiveProjectId) return;
-    const name   = document.getElementById('scopeNameInput').value.trim();
-    const leader = document.getElementById('scopeLeaderInput').value.trim();
-    const bank   = document.getElementById('scopeBankInput').value.trim();
-
-    if (!name || !leader) { alert('Pakisulat ang Scope Name at Leader Name!'); return; }
-
-    const scopeKey = name.replace(/\s+/g, '_').toLowerCase();
-    await firebase.database().ref(`projects/${currentActiveProjectId}/scopes/${scopeKey}`).set({ name, leader, bank });
-
-    document.getElementById('scopeNameInput').value   = '';
-    document.getElementById('scopeLeaderInput').value = '';
-    document.getElementById('scopeBankInput').value   = '';
-
-    refreshScopeSelect();
-    alert(`✅ Scope "${name}" saved!`);
-}
-
-function refreshScopeSelect() {
-    if (!currentActiveProjectId) return;
-    firebase.database().ref(`projects/${currentActiveProjectId}/scopes`).once('value', (snap) => {
-        const sel = document.getElementById('workerScopeSelect');
-        if (!sel) return;
-        sel.innerHTML = '<option value="">— Select Scope —</option>';
-        snap.forEach(child => {
-            const s = child.val();
-            sel.innerHTML += `<option value="${child.key}">${s.name}</option>`;
-        });
-    });
-}
-
-// ── Worker Roster ────────────────────────────────────────────
-async function deployWorkerToRoster() {
-    if (!currentActiveProjectId) return;
-    const name    = document.getElementById('workerNameInput').value.trim();
-    const rate    = parseFloat(document.getElementById('workerRateInput').value) || 750;
-    const scopeId = document.getElementById('workerScopeSelect').value;
-
-    if (!name)    { alert('Pakisulat ang Worker Name!'); return; }
-    if (!scopeId) { alert('Pumili ng Scope para sa worker!'); return; }
-
-    await firebase.database().ref(`projects/${currentActiveProjectId}/workers`).push({
-        name, dailyRate: rate, scopeId, timestamp: Date.now()
-    });
-
-    document.getElementById('workerNameInput').value = '';
-    alert(`✅ ${name} deployed!`);
-}
-
-// ── Boot ─────────────────────────────────────────────────────
-window.onload = () => {
-    loadProjectList();
-};
+    if (typeof initLabor     === 'function') initLabor(id);
+    if (typeof initMaterials === 'function') initMaterials(id);
+  }
+  
+  function exitHub() {
+    detachAll();
+    currentProjectId = null;
+    $('workspaceView').classList.add('hidden');
+    $('hubView').classList.remove('hidden');
+    renderHub();
+  }
+  
+  // ── Tab switcher ──────────────────────────────────────────────────
+  function switchTab(tab) {
+    ['laborPanel','materialsPanel'].forEach(p => $(p)?.classList.add('hidden'));
+    ['tabLabor','tabMaterials'].forEach(b => $(b)?.classList.remove('tab-active'));
+    $(tab === 'labor' ? 'laborPanel'    : 'materialsPanel')?.classList.remove('hidden');
+    $(tab === 'labor' ? 'tabLabor'      : 'tabMaterials')?.classList.add('tab-active');
+  }

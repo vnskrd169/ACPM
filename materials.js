@@ -1,180 +1,332 @@
-// ============================================================
-//  ACPM — materials.js  |  Materials & Procurement Module
-//  Depends on: main.js (currentActiveProjectId, fmt, activeListeners)
-// ============================================================
+// ═══════════════════════════════════════════════════════════════
+//  ACPM v3 — materials.js
+//  Purchase Orders · Item Ledger · History · PNG Export
+// ═══════════════════════════════════════════════════════════════
 
-// ── Category Balance Budgets (static; adjust as needed) ──────
-const MAT_CATEGORY_BUDGETS = {
-    'Architectural': 822900,
-    'Plumbing'     : 117200,
-    'Electrical'   : 432840,
-    'Cabinets'     : 456575
-};
+let _matPid   = null;
+let _draftItems = [];   // current PO draft items
 
-const CATEGORY_BALANCE_IDS = {
-    'Architectural': 'balArch',
-    'Plumbing'     : 'balPlumb',
-    'Electrical'   : 'balElec',
-    'Cabinets'     : 'balCabinets'
-};
+// ── Boot ──────────────────────────────────────────────────────────
+function initMaterials(pid) {
+  _matPid = pid;
+  _draftItems = [];
+  renderDraft();
+  watchBudgetMat(pid);
+  watchLedger(pid);
+  watchPOHistory(pid);
+}
 
-// ── Add Material Order ────────────────────────────────────────
-async function addMaterialOrder() {
-    if (!currentActiveProjectId) { alert('Walang active project!'); return; }
+// ── Materials budget KPIs ─────────────────────────────────────────
+function watchBudgetMat(pid) {
+  listen(firebase.database().ref(`projects/${pid}`), snap => {
+    const d      = snap.val() || {};
+    const budget = parseFloat(d.materialBudget) || 0;
+    const spent  = parseFloat(d.materialSpent)  || 0;
+    const left   = budget - spent;
+    setText('mbBudget', peso(budget));
+    setText('mbSpent',  peso(spent));
+    const el = $('mbLeft');
+    if (el) { el.textContent = peso(left); el.className = `kpi-num ${left < 0 ? 'kpi-danger' : 'kpi-safe'}`; }
+  });
+}
 
-    const desc     = document.getElementById('matDesc').value.trim();
-    const size     = document.getElementById('matSize').value.trim();
-    const qty      = parseFloat(document.getElementById('matQty').value)  || 0;
-    const unit     = document.getElementById('matUnit').value.trim();
-    const cat      = document.getElementById('matCat').value;
-    const unitCost = parseFloat(document.getElementById('matCost').value) || 0;
+// ══════════════════════════════════════════════════════
+//  DRAFT PO — build before submitting
+// ══════════════════════════════════════════════════════
+function addDraftItem() {
+  const desc = $('poItemDesc')?.value.trim();
+  const qty  = parseFloat($('poItemQty')?.value)  || 0;
+  const unit = $('poItemUnit')?.value.trim()       || '';
+  const cost = parseFloat($('poItemCost')?.value)  || 0;
 
-    if (!desc)   { alert('Pakisulat ang Description!'); return; }
-    if (qty <= 0) { alert('Pakilagay ng valid na Quantity!'); return; }
+  if (!desc)   { alert('Enter item description.'); return; }
+  if (qty <= 0) { alert('Enter valid quantity.'); return; }
 
-    const newMaterial = {
-        description : desc,
-        size        : size,
-        qty         : qty,
-        unit        : unit,
-        category    : cat,
-        unitCost    : unitCost,
-        totalCost   : qty * unitCost,
-        status      : 'ordered',
-        remarks     : '',
-        timestamp   : Date.now()
+  _draftItems.push({ desc, qty, unit, cost, total: qty * cost });
+  $('poItemDesc').value = '';
+  $('poItemQty').value  = '';
+  $('poItemUnit').value = '';
+  $('poItemCost').value = '';
+  renderDraft();
+}
+
+function removeDraftItem(i) {
+  _draftItems.splice(i, 1);
+  renderDraft();
+}
+
+function renderDraft() {
+  const el = $('draftList');
+  if (!el) return;
+
+  if (!_draftItems.length) {
+    el.innerHTML = '<p class="empty-hint">No items added yet. Fill the form above and click Add Item.</p>';
+    setText('draftTotal', peso(0));
+    return;
+  }
+
+  el.innerHTML = _draftItems.map((item, i) => `
+    <div class="draft-row">
+      <span class="draft-desc">${item.desc}</span>
+      <span class="draft-qty">${item.qty} ${item.unit}</span>
+      <span class="draft-cost">${peso(item.cost)}/unit</span>
+      <span class="draft-total">${peso(item.total)}</span>
+      <button class="draft-del" onclick="removeDraftItem(${i})">✕</button>
+    </div>`).join('');
+
+  const total = _draftItems.reduce((s, x) => s + x.total, 0);
+  setText('draftTotal', peso(total));
+}
+
+// ══════════════════════════════════════════════════════
+//  SUBMIT PO
+// ══════════════════════════════════════════════════════
+async function submitPO() {
+  if (!_matPid) return;
+  if (!_draftItems.length) { alert('Add at least one item first.'); return; }
+
+  const supplier = $('poSupplier')?.value.trim();
+  const date     = $('poDate')?.value;
+  const notes    = $('poNotes')?.value.trim() || '';
+
+  if (!supplier) { alert('Enter supplier name.'); return; }
+  if (!date)     { alert('Enter PO date.'); return; }
+
+  const total = _draftItems.reduce((s, x) => s + x.total, 0);
+
+  const po = {
+    supplier,
+    date,
+    notes,
+    items:      _draftItems,
+    total,
+    status:     'ordered',
+    createdAt:  Date.now(),
+    createdDate: new Date().toLocaleDateString('en-PH')
+  };
+
+  // Save PO
+  const poRef = await firebase.database().ref(`projects/${_matPid}/purchaseOrders`).push(po);
+
+  // Save each item to the flat ledger
+  const ledgerUpdates = {};
+  _draftItems.forEach((item, i) => {
+    const key = `${poRef.key}_${i}`;
+    ledgerUpdates[key] = {
+      poId:     poRef.key,
+      supplier,
+      date,
+      desc:     item.desc,
+      qty:      item.qty,
+      unit:     item.unit,
+      cost:     item.cost,
+      total:    item.total,
+      status:   'ordered',
+      createdAt: Date.now()
     };
+  });
+  await firebase.database().ref(`projects/${_matPid}/ledger`).update(ledgerUpdates);
 
-    await firebase.database()
-        .ref(`projects/${currentActiveProjectId}/materials`).push(newMaterial);
+  // Clear draft
+  _draftItems = [];
+  $('poSupplier').value = '';
+  $('poDate').value     = '';
+  $('poNotes').value    = '';
+  renderDraft();
 
-    // Clear inputs
-    ['matDesc','matSize','matQty','matUnit','matCost'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-    });
+  alert(`✅ PO submitted! ${_draftItems.length} items · ${peso(total)}`);
 }
 
-// ── Update Material Status ────────────────────────────────────
-function updateMatStatus(key, newStatus) {
-    if (!currentActiveProjectId) return;
-    firebase.database()
-        .ref(`projects/${currentActiveProjectId}/materials/${key}`)
-        .update({ status: newStatus });
-}
+// ══════════════════════════════════════════════════════
+//  LEDGER — all items flat
+// ══════════════════════════════════════════════════════
+function watchLedger(pid) {
+  listen(firebase.database().ref(`projects/${pid}/ledger`), snap => {
+    const tbody = $('ledgerBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
 
-// ── Update Material Remarks ───────────────────────────────────
-function updateMatRemarks(key, value) {
-    if (!currentActiveProjectId) return;
-    firebase.database()
-        .ref(`projects/${currentActiveProjectId}/materials/${key}`)
-        .update({ remarks: value });
-}
+    let paidTotal = 0;
 
-// ── Delete Material ───────────────────────────────────────────
-function deleteMaterial(key, description) {
-    if (!currentActiveProjectId) return;
-    if (!confirm(`Delete "${description}"?`)) return;
-    firebase.database()
-        .ref(`projects/${currentActiveProjectId}/materials/${key}`)
-        .remove();
-}
+    if (!snap.exists()) {
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-cell">No items yet. Create a Purchase Order above.</td></tr>`;
+      setText('ledgerTotal', peso(0));
+      return;
+    }
 
-// ── Listen to Materials (Real-time) ──────────────────────────
-function listenToMaterials() {
-    if (!currentActiveProjectId) return;
+    snap.forEach(c => {
+      const key = c.key;
+      const m   = c.val();
+      const isPaid = m.status === 'paid' || m.status === 'delivered';
+      if (isPaid) paidTotal += m.total || 0;
 
-    const ref = firebase.database().ref(`projects/${currentActiveProjectId}/materials`);
-    activeListeners.push(ref);
+      const statusOpts = ['ordered','delivered','paid','cancelled']
+        .map(s => `<option value="${s}" ${m.status === s ? 'selected' : ''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`)
+        .join('');
 
-    ref.on('value', (snap) => {
-        const tbody = document.getElementById('materialsTableBody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
-
-        // Reset per-category spending
-        const catSpent = { Architectural: 0, Plumbing: 0, Electrical: 0, Cabinets: 0 };
-        let globalSpent = 0;
-
-        if (!snap.exists()) {
-            tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-500 text-xs">Walang materials pa. Mag-add sa form sa itaas.</td></tr>`;
-            updateCategoryBalances(catSpent, 0);
-            return;
-        }
-
-        snap.forEach(child => {
-            const key = child.key;
-            const m   = child.val();
-
-            const total    = parseFloat(m.totalCost) || 0;
-            const isPaid   = m.status === 'paid';
-            const isDelivered = m.status === 'delivered';
-
-            if (isPaid || isDelivered) {
-                if (catSpent[m.category] !== undefined) catSpent[m.category] += total;
-                globalSpent += total;
-            }
-
-            const statusColors = {
-                'ordered'   : 'bg-blue-950 text-blue-400 border-blue-900/50',
-                'delivered' : 'bg-amber-950 text-amber-400 border-amber-900/50',
-                'paid'      : 'bg-emerald-950 text-emerald-400 border-emerald-900/50',
-                'cancelled' : 'bg-red-950 text-red-400 border-red-900/50'
-            };
-            const statusClass = statusColors[m.status] || statusColors['ordered'];
-
-            tbody.innerHTML += `
-                <tr class="border-t border-slate-800 hover:bg-slate-800/30 transition text-xs ${m.status === 'cancelled' ? 'opacity-50' : ''}">
-                    <td class="p-3 font-medium text-white">${m.description || '—'}</td>
-                    <td class="p-3 text-slate-400">${m.size || '—'}</td>
-                    <td class="p-3 text-center text-slate-300">${m.qty || 0} ${m.unit || ''}</td>
-                    <td class="p-3 text-right text-slate-300">${fmt(m.unitCost)}</td>
-                    <td class="p-3 text-right font-bold text-amber-400">${fmt(total)}</td>
-                    <td class="p-3 text-center">
-                        <select onchange="updateMatStatus('${key}', this.value)"
-                            class="bg-slate-950 border border-slate-800 text-xs rounded-lg px-2 py-1 outline-none ${statusClass}">
-                            <option value="ordered"   ${m.status === 'ordered'    ? 'selected' : ''}>Ordered</option>
-                            <option value="delivered" ${m.status === 'delivered'  ? 'selected' : ''}>Delivered</option>
-                            <option value="paid"      ${m.status === 'paid'       ? 'selected' : ''}>Paid</option>
-                            <option value="cancelled" ${m.status === 'cancelled'  ? 'selected' : ''}>Cancelled</option>
-                        </select>
-                    </td>
-                    <td class="p-3">
-                        <input type="text" value="${m.remarks || ''}" placeholder="Remarks..."
-                            onblur="updateMatRemarks('${key}', this.value)"
-                            class="w-full bg-transparent border-b border-slate-700 text-slate-400 text-xs outline-none focus:border-blue-500 py-0.5 transition">
-                    </td>
-                    <td class="p-3 text-center">
-                        <button onclick="deleteMaterial('${key}', '${(m.description || '').replace(/'/g,"\\'")}' )"
-                            class="text-red-500 hover:text-red-300 font-bold text-xs px-2 py-1 rounded transition">
-                            ✕
-                        </button>
-                    </td>
-                </tr>`;
-        });
-
-        updateCategoryBalances(catSpent, globalSpent);
-
-        // Update project aggregate
-        firebase.database()
-            .ref(`projects/${currentActiveProjectId}`)
-            .update({ totalMaterialSpent: globalSpent });
-    });
-}
-
-// ── Update Balance Cards ──────────────────────────────────────
-function updateCategoryBalances(catSpent, globalSpent) {
-    Object.keys(CATEGORY_BALANCE_IDS).forEach(cat => {
-        const elId    = CATEGORY_BALANCE_IDS[cat];
-        const el      = document.getElementById(elId);
-        if (!el) return;
-        const budget  = MAT_CATEGORY_BUDGETS[cat] || 0;
-        const spent   = catSpent[cat] || 0;
-        const balance = budget - spent;
-        el.textContent = fmt(balance);
-        el.className   = `text-base font-bold mt-1 block ${balance < 0 ? 'text-red-400' : 'text-emerald-400'}`;
+      tbody.innerHTML += `
+        <tr class="led-row ${m.status === 'cancelled' ? 'led-cancelled' : ''}">
+          <td class="l-cell">${m.date || '—'}</td>
+          <td class="l-cell l-supplier">${m.supplier || '—'}</td>
+          <td class="l-cell l-desc">${m.desc}</td>
+          <td class="l-cell l-center">${m.qty} ${m.unit}</td>
+          <td class="l-cell l-right">${peso(m.cost)}</td>
+          <td class="l-cell l-right l-bold">${peso(m.total)}</td>
+          <td class="l-cell">
+            <select class="status-sel" onchange="updateLedgerStatus('${key}',this.value,'${m.poId}')">
+              ${statusOpts}
+            </select>
+          </td>
+          <td class="l-cell l-center">
+            <button class="del-item-btn" onclick="deleteLedgerItem('${key}','${m.desc}')">✕</button>
+          </td>
+        </tr>`;
     });
 
-    const totalLabel = document.getElementById('matTotalLabel');
-    if (totalLabel) totalLabel.textContent = fmt(globalSpent);
+    // Update paid/delivered total and project aggregate
+    setText('ledgerTotal', peso(paidTotal));
+    firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal });
+  });
 }
+
+async function updateLedgerStatus(key, status, poId) {
+  if (!_matPid) return;
+  await firebase.database().ref(`projects/${_matPid}/ledger/${key}`).update({ status });
+  // also update on PO if needed
+}
+
+async function deleteLedgerItem(key, desc) {
+  if (!_matPid || !confirm(`Delete "${desc}"?`)) return;
+  await firebase.database().ref(`projects/${_matPid}/ledger/${key}`).remove();
+}
+
+// ══════════════════════════════════════════════════════
+//  PO HISTORY
+// ══════════════════════════════════════════════════════
+function watchPOHistory(pid) {
+  listen(firebase.database().ref(`projects/${pid}/purchaseOrders`), snap => {
+    const container = $('poHistory');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!snap.exists()) {
+      container.innerHTML = '<p class="empty-hint" style="padding:20px">No purchase orders yet.</p>';
+      return;
+    }
+
+    const entries = [];
+    snap.forEach(c => entries.unshift({ id: c.key, ...c.val() }));
+
+    entries.forEach(po => {
+      const itemRows = (po.items || []).map(it =>
+        `<div class="po-item-row">
+          <span class="po-item-desc">${it.desc}</span>
+          <span class="po-item-qty">${it.qty} ${it.unit}</span>
+          <span class="po-item-cost">${peso(it.cost)}</span>
+          <span class="po-item-total">${peso(it.total)}</span>
+        </div>`
+      ).join('');
+
+      container.innerHTML += `
+        <div class="po-card">
+          <div class="po-card-hdr">
+            <div>
+              <p class="po-date-lbl">${po.date}</p>
+              <p class="po-supplier">${po.supplier}</p>
+              ${po.notes ? `<p class="po-notes">${po.notes}</p>` : ''}
+            </div>
+            <div class="po-card-right">
+              <span class="po-total">${peso(po.total)}</span>
+              <button class="po-export-btn" onclick="exportPOImage('${po.id}')">📷 Save as Image</button>
+            </div>
+          </div>
+          <div class="po-item-hdr">
+            <span>Item</span><span>Qty</span><span>Unit Cost</span><span>Total</span>
+          </div>
+          ${itemRows}
+        </div>`;
+    });
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  EXPORT PO AS PNG IMAGE
+// ══════════════════════════════════════════════════════
+async function exportPOImage(poId) {
+  if (!_matPid) return;
+
+  const snap = await firebase.database().ref(`projects/${_matPid}/purchaseOrders/${poId}`).once('value');
+  const po   = snap.val();
+  if (!po) return;
+
+  // Build an off-screen render div styled for a clean PNG
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `
+    position:fixed; left:-9999px; top:0;
+    width:600px; background:#ffffff; color:#111111;
+    font-family:'Segoe UI',Arial,sans-serif; font-size:13px;
+    padding:32px; box-sizing:border-box;`;
+
+  const itemsHTML = (po.items || []).map(it => `
+    <tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb">${it.desc}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:center">${it.qty} ${it.unit}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right">${peso(it.cost)}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">${peso(it.total)}</td>
+    </tr>`).join('');
+
+  wrap.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+      <div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:.1em;color:#6b7280;margin-bottom:4px">PURCHASE ORDER</div>
+        <div style="font-size:22px;font-weight:900;color:#111">${_matPid}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:#6b7280">Date</div>
+        <div style="font-weight:700">${po.date}</div>
+      </div>
+    </div>
+    <div style="background:#f3f4f6;border-radius:8px;padding:12px 16px;margin-bottom:20px">
+      <div style="font-size:11px;color:#6b7280;font-weight:700;margin-bottom:2px">SUPPLIER</div>
+      <div style="font-size:16px;font-weight:800">${po.supplier}</div>
+      ${po.notes ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${po.notes}</div>` : ''}
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="background:#1e293b;color:#fff">
+          <th style="padding:8px;text-align:left;font-size:11px;font-weight:700">ITEM</th>
+          <th style="padding:8px;text-align:center;font-size:11px;font-weight:700">QTY</th>
+          <th style="padding:8px;text-align:right;font-size:11px;font-weight:700">UNIT COST</th>
+          <th style="padding:8px;text-align:right;font-size:11px;font-weight:700">TOTAL</th>
+        </tr>
+      </thead>
+      <tbody>${itemsHTML}</tbody>
+    </table>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px">
+      <div style="background:#0f172a;color:#fff;border-radius:8px;padding:12px 20px;text-align:right">
+        <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-bottom:2px">TOTAL AMOUNT</div>
+        <div style="font-size:22px;font-weight:900">${peso(po.total)}</div>
+      </div>
+    </div>
+    <div style="margin-top:24px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:10px;color:#9ca3af;text-align:center">
+      ACPM · Art and Choi Project Management · Generated ${new Date().toLocaleDateString('en-PH')}
+    </div>`;
+
+  document.body.appendChild(wrap);
+
+  try {
+    const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+    const link   = document.createElement('a');
+    link.download = `PO_${po.supplier.replace(/\s+/g,'_')}_${po.date}.png`;
+    link.href     = canvas.toDataURL('image/png');
+    link.click();
+  } catch (e) {
+    alert('Export failed. Make sure html2canvas is loaded.');
+    console.error(e);
+  } finally {
+    document.body.removeChild(wrap);
+  }
+}
+
+// ── Util ──────────────────────────────────────────────────────────
+function setText(id, v) { const e = $(id); if (e) e.textContent = v; }
