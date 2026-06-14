@@ -136,6 +136,14 @@ const firebaseConfig = {
     $('hubView').classList.remove('hidden');
     renderHub();
   }
+   // Delete Button
+   const delBtn = document.createElement('button');
+   delBtn.className = "ml-4 bg-red-600 px-3 py-1 rounded text-xs hover:bg-red-500";
+   delBtn.innerText = "Delete";
+   delBtn.onclick = (e) => deleteProject(projectId, e); // Pass the event
+   div.appendChild(btn);
+   div.appendChild(delBtn);
+   listContainer.appendChild(div);
   
   // ── Tab switcher ──────────────────────────────────────────────────
   function switchTab(tab) {
@@ -144,3 +152,22 @@ const firebaseConfig = {
     $(tab === 'labor' ? 'laborPanel'    : 'materialsPanel')?.classList.remove('hidden');
     $(tab === 'labor' ? 'tabLabor'      : 'tabMaterials')?.classList.add('tab-active');
   }
+  async function deleteProject(projectId, event) {
+    // 1. Pigilan ang event propagation (para hindi bumukas ang workspace pag-click ng delete)
+    event.stopPropagation();
+    
+    // 2. Confirmation (Importante para hindi aksidenteng mabura)
+    const confirmed = confirm(`Babala: Buburahin nito ang project na "${projectId}" at lahat ng data nito (Materials, Payroll, Roster). Ituloy?`);
+    
+    if (confirmed) {
+        try {
+            await firebase.database().ref(`projects/${projectId}`).remove();
+            alert("Project deleted successfully.");
+            // Note: Hindi na kailangang i-refresh ang UI manually dahil 
+            // naka-.on('value') listener tayo sa loadProjectList().
+        } catch (error) {
+            console.error("Error deleting project:", error);
+            alert("Nagkaroon ng error sa pagbura.");
+        }
+    }
+}
