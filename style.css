@@ -71,7 +71,7 @@ select option { background: var(--surface2); }
 .proj-name  { font-size: 16px; font-weight: 900; margin: 3px 0; }
 .proj-date  { font-size: 11px; color: var(--muted); }
 .proj-status { font-size: 10px; font-weight: 700; padding: 3px 8px; background: #064e3b; color: #34d399; border: 1px solid #065f46; border-radius: 20px; }
-.proj-budgets {}
+
 .budget-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .budget-label { font-size: 11px; color: var(--muted2); }
 .budget-val   { font-size: 13px; font-weight: 700; }
