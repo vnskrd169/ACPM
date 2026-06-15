@@ -16,6 +16,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="import_test.js"></script>
 
 
 
@@ -44,11 +45,7 @@
   </div>
 </div>
 
-<!-- CHECK MO DITO YUNG BUTTON FOR UPLOAD NG BOQ KUNG KAYA MADETECT-->
-<input type="file" id="importExcel" accept=".xlsx" style="display:none" onchange="processImport(event)">
-<button type="button" onclick="document.getElementById('importExcel').click()">
-    + Upload Project File
-</button>
+
 
 <!-- ═══ HUB VIEW ══════════════════════════════════════════ -->
 <section id="hubView">
@@ -443,7 +440,7 @@
 <script src="suppliers.js"></script>
 <script src="billing.js"></script>
 <script src="changeorders.js"></script>
-<script src="import_test.js"></script>
+
 <script>
 // PWA Install prompt
 let deferredPrompt;
