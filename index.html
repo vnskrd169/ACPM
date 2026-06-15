@@ -15,8 +15,6 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
-<script src="import_test.js"></script>
 
 
 
@@ -44,7 +42,6 @@
     <button class="btn-install-dismiss" onclick="document.getElementById('installBar').classList.add('hidden')">✕</button>
   </div>
 </div>
-
 
 
 <!-- ═══ HUB VIEW ══════════════════════════════════════════ -->
@@ -461,16 +458,5 @@ window.addEventListener('appinstalled', () => {
 });
 </script>
 
-<script>
-  console.log("DEBUG: Testing if script runs...");
-  function processImport(event) {
-    console.log("DEBUG: Function triggered!");
-    alert("Function triggered!");
-  }
-</script>
-
-<button onclick="processImport()" style="position:fixed; bottom:20px; right:20px; z-index:9999; padding:20px; background:red; color:white;">
-  TEST BUTTON
-</button>
 </body>
 </html>
