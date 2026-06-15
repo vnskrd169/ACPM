@@ -17,6 +17,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
+
+
+
 </head>
 <body>
 
@@ -39,10 +42,12 @@
     <button class="btn-install-dismiss" onclick="document.getElementById('installBar').classList.add('hidden')">✕</button>
   </div>
 </div>
-<div style="padding: 20px; border: 2px dashed #3b82f6; margin: 10px;">
-  <label for="file-upload">Upload Excel to Test:</label>
-  <input type="file" id="file-upload" accept=".xlsx, .csv" onchange="processImport(event)">
+
+<div style="padding: 20px; border: 2px solid var(--blue); margin: 20px 0;">
+  <h3>Excel Import Sandbox</h3>
+  <input type="file" id="testFile" accept=".xlsx" onchange="processImport(event)">
 </div>
+
 <!-- ═══ HUB VIEW ══════════════════════════════════════════ -->
 <section id="hubView">
   <div class="card" style="margin-bottom:14px">
@@ -436,7 +441,7 @@
 <script src="suppliers.js"></script>
 <script src="billing.js"></script>
 <script src="changeorders.js"></script>
-
+<script src="import_test.js"></script>
 <script>
 // PWA Install prompt
 let deferredPrompt;
