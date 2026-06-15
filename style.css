@@ -377,3 +377,15 @@ select option{background:var(--surface2)}
 .install-bar p{font-size:13px;color:#93c5fd}
 .btn-install{background:var(--blue);color:#fff;font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;min-height:var(--touch)}
 .btn-install-dismiss{background:transparent;color:var(--muted2);font-size:12px;padding:6px;min-height:auto}
+
+/*-- Bbutton add ---*/
+.btn-add-supplier {
+  background: var(--blue);
+  color: #fff;
+  border-radius: 8px;
+  font-weight: 700;
+  padding: 0 20px;
+  min-height: 48px;
+  width: 100%; /* Makes it easier to tap on mobile */
+  margin-top: 10px;
+}
