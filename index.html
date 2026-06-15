@@ -20,6 +20,7 @@
 
 
 
+
 </head>
 <body>
 
@@ -43,9 +44,18 @@
   </div>
 </div>
 
-<div style="padding: 20px; border: 2px solid var(--blue); margin: 20px 0;">
-  <h3>Excel Import Sandbox</h3>
-  <input type="file" id="testFile" accept=".xlsx" onchange="processImport(event)">
+<!-- CHECK MO DITO YUNG BUTTON FOR UPLOAD NG BOQ KUNG KAYA MADETECT-->
+<div class="card" style="margin: 15px 0; padding: 15px; border: 1px solid var(--border)">
+  <h3 style="margin-bottom: 10px; font-size: 14px;">Project Import</h3>
+  <p style="font-size: 12px; color: var(--muted); margin-bottom: 15px;">
+      Upload a file (Excel/CSV) to populate budget and material items.
+  </p>
+  
+  <input type="file" id="importExcel" accept=".xlsx, .csv" style="display:none" onchange="processImport(event)">
+  
+  <button class="btn-save-adv" onclick="document.getElementById('importExcel').click()">
+      + Upload Project File
+  </button>
 </div>
 
 <!-- ═══ HUB VIEW ══════════════════════════════════════════ -->
