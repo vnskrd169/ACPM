@@ -185,7 +185,7 @@ function enterProject(id, readOnly=false) {
   if (typeof initLabor         ==='function') initLabor(id);
   if (typeof initMaterials     ==='function') initMaterials(id);
   if (typeof initSiteLog       ==='function') initSiteLog(id);
-  if (typeof initSuppliers     ==='function') initSuppliers(id);
+  if (typeof initSuppliers === 'function') initSuppliers();
   if (typeof initBilling       ==='function') initBilling(id);
   if (typeof initChangeOrders  ==='function') initChangeOrders(id);
 }
