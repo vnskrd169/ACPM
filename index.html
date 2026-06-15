@@ -463,5 +463,17 @@ window.addEventListener('appinstalled', () => {
   document.getElementById('installBar').classList.add('hidden');
 });
 </script>
+
+<script>
+  console.log("DEBUG: Testing if script runs...");
+  function processImport(event) {
+    console.log("DEBUG: Function triggered!");
+    alert("Function triggered!");
+  }
+</script>
+
+<button onclick="processImport()" style="position:fixed; bottom:20px; right:20px; z-index:9999; padding:20px; background:red; color:white;">
+  TEST BUTTON
+</button>
 </body>
 </html>
