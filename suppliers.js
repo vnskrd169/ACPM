@@ -1,6 +1,4 @@
-
-
-//  ACPM v8 — suppliers.js
+//  ACPM v8.1 — suppliers.js
 //  · Global — stored at root /suppliers
 //  · XSS-safe rendering
 //  · Search/filter
@@ -45,9 +43,9 @@ function watchGlobalSuppliers() {
             ${bankLine}
           </div>
           <div class="supplier-actions">
-            <button class="btn-use-supplier"  onclick="useSupplierInPO('${escapeHtml(s.name).replace(/'/g, "\\'")}')">Use in PO</button>
-            <button class="btn-edit-supplier" onclick="openEditSupplier('${s.key}')">✎ Edit</button>
-            <button class="btn-del-supplier"  onclick="deleteSupplier('${s.key}','${escapeHtml(s.name).replace(/'/g, "\\'")}')">✕</button>
+            <button class="btn-use-supplier" aria-label="Use ${escapeHtml(s.name)} in PO" onclick="useSupplierInPO('${escapeHtml(s.name).replace(/'/g, "\\'")}')">Use in PO</button>
+            <button class="btn-edit-supplier" aria-label="Edit ${escapeHtml(s.name)}" onclick="openEditSupplier('${s.key}')">✎ Edit</button>
+            <button class="btn-del-supplier" aria-label="Delete ${escapeHtml(s.name)}" onclick="deleteSupplier('${s.key}','${escapeHtml(s.name).replace(/'/g, "\\'")}')">✕</button>
           </div>
         </div>`;
     });

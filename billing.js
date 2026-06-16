@@ -1,5 +1,4 @@
 
-//  ACPM v8 — billing.js
 //  · Proper listener lifecycle (no duplicates)
 //  · XSS-safe rendering
 //  · Loading states
@@ -170,7 +169,7 @@ function watchBillings(pid) {
           </select>
         </td>
         <td class="b-cell b-center">
-          <button class="del-item-btn" onclick="deleteBilling('${b.id}')">✕</button>
+          <button class="del-item-btn" aria-label="Delete billing" onclick="deleteBilling('${b.id}')">✕</button>
         </td>
       </tr>`;
     });
@@ -187,10 +186,11 @@ async function addBillingRequest() {
   if (amount <= 0) { showToast('Enter billing amount.', 'error'); return; }
   if (desc.length > 200) { showToast('Description too long (max 200).', 'error'); return; }
 
+  const newRef = firebase.database().ref(`projects/${_bpid}/billings`).push();
   const snap = await firebase.database().ref(`projects/${_bpid}/billings`).once('value');
   const seq  = (snap.numChildren() || 0) + 1;
 
-  await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings`).push({
+  await safeDb(() => newRef.set({
     date, description: desc, amount, seq, status: 'pending',
     savedAt: Date.now()
   }), 'Failed to add billing');
@@ -244,7 +244,7 @@ function watchCollections(pid) {
         <td class="b-cell">${escapeHtml(col.description || '—')}</td>
         <td class="b-cell b-right b-bold" style="color:var(--green)">${peso(col.amount)}</td>
         <td class="b-cell b-center">
-          ${col.type !== 'down_payment' ? `<button class="del-item-btn" onclick="deleteCollection('${col.id}')">✕</button>` : '<span style="font-size:10px;color:var(--muted)">DP</span>'}
+          ${col.type !== 'down_payment' ? `<button class="del-item-btn" aria-label="Delete collection" onclick="deleteCollection('${col.id}')">✕</button>` : '<span style="font-size:10px;color:var(--muted)">DP</span>'}
         </td>
       </tr>`;
     });
@@ -256,8 +256,7 @@ function watchCollections(pid) {
     </tr>`;
     setText('collectionGrand', peso(grand));
 
-    const contractRef = firebase.database().ref(`projects/${pid}/contract`);
-    contractRef.once('value', cSnap => {
+    firebase.database().ref(`projects/${pid}/contract`).once('value', cSnap => {
       if (cSnap.exists()) renderContractDashboard(cSnap.val(), pid);
     });
   });
@@ -295,24 +294,25 @@ async function exportBillingSummary() {
   ]);
 
   const contract = contractSnap.val() || {};
-  let csv = 'ACPM Billing Summary\\n';
-  csv += `Project,${_bpid}\\n`;
-  csv += `Client,${escapeCsv(contract.client || 'N/A')}\\n`;
-  csv += `Contract Amount,${contract.amount || 0}\\n`;
-  csv += `Retention %,${contract.retention || 0}\\n\\n`;
+  // FIXED: Use actual newlines
+  let csv = 'ACPM Billing Summary\n';
+  csv += `Project,${_bpid}\n`;
+  csv += `Client,${escapeCsv(contract.client || 'N/A')}\n`;
+  csv += `Contract Amount,${contract.amount || 0}\n`;
+  csv += `Retention %,${contract.retention || 0}\n\n`;
 
-  csv += 'BILLING REQUESTS\\n';
-  csv += 'Seq,Date,Description,Amount,Status\\n';
+  csv += 'BILLING REQUESTS\n';
+  csv += 'Seq,Date,Description,Amount,Status\n';
   bSnap.forEach(c => {
     const b = c.val();
-    csv += `${b.seq || ''},${b.date || ''},${escapeCsv(b.description || '')},${b.amount || 0},${b.status || 'pending'}\\n`;
+    csv += `${b.seq || ''},${b.date || ''},${escapeCsv(b.description || '')},${b.amount || 0},${b.status || 'pending'}\n`;
   });
 
-  csv += '\\nCOLLECTIONS\\n';
-  csv += 'Date,Description,Amount\\n';
+  csv += '\nCOLLECTIONS\n';
+  csv += 'Date,Description,Amount\n';
   cSnap.forEach(c => {
     const col = c.val();
-    csv += `${col.date || ''},${escapeCsv(col.description || '')},${col.amount || 0}\\n`;
+    csv += `${col.date || ''},${escapeCsv(col.description || '')},${col.amount || 0}\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -332,4 +332,3 @@ function escapeCsv(text) {
   }
   return text;
 }
-

@@ -1,11 +1,10 @@
 
-
-//  ACPM v8 — changeorders.js
 //  · Proper listener lifecycle
 //  · XSS-safe rendering
 //  · Loading states
 //  · CO export to CSV
 //  · Better status tracking
+//  · Transaction-safe budget updates
 // ═══════════════════════════════════════════════════════════════
 
 let _copid = null;
@@ -62,10 +61,10 @@ function watchChangeOrders(pid) {
 
       const statusMap = {
         pending : { cls:'co-pending',  label:'⏳ Pending',  actions: `
-          <button class="co-approve-btn" onclick="approveRejectCO('${co.id}','approved')">✓ Approve</button>
-          <button class="co-reject-btn"  onclick="approveRejectCO('${co.id}','rejected')">✕ Reject</button>` },
-        approved: { cls:'co-approved', label:'✓ Approved', actions: `<button class="co-revert-btn" onclick="approveRejectCO('${co.id}','pending')">↩ Revert</button>` },
-        rejected: { cls:'co-rejected', label:'✕ Rejected', actions: `<button class="co-revert-btn" onclick="approveRejectCO('${co.id}','pending')">↩ Revert</button>` }
+          <button class="co-approve-btn" aria-label="Approve CO" onclick="approveRejectCO('${co.id}','approved')">✓ Approve</button>
+          <button class="co-reject-btn" aria-label="Reject CO" onclick="approveRejectCO('${co.id}','rejected')">✕ Reject</button>` },
+        approved: { cls:'co-approved', label:'✓ Approved', actions: `<button class="co-revert-btn" aria-label="Revert CO" onclick="approveRejectCO('${co.id}','pending')">↩ Revert</button>` },
+        rejected: { cls:'co-rejected', label:'✕ Rejected', actions: `<button class="co-revert-btn" aria-label="Revert CO" onclick="approveRejectCO('${co.id}','pending')">↩ Revert</button>` }
       };
       const s = statusMap[co.status] || statusMap.pending;
 
@@ -77,7 +76,7 @@ function watchChangeOrders(pid) {
           </div>
           <div class="co-card-right">
             <span class="co-total-impact">${totalImpact >= 0 ? '+' : ''}${peso(totalImpact)}</span>
-            <button class="del-item-btn" onclick="deleteCO('${co.id}','${co.status}')">✕</button>
+            <button class="del-item-btn" aria-label="Delete CO" onclick="deleteCO('${co.id}','${co.status}')">✕</button>
           </div>
         </div>
         <div class="co-body">
@@ -129,10 +128,11 @@ async function addChangeOrder() {
   if (labor === 0 && materials === 0) { showToast('Enter at least one cost impact.', 'error'); return; }
   if (desc.length > 300) { showToast('Description too long (max 300).', 'error'); return; }
 
+  const newRef = firebase.database().ref(`projects/${_copid}/changeOrders`).push();
   const snap = await firebase.database().ref(`projects/${_copid}/changeOrders`).once('value');
   const seq  = (snap.numChildren() || 0) + 1;
 
-  await safeDb(() => firebase.database().ref(`projects/${_copid}/changeOrders`).push({
+  await safeDb(() => newRef.set({
     seq, description: desc, requestedBy: reqBy, date,
     laborImpact: labor, materialsImpact: materials, notes,
     status: 'pending', createdAt: Date.now()
@@ -145,7 +145,7 @@ async function addChangeOrder() {
 }
 
 // ══════════════════════════════════════════════════════
-//  APPROVE / REJECT
+//  APPROVE / REJECT — Transaction-safe batch update
 // ══════════════════════════════════════════════════════
 async function approveRejectCO(key, newStatus) {
   if (!_copid) return;
@@ -175,15 +175,15 @@ async function approveRejectCO(key, newStatus) {
     materialBudget += materialsImpact;
   }
 
-  await safeDb(() => firebase.database().ref(`projects/${_copid}/changeOrders/${key}`).update({
-    status: newStatus,
-    [`${newStatus}At`]: Date.now(),
-    [`${newStatus}Date`]: new Date().toLocaleDateString('en-PH')
-  }), 'Failed to update CO status');
+  // Batch update to prevent race conditions
+  const updates = {};
+  updates[`projects/${_copid}/changeOrders/${key}/status`] = newStatus;
+  updates[`projects/${_copid}/changeOrders/${key}/${newStatus}At`] = Date.now();
+  updates[`projects/${_copid}/changeOrders/${key}/${newStatus}Date`] = new Date().toLocaleDateString('en-PH');
+  updates[`projects/${_copid}/laborBudget`] = laborBudget;
+  updates[`projects/${_copid}/materialBudget`] = materialBudget;
 
-  await safeDb(() => firebase.database().ref(`projects/${_copid}`).update({
-    laborBudget, materialBudget
-  }), 'Failed to update budget');
+  await safeDb(() => firebase.database().ref().update(updates), 'Failed to update CO status');
 
   const action = newStatus === 'approved' ? 'approved ✓' : newStatus === 'rejected' ? 'rejected ✕' : 'reverted to pending';
   showToast(`CO-${String(co.seq).padStart(3, '0')} ${action}`);
@@ -237,4 +237,3 @@ function escapeCsv(text) {
   }
   return text;
 }
-

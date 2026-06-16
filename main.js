@@ -1,11 +1,9 @@
 
-
-//  ACPM v8 — main.js
 //  · Firebase Auth (optional, falls back to anonymous)
 //  · Offline persistence enabled
 //  · Input sanitization (XSS prevention)
 //  · Loading states on all async ops
-//  · Project search/filter
+//  · Project search/filter (debounced)
 //  · Keyboard shortcuts
 //  · Toast notifications with queue
 //  · Error boundaries on all Firebase calls
@@ -29,10 +27,11 @@ if (!firebase.apps.length) {
 let currentProjectId = null, currentProjectLocked = true;
 let _listeners = [], _toastQueue = [], _toastShowing = false;
 let _authUser = null;
+let _filterDebounce = null;
 
 // ── Utilities ─────────────────────────────────────────────────
 function peso(n) {
-  return '₱' + (parseFloat(n) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return '\u20B1' + (parseFloat(n) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function pct(s, b) { return (!b) ? 0 : Math.min(100, Math.round((s / b) * 100)); }
 function $(id) { return document.getElementById(id); }
@@ -52,6 +51,12 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+// ── Debounce utility ──────────────────────────────────────────
+function debounce(fn, ms) {
+  let t;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
 }
 
 // ── Listeners ─────────────────────────────────────────────────
@@ -144,7 +149,8 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey) {
     const tabs = ['labor','materials','billing','changeorders','sitelog','suppliers'];
     const num = parseInt(e.key);
-    if (num >= 1 && num <= 6 && !$('hubView')?.classList.contains('hidden')) {
+    // FIXED: Check workspace is visible, not hub
+    if (num >= 1 && num <= 6 && !$('workspaceView')?.classList.contains('hidden')) {
       e.preventDefault();
       switchTab(tabs[num - 1]);
     }
@@ -201,12 +207,12 @@ function buildProjectCard(id, d, lb, mb, ls, ms, lp, mp, done) {
     ? '<span class="completed-tag">✓ DONE</span>'
     : '<span class="active-tag">ACTIVE</span>';
   const actions = done
-    ? `<div class="proj-actions">
+    ? html`<div class="proj-actions">
         <button class="btn-unlock" onclick="enterProject('${escapeHtml(id)}',true)">🔓 View</button>
         <button class="btn-reopen" onclick="reopenProject('${escapeHtml(id)}')">↩ Reopen</button>
         <button class="btn-delete" onclick="deleteProject('${escapeHtml(id)}')">🗑</button>
       </div>`
-    : `<div class="proj-actions">
+    : html`<div class="proj-actions">
         <button class="proj-open-btn" onclick="enterProject('${escapeHtml(id)}')">Open Workspace →</button>
         <button class="btn-complete" onclick="markComplete('${escapeHtml(id)}')">✓ Done</button>
         <button class="btn-delete" onclick="deleteProject('${escapeHtml(id)}')">🗑</button>
@@ -248,12 +254,16 @@ function renderComparison(projects) {
   }).join('');
 }
 
+// FIXED: Debounced filter
 function filterProjects(query) {
-  const q = query.toLowerCase().trim();
-  document.querySelectorAll('.proj-card').forEach(card => {
-    const name = card.getAttribute('data-name') || '';
-    card.style.display = name.includes(q) ? '' : 'none';
-  });
+  if (_filterDebounce) clearTimeout(_filterDebounce);
+  _filterDebounce = setTimeout(() => {
+    const q = query.toLowerCase().trim();
+    document.querySelectorAll('.proj-card').forEach(card => {
+      const name = card.getAttribute('data-name') || '';
+      card.style.display = name.includes(q) ? '' : 'none';
+    });
+  }, 150);
 }
 
 // ═════════════════════════════════════════════════════════════

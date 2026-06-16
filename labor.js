@@ -1,5 +1,5 @@
 
-//  ACPM v8 — labor.js
+
 //  · Proper listener lifecycle (no duplicates)
 //  · XSS-safe rendering via escapeHtml
 //  · Loading states on actions
@@ -10,6 +10,7 @@
 
 let _lpid = null;
 let _laborListeners = [];
+let _payrollFilterDebounce = null;
 
 function initLabor(pid) {
   _lpid = pid;
@@ -77,8 +78,8 @@ function renderTradeChips(snap) {
     const t = c.val();
     el.innerHTML += `<div class="trade-chip">
       <span class="trade-chip-name">${escapeHtml(t.name)}</span>
-      <button class="chip-edit" onclick="renameTrade('${c.key}','${escapeHtml(t.name)}')">✎</button>
-      <button class="chip-del"  onclick="deleteTrade('${c.key}','${escapeHtml(t.name)}')">✕</button>
+      <button class="chip-edit" aria-label="Rename trade" onclick="renameTrade('${c.key}','${escapeHtml(t.name)}')">✎</button>
+      <button class="chip-del" aria-label="Delete trade" onclick="deleteTrade('${c.key}','${escapeHtml(t.name)}')">✕</button>
     </div>`;
   });
 }
@@ -147,34 +148,30 @@ function renderRoster(wSnap, pid) {
 
   wSnap.forEach(c => {
     const w = c.val();
+    // FIXED: Single fetch per worker, no double-fetch
     firebase.database().ref(`projects/${pid}/advances/${c.key}`).once('value', advSnap => {
       let pending = 0;
       advSnap.forEach(a => { if (!a.val().deducted) pending += a.val().amount || 0; });
+      
       const row = document.getElementById(`roster_${c.key}`);
       if (row) {
         const badge = row.querySelector('.adv-badge-wrap');
         if (badge) badge.innerHTML = pending > 0 ? `<span class="adv-badge">₱${pending.toLocaleString()} advance</span>` : '';
+      } else {
+        // Create new row
+        const div = document.createElement('div');
+        div.className = 'roster-row';
+        div.id = `roster_${c.key}`;
+        div.innerHTML = `<div class="roster-info">
+          <span class="roster-name">${escapeHtml(w.name)}</span>
+          <span class="roster-trade-tag">${escapeHtml(w.trade || 'No Trade')}</span>
+          <span class="adv-badge-wrap">${pending > 0 ? `<span class="adv-badge">₱${pending.toLocaleString()} advance</span>` : ''}</span>
+        </div>
+        <span class="roster-rate">${peso(w.dailyRate)}/day</span>
+        <button class="btn-advance" onclick="openAdvanceModal('${c.key}','${escapeHtml(w.name)}')">₱ Advance</button>
+        <button class="del-worker" aria-label="Remove worker" onclick="removeWorker('${c.key}')">✕</button>`;
+        el.appendChild(div);
       }
-    });
-
-    el.innerHTML += `<div class="roster-row" id="roster_${c.key}">
-      <div class="roster-info">
-        <span class="roster-name">${escapeHtml(w.name)}</span>
-        <span class="roster-trade-tag">${escapeHtml(w.trade || 'No Trade')}</span>
-        <span class="adv-badge-wrap"></span>
-      </div>
-      <span class="roster-rate">${peso(w.dailyRate)}/day</span>
-      <button class="btn-advance" onclick="openAdvanceModal('${c.key}','${escapeHtml(w.name)}')">₱ Advance</button>
-      <button class="del-worker"  onclick="removeWorker('${c.key}')">✕</button>
-    </div>`;
-  });
-
-  wSnap.forEach(c => {
-    firebase.database().ref(`projects/${pid}/advances/${c.key}`).once('value', advSnap => {
-      let pending = 0;
-      advSnap.forEach(a => { if (!a.val().deducted) pending += a.val().amount || 0; });
-      const wrap = document.querySelector(`#roster_${c.key} .adv-badge-wrap`);
-      if (wrap) wrap.innerHTML = pending > 0 ? `<span class="adv-badge">₱${pending.toLocaleString()} advance</span>` : '';
     });
   });
 }
@@ -236,7 +233,7 @@ function loadAdvanceHistory(wid) {
         <span class="advance-amt">${peso(a.amount)}</span>
         ${a.notes ? `<span class="advance-note">${escapeHtml(a.notes)}</span>` : ''}
         <span class="advance-status ${a.deducted ? 'adv-deducted' : 'adv-pending'}">${a.deducted ? 'Deducted' : 'Pending'}</span>
-        <button class="del-advance" onclick="deleteAdvance('${wid}','${c.key}')">✕</button>
+        <button class="del-advance" aria-label="Delete advance" onclick="deleteAdvance('${wid}','${c.key}')">✕</button>
       </div>`;
     });
     setText('advanceTotalLabel', peso(total));
@@ -307,7 +304,7 @@ function buildGrid(pid, wSnap, tcSnap) {
         const on  = weekKeys.has(d.iso) && tc[key]?.present || false;
         if (on) { sub += w.dailyRate; daysPresent++; }
         return `<td class="g-cell"><input type="checkbox" class="g-check" ${on ? 'checked' : ''}
-          onchange="markDay('${w.id}','${d.iso}',this.checked,${w.dailyRate},'${escapeHtml(trade)}')"></td>`;
+          onchange="markDay('${w.id}','${d.iso}',this.checked,${w.dailyRate},'${escapeHtml(trade)}')" aria-label="Mark attendance for ${escapeHtml(w.name)}"></td>`;
       }).join('');
       tradeTotal += sub;
       summaryData[w.id] = { name: w.name, trade, rate: w.dailyRate, days: daysPresent, sub };
@@ -730,9 +727,10 @@ async function exportPayrollCSV() {
   snap.forEach(c => rows.push(c.val()));
   rows.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
-  let csv = 'Date,Period,Gross,Deductions,Net\\n';
+  // FIXED: Proper newlines
+  let csv = 'Date,Period,Gross,Deductions,Net\n';
   rows.forEach(r => {
-    csv += `${r.savedDate || ''},${r.period || ''},${r.gross || 0},${r.deductions || 0},${r.net || r.gross || 0}\\n`;
+    csv += `${r.savedDate || ''},${r.period || ''},${r.gross || 0},${r.deductions || 0},${r.net || r.gross || 0}\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });

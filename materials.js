@@ -1,16 +1,17 @@
 
-//  ACPM v8 — materials.js
 //  · Proper listener lifecycle
 //  · XSS-safe rendering
 //  · Loading states
 //  · PO history with search/filter
 //  · Ledger export to CSV
 //  · Supplier bank details auto-populate in PO export
+//  · Debounced search
 // ═══════════════════════════════════════════════════════════════
 
 let _mpid = null;
 let _draftItems = [];
 let _matListeners = [];
+let _poFilterDebounce = null;
 
 function initMaterials(pid) {
   _mpid = pid; _draftItems = [];
@@ -19,7 +20,6 @@ function initMaterials(pid) {
   watchMatBudget(pid);
   watchLedger(pid);
   watchPOHistory(pid);
-  loadGlobalSuppliersForPO();
 }
 
 function detachMatListeners() {
@@ -59,20 +59,14 @@ function watchMatBudget(pid) {
 // ── Load global suppliers for PO quick-select ─────────────────
 function loadGlobalSuppliersForPO() {
   firebase.database().ref('suppliers').once('value', snap => {
-    const sel = $('poSupplierSelect');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">— Quick select supplier —</option>';
-    snap.forEach(c => {
-      const s = c.val();
-      sel.innerHTML += `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}${s.specialty ? ' (' + escapeHtml(s.specialty) + ')' : ''}</option>`;
-    });
+    refreshSupplierDropdown(snap);
   });
 }
 
 function applySupplierSelection() {
   const sel = $('poSupplierSelect');
   const inp = $('poSupplier');
-  if (sel && inp && sel.value) inp.value = sel.value;
+  if (sel && inp && sel.value) { inp.value = sel.value; sel.value = ''; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -86,6 +80,7 @@ function addDraftItem() {
   const cost = parseFloat($('poItemCost')?.value)  || 0;
   if (!desc)  { showToast('Enter item description.', 'error'); return; }
   if (qty <= 0) { showToast('Enter valid quantity.', 'error'); return; }
+  if (cost <= 0) { showToast('Enter valid unit cost.', 'error'); return; }
   if (desc.length > 100) { showToast('Description too long (max 100).', 'error'); return; }
   _draftItems.push({ desc, size, qty, unit, cost, total: qty * cost });
   ['poItemDesc', 'poItemSize', 'poItemQty', 'poItemUnit', 'poItemCost'].forEach(id => {
@@ -109,7 +104,7 @@ function renderDraft() {
       <span class="draft-qty">${item.qty} ${escapeHtml(item.unit)}</span>
       <span class="draft-cost">${peso(item.cost)}/unit</span>
       <span class="draft-total">${peso(item.total)}</span>
-      <button class="draft-del" onclick="removeDraftItem(${i})">✕</button>
+      <button class="draft-del" aria-label="Remove item" onclick="removeDraftItem(${i})">✕</button>
     </div>`).join('');
   setText('draftTotal', peso(_draftItems.reduce((s, x) => s + x.total, 0)));
 }
@@ -201,7 +196,7 @@ function watchLedger(pid) {
           <select class="status-sel" onchange="updateLedgerStatus('${key}',this.value)">${statusOpts}</select>
         </td>
         <td class="l-cell l-center">
-          <button class="del-item-btn" onclick="deleteLedgerItem('${key}','${escapeHtml(m.desc || '').replace(/'/g, "\\'")}')">✕</button>
+          <button class="del-item-btn" aria-label="Delete item" onclick="deleteLedgerItem('${key}','${escapeHtml(m.desc || '').replace(/'/g, "\\'")}')">✕</button>
         </td>
       </tr>`;
     });
@@ -301,9 +296,9 @@ function watchPOHistory(pid) {
             <div class="po-card-right">
               <span class="po-total">${peso(po.total)}</span>
               <div class="po-btns">
-                <button class="po-mark-btn"          onclick="markAllPO('${po.id}','delivered')">✓ Delivered</button>
-                <button class="po-mark-btn po-paid-btn" onclick="markAllPO('${po.id}','paid')">✓ Paid</button>
-                <button class="po-export-btn"        onclick="exportPOImage('${po.id}')">📷 Image</button>
+                <button class="po-mark-btn" aria-label="Mark delivered" onclick="markAllPO('${po.id}','delivered')">✓ Delivered</button>
+                <button class="po-mark-btn po-paid-btn" aria-label="Mark paid" onclick="markAllPO('${po.id}','paid')">✓ Paid</button>
+                <button class="po-export-btn" aria-label="Export PO" onclick="exportPOImage('${po.id}')">📷 Image</button>
               </div>
             </div>
           </div>
@@ -435,11 +430,14 @@ function escapeCsv(text) {
   return text;
 }
 
-// Filter PO history by supplier
+// Filter PO history by supplier — now debounced
 function filterPOHistory(query) {
-  const q = query.toLowerCase().trim();
-  document.querySelectorAll('.po-card').forEach(card => {
-    const supplier = card.getAttribute('data-supplier') || '';
-    card.style.display = supplier.includes(q) ? '' : 'none';
-  });
+  if (_poFilterDebounce) clearTimeout(_poFilterDebounce);
+  _poFilterDebounce = setTimeout(() => {
+    const q = query.toLowerCase().trim();
+    document.querySelectorAll('.po-card').forEach(card => {
+      const supplier = card.getAttribute('data-supplier') || '';
+      card.style.display = supplier.includes(q) ? '' : 'none';
+    });
+  }, 150);
 }

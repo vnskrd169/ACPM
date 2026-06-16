@@ -27,8 +27,8 @@ self.addEventListener('fetch', e => {
         if (network.ok) caches.open(CACHE).then(c => c.put(e.request, network.clone()));
         return network;
       }).catch(() => cached);
-      return cached || fetchPromise;
+      // Network-first: try network, fall back to cache
+      return fetchPromise || cached;
     })
   );
 });
-

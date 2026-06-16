@@ -1,17 +1,16 @@
 
-
-//  ACPM v8 — sitelog.js
 //  · Proper listener lifecycle
 //  · XSS-safe rendering
 //  · Date-grouped log stacking (newest on top)
 //  · GPS location + weather capture
 //  · Photo upload support (base64 for simplicity)
 //  · Export to TXT
-//  · Search/filter logs
+//  · Search/filter logs with restore
 // ═══════════════════════════════════════════════════════════════
 
 let _slpid = null;
 let _slListener = null;
+let _logFilterDebounce = null;
 
 function initSiteLog(pid) {
   _slpid = pid;
@@ -75,6 +74,7 @@ function watchSiteLog(pid) {
 
         const div = document.createElement('div');
         div.className = 'log-entry';
+        // FIXED: escapeHtml on notes before replacing newlines
         div.innerHTML = `
           <div class="log-entry-hdr">
             <span class="log-date">${e.date || '—'}</span>
@@ -82,9 +82,9 @@ function watchSiteLog(pid) {
             ${weatherHTML}
             ${locHTML}
             <span class="log-saved">${e.savedDate || ''}</span>
-            <button class="del-log" onclick="deleteLog('${e.id}')">✕</button>
+            <button class="del-log" aria-label="Delete log" onclick="deleteLog('${e.id}')">✕</button>
           </div>
-          <p class="log-notes">${(e.notes || '').replace(/\n/g, '<br>')}</p>
+          <p class="log-notes">${escapeHtml(e.notes || '').replace(/\n/g, '<br>')}</p>
           ${e.photos ? `<div class="log-photos">${e.photos.map(p => `<img src="${p}" class="log-photo" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}`;
         dayGroup.appendChild(div);
       });
@@ -211,17 +211,25 @@ async function exportSiteLogs() {
   showToast('Site log exported!');
 }
 
-// Filter logs by search query
+// Filter logs by search query — now debounced and restores visibility
 function filterLogs(query) {
-  const q = query.toLowerCase().trim();
-  document.querySelectorAll('.log-entry').forEach(entry => {
-    const text = entry.textContent.toLowerCase();
-    entry.style.display = text.includes(q) ? '' : 'none';
-  });
-  // Hide empty day groups
-  document.querySelectorAll('.log-day-group').forEach(group => {
-    const visible = group.querySelectorAll('.log-entry:not([style*="none"])').length;
-    group.style.display = visible > 0 ? '' : 'none';
-  });
+  if (_logFilterDebounce) clearTimeout(_logFilterDebounce);
+  _logFilterDebounce = setTimeout(() => {
+    const q = query.toLowerCase().trim();
+    document.querySelectorAll('.log-entry').forEach(entry => {
+      const text = entry.textContent.toLowerCase();
+      entry.style.display = text.includes(q) ? '' : 'none';
+    });
+    // Show/hide day groups based on visible children
+    document.querySelectorAll('.log-day-group').forEach(group => {
+      const visible = group.querySelectorAll('.log-entry:not([style*="none"])').length;
+      group.style.display = visible > 0 ? '' : 'none';
+    });
+    // FIXED: Restore visibility when query is cleared
+    if (!q) {
+      document.querySelectorAll('.log-entry, .log-day-group').forEach(el => {
+        el.style.display = '';
+      });
+    }
+  }, 150);
 }
-
