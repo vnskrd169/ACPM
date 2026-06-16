@@ -401,8 +401,10 @@ select option{background:var(--surface2)}
 }
 
 .log-item {
+  display: block;        /* Siguraduhin na block element ito */
+  width: 100%;           /* Puno ang lapad */
+  margin-bottom: 10px;   /* May pagitan sa bawat log */
+  padding: 10px;
   background: var(--surface2);
-  padding: 12px;
   border-radius: 8px;
-  border-left: 4px solid var(--blue); /* Design touch */
 }

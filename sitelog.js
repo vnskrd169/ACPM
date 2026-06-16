@@ -7,13 +7,13 @@
 // ═══════════════════════════════════════════════════════════════
 
 let _slpid = null;
-let _slListenerRegistered = false;
+
+let _slListenerRegistered = false; 
 
 function initSiteLog(pid) {
   _slpid = pid;
-  _slListenerRegistered = false;
+  _slListenerRegistered = false; // Reset status tuwing nag-iinit ang project
 
-  // Auto-fill today's date
   const dateInp = document.getElementById('logDate');
   if (dateInp) dateInp.value = new Date().toISOString().slice(0,10);
 
@@ -21,12 +21,15 @@ function initSiteLog(pid) {
 }
 
 function watchSiteLog(pid) {
-  // MAHALAGA: Gumamit ng reference na may .off() sa detachAll()
+  // GUARD: Kung naka-register na, huwag nang mag-add ng panibagong listener
+  if (_slListenerRegistered) return;
+  _slListenerRegistered = true;
+
   listen(firebase.database().ref(`projects/${pid}/siteLogs`), snap => {
     const el = document.getElementById('siteLogList');
     if (!el) return;
     
-    // I-clear ang container
+    // I-clear nang maayos ang container
     el.innerHTML = ''; 
 
     if (!snap.exists()) {
@@ -34,17 +37,20 @@ function watchSiteLog(pid) {
       return;
     }
 
-    // Gamitin ang fragment para hindi mag-flicker ang UI
     const fragment = document.createDocumentFragment();
-    snap.forEach(c => {
-      const log = c.val();
+    
+    // Reverse ang listahan para ang pinakabago ay nasa taas
+    const entries = [];
+    snap.forEach(c => entries.unshift({ id: c.key, ...c.val() }));
+
+    entries.forEach(log => {
       const div = document.createElement('div');
-      div.className = 'log-item'; // Siguraduhin na may class na ito
+      div.className = 'log-item';
       div.innerHTML = `<strong>${log.date} ${log.time}</strong><p>${log.notes}</p>`;
       fragment.appendChild(div);
     });
     
-    el.appendChild(fragment); // I-attach ang buong listahan sa isang bagsakan
+    el.appendChild(fragment);
   });
 }
 
