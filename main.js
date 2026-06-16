@@ -1,6 +1,5 @@
 
-# ============ main.js (v8 — Complete rewrite) ============
-main_v8 = r'''//═══════════════════════════════════════════════════════════════
+
 //  ACPM v8 — main.js
 //  · Firebase Auth (optional, falls back to anonymous)
 //  · Offline persistence enabled
@@ -377,9 +376,4 @@ async function exportAllData() {
     showToast('Export failed.', 'error');
   }
 }
-'''
 
-with open('/mnt/agents/output/main.js', 'w') as f:
-    f.write(main_v8)
-
-print(f"✅ main.js v8 — {len(main_v8)} bytes")

@@ -1,6 +1,5 @@
 
-# ============ sitelog.js (v8 — Complete rewrite) ============
-sitelog_v8 = r'''// ═══════════════════════════════════════════════════════════════
+
 //  ACPM v8 — sitelog.js
 //  · Proper listener lifecycle
 //  · XSS-safe rendering
@@ -225,9 +224,4 @@ function filterLogs(query) {
     group.style.display = visible > 0 ? '' : 'none';
   });
 }
-'''
 
-with open('/mnt/agents/output/sitelog.js', 'w') as f:
-    f.write(sitelog_v8)
-
-print(f"✅ sitelog.js v8 — {len(sitelog_v8)} bytes")

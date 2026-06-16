@@ -1,6 +1,5 @@
 
-# ============ changeorders.js (v8 — Complete rewrite) ============
-co_v8 = r'''// ═══════════════════════════════════════════════════════════════
+
 //  ACPM v8 — changeorders.js
 //  · Proper listener lifecycle
 //  · XSS-safe rendering
@@ -238,9 +237,4 @@ function escapeCsv(text) {
   }
   return text;
 }
-'''
 
-with open('/mnt/agents/output/changeorders.js', 'w') as f:
-    f.write(co_v8)
-
-print(f"✅ changeorders.js v8 — {len(co_v8)} bytes")

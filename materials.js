@@ -1,6 +1,4 @@
 
-# ============ materials.js (v8 — Complete rewrite) ============
-materials_v8 = r'''// ═══════════════════════════════════════════════════════════════
 //  ACPM v8 — materials.js
 //  · Proper listener lifecycle
 //  · XSS-safe rendering
@@ -445,9 +443,3 @@ function filterPOHistory(query) {
     card.style.display = supplier.includes(q) ? '' : 'none';
   });
 }
-'''
-
-with open('/mnt/agents/output/materials.js', 'w') as f:
-    f.write(materials_v8)
-
-print(f"✅ materials.js v8 — {len(materials_v8)} bytes")

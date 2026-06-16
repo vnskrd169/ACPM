@@ -1,6 +1,5 @@
 
-# ============ suppliers.js (v8 — Complete rewrite) ============
-suppliers_v8 = r'''// ═══════════════════════════════════════════════════════════════
+
 //  ACPM v8 — suppliers.js
 //  · Global — stored at root /suppliers
 //  · XSS-safe rendering
@@ -180,9 +179,3 @@ function escapeCsv(text) {
   }
   return text;
 }
-'''
-
-with open('/mnt/agents/output/suppliers.js', 'w') as f:
-    f.write(suppliers_v8)
-
-print(f"✅ suppliers.js v8 — {len(suppliers_v8)} bytes")

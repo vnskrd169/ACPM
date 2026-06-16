@@ -1,6 +1,4 @@
 
-# ============ labor.js (v8 — Complete rewrite) ============
-labor_v8 = r'''// ═══════════════════════════════════════════════════════════════
 //  ACPM v8 — labor.js
 //  · Proper listener lifecycle (no duplicates)
 //  · XSS-safe rendering via escapeHtml
@@ -746,9 +744,3 @@ async function exportPayrollCSV() {
   URL.revokeObjectURL(url);
   showToast('Payroll CSV exported!');
 }
-'''
-
-with open('/mnt/agents/output/labor.js', 'w') as f:
-    f.write(labor_v8)
-
-print(f"✅ labor.js v8 — {len(labor_v8)} bytes")

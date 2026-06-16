@@ -1,6 +1,4 @@
 
-# ============ billing.js (v8 — Complete rewrite) ============
-billing_v8 = r'''// ═══════════════════════════════════════════════════════════════
 //  ACPM v8 — billing.js
 //  · Proper listener lifecycle (no duplicates)
 //  · XSS-safe rendering
@@ -334,9 +332,4 @@ function escapeCsv(text) {
   }
   return text;
 }
-'''
 
-with open('/mnt/agents/output/billing.js', 'w') as f:
-    f.write(billing_v8)
-
-print(f"✅ billing.js v8 — {len(billing_v8)} bytes")

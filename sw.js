@@ -1,9 +1,4 @@
 
-# COMPLETE ACPM v8 — All files rewritten with every improvement
-# This is the master build — everything in one shot
-
-# ============ sw.js (NEW — Service Worker for offline) ============
-sw_js = '''const CACHE = 'acpm-v8';
 const ASSETS = [
   './','./index.html','./style.css',
   './main.js','./labor.js','./materials.js',
@@ -36,9 +31,4 @@ self.addEventListener('fetch', e => {
     })
   );
 });
-'''
 
-with open('/mnt/agents/output/sw.js', 'w') as f:
-    f.write(sw_js)
-
-print("✅ sw.js created")
