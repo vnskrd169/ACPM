@@ -389,3 +389,20 @@ select option{background:var(--surface2)}
   width: 100%; /* Makes it easier to tap on mobile */
   margin-top: 10px;
 }
+
+#siteLogList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: auto;        /* Hayaan ang container na mag-expand */
+  min-height: 100px;
+  overflow-y: visible; /* Huwag i-hide ang overflow para lumaki ang div */
+  padding-bottom: 20px;
+}
+
+.log-item {
+  background: var(--surface2);
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 4px solid var(--blue); /* Design touch */
+}

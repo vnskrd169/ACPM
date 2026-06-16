@@ -21,18 +21,32 @@ function initSiteLog(pid) {
 }
 
 function watchSiteLog(pid) {
-  if (_slListenerRegistered) return;
-  _slListenerRegistered = true;
-
+  // MAHALAGA: Gumamit ng reference na may .off() sa detachAll()
   listen(firebase.database().ref(`projects/${pid}/siteLogs`), snap => {
     const el = document.getElementById('siteLogList');
     if (!el) return;
-    el.innerHTML = '';
+    
+    // I-clear ang container
+    el.innerHTML = ''; 
 
     if (!snap.exists()) {
-      el.innerHTML = '<p class="empty-hint">No entries yet. Add your first log above.</p>';
+      el.innerHTML = '<p class="empty-hint">No logs yet.</p>';
       return;
     }
+
+    // Gamitin ang fragment para hindi mag-flicker ang UI
+    const fragment = document.createDocumentFragment();
+    snap.forEach(c => {
+      const log = c.val();
+      const div = document.createElement('div');
+      div.className = 'log-item'; // Siguraduhin na may class na ito
+      div.innerHTML = `<strong>${log.date} ${log.time}</strong><p>${log.notes}</p>`;
+      fragment.appendChild(div);
+    });
+    
+    el.appendChild(fragment); // I-attach ang buong listahan sa isang bagsakan
+  });
+}
 
     // Collect and reverse for newest-first
     const entries = [];
@@ -58,8 +72,7 @@ function watchSiteLog(pid) {
         <p class="log-notes">${(e.notes||'').replace(/\n/g,'<br>')}</p>`;
       el.appendChild(div);
     });
-  });
-}
+ 
 
 async function saveLog() {
   if (!_slpid) { showToast('No active project.','error'); return; }
