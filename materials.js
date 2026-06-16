@@ -1,27 +1,43 @@
-// ═══════════════════════════════════════════════════════════════
-//  ACPM v6 — materials.js
-//  FIXES:
-//  · PO history now accumulates correctly (newest on top)
-//  · submitPO clears draft and shows new card immediately
-//  · Supplier quick-select pulls from global suppliers node
-//  · Size field included in all exports and ledger
+
+# ============ materials.js (v8 — Complete rewrite) ============
+materials_v8 = r'''// ═══════════════════════════════════════════════════════════════
+//  ACPM v8 — materials.js
+//  · Proper listener lifecycle
+//  · XSS-safe rendering
+//  · Loading states
+//  · PO history with search/filter
+//  · Ledger export to CSV
+//  · Supplier bank details auto-populate in PO export
 // ═══════════════════════════════════════════════════════════════
 
-let _mpid       = null;
+let _mpid = null;
 let _draftItems = [];
+let _matListeners = [];
 
 function initMaterials(pid) {
   _mpid = pid; _draftItems = [];
+  detachMatListeners();
   renderDraft();
   watchMatBudget(pid);
   watchLedger(pid);
   watchPOHistory(pid);
-  loadGlobalSuppliersForPO(); // populate quick-select dropdown
+  loadGlobalSuppliersForPO();
 }
 
-// ── Budget KPIs + warning ─────────────────────────────────────
+function detachMatListeners() {
+  _matListeners.forEach(ref => ref.off());
+  _matListeners = [];
+}
+
+function matListen(ref, cb) {
+  ref.on('value', cb);
+  _matListeners.push(ref);
+}
+
+// ── Budget KPIs ───────────────────────────────────────────────
 function watchMatBudget(pid) {
-  listen(firebase.database().ref(`projects/${pid}`), snap => {
+  const ref = firebase.database().ref(`projects/${pid}`);
+  matListen(ref, snap => {
     const d      = snap.val() || {};
     const budget = parseFloat(d.materialBudget) || 0;
     const spent  = parseFloat(d.materialSpent)  || 0;
@@ -30,12 +46,12 @@ function watchMatBudget(pid) {
     setText('mbBudget', peso(budget));
     setText('mbSpent',  peso(spent));
     const el = $('mbLeft');
-    if (el) { el.textContent = peso(left); el.className = `kpi-num ${left<0?'kpi-danger':'kpi-safe'}`; }
+    if (el) { el.textContent = peso(left); el.className = `kpi-num ${left < 0 ? 'kpi-danger' : 'kpi-safe'}`; }
     const wb = $('matBudgetWarn');
     if (wb) {
-      wb.classList.toggle('hidden', p<80);
-      wb.className  = `budget-warn-bar ${p>=95?'warn-critical':'warn-high'} ${p<80?'hidden':''}`;
-      wb.textContent = p>=95
+      wb.classList.toggle('hidden', p < 80);
+      wb.className  = `budget-warn-bar ${p >= 95 ? 'warn-critical' : 'warn-high'} ${p < 80 ? 'hidden' : ''}`;
+      wb.textContent = p >= 95
         ? `⚠ CRITICAL — Materials budget ${p}% used! Only ${peso(left)} left.`
         : `⚠ WARNING — Materials budget ${p}% used. ${peso(left)} remaining.`;
     }
@@ -50,7 +66,7 @@ function loadGlobalSuppliersForPO() {
     sel.innerHTML = '<option value="">— Quick select supplier —</option>';
     snap.forEach(c => {
       const s = c.val();
-      sel.innerHTML += `<option value="${s.name}">${s.name}${s.specialty?' ('+s.specialty+')':''}</option>`;
+      sel.innerHTML += `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}${s.specialty ? ' (' + escapeHtml(s.specialty) + ')' : ''}</option>`;
     });
   });
 }
@@ -70,10 +86,11 @@ function addDraftItem() {
   const qty  = parseFloat($('poItemQty')?.value)  || 0;
   const unit = $('poItemUnit')?.value.trim() || '';
   const cost = parseFloat($('poItemCost')?.value)  || 0;
-  if (!desc)  { showToast('Enter item description.','error'); return; }
-  if (qty<=0) { showToast('Enter valid quantity.','error'); return; }
+  if (!desc)  { showToast('Enter item description.', 'error'); return; }
+  if (qty <= 0) { showToast('Enter valid quantity.', 'error'); return; }
+  if (desc.length > 100) { showToast('Description too long (max 100).', 'error'); return; }
   _draftItems.push({ desc, size, qty, unit, cost, total: qty * cost });
-  ['poItemDesc','poItemSize','poItemQty','poItemUnit','poItemCost'].forEach(id => {
+  ['poItemDesc', 'poItemSize', 'poItemQty', 'poItemUnit', 'poItemCost'].forEach(id => {
     const e = $(id); if (e) e.value = '';
   });
   $('poItemDesc')?.focus();
@@ -90,8 +107,8 @@ function renderDraft() {
   }
   el.innerHTML = _draftItems.map((item, i) => `
     <div class="draft-row">
-      <span class="draft-desc">${item.desc}${item.size?` <span class="draft-size">[${item.size}]</span>`:''}</span>
-      <span class="draft-qty">${item.qty} ${item.unit}</span>
+      <span class="draft-desc">${escapeHtml(item.desc)}${item.size ? ` <span class="draft-size">[${escapeHtml(item.size)}]</span>` : ''}</span>
+      <span class="draft-qty">${item.qty} ${escapeHtml(item.unit)}</span>
       <span class="draft-cost">${peso(item.cost)}/unit</span>
       <span class="draft-total">${peso(item.total)}</span>
       <button class="draft-del" onclick="removeDraftItem(${i})">✕</button>
@@ -102,14 +119,15 @@ function renderDraft() {
 // ── Submit PO ─────────────────────────────────────────────────
 async function submitPO() {
   if (!_mpid) return;
-  if (!_draftItems.length) { showToast('Add at least one item first.','error'); return; }
+  if (!_draftItems.length) { showToast('Add at least one item first.', 'error'); return; }
 
   const supplier = $('poSupplier')?.value.trim();
   const date     = $('poDate')?.value;
   const notes    = $('poNotes')?.value.trim() || '';
 
-  if (!supplier) { showToast('Enter supplier name.','error'); return; }
-  if (!date)     { showToast('Enter PO date.','error'); return; }
+  if (!supplier) { showToast('Enter supplier name.', 'error'); return; }
+  if (!date)     { showToast('Enter PO date.', 'error'); return; }
+  if (supplier.length > 50) { showToast('Supplier name too long.', 'error'); return; }
 
   const total = _draftItems.reduce((s, x) => s + x.total, 0);
 
@@ -122,10 +140,8 @@ async function submitPO() {
     createdDate : new Date().toLocaleDateString('en-PH')
   };
 
-  // FIX: push() always creates a NEW PO record, never overwrites
-  const poRef = await firebase.database().ref(`projects/${_mpid}/purchaseOrders`).push(po);
+  const poRef = await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders`).push(po), 'Failed to submit PO');
 
-  // Flatten items into ledger
   const ledgerUpdates = {};
   _draftItems.forEach((item, i) => {
     ledgerUpdates[`${poRef.key}_${i}`] = {
@@ -141,11 +157,10 @@ async function submitPO() {
       createdAt: Date.now()
     };
   });
-  await firebase.database().ref(`projects/${_mpid}/ledger`).update(ledgerUpdates);
+  await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger`).update(ledgerUpdates), 'Failed to update ledger');
 
-  // Clear draft and form
   _draftItems = [];
-  ['poSupplier','poDate','poNotes'].forEach(id => { const e = $(id); if (e) e.value = ''; });
+  ['poSupplier', 'poDate', 'poNotes'].forEach(id => { const e = $(id); if (e) e.value = ''; });
   const sel = $('poSupplierSelect'); if (sel) sel.value = '';
   renderDraft();
   showToast(`✅ PO #${poRef.key.slice(-4)} submitted to ${supplier}!`);
@@ -155,7 +170,8 @@ async function submitPO() {
 //  LEDGER
 // ══════════════════════════════════════════════════════
 function watchLedger(pid) {
-  listen(firebase.database().ref(`projects/${pid}/ledger`), snap => {
+  const ref = firebase.database().ref(`projects/${pid}/ledger`);
+  matListen(ref, snap => {
     const tbody = $('ledgerBody'); if (!tbody) return;
     tbody.innerHTML = '';
     let paidTotal = 0, orderCount = 0;
@@ -173,27 +189,27 @@ function watchLedger(pid) {
       const isPaid = m.status === 'paid' || m.status === 'delivered';
       if (isPaid) paidTotal += m.total || 0;
       const statusOpts = ['ordered','delivered','paid','cancelled'].map(s =>
-        `<option value="${s}" ${m.status===s?'selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`
+        `<option value="${s}" ${m.status === s ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`
       ).join('');
-      tbody.innerHTML += `<tr class="led-row ${m.status==='cancelled'?'led-cancelled':''}">
-        <td class="l-cell">${m.date||'—'}</td>
-        <td class="l-cell l-supplier">${m.supplier||'—'}</td>
-        <td class="l-cell l-desc">${m.desc}</td>
-        <td class="l-cell">${m.size||'—'}</td>
-        <td class="l-cell l-center">${m.qty} ${m.unit}</td>
+      tbody.innerHTML += `<tr class="led-row ${m.status === 'cancelled' ? 'led-cancelled' : ''}">
+        <td class="l-cell">${m.date || '—'}</td>
+        <td class="l-cell l-supplier">${escapeHtml(m.supplier || '—')}</td>
+        <td class="l-cell l-desc">${escapeHtml(m.desc)}</td>
+        <td class="l-cell">${escapeHtml(m.size || '—')}</td>
+        <td class="l-cell l-center">${m.qty} ${escapeHtml(m.unit)}</td>
         <td class="l-cell l-right">${peso(m.cost)}</td>
         <td class="l-cell l-right l-bold">${peso(m.total)}</td>
         <td class="l-cell">
           <select class="status-sel" onchange="updateLedgerStatus('${key}',this.value)">${statusOpts}</select>
         </td>
         <td class="l-cell l-center">
-          <button class="del-item-btn" onclick="deleteLedgerItem('${key}','${(m.desc||'').replace(/'/g,"\\'")}')">✕</button>
+          <button class="del-item-btn" onclick="deleteLedgerItem('${key}','${escapeHtml(m.desc || '').replace(/'/g, "\\'")}')">✕</button>
         </td>
       </tr>`;
     });
 
     setText('ledgerTotal', peso(paidTotal));
-    setText('ledgerCount', `${orderCount} item${orderCount!==1?'s':''} total`);
+    setText('ledgerCount', `${orderCount} item${orderCount !== 1 ? 's' : ''} total`);
     firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal });
     updateMaterialsSummary(snap);
   });
@@ -201,16 +217,18 @@ function watchLedger(pid) {
 
 async function updateLedgerStatus(key, status) {
   if (!_mpid) return;
-  await firebase.database().ref(`projects/${_mpid}/ledger/${key}`).update({ status });
+  await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger/${key}`).update({ status }), 'Failed to update status');
+  showToast(`Status updated to ${status}`);
 }
 
 async function deleteLedgerItem(key, desc) {
   if (!_mpid || !confirm(`Delete "${desc}"?`)) return;
-  await firebase.database().ref(`projects/${_mpid}/ledger/${key}`).remove();
+  await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger/${key}`).remove(), 'Failed to delete item');
+  showToast('Item deleted', 'warn');
 }
 
 // ══════════════════════════════════════════════════════
-//  MATERIALS SUMMARY — grouped by item + size
+//  MATERIALS SUMMARY
 // ══════════════════════════════════════════════════════
 function updateMaterialsSummary(snap) {
   const el = $('materialsSummary'); if (!el) return;
@@ -220,8 +238,8 @@ function updateMaterialsSummary(snap) {
   snap.forEach(c => {
     const m = c.val();
     if (m.status === 'cancelled') return;
-    const key = `${m.desc}||${m.size||''}`;
-    if (!grouped[key]) grouped[key] = { desc: m.desc, size: m.size||'', totalQty: 0, unit: m.unit||'', totalCost: 0, count: 0 };
+    const key = `${m.desc}||${m.size || ''}`;
+    if (!grouped[key]) grouped[key] = { desc: m.desc, size: m.size || '', totalQty: 0, unit: m.unit || '', totalCost: 0, count: 0 };
     grouped[key].totalQty  += parseFloat(m.qty)   || 0;
     grouped[key].totalCost += parseFloat(m.total)  || 0;
     grouped[key].count++;
@@ -235,12 +253,12 @@ function updateMaterialsSummary(snap) {
       <th style="text-align:right">Total Cost</th><th style="text-align:right">PO Count</th>
     </tr></thead>
     <tbody>
-      ${Object.values(grouped).sort((a,b) => b.totalCost - a.totalCost).map(g => `
+      ${Object.values(grouped).sort((a, b) => b.totalCost - a.totalCost).map(g => `
         <tr class="s-row">
-          <td class="s-cell s-bold">${g.desc}</td>
-          <td class="s-cell">${g.size||'—'}</td>
+          <td class="s-cell s-bold">${escapeHtml(g.desc)}</td>
+          <td class="s-cell">${escapeHtml(g.size) || '—'}</td>
           <td class="s-cell s-center">${g.totalQty}</td>
-          <td class="s-cell">${g.unit}</td>
+          <td class="s-cell">${escapeHtml(g.unit)}</td>
           <td class="s-cell s-right s-bold">${peso(g.totalCost)}</td>
           <td class="s-cell s-right">${g.count}</td>
         </tr>`).join('')}
@@ -249,12 +267,11 @@ function updateMaterialsSummary(snap) {
 }
 
 // ══════════════════════════════════════════════════════
-//  PO HISTORY — accumulates, newest on top
-//  FIX: watchPOHistory uses a live listener (not once())
-//       so every new PO appears immediately without refresh
+//  PO HISTORY
 // ══════════════════════════════════════════════════════
 function watchPOHistory(pid) {
-  listen(firebase.database().ref(`projects/${pid}/purchaseOrders`), snap => {
+  const ref = firebase.database().ref(`projects/${pid}/purchaseOrders`);
+  matListen(ref, snap => {
     const container = $('poHistory'); if (!container) return;
     container.innerHTML = '';
 
@@ -263,26 +280,25 @@ function watchPOHistory(pid) {
       return;
     }
 
-    // Newest first
     const entries = [];
     snap.forEach(c => entries.unshift({ id: c.key, ...c.val() }));
 
     entries.forEach(po => {
       const itemRows = (po.items || []).map(it => `
         <div class="po-item-row">
-          <span class="po-item-desc">${it.desc}${it.size?` <span class="po-item-size">[${it.size}]</span>`:''}</span>
-          <span class="po-item-qty">${it.qty} ${it.unit}</span>
+          <span class="po-item-desc">${escapeHtml(it.desc)}${it.size ? ` <span class="po-item-size">[${escapeHtml(it.size)}]</span>` : ''}</span>
+          <span class="po-item-qty">${it.qty} ${escapeHtml(it.unit)}</span>
           <span class="po-item-cost">${peso(it.cost)}</span>
           <span class="po-item-total">${peso(it.total)}</span>
         </div>`).join('');
 
       container.innerHTML += `
-        <div class="po-card" id="poc_${po.id}">
+        <div class="po-card" id="poc_${po.id}" data-supplier="${escapeHtml((po.supplier || '').toLowerCase())}">
           <div class="po-card-hdr">
             <div>
-              <p class="po-date-lbl">${po.date} · ${po.createdDate||''}</p>
-              <p class="po-supplier">${po.supplier}</p>
-              ${po.notes ? `<p class="po-notes">${po.notes}</p>` : ''}
+              <p class="po-date-lbl">${po.date} · ${po.createdDate || ''}</p>
+              <p class="po-supplier">${escapeHtml(po.supplier)}</p>
+              ${po.notes ? `<p class="po-notes">${escapeHtml(po.notes)}</p>` : ''}
             </div>
             <div class="po-card-right">
               <span class="po-total">${peso(po.total)}</span>
@@ -304,10 +320,11 @@ function watchPOHistory(pid) {
 
 async function markAllPO(poId, status) {
   if (!_mpid) return;
+  if (!confirm(`Mark all items in this PO as ${status}?`)) return;
   const snap = await firebase.database().ref(`projects/${_mpid}/ledger`).once('value');
   const updates = {};
   snap.forEach(c => { if (c.val().poId === poId) updates[`${c.key}/status`] = status; });
-  await firebase.database().ref(`projects/${_mpid}/ledger`).update(updates);
+  await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger`).update(updates), 'Failed to update PO status');
   showToast(`All items marked as ${status}`);
 }
 
@@ -317,13 +334,12 @@ async function exportPOImage(poId) {
   const snap = await firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).once('value');
   const po   = snap.val(); if (!po) return;
 
-  // Also get supplier bank details if available
   let bankInfo = '';
   const suppSnap = await firebase.database().ref('suppliers').once('value');
   suppSnap.forEach(c => {
     const s = c.val();
     if (s.name === po.supplier && (s.bankName || s.accNum)) {
-      bankInfo = `${s.bankName || ''} ${s.accNum ? '· Acct: '+s.accNum : ''}`.trim();
+      bankInfo = `${s.bankName || ''} ${s.accNum ? '· Acct: ' + s.accNum : ''} ${s.accName ? '· ' + s.accName : ''}`.trim();
     }
   });
 
@@ -333,9 +349,9 @@ async function exportPOImage(poId) {
 
   const itemsHTML = (po.items || []).map(it => `<tr>
     <td style="padding:7px 8px;border-bottom:1px solid #e5e7eb">
-      ${it.desc}${it.size?` <em style="color:#6b7280;font-size:11px">[${it.size}]</em>`:''}
+      ${escapeHtml(it.desc)}${it.size ? ` <em style="color:#6b7280;font-size:11px">[${escapeHtml(it.size)}]</em>` : ''}
     </td>
-    <td style="padding:7px 8px;border-bottom:1px solid #e5e7eb;text-align:center">${it.qty} ${it.unit}</td>
+    <td style="padding:7px 8px;border-bottom:1px solid #e5e7eb;text-align:center">${it.qty} ${escapeHtml(it.unit)}</td>
     <td style="padding:7px 8px;border-bottom:1px solid #e5e7eb;text-align:right">${peso(it.cost)}</td>
     <td style="padding:7px 8px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700">${peso(it.total)}</td>
   </tr>`).join('');
@@ -353,9 +369,9 @@ async function exportPOImage(poId) {
     </div>
     <div style="background:#f3f4f6;border-radius:10px;padding:12px 16px;margin-bottom:20px">
       <div style="font-size:10px;color:#6b7280;font-weight:700;margin-bottom:3px">SUPPLIER</div>
-      <div style="font-size:17px;font-weight:900">${po.supplier}</div>
-      ${bankInfo ? `<div style="font-size:12px;color:#374151;margin-top:4px;font-weight:600">🏦 ${bankInfo}</div>` : ''}
-      ${po.notes ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${po.notes}</div>` : ''}
+      <div style="font-size:17px;font-weight:900">${escapeHtml(po.supplier)}</div>
+      ${bankInfo ? `<div style="font-size:12px;color:#374151;margin-top:4px;font-weight:600">🏦 ${escapeHtml(bankInfo)}</div>` : ''}
+      ${po.notes ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(po.notes)}</div>` : ''}
     </div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
       <thead><tr style="background:#1e293b;color:#fff">
@@ -380,14 +396,58 @@ async function exportPOImage(poId) {
   try {
     const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
     const link   = document.createElement('a');
-    link.download = `PO_${po.supplier.replace(/\s+/g,'_')}_${po.date}.png`;
+    link.download = `PO_${po.supplier.replace(/\s+/g, '_')}_${po.date}.png`;
     link.href     = canvas.toDataURL('image/png');
     link.click();
     showToast('PO image downloaded!');
   } catch(e) {
-    showToast('Export failed. Check console.','error');
+    showToast('Export failed. Check console.', 'error');
     console.error(e);
   } finally {
     document.body.removeChild(wrap);
   }
 }
+
+// Export ledger to CSV
+async function exportLedgerCSV() {
+  if (!_mpid) return;
+  const snap = await firebase.database().ref(`projects/${_mpid}/ledger`).once('value');
+  if (!snap.exists()) { showToast('No ledger data to export.', 'warn'); return; }
+
+  let csv = 'Date,Supplier,Description,Size,Qty,Unit,Unit Cost,Total,Status\n';
+  snap.forEach(c => {
+    const m = c.val();
+    csv += `${m.date || ''},${escapeCsv(m.supplier || '')},${escapeCsv(m.desc || '')},${escapeCsv(m.size || '')},${m.qty || 0},${escapeCsv(m.unit || '')},${m.cost || 0},${m.total || 0},${m.status || 'ordered'}\n`;
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Ledger_${_mpid}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Ledger exported to CSV!');
+}
+
+function escapeCsv(text) {
+  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+    return '"' + text.replace(/"/g, '""') + '"';
+  }
+  return text;
+}
+
+// Filter PO history by supplier
+function filterPOHistory(query) {
+  const q = query.toLowerCase().trim();
+  document.querySelectorAll('.po-card').forEach(card => {
+    const supplier = card.getAttribute('data-supplier') || '';
+    card.style.display = supplier.includes(q) ? '' : 'none';
+  });
+}
+'''
+
+with open('/mnt/agents/output/materials.js', 'w') as f:
+    f.write(materials_v8)
+
+print(f"✅ materials.js v8 — {len(materials_v8)} bytes")

@@ -1,4 +1,6 @@
-<!DOCTYPE html>
+
+# ============ index.html (v8 — Complete rewrite with all improvements) ============
+html_v8 = '''<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -12,6 +14,7 @@
 <title>ACPM Dashboard</title>
 
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -54,6 +57,10 @@
     </div>
   </div>
 
+  <div style="margin-bottom:14px">
+    <input type="text" id="projectSearch" placeholder="🔍 Search projects..." oninput="filterProjects(this.value)" style="max-width:320px">
+  </div>
+
   <div class="hub-tab-row">
     <button id="hubTab_active"    class="hub-tab tab-active" onclick="showHubTab('active')">🏗 Active</button>
     <button id="hubTab_completed" class="hub-tab"            onclick="showHubTab('completed')">✓ Completed</button>
@@ -85,7 +92,10 @@
       <div class="ws-env">Active Site</div>
       <div class="ws-title"><span id="wsName">—</span></div>
     </div>
-    <button class="btn-back" onclick="exitHub()">← Hub</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn-export-data" onclick="exportAllData()">⬇️ Export</button>
+      <button class="btn-back" onclick="exitHub()">← Hub</button>
+    </div>
   </div>
 
   <!-- Tab scroll -->
@@ -150,7 +160,10 @@
       </div>
     </div>
     <div class="card gap">
-      <div class="card-title">📋 Payroll Logs Archive</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="card-title">📋 Payroll Logs Archive</div>
+        <button class="btn-export-sm" onclick="exportPayrollCSV()">⬇️ CSV</button>
+      </div>
       <div class="history-split">
         <div style="overflow-x:auto">
           <table class="hist-table">
@@ -175,9 +188,14 @@
     <div class="card">
       <div class="card-title">🛒 New Purchase Order</div>
       <div class="po-meta-grid">
-        <input id="poSupplier" type="text" placeholder="Supplier name">
+        <div style="grid-column:1/-1;display:flex;gap:8px">
+          <select id="poSupplierSelect" onchange="applySupplierSelection()" style="width:auto;min-width:180px">
+            <option value="">— Quick-select supplier —</option>
+          </select>
+          <input id="poSupplier" type="text" placeholder="Or type supplier name" style="flex:1">
+        </div>
         <input id="poDate"     type="date">
-        <input id="poNotes"    type="text" placeholder="Notes (optional)" style="grid-column:1/-1">
+        <input id="poNotes"    type="text" placeholder="Notes (optional)">
       </div>
       <div class="po-item-form">
         <input id="poItemDesc" type="text"   placeholder="Item description">
@@ -194,7 +212,10 @@
       </div>
     </div>
     <div class="card gap">
-      <div class="card-title">📋 Materials Ledger <span style="font-size:11px;font-weight:400;color:var(--muted2)" id="ledgerCount"></span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="card-title">📋 Materials Ledger <span style="font-size:11px;font-weight:400;color:var(--muted2)" id="ledgerCount"></span></div>
+        <button class="btn-export-sm" onclick="exportLedgerCSV()">⬇️ CSV</button>
+      </div>
       <div style="overflow-x:auto">
         <table class="led-table">
           <thead><tr><th>Date</th><th>Supplier</th><th>Description</th><th>Size</th><th>Qty</th><th style="text-align:right">Unit Cost</th><th style="text-align:right">Total</th><th>Status</th><th>Del</th></tr></thead>
@@ -211,7 +232,10 @@
       <div id="materialsSummary"><p class="empty-hint">No data yet.</p></div>
     </div>
     <div class="card gap">
-      <div class="card-title">🗂️ PO History</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="card-title">🗂️ PO History</div>
+        <input type="text" placeholder="🔍 Search POs..." oninput="filterPOHistory(this.value)" style="max-width:200px">
+      </div>
       <div id="poHistory"><p class="empty-hint">No orders yet.</p></div>
     </div>
   </div>
@@ -245,7 +269,10 @@
             <div style="font-size:20px;font-weight:900" id="cdAmount">—</div>
             <div style="font-size:12px;color:var(--muted2);margin-top:2px">Client: <span id="cdClient">—</span> · <span id="cdDates">—</span></div>
           </div>
-          <button class="btn-mc" onclick="editContract()" style="align-self:flex-start">✎ Edit</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn-export-sm" onclick="exportBillingSummary()">⬇️ CSV</button>
+            <button class="btn-mc" onclick="editContract()">✎ Edit</button>
+          </div>
         </div>
         <div class="billing-progress-wrap"><div id="cdProgressBar" class="billing-fill bar-ok" style="width:0%"></div></div>
         <div style="font-size:11px;color:var(--muted2);margin-bottom:12px" id="cdProgressPct">0% collected</div>
@@ -262,7 +289,15 @@
 
       <!-- Billing Requests -->
       <div class="card" style="margin-bottom:12px">
-        <div class="card-title">📤 Billing Requests</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="card-title">📤 Billing Requests</div>
+          <div style="display:flex;gap:6px">
+            <button class="filter-btn" onclick="filterBillings('all')">All</button>
+            <button class="filter-btn" onclick="filterBillings('pending')">Pending</button>
+            <button class="filter-btn" onclick="filterBillings('sent')">Sent</button>
+            <button class="filter-btn" onclick="filterBillings('collected')">Collected</button>
+          </div>
+        </div>
         <div class="billing-form-grid">
           <input id="billDesc"   type="text"   placeholder="Description (e.g. 2nd tranche — roofing complete)">
           <input id="billDate"   type="date">
@@ -329,22 +364,39 @@
       </div>
     </div>
 
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="display:flex;gap:6px">
+        <button class="filter-btn" onclick="filterCOs('all')">All</button>
+        <button class="filter-btn" onclick="filterCOs('pending')">Pending</button>
+        <button class="filter-btn" onclick="filterCOs('approved')">Approved</button>
+        <button class="filter-btn" onclick="filterCOs('rejected')">Rejected</button>
+      </div>
+      <button class="btn-export-sm" onclick="exportCOsCSV()">⬇️ CSV</button>
+    </div>
     <div id="coList"><p class="empty-hint">No change orders yet.</p></div>
   </div>
 
 
   <!-- ══ SITE LOG PANEL ══════════════════════════════════════ -->
   <div id="sitelogPanel" class="hidden">
+    <div id="siteLogSummary" style="margin-bottom:12px"></div>
     <div class="card">
-      <div class="card-title">📒 Daily Site Log</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div class="card-title">📒 Daily Site Log</div>
+        <div style="display:flex;gap:8px">
+          <input type="text" placeholder="🔍 Search logs..." oninput="filterLogs(this.value)" style="max-width:200px">
+          <button class="btn-rfp" onclick="exportSiteLogs()">⬇️ Export</button>
+        </div>
+      </div>
       <div class="log-form">
         <div class="log-date-row">
           <input id="logDate" type="date">
-          <textarea id="logNotes" rows="3" placeholder="What happened on site today?"></textarea>
+          <input id="logWeather" type="text" placeholder="Weather (e.g. Sunny, Rainy)" style="flex:1">
         </div>
-        <div style="display:flex;justify-content:flex-end">
-          <button class="btn-add-sm" onclick="saveLog()">+ Save Entry</button>
-        </div>
+        <textarea id="logNotes" rows="3" placeholder="What happened on site today?"></textarea>
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn-add-sm" onclick="saveLog()">+ Save Entry</button>
       </div>
       <div id="siteLogList"><p class="empty-hint">No entries yet.</p></div>
     </div>
@@ -359,9 +411,13 @@
         <input id="supName"      type="text" placeholder="Supplier name (required)">
         <input id="supContact"   type="text" placeholder="Contact / phone">
         <input id="supSpecialty" type="text" placeholder="Specialty (e.g. Hardware)">
-        <input type="text" id="supBank" placeholder="Bank Name">      
-        <input type="text" id="supAccNum" placeholder="Account No."> 
-        <button class="btn-add-supplier" onclick="addSupplier()"> + Add </button>
+        <input id="supBank"      type="text" placeholder="Bank Name">
+        <input id="supAccNum"    type="text" placeholder="Account No.">
+        <input id="supAccName"   type="text" placeholder="Account Name">
+        <button class="btn-add-supplier" onclick="addSupplier()">+ Add Supplier</button>
+      </div>
+      <div style="margin-bottom:14px">
+        <input type="text" id="supplierSearch" placeholder="🔍 Search suppliers..." oninput="filterSuppliers(this.value)" style="max-width:320px">
       </div>
       <div id="supplierList"><p class="empty-hint">No suppliers yet.</p></div>
     </div>
@@ -426,6 +482,26 @@
   </div>
 </div>
 
+<!-- Edit Supplier Modal -->
+<div id="editSupplierModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-title">✎ Edit Supplier</div>
+    <input type="hidden" id="editSupKey">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <input id="editSupName"    type="text" placeholder="Supplier name" style="grid-column:1/-1">
+      <input id="editSupContact" type="text" placeholder="Contact / phone">
+      <input id="editSupSpec"    type="text" placeholder="Specialty">
+      <input id="editSupBank"    type="text" placeholder="Bank Name">
+      <input id="editSupAccNum"  type="text" placeholder="Account No.">
+      <input id="editSupAccName" type="text" placeholder="Account Name" style="grid-column:1/-1">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-mc" onclick="closeEditSupplier()">Cancel</button>
+      <button class="btn-save-payroll" onclick="saveEditSupplier()">💾 Save Changes</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- SCRIPTS — ORDER CRITICAL -->
 <script src="main.js"></script>
@@ -457,4 +533,9 @@ window.addEventListener('appinstalled', () => {
 </script>
 
 </body>
-</html>
+</html>'''
+
+with open('/mnt/agents/output/index.html', 'w') as f:
+    f.write(html_v8)
+
+print(f"✅ index.html v8 — {len(html_v8)} bytes")

@@ -1,17 +1,25 @@
-// ═══════════════════════════════════════════════════════════════
-//  ACPM v6 — suppliers.js  (FIXED)
-//  · Global — stored at root /suppliers, NOT per project
-//  · Bank name + account number + account name stored
-//  · Bank details auto-appear in PO PNG export
-//  · Edit uses a proper modal (not prompt)
-//  · "Use in PO" fills the PO supplier field directly
+
+# ============ suppliers.js (v8 — Complete rewrite) ============
+suppliers_v8 = r'''// ═══════════════════════════════════════════════════════════════
+//  ACPM v8 — suppliers.js
+//  · Global — stored at root /suppliers
+//  · XSS-safe rendering
+//  · Search/filter
+//  · Edit via modal
+//  · Bank details for PO export
 // ═══════════════════════════════════════════════════════════════
 
-function initSuppliers() { watchGlobalSuppliers(); }
+let _supListener = null;
+
+function initSuppliers() {
+  if (_supListener) { _supListener.off(); _supListener = null; }
+  watchGlobalSuppliers();
+}
 
 function watchGlobalSuppliers() {
-  listen(firebase.database().ref('suppliers'), snap => {
-    const el = document.getElementById('supplierList');
+  _supListener = firebase.database().ref('suppliers');
+  _supListener.on('value', snap => {
+    const el = $('supplierList');
     if (!el) return;
     el.innerHTML = '';
 
@@ -21,23 +29,26 @@ function watchGlobalSuppliers() {
       return;
     }
 
-    snap.forEach(c => {
-      const s = c.val(), key = c.key;
-      const bankLine = (s.bankName||s.accNum)
-        ? `<div class="supplier-bank">🏦 ${s.bankName||''} ${s.accNum?'· Acct: '+s.accNum:''} ${s.accName?'· '+s.accName:''}</div>`
+    const suppliers = [];
+    snap.forEach(c => suppliers.push({ key: c.key, ...c.val() }));
+    suppliers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    suppliers.forEach(s => {
+      const bankLine = (s.bankName || s.accNum)
+        ? `<div class="supplier-bank">🏦 ${escapeHtml(s.bankName || '')} ${s.accNum ? '· Acct: ' + escapeHtml(s.accNum) : ''} ${s.accName ? '· ' + escapeHtml(s.accName) : ''}</div>`
         : '';
       el.innerHTML += `
-        <div class="supplier-card">
+        <div class="supplier-card" data-name="${escapeHtml((s.name || '').toLowerCase())}">
           <div class="supplier-info">
-            <span class="supplier-name">${s.name}</span>
-            ${s.specialty?`<span class="supplier-specialty">${s.specialty}</span>`:''}
-            ${s.contact?`<span class="supplier-contact">📞 ${s.contact}</span>`:''}
+            <span class="supplier-name">${escapeHtml(s.name)}</span>
+            ${s.specialty ? `<span class="supplier-specialty">${escapeHtml(s.specialty)}</span>` : ''}
+            ${s.contact ? `<span class="supplier-contact">📞 ${escapeHtml(s.contact)}</span>` : ''}
             ${bankLine}
           </div>
           <div class="supplier-actions">
-            <button class="btn-use-supplier"  onclick="useSupplierInPO('${s.name.replace(/'/g,"\\'")}')">Use in PO</button>
-            <button class="btn-edit-supplier" onclick="openEditSupplier('${key}')">✎ Edit</button>
-            <button class="btn-del-supplier"  onclick="deleteSupplier('${key}','${s.name.replace(/'/g,"\\'")}')">✕</button>
+            <button class="btn-use-supplier"  onclick="useSupplierInPO('${escapeHtml(s.name).replace(/'/g, "\\'")}')">Use in PO</button>
+            <button class="btn-edit-supplier" onclick="openEditSupplier('${s.key}')">✎ Edit</button>
+            <button class="btn-del-supplier"  onclick="deleteSupplier('${s.key}','${escapeHtml(s.name).replace(/'/g, "\\'")}')">✕</button>
           </div>
         </div>`;
     });
@@ -47,74 +58,131 @@ function watchGlobalSuppliers() {
 }
 
 function refreshSupplierDropdown(snap) {
-  const sel = document.getElementById('poSupplierSelect');
+  const sel = $('poSupplierSelect');
   if (!sel) return;
   sel.innerHTML = '<option value="">— Quick-select supplier —</option>';
   if (snap && snap.exists()) {
-    snap.forEach(c => {
-      const s = c.val();
-      sel.innerHTML += `<option value="${s.name}">${s.name}${s.specialty?' ('+s.specialty+')':''}</option>`;
+    const suppliers = [];
+    snap.forEach(c => suppliers.push(c.val()));
+    suppliers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    suppliers.forEach(s => {
+      sel.innerHTML += `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}${s.specialty ? ' (' + escapeHtml(s.specialty) + ')' : ''}</option>`;
     });
   }
 }
 
 function applySupplierSelection() {
-  const sel = document.getElementById('poSupplierSelect');
-  const inp = document.getElementById('poSupplier');
+  const sel = $('poSupplierSelect');
+  const inp = $('poSupplier');
   if (sel && inp && sel.value) { inp.value = sel.value; sel.value = ''; }
 }
 
 async function addSupplier() {
-  const name    = document.getElementById('supName')?.value.trim();
-  const contact = document.getElementById('supContact')?.value.trim()  || '';
-  const spec    = document.getElementById('supSpecialty')?.value.trim()|| '';
-  const bank    = document.getElementById('supBank')?.value.trim()     || '';
-  const accNum  = document.getElementById('supAccNum')?.value.trim()   || '';
-  const accName = document.getElementById('supAccName')?.value.trim()  || '';
-  if (!name) { showToast('Enter supplier name.','error'); return; }
-  await firebase.database().ref('suppliers').push({ name, contact, specialty:spec, bankName:bank, accNum, accName, addedAt:Date.now() });
-  ['supName','supContact','supSpecialty','supBank','supAccNum','supAccName'].forEach(id=>{ const e=document.getElementById(id); if(e)e.value=''; });
+  const name    = $('supName')?.value.trim();
+  const contact = $('supContact')?.value.trim()  || '';
+  const spec    = $('supSpecialty')?.value.trim() || '';
+  const bank    = $('supBank')?.value.trim()     || '';
+  const accNum  = $('supAccNum')?.value.trim()   || '';
+  const accName = $('supAccName')?.value.trim()  || '';
+  if (!name) { showToast('Enter supplier name.', 'error'); return; }
+  if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
+  await safeDb(() => firebase.database().ref('suppliers').push({ 
+    name, contact, specialty: spec, bankName: bank, accNum, accName, addedAt: Date.now() 
+  }), 'Failed to add supplier');
+  ['supName', 'supContact', 'supSpecialty', 'supBank', 'supAccNum', 'supAccName'].forEach(id => { 
+    const e = $(id); if (e) e.value = ''; 
+  });
   showToast(`✅ ${name} added`);
 }
 
-// Edit supplier via modal
 function openEditSupplier(key) {
   firebase.database().ref(`suppliers/${key}`).once('value', snap => {
     const s = snap.val() || {};
-    document.getElementById('editSupKey').value     = key;
-    document.getElementById('editSupName').value    = s.name     || '';
-    document.getElementById('editSupContact').value = s.contact  || '';
-    document.getElementById('editSupSpec').value    = s.specialty|| '';
-    document.getElementById('editSupBank').value    = s.bankName || '';
-    document.getElementById('editSupAccNum').value  = s.accNum   || '';
-    document.getElementById('editSupAccName').value = s.accName  || '';
-    document.getElementById('editSupplierModal').classList.remove('hidden');
+    $('editSupKey').value     = key;
+    $('editSupName').value    = s.name     || '';
+    $('editSupContact').value = s.contact  || '';
+    $('editSupSpec').value    = s.specialty|| '';
+    $('editSupBank').value    = s.bankName || '';
+    $('editSupAccNum').value  = s.accNum   || '';
+    $('editSupAccName').value = s.accName  || '';
+    $('editSupplierModal').classList.remove('hidden');
   });
 }
-function closeEditSupplier() { document.getElementById('editSupplierModal').classList.add('hidden'); }
+
+function closeEditSupplier() { 
+  $('editSupplierModal').classList.add('hidden'); 
+}
+
 async function saveEditSupplier() {
-  const key     = document.getElementById('editSupKey').value;
-  const name    = document.getElementById('editSupName').value.trim();
-  const contact = document.getElementById('editSupContact').value.trim() || '';
-  const spec    = document.getElementById('editSupSpec').value.trim()    || '';
-  const bank    = document.getElementById('editSupBank').value.trim()    || '';
-  const accNum  = document.getElementById('editSupAccNum').value.trim()  || '';
-  const accName = document.getElementById('editSupAccName').value.trim() || '';
-  if (!name) { showToast('Name required.','error'); return; }
-  await firebase.database().ref(`suppliers/${key}`).update({ name, contact, specialty:spec, bankName:bank, accNum, accName });
+  const key     = $('editSupKey').value;
+  const name    = $('editSupName').value.trim();
+  const contact = $('editSupContact').value.trim() || '';
+  const spec    = $('editSupSpec').value.trim()    || '';
+  const bank    = $('editSupBank').value.trim()    || '';
+  const accNum  = $('editSupAccNum').value.trim()  || '';
+  const accName = $('editSupAccName').value.trim() || '';
+  if (!name) { showToast('Name required.', 'error'); return; }
+  if (name.length > 50) { showToast('Name too long.', 'error'); return; }
+  await safeDb(() => firebase.database().ref(`suppliers/${key}`).update({ 
+    name, contact, specialty: spec, bankName: bank, accNum, accName 
+  }), 'Failed to update supplier');
   closeEditSupplier();
   showToast(`${name} updated ✓`);
 }
 
 async function deleteSupplier(key, name) {
   if (!confirm(`Delete supplier "${name}" from the entire system?`)) return;
-  await firebase.database().ref(`suppliers/${key}`).remove();
-  showToast(`${name} removed`,'warn');
+  await safeDb(() => firebase.database().ref(`suppliers/${key}`).remove(), 'Failed to delete supplier');
+  showToast(`${name} removed`, 'warn');
 }
 
 function useSupplierInPO(name) {
   switchTab('materials');
-  const inp = document.getElementById('poSupplier');
+  const inp = $('poSupplier');
   if (inp) { inp.value = name; inp.focus(); }
   showToast(`${name} selected for PO`);
 }
+
+function filterSuppliers(query) {
+  const cards = document.querySelectorAll('.supplier-card');
+  const q = query.toLowerCase().trim();
+  cards.forEach(card => {
+    const name = card.getAttribute('data-name') || '';
+    card.style.display = name.includes(q) ? 'flex' : 'none';
+  });
+}
+
+// Export suppliers to CSV
+async function exportSuppliersCSV() {
+  const snap = await firebase.database().ref('suppliers').once('value');
+  if (!snap.exists()) { showToast('No suppliers to export.', 'warn'); return; }
+
+  let csv = 'Name,Contact,Specialty,Bank Name,Account Number,Account Name\n';
+  snap.forEach(c => {
+    const s = c.val();
+    csv += `${escapeCsv(s.name || '')},${escapeCsv(s.contact || '')},${escapeCsv(s.specialty || '')},${escapeCsv(s.bankName || '')},${escapeCsv(s.accNum || '')},${escapeCsv(s.accName || '')}\n`;
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Suppliers_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Suppliers exported!');
+}
+
+function escapeCsv(text) {
+  if (!text) return '';
+  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+    return '"' + text.replace(/"/g, '""') + '"';
+  }
+  return text;
+}
+'''
+
+with open('/mnt/agents/output/suppliers.js', 'w') as f:
+    f.write(suppliers_v8)
+
+print(f"✅ suppliers.js v8 — {len(suppliers_v8)} bytes")
