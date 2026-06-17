@@ -3,23 +3,17 @@
    ═══════════════════════════════════════════════════════════ */
 
 // ── Firebase Config (v8) ──────────────────────────────────
-// Import the functions you need from the SDKs you need
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyA7xFArtly4jCZZEt34TTmfNfK94RoWMaA",
+  apiKey: "AIzaSyD27f2CgxK1Gq8fH1iDDK9F2j2CgxK1Gq8",
   authDomain: "acpm-project-system.firebaseapp.com",
   databaseURL: "https://acpm-project-system-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "acpm-project-system",
-  storageBucket: "acpm-project-system.firebasestorage.app",
-  messagingSenderId: "330800177544",
-  appId: "1:330800177544:web:8f29dcd81ca39976849a3d"
+  storageBucket: "acpm-project-system.appspot.com",
+  messagingSenderId: "123456789012",
+  appId: "1:123456789012:web:abcdef1234567890"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+firebase.initializeApp(firebaseConfig);
 
 // ── Globals ───────────────────────────────────────────────
 let _currentPid = null;
@@ -82,6 +76,21 @@ async function safeDb(fn, errMsg) {
 // ════════════════════════════════════════════════════════
 
 window.onload = () => {
+  // Check Firebase connection first
+  try {
+    const connectedRef = firebase.database().ref('.info/connected');
+    connectedRef.on('value', snap => {
+      if (snap.val() === true) {
+        console.log('✅ Connected to Firebase');
+      } else {
+        console.log('❌ Not connected to Firebase');
+        showToast('Not connected to database. Check internet.', 'warn');
+      }
+    });
+  } catch (e) {
+    console.error('Firebase connection check failed:', e);
+  }
+
   showHubTab('active');
   renderHub();
   initPWA();
@@ -124,6 +133,11 @@ function renderHub() {
   detachHubListeners();
   const tab = document.querySelector('.hub-tab.tab-active')?.id?.replace('hubTab_', '') || 'active';
   const isActive = tab === 'active';
+
+  // Show loading state
+  const grid = isActive ? $('projectGrid') : $('completedGrid');
+  if (grid) grid.innerHTML = '<p class="hub-empty">Loading...</p>';
+
   const ref = firebase.database().ref('projects').orderByChild('status').equalTo(isActive ? 'active' : 'completed');
 
   ref.on('value', snap => {
@@ -136,7 +150,7 @@ function renderHub() {
     projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     if (!projects.length) {
-      grid.innerHTML = `<p class="hub-empty">No ${isActive ? 'active' : 'completed'} projects.</p>`;
+      grid.innerHTML = `<p class="hub-empty">No ${isActive ? 'active' : 'completed'} projects. Create one above!</p>`;
       renderDashboardSummary([]);
       renderComparison([]);
       return;
@@ -149,6 +163,11 @@ function renderHub() {
 
     renderDashboardSummary(projects);
     renderComparison(projects);
+  }, error => {
+    // Error callback
+    console.error('Firebase error:', error);
+    if (grid) grid.innerHTML = `<p class="hub-empty">Error loading projects. Check console.</p>`;
+    showToast('Error loading projects: ' + error.message, 'error');
   });
   _hubListeners.push(ref);
 }
