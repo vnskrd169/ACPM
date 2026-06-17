@@ -205,20 +205,20 @@ function buildProjectCard(id, d, lb, mb, ls, ms, lp, mp, done) {
     ? '<span class="completed-tag">✓ DONE</span>'
     : '<span class="active-tag">ACTIVE</span>';
   const actions = done
-    ? html`<div class="proj-actions">
+    ? `<div class="proj-actions">
         <button class="btn-unlock" onclick="enterProject('${escapeHtml(id)}',true)">🔓 View</button>
         <button class="btn-reopen" onclick="reopenProject('${escapeHtml(id)}')">↩ Reopen</button>
         <button class="btn-delete" onclick="deleteProject('${escapeHtml(id)}')">🗑</button>
       </div>`
-    : html`<div class="proj-actions">
+    : `<div class="proj-actions">
         <button class="proj-open-btn" onclick="enterProject('${escapeHtml(id)}')">Open Workspace →</button>
         <button class="btn-complete" onclick="markComplete('${escapeHtml(id)}')">✓ Done</button>
         <button class="btn-delete" onclick="deleteProject('${escapeHtml(id)}')">🗑</button>
       </div>`;
-  return html`<div class="proj-card ${done ? 'proj-card-done' : ''}" data-name="${id.toLowerCase()}">
+  return `<div class="proj-card ${done ? 'proj-card-done' : ''}" data-name="${id.toLowerCase()}">
     <div class="proj-card-top"><div>
       <p class="proj-label">PROJECT</p><h3 class="proj-name">${id}</h3>
-      <p class="proj-date">Created ${d.created || '—'}${d.completedDate ? ' · Done ' + d.completedDate : ''}</p>
+      <p class="proj-date">Created ${d.created || '—'}${d.completedDate ? ` · Done ${d.completedDate}` : ''}</p>
     </div>${badge}</div>
     <div class="proj-budgets">
       <div class="budget-row"><span class="budget-label">👷 Labor</span><span class="budget-val ${lA}">${peso(lb)}</span></div>
@@ -229,7 +229,6 @@ function buildProjectCard(id, d, lb, mb, ls, ms, lp, mp, done) {
       <p class="budget-sub">${peso(ms)} spent · ${mp}% ${mp >= 80 ? '<span class="warn-tag">' + (mp >= 95 ? '⚠ CRITICAL' : '⚠ HIGH') + '</span>' : ''}</p>
     </div>${actions}</div>`;
 }
-
 function renderComparison(projects) {
   const el = $('comparisonView'); if (!el) return;
   if (!projects || projects.length < 2) {
