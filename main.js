@@ -21,7 +21,6 @@ const firebaseConfig = {
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
-
 }
 
 let currentProjectId = null, currentProjectLocked = true;
@@ -72,7 +71,6 @@ function detachAll() {
   if (typeof detachBillingListeners === 'function') detachBillingListeners();
   if (typeof detachCOListeners === 'function') detachCOListeners();
 }
-
 // ── Toast Queue System ──────────────────────────────────────
 function showToast(msg, type = 'success') {
   _toastQueue.push({ msg, type });
@@ -115,7 +113,7 @@ function setLoading(btn, loading) {
     btn._originalText = btn.textContent;
     btn.innerHTML = '<span class="spinner"></span>';
     btn.disabled = true;
-  } else {a
+  } else {
     btn.textContent = btn._originalText || btn.textContent;
     btn.disabled = false;
   }
@@ -353,13 +351,12 @@ function unlockForEdit() {
 const ALL_TABS = ['labor','materials','billing','changeorders','sitelog','suppliers'];
 function switchTab(tab) {
   ALL_TABS.forEach(t => {
-    $(t + 'Panel')?.classList.add('hidden');
+    $('panel_' + t)?.classList.add('hidden');      // was: $(t + 'Panel')
     $('tab_' + t)?.classList.remove('tab-active');
   });
-  $(tab + 'Panel')?.classList.remove('hidden');
+  $('panel_' + tab)?.classList.remove('hidden');    // was: $(tab + 'Panel')
   $('tab_' + tab)?.classList.add('tab-active');
 }
-
 // ═════════════════════════════════════════════════════════════
 //  EXPORT ALL DATA
 // ═════════════════════════════════════════════════════════════
