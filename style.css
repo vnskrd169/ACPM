@@ -634,3 +634,99 @@ select option{background:var(--surface2)}
     flex: 1;
   }
 }
+
+
+/* ════════════════════════════════════════════════════════
+   SCROLL FIXES — Ensure proper scrolling
+   ════════════════════════════════════════════════════════ */
+
+/* Ensure siteLogList can scroll */
+#siteLogList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 500px;
+  overflow-y: auto;
+  padding-right: 4px;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure parent containers allow scroll */
+.panel-sitelog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+/* Ensure card doesn't block scroll */
+.card-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+}
+
+/* Fix for mobile */
+@media (max-width: 600px) {
+  #siteLogList {
+    max-height: 400px;
+  }
+
+  .panel-sitelog {
+    max-height: calc(100vh - 150px);
+  }
+}
+
+
+/* ════════════════════════════════════════════════════════
+   DIRECT SCROLL FIX for siteLogList
+   ════════════════════════════════════════════════════════ */
+
+/* Force scroll on siteLogList */
+#siteLogList {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+  max-height: 60vh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding-right: 8px !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: thin !important;
+}
+
+/* Ensure the card containing siteLogList can grow */
+.card:has(#siteLogList) {
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+/* Ensure panel allows scroll */
+.panel-sitelog {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+/* Scrollbar styling for siteLogList */
+#siteLogList::-webkit-scrollbar {
+  width: 6px;
+}
+
+#siteLogList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#siteLogList::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 3px;
+}
+
+#siteLogList::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
