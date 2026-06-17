@@ -1,10 +1,14 @@
-let _slpid = null;
 let _slListener = null;
 let _logFilterDebounce = null;
 
 function initSiteLog(pid) {
+  console.log('🔧 initSiteLog called for pid:', pid);
   _slpid = pid;
-  if (_slListener) { _slListener.off(); _slListener = null; }
+  if (_slListener) { 
+    console.log('📡 Detaching old listener');
+    _slListener.off(); 
+    _slListener = null; 
+  }
 
   const dateInp = $('logDate');
   if (dateInp) dateInp.value = new Date().toISOString().slice(0, 10);
@@ -13,26 +17,42 @@ function initSiteLog(pid) {
 }
 
 function detachSiteLogListeners() {
+  console.log('📡 Detaching site log listener');
   if (_slListener) { _slListener.off(); _slListener = null; }
 }
 
 function watchSiteLog(pid) {
-  _slListener = firebase.database().ref(`projects/${pid}/siteLogs`);
-  _slListener.on('value', snap => {
+  console.log('👁️ watchSiteLog starting for pid:', pid);
+  const ref = firebase.database().ref(`projects/${pid}/siteLogs`);
+  _slListener = ref;
+  
+  ref.on('value', snap => {
+    console.log('📨 SiteLog data received:', snap.exists() ? 'EXISTS' : 'EMPTY', 'Key count:', snap.numChildren());
+    
     const el = $('siteLogList');
-    if (!el) return;
+    if (!el) {
+      console.error('❌ siteLogList element not found!');
+      return;
+    }
 
     el.innerHTML = '';
 
     if (!snap.exists()) {
+      console.log('ℹ️ No site logs found');
       el.innerHTML = '<p class="empty-hint">No logs yet. Add your first entry above.</p>';
       renderSiteLogSummary([]);
       return;
     }
 
     const entries = [];
-    snap.forEach(c => entries.push({ id: c.key, ...c.val() }));
-
+    snap.forEach(c => {
+      const val = c.val();
+      console.log('📄 Entry:', c.key, 'Date:', val.date, 'Notes:', val.notes?.substring(0, 20));
+      entries.push({ id: c.key, ...val });
+    });
+    
+    console.log('📊 Total entries:', entries.length);
+    
     // Sort by savedAt descending (newest first)
     entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
@@ -46,13 +66,15 @@ function watchSiteLog(pid) {
       byMonth[monthKey][dateStr].push(e);
     });
 
+    console.log('📅 Month groups:', Object.keys(byMonth));
+
     // Sort months descending
     const sortedMonths = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
-
+    
     sortedMonths.forEach(monthKey => {
       const monthGroup = document.createElement('div');
       monthGroup.className = 'log-month-group';
-
+      
       // Month header
       let monthLabel = monthKey;
       if (monthKey !== 'Unknown') {
@@ -63,9 +85,9 @@ function watchSiteLog(pid) {
           });
         } catch { monthLabel = monthKey; }
       }
-
+      
       const monthCount = Object.values(byMonth[monthKey]).reduce((sum, day) => sum + day.length, 0);
-
+      
       const monthHeader = document.createElement('div');
       monthHeader.className = 'log-month-header';
       monthHeader.innerHTML = `<span class="log-month-label">📅 ${monthLabel}</span><span class="log-month-count">${monthCount} entr${monthCount !== 1 ? 'ies' : 'y'}</span>`;
@@ -73,11 +95,11 @@ function watchSiteLog(pid) {
 
       // Sort dates within month descending
       const sortedDates = Object.keys(byMonth[monthKey]).sort((a, b) => b.localeCompare(a));
-
+      
       sortedDates.forEach(date => {
         const dayGroup = document.createElement('div');
         dayGroup.className = 'log-day-group';
-
+        
         const dayHeader = document.createElement('div');
         dayHeader.className = 'log-day-header';
         let dayLabel;
@@ -108,7 +130,7 @@ function watchSiteLog(pid) {
               <span class="log-saved">${e.savedDate || ''}</span>
               <button class="del-log" aria-label="Delete log" onclick="deleteLog('${e.id}')">✕</button>
             </div>
-            <p class="log-notes">${escapeHtml(e.notes || '').replace(/\n/g, '<br>')}</p>
+            <p class="log-notes">${escapeHtml(e.notes || '').replace(/\\n/g, '<br>')}</p>
             ${e.photos ? `<div class="log-photos">${e.photos.map(p => `<img src="${p}" class="log-photo" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}`;
           dayGroup.appendChild(div);
         });
@@ -120,6 +142,10 @@ function watchSiteLog(pid) {
     });
 
     renderSiteLogSummary(entries);
+    console.log('✅ SiteLog rendering complete');
+  }, error => {
+    console.error('❌ Firebase error in watchSiteLog:', error);
+    showToast('Error loading site logs: ' + error.message, 'error');
   });
 }
 
@@ -228,7 +254,7 @@ async function exportSiteLogs() {
     lines.push('');
   });
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const blob = new Blob([lines.join('\\n')], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -242,26 +268,22 @@ function filterLogs(query) {
   if (_logFilterDebounce) clearTimeout(_logFilterDebounce);
   _logFilterDebounce = setTimeout(() => {
     const q = query.toLowerCase().trim();
-
-    // Filter individual log entries
+    
     document.querySelectorAll('.log-entry').forEach(entry => {
       const text = entry.textContent.toLowerCase();
       entry.style.display = text.includes(q) ? '' : 'none';
     });
-
-    // Show/hide day groups based on visible children
+    
     document.querySelectorAll('.log-day-group').forEach(group => {
       const visible = group.querySelectorAll('.log-entry:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
-
-    // Show/hide month groups based on visible children
+    
     document.querySelectorAll('.log-month-group').forEach(group => {
       const visible = group.querySelectorAll('.log-day-group:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
-
-    // Restore visibility when query is cleared
+    
     if (!q) {
       document.querySelectorAll('.log-entry, .log-day-group, .log-month-group').forEach(el => {
         el.style.display = '';
