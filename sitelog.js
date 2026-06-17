@@ -1,3 +1,4 @@
+let _slpid = null;
 let _slListener = null;
 let _logFilterDebounce = null;
 
@@ -25,10 +26,10 @@ function watchSiteLog(pid) {
   console.log('👁️ watchSiteLog starting for pid:', pid);
   const ref = firebase.database().ref(`projects/${pid}/siteLogs`);
   _slListener = ref;
-  
+
   ref.on('value', snap => {
     console.log('📨 SiteLog data received:', snap.exists() ? 'EXISTS' : 'EMPTY', 'Key count:', snap.numChildren());
-    
+
     const el = $('siteLogList');
     if (!el) {
       console.error('❌ siteLogList element not found!');
@@ -50,9 +51,9 @@ function watchSiteLog(pid) {
       console.log('📄 Entry:', c.key, 'Date:', val.date, 'Notes:', val.notes?.substring(0, 20));
       entries.push({ id: c.key, ...val });
     });
-    
+
     console.log('📊 Total entries:', entries.length);
-    
+
     // Sort by savedAt descending (newest first)
     entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
@@ -70,11 +71,11 @@ function watchSiteLog(pid) {
 
     // Sort months descending
     const sortedMonths = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
-    
+
     sortedMonths.forEach(monthKey => {
       const monthGroup = document.createElement('div');
       monthGroup.className = 'log-month-group';
-      
+
       // Month header
       let monthLabel = monthKey;
       if (monthKey !== 'Unknown') {
@@ -85,9 +86,9 @@ function watchSiteLog(pid) {
           });
         } catch { monthLabel = monthKey; }
       }
-      
+
       const monthCount = Object.values(byMonth[monthKey]).reduce((sum, day) => sum + day.length, 0);
-      
+
       const monthHeader = document.createElement('div');
       monthHeader.className = 'log-month-header';
       monthHeader.innerHTML = `<span class="log-month-label">📅 ${monthLabel}</span><span class="log-month-count">${monthCount} entr${monthCount !== 1 ? 'ies' : 'y'}</span>`;
@@ -95,11 +96,11 @@ function watchSiteLog(pid) {
 
       // Sort dates within month descending
       const sortedDates = Object.keys(byMonth[monthKey]).sort((a, b) => b.localeCompare(a));
-      
+
       sortedDates.forEach(date => {
         const dayGroup = document.createElement('div');
         dayGroup.className = 'log-day-group';
-        
+
         const dayHeader = document.createElement('div');
         dayHeader.className = 'log-day-header';
         let dayLabel;
@@ -130,7 +131,7 @@ function watchSiteLog(pid) {
               <span class="log-saved">${e.savedDate || ''}</span>
               <button class="del-log" aria-label="Delete log" onclick="deleteLog('${e.id}')">✕</button>
             </div>
-            <p class="log-notes">${escapeHtml(e.notes || '').replace(/\\n/g, '<br>')}</p>
+            <p class="log-notes">${escapeHtml(e.notes || '').replace(/\n/g, '<br>')}</p>
             ${e.photos ? `<div class="log-photos">${e.photos.map(p => `<img src="${p}" class="log-photo" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}`;
           dayGroup.appendChild(div);
         });
@@ -143,6 +144,9 @@ function watchSiteLog(pid) {
 
     renderSiteLogSummary(entries);
     console.log('✅ SiteLog rendering complete');
+    
+    // Ensure scroll works
+    setTimeout(ensureScrollable, 100);
   }, error => {
     console.error('❌ Firebase error in watchSiteLog:', error);
     showToast('Error loading site logs: ' + error.message, 'error');
@@ -254,7 +258,7 @@ async function exportSiteLogs() {
     lines.push('');
   });
 
-  const blob = new Blob([lines.join('\\n')], { type: 'text/plain' });
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -268,22 +272,22 @@ function filterLogs(query) {
   if (_logFilterDebounce) clearTimeout(_logFilterDebounce);
   _logFilterDebounce = setTimeout(() => {
     const q = query.toLowerCase().trim();
-    
+
     document.querySelectorAll('.log-entry').forEach(entry => {
       const text = entry.textContent.toLowerCase();
       entry.style.display = text.includes(q) ? '' : 'none';
     });
-    
+
     document.querySelectorAll('.log-day-group').forEach(group => {
       const visible = group.querySelectorAll('.log-entry:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
-    
+
     document.querySelectorAll('.log-month-group').forEach(group => {
       const visible = group.querySelectorAll('.log-day-group:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
-    
+
     if (!q) {
       document.querySelectorAll('.log-entry, .log-day-group, .log-month-group').forEach(el => {
         el.style.display = '';
@@ -291,3 +295,41 @@ function filterLogs(query) {
     }
   }, 150);
 }
+
+
+// ════════════════════════════════════════════════════════
+// SCROLL FIX — Ensure siteLogList is scrollable
+// ════════════════════════════════════════════════════════
+
+function ensureScrollable() {
+  const el = $('siteLogList');
+  if (!el) return;
+
+  // Force scroll styles via JS
+  el.style.maxHeight = '60vh';
+  el.style.overflowY = 'auto';
+  el.style.overflowX = 'hidden';
+  el.style.display = 'flex';
+  el.style.flexDirection = 'column';
+
+  // Check if content is taller than container
+  const isOverflowing = el.scrollHeight > el.clientHeight;
+  console.log('📏 Scroll check:', el.scrollHeight, '>', el.clientHeight, '=', isOverflowing);
+
+  if (!isOverflowing) {
+    // If not overflowing, try to find the parent and make it scrollable
+    let parent = el.parentElement;
+    while (parent && parent !== document.body) {
+      if (parent.classList.contains('card') || parent.classList.contains('panel')) {
+        parent.style.maxHeight = '80vh';
+        parent.style.overflowY = 'auto';
+        console.log('📏 Made parent scrollable:', parent.className);
+        break;
+      }
+      parent = parent.parentElement;
+    }
+  }
+}
+
+// Call after rendering
+setTimeout(ensureScrollable, 100);
