@@ -3,17 +3,24 @@
    ═══════════════════════════════════════════════════════════ */
 
 // ── Firebase Config (v8) ──────────────────────────────────
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyD27f2CgxK1Gq8fH1iDDK9F2j2CgxK1Gq8",
-  authDomain: "acpm-2026.firebaseapp.com",
-  databaseURL: "https://acpm-2026-default-rtdb.firebaseio.com",
-  projectId: "acpm-2026",
-  storageBucket: "acpm-2026.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abcdef1234567890"
+  apiKey: "AIzaSyA7xFArtly4jCZZEt34TTmfNfK94RoWMaA",
+  authDomain: "acpm-project-system.firebaseapp.com",
+  databaseURL: "https://acpm-project-system-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "acpm-project-system",
+  storageBucket: "acpm-project-system.firebasestorage.app",
+  messagingSenderId: "330800177544",
+  appId: "1:330800177544:web:8f29dcd81ca39976849a3d"
 };
 
-firebase.initializeApp(firebaseConfig);
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
 
 // ── Globals ───────────────────────────────────────────────
 let _currentPid = null;
