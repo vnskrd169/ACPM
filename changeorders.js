@@ -1,12 +1,3 @@
-
-//  · Proper listener lifecycle
-//  · XSS-safe rendering
-//  · Loading states
-//  · CO export to CSV
-//  · Better status tracking
-//  · Transaction-safe budget updates
-// ═══════════════════════════════════════════════════════════════
-
 let _copid = null;
 let _coListeners = [];
 
@@ -128,11 +119,18 @@ async function addChangeOrder() {
   if (labor === 0 && materials === 0) { showToast('Enter at least one cost impact.', 'error'); return; }
   if (desc.length > 300) { showToast('Description too long (max 300).', 'error'); return; }
 
-  const newRef = firebase.database().ref(`projects/${_copid}/changeOrders`).push();
-  const snap = await firebase.database().ref(`projects/${_copid}/changeOrders`).once('value');
-  const seq  = (snap.numChildren() || 0) + 1;
+  // FIXED: Atomic counter using transaction
+  const counterRef = firebase.database().ref(`projects/${_copid}/coCounter`);
+  let seq;
+  try {
+    const result = await counterRef.transaction(current => (current || 0) + 1);
+    seq = result.snapshot.val();
+  } catch (e) {
+    showToast('Failed to generate CO number. Try again.', 'error');
+    return;
+  }
 
-  await safeDb(() => newRef.set({
+  await safeDb(() => firebase.database().ref(`projects/${_copid}/changeOrders`).push({
     seq, description: desc, requestedBy: reqBy, date,
     laborImpact: labor, materialsImpact: materials, notes,
     status: 'pending', createdAt: Date.now()
@@ -213,11 +211,11 @@ async function exportCOsCSV() {
   const snap = await firebase.database().ref(`projects/${_copid}/changeOrders`).once('value');
   if (!snap.exists()) { showToast('No change orders to export.', 'warn'); return; }
 
-  let csv = 'Seq,Date,Description,Requested By,Labor Impact,Materials Impact,Total Impact,Status,Notes\n';
+  let csv = 'Seq,Date,Description,Requested By,Labor Impact,Materials Impact,Total Impact,Status,Notes\\n';
   snap.forEach(c => {
     const co = c.val();
     const total = (parseFloat(co.laborImpact) || 0) + (parseFloat(co.materialsImpact) || 0);
-    csv += `${co.seq || ''},${co.date || ''},${escapeCsv(co.description || '')},${escapeCsv(co.requestedBy || '')},${co.laborImpact || 0},${co.materialsImpact || 0},${total},${co.status || 'pending'},${escapeCsv(co.notes || '')}\n`;
+    csv += `${co.seq || ''},${co.date || ''},${escapeCsv(co.description || '')},${escapeCsv(co.requestedBy || '')},${co.laborImpact || 0},${co.materialsImpact || 0},${total},${co.status || 'pending'},${escapeCsv(co.notes || '')}\\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -232,8 +230,9 @@ async function exportCOsCSV() {
 
 function escapeCsv(text) {
   if (!text) return '';
-  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+  if (text.includes(',') || text.includes('"') || text.includes('\\n')) {
     return '"' + text.replace(/"/g, '""') + '"';
   }
   return text;
 }
+

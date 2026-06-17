@@ -1,25 +1,21 @@
-
-//  · Proper listener lifecycle
-//  · XSS-safe rendering
-//  · Date-grouped log stacking (newest on top)
-//  · GPS location + weather capture
-//  · Photo upload support (base64 for simplicity)
-//  · Export to TXT
-//  · Search/filter logs with restore
-// ═══════════════════════════════════════════════════════════════
-
 let _slpid = null;
 let _slListener = null;
 let _logFilterDebounce = null;
 
 function initSiteLog(pid) {
   _slpid = pid;
+  // FIXED: Proper cleanup
   if (_slListener) { _slListener.off(); _slListener = null; }
 
   const dateInp = $('logDate');
   if (dateInp) dateInp.value = new Date().toISOString().slice(0, 10);
 
   watchSiteLog(pid);
+}
+
+// NEW: Proper detach function
+function detachSiteLogListeners() {
+  if (_slListener) { _slListener.off(); _slListener = null; }
 }
 
 function watchSiteLog(pid) {
@@ -74,7 +70,6 @@ function watchSiteLog(pid) {
 
         const div = document.createElement('div');
         div.className = 'log-entry';
-        // FIXED: escapeHtml on notes before replacing newlines
         div.innerHTML = `
           <div class="log-entry-hdr">
             <span class="log-date">${e.date || '—'}</span>
@@ -84,7 +79,7 @@ function watchSiteLog(pid) {
             <span class="log-saved">${e.savedDate || ''}</span>
             <button class="del-log" aria-label="Delete log" onclick="deleteLog('${e.id}')">✕</button>
           </div>
-          <p class="log-notes">${escapeHtml(e.notes || '').replace(/\n/g, '<br>')}</p>
+          <p class="log-notes">${escapeHtml(e.notes || '').replace(/\\n/g, '<br>')}</p>
           ${e.photos ? `<div class="log-photos">${e.photos.map(p => `<img src="${p}" class="log-photo" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}`;
         dayGroup.appendChild(div);
       });
@@ -201,7 +196,7 @@ async function exportSiteLogs() {
     lines.push('');
   });
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const blob = new Blob([lines.join('\\n')], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -225,7 +220,7 @@ function filterLogs(query) {
       const visible = group.querySelectorAll('.log-entry:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
-    // FIXED: Restore visibility when query is cleared
+    // Restore visibility when query is cleared
     if (!q) {
       document.querySelectorAll('.log-entry, .log-day-group').forEach(el => {
         el.style.display = '';

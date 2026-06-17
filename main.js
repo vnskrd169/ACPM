@@ -1,14 +1,3 @@
-
-//  · Firebase Auth (optional, falls back to anonymous)
-//  · Offline persistence enabled
-//  · Input sanitization (XSS prevention)
-//  · Loading states on all async ops
-//  · Project search/filter (debounced)
-//  · Keyboard shortcuts
-//  · Toast notifications with queue
-//  · Error boundaries on all Firebase calls
-// ═══════════════════════════════════════════════════════════════
-
 const firebaseConfig = {
   apiKey: "AIzaSyA7xFArtly4jCZZEt34TTmfNfK94RoWMaA",
   authDomain: "acpm-project-system.firebaseapp.com",
@@ -27,10 +16,11 @@ let currentProjectId = null, currentProjectLocked = true;
 let _listeners = [], _toastQueue = [], _toastShowing = false;
 let _authUser = null;
 let _filterDebounce = null;
+let _allProjectsCache = []; // Cache for dashboard
 
 // ── Utilities ─────────────────────────────────────────────────
 function peso(n) {
-  return '\u20B1' + (parseFloat(n) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return '\\u20B1' + (parseFloat(n) || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function pct(s, b) { return (!b) ? 0 : Math.min(100, Math.round((s / b) * 100)); }
 function $(id) { return document.getElementById(id); }
@@ -70,7 +60,9 @@ function detachAll() {
   if (typeof detachMatListeners === 'function') detachMatListeners();
   if (typeof detachBillingListeners === 'function') detachBillingListeners();
   if (typeof detachCOListeners === 'function') detachCOListeners();
+  if (typeof detachSiteLogListeners === 'function') detachSiteLogListeners();
 }
+
 // ── Toast Queue System ──────────────────────────────────────
 function showToast(msg, type = 'success') {
   _toastQueue.push({ msg, type });
@@ -147,8 +139,8 @@ document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey) {
     const tabs = ['labor','materials','billing','changeorders','sitelog','suppliers'];
     const num = parseInt(e.key);
-    // FIXED: Check workspace is visible, not hub
-    if (num >= 1 && num <= 6 && !$('workspaceView')?.classList.contains('hidden')) {
+    // FIXED: Check workspace is visible (NOT hidden)
+    if (num >= 1 && num <= 6 && $('workspaceView') && !$('workspaceView').classList.contains('hidden')) {
       e.preventDefault();
       switchTab(tabs[num - 1]);
     }
@@ -169,7 +161,7 @@ function showHubTab(tab) {
 }
 
 // ═════════════════════════════════════════════════════════════
-//  HUB
+//  HUB — IMPROVED DASHBOARD
 // ═════════════════════════════════════════════════════════════
 function renderHub() {
   const ag = $('projectGrid'), cg = $('completedGrid');
@@ -181,6 +173,7 @@ function renderHub() {
       ag.innerHTML = '<p class="hub-empty">No projects yet — create one above.</p>';
       cg.innerHTML = '<p class="hub-empty">No completed projects.</p>';
       renderComparison([]);
+      renderDashboardSummary([]);
       return;
     }
     const all = [];
@@ -195,8 +188,72 @@ function renderHub() {
     });
     if (!aC) ag.innerHTML = '<p class="hub-empty">No active projects.</p>';
     if (!cC) cg.innerHTML = '<p class="hub-empty">No completed projects yet.</p>';
+    _allProjectsCache = all;
     renderComparison(all);
+    renderDashboardSummary(all);
   });
+}
+
+// NEW: Dashboard summary for one-man PM
+function renderDashboardSummary(projects) {
+  const el = $('dashboardSummary');
+  if (!el) return;
+  
+  if (!projects.length) {
+    el.innerHTML = '';
+    return;
+  }
+
+  const active = projects.filter(p => p.status !== 'completed');
+  const totalBudget = projects.reduce((s, p) => s + (parseFloat(p.laborBudget) || 0) + (parseFloat(p.materialBudget) || 0), 0);
+  const totalSpent = projects.reduce((s, p) => s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
+  const totalRemaining = totalBudget - totalSpent;
+  const avgProgress = projects.length ? Math.round(totalSpent / totalBudget * 100) : 0;
+  
+  // Count critical budgets
+  const critical = active.filter(p => {
+    const lp = pct(parseFloat(p.laborSpent) || 0, parseFloat(p.laborBudget) || 0);
+    const mp = pct(parseFloat(p.materialSpent) || 0, parseFloat(p.materialBudget) || 0);
+    return lp >= 95 || mp >= 95;
+  }).length;
+  
+  const warning = active.filter(p => {
+    const lp = pct(parseFloat(p.laborSpent) || 0, parseFloat(p.laborBudget) || 0);
+    const mp = pct(parseFloat(p.materialSpent) || 0, parseFloat(p.materialBudget) || 0);
+    return (lp >= 80 && lp < 95) || (mp >= 80 && mp < 95);
+  }).length;
+
+  el.innerHTML = html`
+    <div class="dash-summary-grid">
+      <div class="dash-stat">
+        <span class="dash-stat-label">Active Projects</span>
+        <span class="dash-stat-val">${active.length}</span>
+      </div>
+      <div class="dash-stat">
+        <span class="dash-stat-label">Total Budget</span>
+        <span class="dash-stat-val">${peso(totalBudget)}</span>
+      </div>
+      <div class="dash-stat">
+        <span class="dash-stat-label">Total Spent</span>
+        <span class="dash-stat-val" style="color:var(--red)">${peso(totalSpent)}</span>
+      </div>
+      <div class="dash-stat">
+        <span class="dash-stat-label">Remaining</span>
+        <span class="dash-stat-val" style="color:${totalRemaining < 0 ? 'var(--red)' : 'var(--green)'}">${peso(totalRemaining)}</span>
+      </div>
+      <div class="dash-stat">
+        <span class="dash-stat-label">Overall Progress</span>
+        <span class="dash-stat-val">${avgProgress}%</span>
+        <div class="dash-mini-bar"><div class="dash-mini-fill ${budgetBarClass(avgProgress)}" style="width:${avgProgress}%"></div></div>
+      </div>
+      <div class="dash-stat">
+        <span class="dash-stat-label">Alerts</span>
+        <span class="dash-stat-val" style="color:${critical > 0 ? 'var(--red)' : warning > 0 ? 'var(--amber)' : 'var(--green)'}">
+          ${critical > 0 ? '⚠️ ' + critical + ' Critical' : warning > 0 ? '⚡ ' + warning + ' Warning' : '✅ All Good'}
+        </span>
+      </div>
+    </div>
+  `;
 }
 
 function buildProjectCard(id, d, lb, mb, ls, ms, lp, mp, done) {
@@ -204,22 +261,31 @@ function buildProjectCard(id, d, lb, mb, ls, ms, lp, mp, done) {
   const badge = done
     ? '<span class="completed-tag">✓ DONE</span>'
     : '<span class="active-tag">ACTIVE</span>';
+  
+  // NEW: Health indicator
+  const health = lp >= 95 || mp >= 95 ? '🔴' : lp >= 80 || mp >= 80 ? '🟡' : '🟢';
+  const healthLabel = lp >= 95 || mp >= 95 ? 'Critical' : lp >= 80 || mp >= 80 ? 'Warning' : 'Healthy';
+  
   const actions = done
-    ? `<div class="proj-actions">
+    ? html`<div class="proj-actions">
         <button class="btn-unlock" onclick="enterProject('${escapeHtml(id)}',true)">🔓 View</button>
         <button class="btn-reopen" onclick="reopenProject('${escapeHtml(id)}')">↩ Reopen</button>
         <button class="btn-delete" onclick="deleteProject('${escapeHtml(id)}')">🗑</button>
       </div>`
-    : `<div class="proj-actions">
+    : html`<div class="proj-actions">
         <button class="proj-open-btn" onclick="enterProject('${escapeHtml(id)}')">Open Workspace →</button>
         <button class="btn-complete" onclick="markComplete('${escapeHtml(id)}')">✓ Done</button>
         <button class="btn-delete" onclick="deleteProject('${escapeHtml(id)}')">🗑</button>
       </div>`;
-  return `<div class="proj-card ${done ? 'proj-card-done' : ''}" data-name="${id.toLowerCase()}">
+  return html`<div class="proj-card ${done ? 'proj-card-done' : ''}" data-name="${id.toLowerCase()}">
     <div class="proj-card-top"><div>
       <p class="proj-label">PROJECT</p><h3 class="proj-name">${id}</h3>
-      <p class="proj-date">Created ${d.created || '—'}${d.completedDate ? ` · Done ${d.completedDate}` : ''}</p>
+      <p class="proj-date">Created ${d.created || '—'}${d.completedDate ? ' · Done ' + d.completedDate : ''}</p>
     </div>${badge}</div>
+    <div class="proj-health-row">
+      <span class="proj-health-indicator" title="${healthLabel}">${health}</span>
+      <span class="proj-health-text">${healthLabel}</span>
+    </div>
     <div class="proj-budgets">
       <div class="budget-row"><span class="budget-label">👷 Labor</span><span class="budget-val ${lA}">${peso(lb)}</span></div>
       <div class="mini-bar"><div class="mini-fill ${budgetBarClass(lp)}" style="width:${lp}%"></div></div>
@@ -229,6 +295,7 @@ function buildProjectCard(id, d, lb, mb, ls, ms, lp, mp, done) {
       <p class="budget-sub">${peso(ms)} spent · ${mp}% ${mp >= 80 ? '<span class="warn-tag">' + (mp >= 95 ? '⚠ CRITICAL' : '⚠ HIGH') + '</span>' : ''}</p>
     </div>${actions}</div>`;
 }
+
 function renderComparison(projects) {
   const el = $('comparisonView'); if (!el) return;
   if (!projects || projects.length < 2) {
@@ -350,12 +417,13 @@ function unlockForEdit() {
 const ALL_TABS = ['labor','materials','billing','changeorders','sitelog','suppliers'];
 function switchTab(tab) {
   ALL_TABS.forEach(t => {
-    $('panel_' + t)?.classList.add('hidden');      // was: $(t + 'Panel')
+    $(t + 'Panel')?.classList.add('hidden');
     $('tab_' + t)?.classList.remove('tab-active');
   });
-  $('panel_' + tab)?.classList.remove('hidden');    // was: $(tab + 'Panel')
+  $(tab + 'Panel')?.classList.remove('hidden');
   $('tab_' + tab)?.classList.add('tab-active');
 }
+
 // ═════════════════════════════════════════════════════════════
 //  EXPORT ALL DATA
 // ═════════════════════════════════════════════════════════════
@@ -382,4 +450,3 @@ async function exportAllData() {
     showToast('Export failed.', 'error');
   }
 }
-

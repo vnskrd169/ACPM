@@ -1,13 +1,3 @@
-
-//  · Proper listener lifecycle
-//  · XSS-safe rendering
-//  · Loading states
-//  · PO history with search/filter
-//  · Ledger export to CSV
-//  · Supplier bank details auto-populate in PO export
-//  · Debounced search
-// ═══════════════════════════════════════════════════════════════
-
 let _mpid = null;
 let _draftItems = [];
 let _matListeners = [];
@@ -20,6 +10,8 @@ function initMaterials(pid) {
   watchMatBudget(pid);
   watchLedger(pid);
   watchPOHistory(pid);
+  // FIXED: Actually load suppliers into dropdown
+  loadGlobalSuppliersForPO();
 }
 
 function detachMatListeners() {
@@ -63,11 +55,7 @@ function loadGlobalSuppliersForPO() {
   });
 }
 
-function applySupplierSelection() {
-  const sel = $('poSupplierSelect');
-  const inp = $('poSupplier');
-  if (sel && inp && sel.value) { inp.value = sel.value; sel.value = ''; }
-}
+// REMOVED: Duplicate applySupplierSelection (now only in suppliers.js)
 
 // ══════════════════════════════════════════════════════
 //  PO DRAFT BUILDER
@@ -124,10 +112,21 @@ async function submitPO() {
 
   const total = _draftItems.reduce((s, x) => s + x.total, 0);
 
+  // FIXED: Use atomic counter for PO sequence instead of numChildren
+  const counterRef = firebase.database().ref(`projects/${_mpid}/poCounter`);
+  let seq;
+  try {
+    const result = await counterRef.transaction(current => (current || 0) + 1);
+    seq = result.snapshot.val();
+  } catch (e) {
+    showToast('Failed to generate PO number. Try again.', 'error');
+    return;
+  }
+
   const po = {
     supplier, date, notes,
     items       : _draftItems,
-    total,
+    total, seq,
     status      : 'ordered',
     createdAt   : Date.now(),
     createdDate : new Date().toLocaleDateString('en-PH')
@@ -156,7 +155,7 @@ async function submitPO() {
   ['poSupplier', 'poDate', 'poNotes'].forEach(id => { const e = $(id); if (e) e.value = ''; });
   const sel = $('poSupplierSelect'); if (sel) sel.value = '';
   renderDraft();
-  showToast(`✅ PO #${poRef.key.slice(-4)} submitted to ${supplier}!`);
+  showToast(`✅ PO #${String(seq).padStart(3, '0')} submitted to ${supplier}!`);
 }
 
 // ══════════════════════════════════════════════════════
@@ -179,7 +178,8 @@ function watchLedger(pid) {
     snap.forEach(c => {
       const key = c.key, m = c.val();
       orderCount++;
-      const isPaid = m.status === 'paid' || m.status === 'delivered';
+      // FIXED: Only count 'paid' as spent, not 'delivered'
+      const isPaid = m.status === 'paid';
       if (isPaid) paidTotal += m.total || 0;
       const statusOpts = ['ordered','delivered','paid','cancelled'].map(s =>
         `<option value="${s}" ${m.status === s ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`
@@ -289,7 +289,7 @@ function watchPOHistory(pid) {
         <div class="po-card" id="poc_${po.id}" data-supplier="${escapeHtml((po.supplier || '').toLowerCase())}">
           <div class="po-card-hdr">
             <div>
-              <p class="po-date-lbl">${po.date} · ${po.createdDate || ''}</p>
+              <p class="po-date-lbl">${po.date} · ${po.createdDate || ''} · PO-${String(po.seq || '???').padStart(3, '0')}</p>
               <p class="po-supplier">${escapeHtml(po.supplier)}</p>
               ${po.notes ? `<p class="po-notes">${escapeHtml(po.notes)}</p>` : ''}
             </div>
@@ -354,6 +354,7 @@ async function exportPOImage(poId) {
       <div>
         <div style="font-size:10px;font-weight:700;letter-spacing:.12em;color:#6b7280;margin-bottom:4px">PURCHASE ORDER</div>
         <div style="font-size:22px;font-weight:900">${_mpid}</div>
+        <div style="font-size:14px;color:#374151;margin-top:4px">PO-${String(po.seq || '???').padStart(3, '0')}</div>
       </div>
       <div style="text-align:right">
         <div style="font-size:10px;color:#6b7280">Date</div>
@@ -389,7 +390,7 @@ async function exportPOImage(poId) {
   try {
     const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
     const link   = document.createElement('a');
-    link.download = `PO_${po.supplier.replace(/\s+/g, '_')}_${po.date}.png`;
+    link.download = `PO_${po.supplier.replace(/\\s+/g, '_')}_${po.date}.png`;
     link.href     = canvas.toDataURL('image/png');
     link.click();
     showToast('PO image downloaded!');
@@ -424,7 +425,8 @@ async function exportLedgerCSV() {
 }
 
 function escapeCsv(text) {
-  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+  if (!text) return '';
+  if (text.includes(',') || text.includes('"') || text.includes('\\n')) {
     return '"' + text.replace(/"/g, '""') + '"';
   }
   return text;

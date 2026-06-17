@@ -1,11 +1,3 @@
-//  ACPM v8.1 — suppliers.js
-//  · Global — stored at root /suppliers
-//  · XSS-safe rendering
-//  · Search/filter
-//  · Edit via modal
-//  · Bank details for PO export
-// ═══════════════════════════════════════════════════════════════
-
 let _supListener = null;
 
 function initSuppliers() {
@@ -68,6 +60,7 @@ function refreshSupplierDropdown(snap) {
   }
 }
 
+// This is the ONLY applySupplierSelection function (removed from materials.js)
 function applySupplierSelection() {
   const sel = $('poSupplierSelect');
   const inp = $('poSupplier');
@@ -154,10 +147,10 @@ async function exportSuppliersCSV() {
   const snap = await firebase.database().ref('suppliers').once('value');
   if (!snap.exists()) { showToast('No suppliers to export.', 'warn'); return; }
 
-  let csv = 'Name,Contact,Specialty,Bank Name,Account Number,Account Name\n';
+  let csv = 'Name,Contact,Specialty,Bank Name,Account Number,Account Name\\n';
   snap.forEach(c => {
     const s = c.val();
-    csv += `${escapeCsv(s.name || '')},${escapeCsv(s.contact || '')},${escapeCsv(s.specialty || '')},${escapeCsv(s.bankName || '')},${escapeCsv(s.accNum || '')},${escapeCsv(s.accName || '')}\n`;
+    csv += `${escapeCsv(s.name || '')},${escapeCsv(s.contact || '')},${escapeCsv(s.specialty || '')},${escapeCsv(s.bankName || '')},${escapeCsv(s.accNum || '')},${escapeCsv(s.accName || '')}\\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -172,7 +165,7 @@ async function exportSuppliersCSV() {
 
 function escapeCsv(text) {
   if (!text) return '';
-  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+  if (text.includes(',') || text.includes('"') || text.includes('\\n')) {
     return '"' + text.replace(/"/g, '""') + '"';
   }
   return text;

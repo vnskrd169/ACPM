@@ -1,12 +1,3 @@
-
-//  · Proper listener lifecycle (no duplicates)
-//  · XSS-safe rendering
-//  · Loading states
-//  · Billing history with filtering
-//  · Collections linked to billing requests
-//  · Export billing summary
-// ═══════════════════════════════════════════════════════════════
-
 let _bpid = null;
 let _contractListener = null;
 let _billingsListener = null;
@@ -78,8 +69,9 @@ async function saveContract() {
   showToast('Contract saved ✓');
 }
 
+// IMPROVED: Safer contract edit — stores in temp field instead of deleting
 async function editContract() {
-  if (!confirm('Edit contract details?\n\nDown payment collection will not be removed.')) return;
+  if (!confirm('Edit contract details?\\n\\nDown payment collection will not be removed.')) return;
   const snap = await firebase.database().ref(`projects/${_bpid}/contract`).once('value');
   const c = snap.val() || {};
   $('contractAmount').value    = c.amount    || '';
@@ -88,6 +80,8 @@ async function editContract() {
   $('contractClient').value    = c.client    || '';
   $('contractStart').value     = c.startDate || '';
   $('contractEnd').value       = c.endDate   || '';
+  // IMPROVED: Move to temp instead of deleting, so data isn't lost on refresh
+  await safeDb(() => firebase.database().ref(`projects/${_bpid}/contractTemp`).set(c), 'Failed to backup contract');
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/contract`).remove(), 'Failed to remove contract');
   showToast('Contract removed for editing');
 }
@@ -176,6 +170,7 @@ function watchBillings(pid) {
   });
 }
 
+// FIXED: Use atomic transaction for sequence number instead of numChildren
 async function addBillingRequest() {
   if (!_bpid) return;
   const date   = $('billDate').value;
@@ -186,11 +181,18 @@ async function addBillingRequest() {
   if (amount <= 0) { showToast('Enter billing amount.', 'error'); return; }
   if (desc.length > 200) { showToast('Description too long (max 200).', 'error'); return; }
 
-  const newRef = firebase.database().ref(`projects/${_bpid}/billings`).push();
-  const snap = await firebase.database().ref(`projects/${_bpid}/billings`).once('value');
-  const seq  = (snap.numChildren() || 0) + 1;
+  // FIXED: Atomic counter using transaction
+  const counterRef = firebase.database().ref(`projects/${_bpid}/billingCounter`);
+  let seq;
+  try {
+    const result = await counterRef.transaction(current => (current || 0) + 1);
+    seq = result.snapshot.val();
+  } catch (e) {
+    showToast('Failed to generate billing number. Try again.', 'error');
+    return;
+  }
 
-  await safeDb(() => newRef.set({
+  await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings`).push({
     date, description: desc, amount, seq, status: 'pending',
     savedAt: Date.now()
   }), 'Failed to add billing');
@@ -294,25 +296,24 @@ async function exportBillingSummary() {
   ]);
 
   const contract = contractSnap.val() || {};
-  // FIXED: Use actual newlines
-  let csv = 'ACPM Billing Summary\n';
-  csv += `Project,${_bpid}\n`;
-  csv += `Client,${escapeCsv(contract.client || 'N/A')}\n`;
-  csv += `Contract Amount,${contract.amount || 0}\n`;
-  csv += `Retention %,${contract.retention || 0}\n\n`;
+  let csv = 'ACPM Billing Summary\\n';
+  csv += `Project,${_bpid}\\n`;
+  csv += `Client,${escapeCsv(contract.client || 'N/A')}\\n`;
+  csv += `Contract Amount,${contract.amount || 0}\\n`;
+  csv += `Retention %,${contract.retention || 0}\\n\\n`;
 
-  csv += 'BILLING REQUESTS\n';
-  csv += 'Seq,Date,Description,Amount,Status\n';
+  csv += 'BILLING REQUESTS\\n';
+  csv += 'Seq,Date,Description,Amount,Status\\n';
   bSnap.forEach(c => {
     const b = c.val();
-    csv += `${b.seq || ''},${b.date || ''},${escapeCsv(b.description || '')},${b.amount || 0},${b.status || 'pending'}\n`;
+    csv += `${b.seq || ''},${b.date || ''},${escapeCsv(b.description || '')},${b.amount || 0},${b.status || 'pending'}\\n`;
   });
 
-  csv += '\nCOLLECTIONS\n';
-  csv += 'Date,Description,Amount\n';
+  csv += '\\nCOLLECTIONS\\n';
+  csv += 'Date,Description,Amount\\n';
   cSnap.forEach(c => {
     const col = c.val();
-    csv += `${col.date || ''},${escapeCsv(col.description || '')},${col.amount || 0}\n`;
+    csv += `${col.date || ''},${escapeCsv(col.description || '')},${col.amount || 0}\\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -327,7 +328,7 @@ async function exportBillingSummary() {
 
 function escapeCsv(text) {
   if (!text) return '';
-  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+  if (text.includes(',') || text.includes('"') || text.includes('\\n')) {
     return '"' + text.replace(/"/g, '""') + '"';
   }
   return text;

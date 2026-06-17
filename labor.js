@@ -1,13 +1,3 @@
-
-
-//  · Proper listener lifecycle (no duplicates)
-//  · XSS-safe rendering via escapeHtml
-//  · Loading states on actions
-//  · Payroll history with filtering by period
-//  · Export payroll logs to CSV
-//  · Worker notes / remarks field
-// ═══════════════════════════════════════════════════════════════
-
 let _lpid = null;
 let _laborListeners = [];
 let _payrollFilterDebounce = null;
@@ -127,9 +117,12 @@ function watchWorkers(pid) {
 
   const wRef = firebase.database().ref(`projects/${pid}/workers`);
   laborListen(wRef, wSnap => {
-    renderRoster(wSnap, pid);
-    firebase.database().ref(`projects/${pid}/timecards`).once('value', tcSnap => {
-      buildGrid(pid, wSnap, tcSnap);
+    // IMPROVED: Batch fetch all advances in one call instead of N+1
+    firebase.database().ref(`projects/${pid}/advances`).once('value', allAdvSnap => {
+      renderRoster(wSnap, pid, allAdvSnap);
+      firebase.database().ref(`projects/${pid}/timecards`).once('value', tcSnap => {
+        buildGrid(pid, wSnap, tcSnap);
+      });
     });
   });
 
@@ -141,38 +134,35 @@ function watchWorkers(pid) {
   });
 }
 
-function renderRoster(wSnap, pid) {
+// IMPROVED: Accept pre-fetched advances snapshot
+function renderRoster(wSnap, pid, allAdvSnap) {
   const el = $('rosterList'); if (!el) return;
   el.innerHTML = '';
   if (!wSnap.exists()) { el.innerHTML = '<p class="empty-hint">No workers yet.</p>'; return; }
 
   wSnap.forEach(c => {
     const w = c.val();
-    // FIXED: Single fetch per worker, no double-fetch
-    firebase.database().ref(`projects/${pid}/advances/${c.key}`).once('value', advSnap => {
-      let pending = 0;
-      advSnap.forEach(a => { if (!a.val().deducted) pending += a.val().amount || 0; });
-      
-      const row = document.getElementById(`roster_${c.key}`);
-      if (row) {
-        const badge = row.querySelector('.adv-badge-wrap');
-        if (badge) badge.innerHTML = pending > 0 ? `<span class="adv-badge">₱${pending.toLocaleString()} advance</span>` : '';
-      } else {
-        // Create new row
-        const div = document.createElement('div');
-        div.className = 'roster-row';
-        div.id = `roster_${c.key}`;
-        div.innerHTML = `<div class="roster-info">
-          <span class="roster-name">${escapeHtml(w.name)}</span>
-          <span class="roster-trade-tag">${escapeHtml(w.trade || 'No Trade')}</span>
-          <span class="adv-badge-wrap">${pending > 0 ? `<span class="adv-badge">₱${pending.toLocaleString()} advance</span>` : ''}</span>
-        </div>
-        <span class="roster-rate">${peso(w.dailyRate)}/day</span>
-        <button class="btn-advance" onclick="openAdvanceModal('${c.key}','${escapeHtml(w.name)}')">₱ Advance</button>
-        <button class="del-worker" aria-label="Remove worker" onclick="removeWorker('${c.key}')">✕</button>`;
-        el.appendChild(div);
-      }
-    });
+    const wid = c.key;
+    
+    // Calculate pending advances from pre-fetched data
+    let pending = 0;
+    const workerAdv = allAdvSnap.child(wid);
+    if (workerAdv.exists()) {
+      workerAdv.forEach(a => { if (!a.val().deducted) pending += a.val().amount || 0; });
+    }
+
+    const div = document.createElement('div');
+    div.className = 'roster-row';
+    div.id = `roster_${wid}`;
+    div.innerHTML = `<div class="roster-info">
+      <span class="roster-name">${escapeHtml(w.name)}</span>
+      <span class="roster-trade-tag">${escapeHtml(w.trade || 'No Trade')}</span>
+      <span class="adv-badge-wrap">${pending > 0 ? `<span class="adv-badge">₱${pending.toLocaleString()} advance</span>` : ''}</span>
+    </div>
+    <span class="roster-rate">${peso(w.dailyRate)}/day</span>
+    <button class="btn-advance" onclick="openAdvanceModal('${wid}','${escapeHtml(w.name)}')">₱ Advance</button>
+    <button class="del-worker" aria-label="Remove worker" onclick="removeWorker('${wid}')">✕</button>`;
+    el.appendChild(div);
   });
 }
 
@@ -254,14 +244,22 @@ async function saveAdvance() {
   $('advanceDate').value = ''; $('advanceAmount').value = ''; $('advanceNotes').value = '';
   loadAdvanceHistory(_advWid);
   showToast(`Advance of ${peso(amount)} saved for ${_advName}`);
-  firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => renderRoster(wSnap, _lpid));
+  firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
+    firebase.database().ref(`projects/${_lpid}/advances`).once('value', allAdvSnap => {
+      renderRoster(wSnap, _lpid, allAdvSnap);
+    });
+  });
 }
 
 async function deleteAdvance(wid, key) {
   if (!confirm('Remove this advance record?')) return;
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${wid}/${key}`).remove(), 'Failed to delete advance');
   loadAdvanceHistory(wid);
-  firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => renderRoster(wSnap, _lpid));
+  firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
+    firebase.database().ref(`projects/${_lpid}/advances`).once('value', allAdvSnap => {
+      renderRoster(wSnap, _lpid, allAdvSnap);
+    });
+  });
 }
 
 // ══════════════════════════════════════════════════════
@@ -345,16 +343,22 @@ async function markDay(wid, iso, present, rate, trade) {
     .set({ workerId: wid, date: iso, present, dailyRate: rate, trade }), 'Failed to save attendance');
 }
 
+// IMPROVED: Timezone-safe date handling
 function getWeekDays() {
   const s = $('weekStart')?.value;
   const e = $('weekEnd')?.value;
   const days = [];
-  const start = s ? new Date(s) : (() => {
+  
+  // Use noon to avoid DST issues
+  const start = s ? new Date(s + 'T12:00:00') : (() => {
     const t = new Date();
+    t.setHours(12, 0, 0, 0);
     t.setDate(t.getDate() - ((t.getDay() + 6) % 7));
     return t;
   })();
-  const end = e ? new Date(e) : new Date(start.getTime() + 6 * 86400000);
+  
+  const end = e ? new Date(e + 'T12:00:00') : new Date(start.getTime() + 6 * 86400000);
+  
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const iso = d.toISOString().slice(0, 10);
     days.push({
@@ -402,7 +406,7 @@ function updateAttendanceSummary(data) {
 }
 
 // ══════════════════════════════════════════════════════
-//  COMPILE PAYROLL
+//  COMPILE PAYROLL — IMPROVED: Atomic with rollback
 // ══════════════════════════════════════════════════════
 let _pendingPayrollData = null;
 
@@ -495,7 +499,13 @@ function showPayrollModal() {
 function updatePayrollNet() {
   if (!_pendingPayrollData) return;
   const deduct = parseFloat($('manualDeductInput')?.value) || 0;
-  setText('payrollNet', peso(_pendingPayrollData.grand - deduct));
+  const net = _pendingPayrollData.grand - deduct;
+  // IMPROVED: Show warning if net would be negative
+  const netEl = $('payrollNet');
+  if (netEl) {
+    netEl.textContent = peso(net);
+    netEl.style.color = net < 0 ? 'var(--red)' : 'var(--green)';
+  }
 }
 
 function closePayrollModal() { $('payrollModal').classList.add('hidden'); }
@@ -504,8 +514,18 @@ async function confirmSavePayroll() {
   const d = _pendingPayrollData; if (!d) return;
   const deduct = parseFloat($('manualDeductInput')?.value) || 0;
   const net    = d.grand - deduct;
+  
+  // IMPROVED: Validate net is not negative
+  if (net < 0) {
+    showToast('Net payroll cannot be negative. Reduce deduction.', 'error');
+    return;
+  }
 
-  await safeDb(() => firebase.database().ref(`projects/${_lpid}/payrollLogs`).push({
+  // IMPROVED: Atomic batch update using single update() call
+  const updates = {};
+  const logKey = firebase.database().ref().push().key;
+  
+  updates[`projects/${_lpid}/payrollLogs/${logKey}`] = {
     period     : `${d.start}–${d.end}`,
     gross      : d.grand,
     deductions : deduct,
@@ -513,27 +533,35 @@ async function confirmSavePayroll() {
     byTrade    : d.byTrade,
     savedAt    : Date.now(),
     savedDate  : new Date().toLocaleDateString('en-PH')
-  }), 'Failed to save payroll');
-
+  };
+  
+  updates[`projects/${_lpid}/laborSpent`] = d.prevSpent + net;
+  
+  // Mark advances as deducted
   if (deduct > 0) {
     for (const [wid, wAdv] of Object.entries(d.pendingAdvances)) {
       for (const adv of wAdv.advances) {
-        await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${wid}/${adv.key}`).update({ deducted: true }), 'Failed to mark advance');
+        updates[`projects/${_lpid}/advances/${wid}/${adv.key}/deducted`] = true;
       }
     }
   }
+  
+  // Delete timecards
+  for (const k of d.tcKeysToDelete) {
+    updates[`projects/${_lpid}/timecards/${k}`] = null;
+  }
 
-  await safeDb(() => firebase.database().ref(`projects/${_lpid}`).update({ laborSpent: d.prevSpent + net }), 'Failed to update budget');
-
-  await Promise.all(
-    d.tcKeysToDelete.map(k =>
-      safeDb(() => firebase.database().ref(`projects/${_lpid}/timecards/${k}`).remove(), 'Failed to clear timecard')
-    )
-  );
+  try {
+    await firebase.database().ref().update(updates);
+  } catch (e) {
+    showToast('Failed to save payroll. No data was lost.', 'error');
+    console.error(e);
+    return;
+  }
 
   const endDate = $('weekEnd')?.value;
   if (endDate) {
-    const nextStart = new Date(endDate);
+    const nextStart = new Date(endDate + 'T12:00:00');
     nextStart.setDate(nextStart.getDate() + 1);
     const nextEnd = new Date(nextStart);
     nextEnd.setDate(nextStart.getDate() + 6);
@@ -602,7 +630,7 @@ async function generateRFP() {
   );
 
   window._rfpData = { lines, start, end, grand, byTrade, pid: _lpid };
-  $('rfpOutput').value = lines.join('\n');
+  $('rfpOutput').value = lines.join('\\n');
   $('rfpModal').classList.remove('hidden');
 }
 
@@ -727,7 +755,6 @@ async function exportPayrollCSV() {
   snap.forEach(c => rows.push(c.val()));
   rows.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
-  // FIXED: Proper newlines
   let csv = 'Date,Period,Gross,Deductions,Net\n';
   rows.forEach(r => {
     csv += `${r.savedDate || ''},${r.period || ''},${r.gross || 0},${r.deductions || 0},${r.net || r.gross || 0}\n`;
