@@ -628,7 +628,7 @@
        ═══════════════════════════════════════════════════════ -->
 
   <!-- RFP Modal -->
-  <dialog id="rfpModal" class="modal-overlay">
+  <div id="rfpModal" class="modal-overlay hidden">
     <div class="modal-box">
       <h2 class="modal-title">Request for Payment</h2>
       <textarea id="rfpOutput" readonly></textarea>
@@ -638,10 +638,10 @@
         <button class="btn-pdf" onclick="downloadRFP()">⬇️ PDF</button>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- Payroll Confirm Modal -->
-  <dialog id="payrollModal" class="modal-overlay">
+  <div id="payrollModal" class="modal-overlay hidden">
     <div class="modal-box">
       <h2 class="modal-title">Confirm Payroll</h2>
       <div class="payroll-summary">
@@ -669,10 +669,10 @@
         <button class="btn-save-payroll" onclick="confirmSavePayroll()">💾 Save Payroll</button>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- Cash Advance Modal -->
-  <dialog id="advanceModal" class="modal-overlay">
+  <div id="advanceModal" class="modal-overlay hidden">
     <div class="modal-box">
       <h2 class="modal-title">Cash Advance — <span id="advanceWorkerName">Worker</span></h2>
       <div class="advance-form">
@@ -690,10 +690,10 @@
         <button class="btn-mc" onclick="closeAdvanceModal()">Close</button>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- Edit Supplier Modal -->
-  <dialog id="editSupplierModal" class="modal-overlay">
+  <div id="editSupplierModal" class="modal-overlay hidden">
     <div class="modal-box">
       <h2 class="modal-title">Edit Supplier</h2>
       <input type="hidden" id="editSupKey">
@@ -710,7 +710,7 @@
         <button class="btn-save-payroll" onclick="saveEditSupplier()">💾 Save Changes</button>
       </div>
     </div>
-  </dialog>
+  </div>
 
   <!-- ═══════════════════════════════════════════════════════
        SCRIPTS — Load Order is Critical
