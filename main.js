@@ -21,7 +21,7 @@ const firebaseConfig = {
 
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
-  firebase.database().enablePersistence(true).catch(() => {});
+
 }
 
 let currentProjectId = null, currentProjectLocked = true;
@@ -115,7 +115,7 @@ function setLoading(btn, loading) {
     btn._originalText = btn.textContent;
     btn.innerHTML = '<span class="spinner"></span>';
     btn.disabled = true;
-  } else {
+  } else {a
     btn.textContent = btn._originalText || btn.textContent;
     btn.disabled = false;
   }
