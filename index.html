@@ -14,6 +14,7 @@
 
   <!-- App Styles -->
   <link rel="stylesheet" href="style.css">
+<base target="_blank">
 </head>
 <body>
 
@@ -73,6 +74,14 @@
 
       <!-- Active Projects Pane -->
       <div id="activeProjectsPane" class="tab-pane pane-active">
+        <!-- NEW: Dashboard Summary -->
+        <article class="card card-summary">
+          <h2 class="sec-label">Dashboard Summary</h2>
+          <div id="dashboardSummary">
+            <p class="empty-hint">Loading dashboard...</p>
+          </div>
+        </article>
+
         <div id="projectGrid">
           <p class="hub-empty">Loading...</p>
         </div>
@@ -232,6 +241,17 @@
             <div id="tradeTotals">
               <p class="empty-hint">No data yet.</p>
             </div>
+          </div>
+        </article>
+
+        <!-- NEW: Timecard History — Archived Daily Attendance -->
+        <article class="card card-tc-history">
+          <header class="card-header">
+            <h2 class="card-title">📚 Daily Attendance History</h2>
+            <p class="empty-hint" style="font-size:11px">View past attendance records from compiled payrolls. Click a period to expand.</p>
+          </header>
+          <div id="timecardHistoryList">
+            <p class="empty-hint">No archived attendance yet. Compile payroll to save records.</p>
           </div>
         </article>
       </section>
@@ -543,6 +563,11 @@
            ═════════════════════════════════════════════════ -->
       <section id="panel_sitelog" class="panel panel-sitelog hidden">
 
+        <!-- NEW: Site Log Summary -->
+        <div id="siteLogSummary" class="card" style="margin-bottom:12px">
+          <p class="empty-hint">Loading site log summary...</p>
+        </div>
+
         <article class="card card-log">
           <header class="card-header">
             <h2 class="card-title">📒 Daily Site Log</h2>
@@ -603,75 +628,87 @@
        ═══════════════════════════════════════════════════════ -->
 
   <!-- RFP Modal -->
-  <dialog id="rfpModal" class="modal">
-    <h2 class="modal-title">Request for Payment</h2>
-    <textarea id="rfpOutput" readonly></textarea>
-    <div class="modal-actions">
-      <button class="btn-mc" onclick="closeRFP()">Close</button>
-      <button class="btn-copy" onclick="copyRFP()">📋 Copy</button>
-      <button class="btn-pdf" onclick="downloadRFP()">⬇️ PDF</button>
+  <dialog id="rfpModal" class="modal-overlay">
+    <div class="modal-box">
+      <h2 class="modal-title">Request for Payment</h2>
+      <textarea id="rfpOutput" readonly></textarea>
+      <div class="modal-actions">
+        <button class="btn-mc" onclick="closeRFP()">Close</button>
+        <button class="btn-copy" onclick="copyRFP()">📋 Copy</button>
+        <button class="btn-pdf" onclick="downloadRFP()">⬇️ PDF</button>
+      </div>
     </div>
   </dialog>
 
   <!-- Payroll Confirm Modal -->
-  <dialog id="payrollModal" class="modal">
-    <h2 class="modal-title">Confirm Payroll</h2>
-    <div class="payroll-summary">
-      <div class="pay-row">
-        <span class="pay-label">Gross Payroll</span>
-        <span class="pay-val" id="payrollGross">₱0.00</span>
+  <dialog id="payrollModal" class="modal-overlay">
+    <div class="modal-box">
+      <h2 class="modal-title">Confirm Payroll</h2>
+      <div class="payroll-summary">
+        <div class="pay-row">
+          <span class="pay-label">Period</span>
+          <span class="pay-val" id="payrollPeriod">—</span>
+        </div>
+        <div class="pay-row">
+          <span class="pay-label">Gross Payroll</span>
+          <span class="pay-val" id="payrollGross">₱0.00</span>
+        </div>
+        <div class="pay-row">
+          <span class="pay-label">Pending Advances</span>
+          <span class="pay-val pay-danger" id="totalAdvances">₱0.00</span>
+        </div>
+        <div id="advanceDeductList"></div>
+        <div class="pay-deduct-row">
+          <label for="manualDeductInput">Manual Deduction</label>
+          <input id="manualDeductInput" type="number" placeholder="0.00" oninput="updatePayrollNet()" inputmode="decimal">
+        </div>
+        <div class="pay-net">Net: <span id="payrollNet">₱0.00</span></div>
       </div>
-      <div class="pay-row">
-        <span class="pay-label">Pending Advances</span>
-        <span class="pay-val pay-danger" id="totalAdvances">₱0.00</span>
+      <div class="modal-actions">
+        <button class="btn-mc" onclick="closePayrollModal()">Cancel</button>
+        <button class="btn-save-payroll" onclick="confirmSavePayroll()">💾 Save Payroll</button>
       </div>
-      <div id="advanceDeductList"></div>
-      <div class="pay-deduct-row">
-        <label for="manualDeductInput">Manual Deduction</label>
-        <input id="manualDeductInput" type="number" placeholder="0.00" oninput="updatePayrollNet()" inputmode="decimal">
-      </div>
-      <div class="pay-net">Net: <span id="payrollNet">₱0.00</span></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-mc" onclick="closePayrollModal()">Cancel</button>
-      <button class="btn-save-payroll" onclick="confirmSavePayroll()">💾 Save Payroll</button>
     </div>
   </dialog>
 
   <!-- Cash Advance Modal -->
-  <dialog id="advanceModal" class="modal">
-    <h2 class="modal-title">Cash Advance</h2>
-    <div class="advance-form">
-      <input id="advanceDate" type="date">
-      <input id="advanceAmount" type="number" placeholder="0.00" inputmode="decimal">
-      <input id="advanceNotes" type="text" placeholder="Notes (optional)">
-    </div>
-    <button class="btn-save-adv" onclick="saveAdvance()">+ Save Advance</button>
-    <div id="advanceHistory"></div>
-    <div class="advance-total-row">
-      <span class="total-label">Total Advances</span>
-      <span class="total-val" id="advanceTotalLabel">₱0.00</span>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-mc" onclick="closeAdvanceModal()">Close</button>
+  <dialog id="advanceModal" class="modal-overlay">
+    <div class="modal-box">
+      <h2 class="modal-title">Cash Advance — <span id="advanceWorkerName">Worker</span></h2>
+      <div class="advance-form">
+        <input id="advanceDate" type="date">
+        <input id="advanceAmount" type="number" placeholder="0.00" inputmode="decimal">
+        <input id="advanceNotes" type="text" placeholder="Notes (optional)">
+      </div>
+      <button class="btn-save-adv" onclick="saveAdvance()">+ Save Advance</button>
+      <div id="advanceHistory"></div>
+      <div class="advance-total-row">
+        <span class="total-label">Total Advances</span>
+        <span class="total-val" id="advanceTotalLabel">₱0.00</span>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-mc" onclick="closeAdvanceModal()">Close</button>
+      </div>
     </div>
   </dialog>
 
   <!-- Edit Supplier Modal -->
-  <dialog id="editSupplierModal" class="modal">
-    <h2 class="modal-title">Edit Supplier</h2>
-    <input type="hidden" id="editSupKey">
-    <div class="edit-supplier-form">
-      <input id="editSupName" type="text" placeholder="Supplier name">
-      <input id="editSupContact" type="text" placeholder="Contact / phone">
-      <input id="editSupSpec" type="text" placeholder="Specialty">
-      <input id="editSupBank" type="text" placeholder="Bank Name">
-      <input id="editSupAccNum" type="text" placeholder="Account No.">
-      <input id="editSupAccName" type="text" placeholder="Account Name">
-    </div>
-    <div class="modal-actions">
-      <button class="btn-mc" onclick="closeEditSupplier()">Cancel</button>
-      <button class="btn-save-payroll" onclick="saveEditSupplier()">💾 Save Changes</button>
+  <dialog id="editSupplierModal" class="modal-overlay">
+    <div class="modal-box">
+      <h2 class="modal-title">Edit Supplier</h2>
+      <input type="hidden" id="editSupKey">
+      <div class="edit-supplier-form">
+        <input id="editSupName" type="text" placeholder="Supplier name">
+        <input id="editSupContact" type="text" placeholder="Contact / phone">
+        <input id="editSupSpec" type="text" placeholder="Specialty">
+        <input id="editSupBank" type="text" placeholder="Bank Name">
+        <input id="editSupAccNum" type="text" placeholder="Account No.">
+        <input id="editSupAccName" type="text" placeholder="Account Name">
+      </div>
+      <div class="modal-actions">
+        <button class="btn-mc" onclick="closeEditSupplier()">Cancel</button>
+        <button class="btn-save-payroll" onclick="saveEditSupplier()">💾 Save Changes</button>
+      </div>
     </div>
   </dialog>
 

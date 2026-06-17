@@ -8,6 +8,7 @@ function initLabor(pid) {
   watchLaborBudget(pid);
   watchTrades(pid);
   watchPayrollLogs(pid);
+  watchTimecardHistory(pid);  // NEW: View past attendance records
 }
 
 function detachLaborListeners() {
@@ -143,7 +144,7 @@ function renderRoster(wSnap, pid, allAdvSnap) {
   wSnap.forEach(c => {
     const w = c.val();
     const wid = c.key;
-    
+
     // Calculate pending advances from pre-fetched data
     let pending = 0;
     const workerAdv = allAdvSnap.child(wid);
@@ -199,7 +200,9 @@ let _advWid = null, _advName = '';
 
 function openAdvanceModal(wid, name) {
   _advWid = wid; _advName = name;
-  setText('advanceWorkerName', name);
+  // FIXED: Use textContent instead of setText for worker name display
+  const nameEl = $('advanceWorkerName');
+  if (nameEl) nameEl.textContent = name;
   loadAdvanceHistory(wid);
   $('advanceModal').classList.remove('hidden');
 }
@@ -348,7 +351,7 @@ function getWeekDays() {
   const s = $('weekStart')?.value;
   const e = $('weekEnd')?.value;
   const days = [];
-  
+
   // Use noon to avoid DST issues
   const start = s ? new Date(s + 'T12:00:00') : (() => {
     const t = new Date();
@@ -356,9 +359,9 @@ function getWeekDays() {
     t.setDate(t.getDate() - ((t.getDay() + 6) % 7));
     return t;
   })();
-  
+
   const end = e ? new Date(e + 'T12:00:00') : new Date(start.getTime() + 6 * 86400000);
-  
+
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const iso = d.toISOString().slice(0, 10);
     days.push({
@@ -406,7 +409,7 @@ function updateAttendanceSummary(data) {
 }
 
 // ══════════════════════════════════════════════════════
-//  COMPILE PAYROLL — IMPROVED: Atomic with rollback
+//  COMPILE PAYROLL — IMPROVED: Archive timecards before delete
 // ══════════════════════════════════════════════════════
 let _pendingPayrollData = null;
 
@@ -431,6 +434,7 @@ async function compilePayroll() {
   const byTrade = {}; 
   let grand = 0;
   const tcKeysToDelete = [];
+  const timecardArchive = {};  // NEW: Store timecards for archiving
 
   tcSnap.forEach(c => {
     const tc = c.val();
@@ -438,6 +442,8 @@ async function compilePayroll() {
     const w = workers[tc.workerId]; 
     if (!w) return;
     tcKeysToDelete.push(c.key);
+    // NEW: Archive the timecard data
+    timecardArchive[c.key] = { ...tc, compiledAt: Date.now() };
     if (!byTrade[tc.trade]) byTrade[tc.trade] = { workers: {}, total: 0 };
     const bt = byTrade[tc.trade];
     if (!bt.workers[tc.workerId]) bt.workers[tc.workerId] = { name: w.name, rate: w.dailyRate, days: 0, subtotal: 0 };
@@ -468,7 +474,8 @@ async function compilePayroll() {
   _pendingPayrollData = {
     start, end, grand, byTrade, pendingAdvances, totalPending,
     prevSpent: parseFloat(projSnap.val()?.laborSpent) || 0,
-    tcKeysToDelete
+    tcKeysToDelete,
+    timecardArchive  // NEW: Include archive data
   };
   showPayrollModal();
 }
@@ -476,7 +483,9 @@ async function compilePayroll() {
 function showPayrollModal() {
   const d = _pendingPayrollData; if (!d) return;
   setText('payrollGross',  peso(d.grand));
-  setText('payrollPeriod', `${d.start} – ${d.end}`);
+  // FIXED: Use textContent for period display
+  const periodEl = $('payrollPeriod');
+  if (periodEl) periodEl.textContent = `${d.start} – ${d.end}`;
   setText('totalAdvances', peso(d.totalPending));
 
   const advList = $('advanceDeductList');
@@ -514,7 +523,7 @@ async function confirmSavePayroll() {
   const d = _pendingPayrollData; if (!d) return;
   const deduct = parseFloat($('manualDeductInput')?.value) || 0;
   const net    = d.grand - deduct;
-  
+
   // IMPROVED: Validate net is not negative
   if (net < 0) {
     showToast('Net payroll cannot be negative. Reduce deduction.', 'error');
@@ -524,7 +533,16 @@ async function confirmSavePayroll() {
   // IMPROVED: Atomic batch update using single update() call
   const updates = {};
   const logKey = firebase.database().ref().push().key;
-  
+
+  // NEW: Archive timecards under this payroll log
+  if (d.timecardArchive && Object.keys(d.timecardArchive).length > 0) {
+    updates[`projects/${_lpid}/timecardHistory/${logKey}`] = {
+      period: `${d.start}–${d.end}`,
+      savedAt: Date.now(),
+      timecards: d.timecardArchive
+    };
+  }
+
   updates[`projects/${_lpid}/payrollLogs/${logKey}`] = {
     period     : `${d.start}–${d.end}`,
     gross      : d.grand,
@@ -534,9 +552,9 @@ async function confirmSavePayroll() {
     savedAt    : Date.now(),
     savedDate  : new Date().toLocaleDateString('en-PH')
   };
-  
+
   updates[`projects/${_lpid}/laborSpent`] = d.prevSpent + net;
-  
+
   // Mark advances as deducted
   if (deduct > 0) {
     for (const [wid, wAdv] of Object.entries(d.pendingAdvances)) {
@@ -545,8 +563,8 @@ async function confirmSavePayroll() {
       }
     }
   }
-  
-  // Delete timecards
+
+  // Delete timecards from active
   for (const k of d.tcKeysToDelete) {
     updates[`projects/${_lpid}/timecards/${k}`] = null;
   }
@@ -572,6 +590,89 @@ async function confirmSavePayroll() {
   closePayrollModal();
   showToast(`✅ Payroll saved! Gross: ${peso(d.gross)} · Net: ${peso(net)}`);
   applyWeek();
+}
+
+// ══════════════════════════════════════════════════════
+//  TIMECARD HISTORY — NEW: View past attendance records
+// ══════════════════════════════════════════════════════
+let _tcHistoryListener = null;
+
+function watchTimecardHistory(pid) {
+  if (_tcHistoryListener) { _tcHistoryListener.off(); _tcHistoryListener = null; }
+  const ref = firebase.database().ref(`projects/${pid}/timecardHistory`);
+  _tcHistoryListener = ref;
+  ref.on('value', snap => {
+    renderTimecardHistory(snap);
+  });
+  laborListen(ref, snap => renderTimecardHistory(snap));
+}
+
+function renderTimecardHistory(snap) {
+  const el = $('timecardHistoryList'); if (!el) return;
+  el.innerHTML = '';
+
+  if (!snap || !snap.exists()) {
+    el.innerHTML = '<p class="empty-hint">No archived attendance yet. Compile payroll to save records.</p>';
+    return;
+  }
+
+  const entries = [];
+  snap.forEach(c => {
+    const data = c.val();
+    const tcCount = data.timecards ? Object.keys(data.timecards).length : 0;
+    entries.push({ key: c.key, ...data, tcCount });
+  });
+  entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+
+  entries.forEach(e => {
+    const div = document.createElement('div');
+    div.className = 'tc-history-card';
+    div.innerHTML = `
+      <div class="tc-history-hdr" onclick="toggleTCHistory('${e.key}')">
+        <div class="tc-history-left">
+          <span class="tc-history-period">📅 ${e.period || '—'}</span>
+          <span class="tc-history-meta">${e.tcCount} timecard entries · ${new Date(e.savedAt).toLocaleDateString('en-PH')}</span>
+        </div>
+        <span class="tc-history-toggle" id="tcToggle_${e.key}">▼</span>
+      </div>
+      <div class="tc-history-body hidden" id="tcBody_${e.key}">
+        <div class="tc-history-table-wrap">
+          <table class="summary-table">
+            <thead><tr>
+              <th>Worker</th><th>Trade</th><th>Date</th><th style="text-align:center">Present</th><th style="text-align:right">Rate</th>
+            </tr></thead>
+            <tbody>
+              ${renderTimecardRows(e.timecards)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    el.appendChild(div);
+  });
+}
+
+function renderTimecardRows(timecards) {
+  if (!timecards) return '<tr><td colspan="5" class="empty-cell">No timecard data</td></tr>';
+  const rows = Object.values(timecards).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  return rows.map(tc => `
+    <tr class="s-row">
+      <td class="s-cell">${escapeHtml(tc.workerId || '—')}</td>
+      <td class="s-cell s-trade">${escapeHtml(tc.trade || '—')}</td>
+      <td class="s-cell">${tc.date || '—'}</td>
+      <td class="s-cell s-center">${tc.present ? '✅' : '❌'}</td>
+      <td class="s-cell s-right">${peso(tc.dailyRate)}</td>
+    </tr>
+  `).join('');
+}
+
+function toggleTCHistory(key) {
+  const body = $(`tcBody_${key}`);
+  const toggle = $(`tcToggle_${key}`);
+  if (!body || !toggle) return;
+  const isHidden = body.classList.contains('hidden');
+  body.classList.toggle('hidden', !isHidden);
+  toggle.textContent = isHidden ? '▲' : '▼';
 }
 
 // ══════════════════════════════════════════════════════
@@ -630,7 +731,7 @@ async function generateRFP() {
   );
 
   window._rfpData = { lines, start, end, grand, byTrade, pid: _lpid };
-  $('rfpOutput').value = lines.join('\\n');
+  $('rfpOutput').value = lines.join('\n');
   $('rfpModal').classList.remove('hidden');
 }
 
@@ -703,6 +804,10 @@ function watchPayrollLogs(pid) {
 
     const rows = []; 
     snap.forEach(c => rows.unshift({ id: c.key, ...c.val() }));
+
+    // FIXED: Use DocumentFragment for better performance
+    const fragment = document.createDocumentFragment();
+
     rows.forEach(e => {
       grandTotal += e.net || e.gross || 0;
       if (e.byTrade) Object.entries(e.byTrade).forEach(([t, d]) => {
@@ -711,7 +816,10 @@ function watchPayrollLogs(pid) {
       const breakdown = e.byTrade
         ? Object.entries(e.byTrade).map(([t, d]) => `${escapeHtml(t)}: ${peso(d.total)}`).join(' · ')
         : '—';
-      tbody.innerHTML += `<tr class="hist-row">
+
+      const tr = document.createElement('tr');
+      tr.className = 'hist-row';
+      tr.innerHTML = `
         <td class="h-cell">${e.savedDate || '—'}</td>
         <td class="h-cell">${e.period || '—'}</td>
         <td class="h-cell h-breakdown">${breakdown}</td>
@@ -720,13 +828,19 @@ function watchPayrollLogs(pid) {
           ${peso(e.gross || 0)}
         </td>
         <td class="h-cell h-amount net-col">${peso(e.net || e.gross || 0)}</td>
-      </tr>`;
+      `;
+      fragment.appendChild(tr);
     });
 
-    tbody.innerHTML += `<tr class="hist-total-row">
+    const totalTr = document.createElement('tr');
+    totalTr.className = 'hist-total-row';
+    totalTr.innerHTML = `
       <td class="h-cell" colspan="4">Total Labor Disbursed</td>
       <td class="h-cell h-amount">${peso(grandTotal)}</td>
-    </tr>`;
+    `;
+    fragment.appendChild(totalTr);
+
+    tbody.appendChild(fragment);
     renderTradeTotals(tradeTotals, grandTotal);
   });
 }

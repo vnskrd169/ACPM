@@ -196,13 +196,13 @@ function watchLedger(pid) {
           <select class="status-sel" onchange="updateLedgerStatus('${key}',this.value)">${statusOpts}</select>
         </td>
         <td class="l-cell l-center">
-          <button class="del-item-btn" aria-label="Delete item" onclick="deleteLedgerItem('${key}','${escapeHtml(m.desc || '').replace(/'/g, "\\'")}')">✕</button>
+          <button class="del-item-btn" aria-label="Delete item" onclick="deleteLedgerItem('${key}','${escapeHtml(m.desc || '').replace(/'/g, "\'")}')">✕</button>
         </td>
       </tr>`;
     });
 
     setText('ledgerTotal', peso(paidTotal));
-    setText('ledgerCount', `${orderCount} item${orderCount !== 1 ? 's' : ''} total`);
+    setText('ledgerCount', `${orderCount} item${orderCount !== 1 ? 's' : ''}`);
     firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal });
     updateMaterialsSummary(snap);
   });
@@ -260,7 +260,7 @@ function updateMaterialsSummary(snap) {
 }
 
 // ══════════════════════════════════════════════════════
-//  PO HISTORY
+//  PO HISTORY — IMPROVED: Group by month with date filtering
 // ══════════════════════════════════════════════════════
 function watchPOHistory(pid) {
   const ref = firebase.database().ref(`projects/${pid}/purchaseOrders`);
@@ -276,17 +276,52 @@ function watchPOHistory(pid) {
     const entries = [];
     snap.forEach(c => entries.unshift({ id: c.key, ...c.val() }));
 
+    // IMPROVED: Group by month
+    const byMonth = {};
     entries.forEach(po => {
-      const itemRows = (po.items || []).map(it => `
-        <div class="po-item-row">
-          <span class="po-item-desc">${escapeHtml(it.desc)}${it.size ? ` <span class="po-item-size">[${escapeHtml(it.size)}]</span>` : ''}</span>
-          <span class="po-item-qty">${it.qty} ${escapeHtml(it.unit)}</span>
-          <span class="po-item-cost">${peso(it.cost)}</span>
-          <span class="po-item-total">${peso(it.total)}</span>
-        </div>`).join('');
+      const dateStr = po.date || po.createdDate || 'Unknown';
+      const monthKey = dateStr !== 'Unknown' ? dateStr.slice(0, 7) : 'Unknown';
+      if (!byMonth[monthKey]) byMonth[monthKey] = [];
+      byMonth[monthKey].push(po);
+    });
 
-      container.innerHTML += `
-        <div class="po-card" id="poc_${po.id}" data-supplier="${escapeHtml((po.supplier || '').toLowerCase())}">
+    const sortedMonths = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
+
+    sortedMonths.forEach(monthKey => {
+      let monthLabel = monthKey;
+      if (monthKey !== 'Unknown') {
+        try {
+          const [year, month] = monthKey.split('-');
+          monthLabel = new Date(parseInt(year), parseInt(month) - 1, 1).toLocaleDateString('en-PH', { 
+            year: 'numeric', month: 'long' 
+          });
+        } catch { monthLabel = monthKey; }
+      }
+
+      const monthGroup = document.createElement('div');
+      monthGroup.className = 'po-month-group';
+      monthGroup.setAttribute('data-month', monthKey);
+
+      const monthHeader = document.createElement('div');
+      monthHeader.className = 'po-month-header';
+      monthHeader.innerHTML = `<span class="po-month-label">📅 ${monthLabel}</span><span class="po-month-count">${byMonth[monthKey].length} PO${byMonth[monthKey].length !== 1 ? 's' : ''}</span>`;
+      monthGroup.appendChild(monthHeader);
+
+      byMonth[monthKey].forEach(po => {
+        const itemRows = (po.items || []).map(it => `
+          <div class="po-item-row">
+            <span class="po-item-desc">${escapeHtml(it.desc)}${it.size ? ` <span class="po-item-size">[${escapeHtml(it.size)}]</span>` : ''}</span>
+            <span class="po-item-qty">${it.qty} ${escapeHtml(it.unit)}</span>
+            <span class="po-item-cost">${peso(it.cost)}</span>
+            <span class="po-item-total">${peso(it.total)}</span>
+          </div>`).join('');
+
+        const poCard = document.createElement('div');
+        poCard.className = 'po-card';
+        poCard.id = `poc_${po.id}`;
+        poCard.setAttribute('data-supplier', escapeHtml((po.supplier || '').toLowerCase()));
+        poCard.setAttribute('data-date', po.date || '');
+        poCard.innerHTML = `
           <div class="po-card-hdr">
             <div>
               <p class="po-date-lbl">${po.date} · ${po.createdDate || ''} · PO-${String(po.seq || '???').padStart(3, '0')}</p>
@@ -305,8 +340,11 @@ function watchPOHistory(pid) {
           <div class="po-item-hdr">
             <span>Item / Size</span><span>Qty</span><span>Unit Cost</span><span>Total</span>
           </div>
-          ${itemRows}
-        </div>`;
+          ${itemRows}`;
+        monthGroup.appendChild(poCard);
+      });
+
+      container.appendChild(monthGroup);
     });
   });
 }
@@ -390,7 +428,7 @@ async function exportPOImage(poId) {
   try {
     const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
     const link   = document.createElement('a');
-    link.download = `PO_${po.supplier.replace(/\\s+/g, '_')}_${po.date}.png`;
+    link.download = `PO_${po.supplier.replace(/\s+/g, '_')}_${po.date}.png`;
     link.href     = canvas.toDataURL('image/png');
     link.click();
     showToast('PO image downloaded!');
@@ -426,20 +464,36 @@ async function exportLedgerCSV() {
 
 function escapeCsv(text) {
   if (!text) return '';
-  if (text.includes(',') || text.includes('"') || text.includes('\\n')) {
+  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
     return '"' + text.replace(/"/g, '""') + '"';
   }
   return text;
 }
 
-// Filter PO history by supplier — now debounced
+// Filter PO history by supplier — now debounced and also filters by month
 function filterPOHistory(query) {
   if (_poFilterDebounce) clearTimeout(_poFilterDebounce);
   _poFilterDebounce = setTimeout(() => {
     const q = query.toLowerCase().trim();
+
+    // Filter individual PO cards
     document.querySelectorAll('.po-card').forEach(card => {
       const supplier = card.getAttribute('data-supplier') || '';
-      card.style.display = supplier.includes(q) ? '' : 'none';
+      const date = card.getAttribute('data-date') || '';
+      card.style.display = (supplier.includes(q) || date.includes(q)) ? '' : 'none';
     });
+
+    // Show/hide month groups based on visible children
+    document.querySelectorAll('.po-month-group').forEach(group => {
+      const visible = group.querySelectorAll('.po-card:not([style*="none"])').length;
+      group.style.display = visible > 0 ? '' : 'none';
+    });
+
+    // Restore visibility when query is cleared
+    if (!q) {
+      document.querySelectorAll('.po-card, .po-month-group').forEach(el => {
+        el.style.display = '';
+      });
+    }
   }, 150);
 }

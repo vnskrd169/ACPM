@@ -210,6 +210,18 @@ select option{background:var(--surface2)}
 .tt-pct{font-size:11px;color:var(--muted2);width:28px;text-align:right}
 .tt-val{font-size:12px;font-weight:700;color:var(--amber);width:80px;text-align:right}
 
+/* ── Timecard History — NEW ────────────────────────────── */
+#timecardHistoryList{display:flex;flex-direction:column;gap:10px;max-height:400px;overflow-y:auto;padding-right:4px}
+.tc-history-card{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;overflow:hidden}
+.tc-history-hdr{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface3);cursor:pointer;transition:background .2s}
+.tc-history-hdr:hover{background:var(--border2)}
+.tc-history-left{display:flex;flex-direction:column;gap:2px}
+.tc-history-period{font-size:13px;font-weight:700;color:var(--blue-l)}
+.tc-history-meta{font-size:11px;color:var(--muted)}
+.tc-history-toggle{font-size:12px;color:var(--muted2);transition:transform .2s}
+.tc-history-body{padding:12px 14px;border-top:1px solid var(--border)}
+.tc-history-table-wrap{overflow-x:auto}
+
 /* ── Advances ──────────────────────────────────────────── */
 .advance-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}
 .advance-date{width:85px;color:var(--muted2)}.advance-amt{flex:1;font-weight:700}
@@ -247,7 +259,7 @@ select option{background:var(--surface2)}
 .led-footer{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-top:2px solid var(--border2);background:var(--surface2);flex-wrap:wrap;gap:8px}
 
 /* ── PO history ────────────────────────────────────────── */
-#poHistory{display:flex;flex-direction:column;gap:12px}
+#poHistory{display:flex;flex-direction:column;gap:12px;max-height:600px;overflow-y:auto;padding-right:4px}
 .po-card{background:var(--surface2);border:1px solid var(--border2);border-radius:12px;overflow:hidden}
 .po-card-hdr{display:flex;justify-content:space-between;align-items:flex-start;padding:12px 14px;flex-wrap:wrap;gap:8px}
 .po-date-lbl{font-size:11px;color:var(--muted2);margin-bottom:2px}
@@ -320,18 +332,41 @@ select option{background:var(--surface2)}
 .co-reject-btn{background:#450a0a;color:var(--red);border:1px solid #7f1d1d;font-size:12px;font-weight:700;padding:8px 14px;border-radius:8px;flex:1;min-height:var(--touch)}
 .co-revert-btn{background:var(--surface2);border:1px solid var(--border2);color:var(--muted2);font-size:12px;font-weight:600;padding:8px 14px;border-radius:8px;min-height:var(--touch)}
 
-/* ── Site log ──────────────────────────────────────────── */
+/* ── Site log — FIXED ──────────────────────────────────── */
 .log-form{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
 .log-date-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .log-date-row input{width:160px;flex-shrink:0}
 .log-date-row textarea{flex:1;min-width:200px;resize:vertical;min-height:80px}
+
+/* FIXED: Proper container with scroll */
+#siteLogList{display:flex;flex-direction:column;gap:10px;max-height:500px;overflow-y:auto;padding-right:4px;min-height:0}
+
+/* NEW: Month grouping */
+.log-month-group{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px}
+.log-month-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.log-month-label{font-size:13px;font-weight:800;color:var(--blue-l);letter-spacing:.05em}
+.log-month-count{font-size:11px;color:var(--muted);font-weight:600}
+
+.log-day-group{padding:8px 14px;border-bottom:1px solid var(--border)}
+.log-day-group:last-child{border-bottom:none}
+.log-day-header{display:flex;justify-content:space-between;align-items:center;padding:6px 0;margin-bottom:6px;border-bottom:1px dashed var(--border2)}
+.log-day-label{font-size:12px;font-weight:700;color:var(--teal)}
+.log-day-count{font-size:11px;color:var(--muted)}
+
 .log-entry{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;margin-bottom:8px}
+.log-entry:last-child{margin-bottom:0}
 .log-entry-hdr{display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap}
 .log-date{font-size:13px;font-weight:800;color:var(--blue-l)}
 .log-saved{font-size:10px;color:var(--muted);flex:1}
 .del-log{background:transparent;color:var(--muted);font-size:14px;min-height:auto}
 .del-log:hover{color:var(--red)}
 .log-notes{font-size:13px;line-height:1.6;color:var(--muted2)}
+.log-time{font-size:11px;color:var(--amber);background:#451a03;padding:2px 6px;border-radius:4px}
+.log-weather{font-size:11px;color:var(--teal);background:#064e3b;padding:2px 6px;border-radius:4px}
+.log-loc{font-size:11px;color:var(--blue-l);background:#1e3a5f;padding:2px 6px;border-radius:4px;text-decoration:none}
+.log-loc:hover{background:#1e40af}
+.log-photos{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.log-photo{width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid var(--border2);cursor:pointer}
 
 /* ── Suppliers ─────────────────────────────────────────── */
 .supplier-form{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;margin-bottom:14px;align-items:end}
@@ -390,15 +425,7 @@ select option{background:var(--surface2)}
   margin-top: 10px;
 }
 
-#siteLogList {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  height: auto;        /* Hayaan ang container na mag-expand */
-  min-height: 100px;
-  overflow-y: visible; /* Huwag i-hide ang overflow para lumaki ang div */
-  padding-bottom: 20px;
-}
+/* FIXED: Removed conflicting #siteLogList rule, now properly defined above */
 
 .log-item {
   display: block;        /* Siguraduhin na block element ito */
@@ -408,3 +435,10 @@ select option{background:var(--surface2)}
   background: var(--surface2);
   border-radius: 8px;
 }
+
+
+/* ── PO Month Grouping — NEW ───────────────────────────── */
+.po-month-group{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px}
+.po-month-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border)}
+.po-month-label{font-size:13px;font-weight:800;color:var(--blue-l);letter-spacing:.05em}
+.po-month-count{font-size:11px;color:var(--muted);font-weight:600}

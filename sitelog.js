@@ -36,55 +36,86 @@ function watchSiteLog(pid) {
     snap.forEach(c => entries.push({ id: c.key, ...c.val() }));
     entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
-    // Group by date
-    const byDate = {};
+    // Group by MONTH first, then by date
+    const byMonth = {};
     entries.forEach(e => {
-      const d = e.date || 'Unknown';
-      if (!byDate[d]) byDate[d] = [];
-      byDate[d].push(e);
+      const dateStr = e.date || 'Unknown';
+      const monthKey = dateStr !== 'Unknown' ? dateStr.slice(0, 7) : 'Unknown';
+      if (!byMonth[monthKey]) byMonth[monthKey] = {};
+      if (!byMonth[monthKey][dateStr]) byMonth[monthKey][dateStr] = [];
+      byMonth[monthKey][dateStr].push(e);
     });
 
-    const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
-    
-    sortedDates.forEach(date => {
-      const dayGroup = document.createElement('div');
-      dayGroup.className = 'log-day-group';
-      
-      const dayHeader = document.createElement('div');
-      dayHeader.className = 'log-day-header';
-      let dayLabel;
-      try {
-        dayLabel = new Date(date).toLocaleDateString('en-PH', { 
-          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    // Sort months descending
+    const sortedMonths = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
+
+    sortedMonths.forEach(monthKey => {
+      const monthGroup = document.createElement('div');
+      monthGroup.className = 'log-month-group';
+
+      // Month header
+      let monthLabel = monthKey;
+      if (monthKey !== 'Unknown') {
+        try {
+          const [year, month] = monthKey.split('-');
+          monthLabel = new Date(parseInt(year), parseInt(month) - 1, 1).toLocaleDateString('en-PH', { 
+            year: 'numeric', month: 'long' 
+          });
+        } catch { monthLabel = monthKey; }
+      }
+
+      const monthCount = Object.values(byMonth[monthKey]).reduce((sum, day) => sum + day.length, 0);
+
+      const monthHeader = document.createElement('div');
+      monthHeader.className = 'log-month-header';
+      monthHeader.innerHTML = `<span class="log-month-label">📅 ${monthLabel}</span><span class="log-month-count">${monthCount} entr${monthCount !== 1 ? 'ies' : 'y'}</span>`;
+      monthGroup.appendChild(monthHeader);
+
+      // Sort dates within month descending
+      const sortedDates = Object.keys(byMonth[monthKey]).sort((a, b) => b.localeCompare(a));
+
+      sortedDates.forEach(date => {
+        const dayGroup = document.createElement('div');
+        dayGroup.className = 'log-day-group';
+
+        const dayHeader = document.createElement('div');
+        dayHeader.className = 'log-day-header';
+        let dayLabel;
+        try {
+          dayLabel = new Date(date).toLocaleDateString('en-PH', { 
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+          });
+        } catch { dayLabel = date; }
+        dayHeader.innerHTML = `<span class="log-day-label">📆 ${dayLabel}</span><span class="log-day-count">${byMonth[monthKey][date].length} entr${byMonth[monthKey][date].length !== 1 ? 'ies' : 'y'}</span>`;
+        dayGroup.appendChild(dayHeader);
+
+        byMonth[monthKey][date].forEach(e => {
+          const locHTML = e.location
+            ? `<a class="log-loc" href="https://maps.google.com/?q=${e.location}" target="_blank" rel="noopener">📍 Location</a>`
+            : '';
+          const timeHTML = e.time ? `<span class="log-time">⏰ ${e.time}</span>` : '';
+          const weatherHTML = e.weather ? `<span class="log-weather">🌤️ ${escapeHtml(e.weather)}</span>` : '';
+
+          const div = document.createElement('div');
+          div.className = 'log-entry';
+          div.innerHTML = `
+            <div class="log-entry-hdr">
+              <span class="log-date">${e.date || '—'}</span>
+              ${timeHTML}
+              ${weatherHTML}
+              ${locHTML}
+              <span class="log-saved">${e.savedDate || ''}</span>
+              <button class="del-log" aria-label="Delete log" onclick="deleteLog('${e.id}')">✕</button>
+            </div>
+            <p class="log-notes">${escapeHtml(e.notes || '').replace(/\n/g, '<br>')}</p>
+            ${e.photos ? `<div class="log-photos">${e.photos.map(p => `<img src="${p}" class="log-photo" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}`;
+          dayGroup.appendChild(div);
         });
-      } catch { dayLabel = date; }
-      dayHeader.innerHTML = `<span class="log-day-label">📅 ${dayLabel}</span><span class="log-day-count">${byDate[date].length} entry${byDate[date].length !== 1 ? 's' : ''}</span>`;
-      dayGroup.appendChild(dayHeader);
 
-      byDate[date].forEach(e => {
-        const locHTML = e.location
-          ? `<a class="log-loc" href="https://maps.google.com/?q=${e.location}" target="_blank" rel="noopener">📍 Location</a>`
-          : '';
-        const timeHTML = e.time ? `<span class="log-time">⏰ ${e.time}</span>` : '';
-        const weatherHTML = e.weather ? `<span class="log-weather">🌤️ ${escapeHtml(e.weather)}</span>` : '';
-
-        const div = document.createElement('div');
-        div.className = 'log-entry';
-        div.innerHTML = `
-          <div class="log-entry-hdr">
-            <span class="log-date">${e.date || '—'}</span>
-            ${timeHTML}
-            ${weatherHTML}
-            ${locHTML}
-            <span class="log-saved">${e.savedDate || ''}</span>
-            <button class="del-log" aria-label="Delete log" onclick="deleteLog('${e.id}')">✕</button>
-          </div>
-          <p class="log-notes">${escapeHtml(e.notes || '').replace(/\\n/g, '<br>')}</p>
-          ${e.photos ? `<div class="log-photos">${e.photos.map(p => `<img src="${p}" class="log-photo" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}`;
-        dayGroup.appendChild(div);
+        monthGroup.appendChild(dayGroup);
       });
 
-      el.appendChild(dayGroup);
+      el.appendChild(monthGroup);
     });
 
     renderSiteLogSummary(entries);
@@ -196,7 +227,7 @@ async function exportSiteLogs() {
     lines.push('');
   });
 
-  const blob = new Blob([lines.join('\\n')], { type: 'text/plain' });
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -220,9 +251,14 @@ function filterLogs(query) {
       const visible = group.querySelectorAll('.log-entry:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
+    // Show/hide month groups based on visible children
+    document.querySelectorAll('.log-month-group').forEach(group => {
+      const visible = group.querySelectorAll('.log-day-group:not([style*="none"])').length;
+      group.style.display = visible > 0 ? '' : 'none';
+    });
     // Restore visibility when query is cleared
     if (!q) {
-      document.querySelectorAll('.log-entry, .log-day-group').forEach(el => {
+      document.querySelectorAll('.log-entry, .log-day-group, .log-month-group').forEach(el => {
         el.style.display = '';
       });
     }
