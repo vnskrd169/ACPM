@@ -303,33 +303,83 @@ function filterLogs(query) {
 
 function ensureScrollable() {
   const el = $('siteLogList');
-  if (!el) return;
+  if (!el) {
+    console.log('❌ siteLogList not found');
+    return;
+  }
+
+  // Get computed styles
+  const computed = window.getComputedStyle(el);
+  console.log('📏 siteLogList styles:', {
+    maxHeight: computed.maxHeight,
+    overflowY: computed.overflowY,
+    overflowX: computed.overflowX,
+    display: computed.display,
+    height: computed.height
+  });
 
   // Force scroll styles via JS
-  el.style.maxHeight = '60vh';
-  el.style.overflowY = 'auto';
+  el.style.maxHeight = '500px';
+  el.style.overflowY = 'scroll';
   el.style.overflowX = 'hidden';
-  el.style.display = 'flex';
-  el.style.flexDirection = 'column';
+  el.style.display = 'block';
+
+  // Check dimensions
+  console.log('📏 Dimensions:', {
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+    offsetHeight: el.offsetHeight
+  });
 
   // Check if content is taller than container
   const isOverflowing = el.scrollHeight > el.clientHeight;
-  console.log('📏 Scroll check:', el.scrollHeight, '>', el.clientHeight, '=', isOverflowing);
+  console.log('📏 Is overflowing:', isOverflowing);
 
-  if (!isOverflowing) {
-    // If not overflowing, try to find the parent and make it scrollable
-    let parent = el.parentElement;
-    while (parent && parent !== document.body) {
-      if (parent.classList.contains('card') || parent.classList.contains('panel')) {
-        parent.style.maxHeight = '80vh';
-        parent.style.overflowY = 'auto';
-        console.log('📏 Made parent scrollable:', parent.className);
-        break;
-      }
-      parent = parent.parentElement;
+  // Make ALL parents scrollable
+  let parent = el.parentElement;
+  let level = 0;
+  while (parent && parent !== document.body && level < 5) {
+    const parentComputed = window.getComputedStyle(parent);
+    console.log(`📏 Parent ${level} (${parent.className}):`, {
+      overflowY: parentComputed.overflowY,
+      overflowX: parentComputed.overflowX,
+      maxHeight: parentComputed.maxHeight,
+      height: parentComputed.height
+    });
+
+    // If parent has overflow hidden, change it
+    if (parentComputed.overflowY === 'hidden' || parentComputed.overflow === 'hidden') {
+      parent.style.overflowY = 'auto';
+      console.log(`📏 Fixed parent ${level} overflow`);
     }
+
+    parent = parent.parentElement;
+    level++;
   }
 }
 
 // Call after rendering
 setTimeout(ensureScrollable, 100);
+
+
+// ════════════════════════════════════════════════════════
+// MANUAL REFRESH — For debugging scroll and data issues
+// ════════════════════════════════════════════════════════
+
+function refreshSiteLogs() {
+  console.log('🔄 Manual refresh triggered');
+  if (_slpid) {
+    // Detach and reattach listener
+    if (_slListener) { _slListener.off(); _slListener = null; }
+    watchSiteLog(_slpid);
+    showToast('Site logs refreshed');
+  }
+}
+
+// Add keyboard shortcut for refresh (Ctrl+R in site log)
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key === 'r' && document.querySelector('.panel-sitelog:not(.hidden)')) {
+    e.preventDefault();
+    refreshSiteLogs();
+  }
+});
