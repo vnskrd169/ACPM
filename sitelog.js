@@ -4,7 +4,6 @@ let _logFilterDebounce = null;
 
 function initSiteLog(pid) {
   _slpid = pid;
-  // FIXED: Proper cleanup
   if (_slListener) { _slListener.off(); _slListener = null; }
 
   const dateInp = $('logDate');
@@ -13,7 +12,6 @@ function initSiteLog(pid) {
   watchSiteLog(pid);
 }
 
-// NEW: Proper detach function
 function detachSiteLogListeners() {
   if (_slListener) { _slListener.off(); _slListener = null; }
 }
@@ -34,6 +32,8 @@ function watchSiteLog(pid) {
 
     const entries = [];
     snap.forEach(c => entries.push({ id: c.key, ...c.val() }));
+
+    // Sort by savedAt descending (newest first)
     entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
     // Group by MONTH first, then by date
@@ -98,6 +98,7 @@ function watchSiteLog(pid) {
 
           const div = document.createElement('div');
           div.className = 'log-entry';
+          div.setAttribute('data-id', e.id);
           div.innerHTML = `
             <div class="log-entry-hdr">
               <span class="log-date">${e.date || '—'}</span>
@@ -237,25 +238,29 @@ async function exportSiteLogs() {
   showToast('Site log exported!');
 }
 
-// Filter logs by search query — now debounced and restores visibility
 function filterLogs(query) {
   if (_logFilterDebounce) clearTimeout(_logFilterDebounce);
   _logFilterDebounce = setTimeout(() => {
     const q = query.toLowerCase().trim();
+
+    // Filter individual log entries
     document.querySelectorAll('.log-entry').forEach(entry => {
       const text = entry.textContent.toLowerCase();
       entry.style.display = text.includes(q) ? '' : 'none';
     });
+
     // Show/hide day groups based on visible children
     document.querySelectorAll('.log-day-group').forEach(group => {
       const visible = group.querySelectorAll('.log-entry:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
+
     // Show/hide month groups based on visible children
     document.querySelectorAll('.log-month-group').forEach(group => {
       const visible = group.querySelectorAll('.log-day-group:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
+
     // Restore visibility when query is cleared
     if (!q) {
       document.querySelectorAll('.log-entry, .log-day-group, .log-month-group').forEach(el => {

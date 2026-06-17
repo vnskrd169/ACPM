@@ -426,13 +426,18 @@ select option{background:var(--surface2)}
 .panel{display:flex;flex-direction:column;gap:12px;position:relative}
 
 
+
+
+
+
+
+
+
 /* ════════════════════════════════════════════════════════
    MODAL OVERLAY — Using div (not dialog) for full control
    ════════════════════════════════════════════════════════ */
 
 .modal-overlay {
-
-  z-index:0;
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.85);
@@ -475,5 +480,157 @@ select option{background:var(--surface2)}
   .modal-box {
     border-radius: 16px 16px 0 0;
     max-height: 90dvh;
+  }
+}
+
+
+/* ════════════════════════════════════════════════════════
+   UI FIXES — Buttons, Layout, Spacing
+   ════════════════════════════════════════════════════════ */
+
+/* Fix button styling */
+.btn-export-sm {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--muted2);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 8px;
+  min-height: var(--touch);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-export-sm:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* Fix site log summary */
+.log-summary-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+}
+
+.log-summary-item {
+  font-size: 13px;
+  color: var(--muted2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Fix card header with actions */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.card-header h2 {
+  margin: 0;
+}
+
+/* Fix log actions */
+.log-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Fix search bar */
+.search-bar {
+  margin-bottom: 12px;
+}
+
+.search-bar input {
+  width: 100%;
+}
+
+/* Fix form actions */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+/* Fix workspace tabs */
+.ws-tab-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+}
+
+.ws-tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Fix tab button in workspace */
+.ws-tab-bar .tab-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Fix locked banner */
+.locked-banner {
+  width: 100%;
+}
+
+/* Fix modal actions */
+.modal-actions {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* Fix toast positioning */
+.toast-msg {
+  z-index: 9999;
+}
+
+/* Ensure proper stacking */
+.app-header {
+  z-index: 100;
+}
+
+.modal-overlay {
+  z-index: 1000;
+}
+
+/* Fix for mobile */
+@media (max-width: 600px) {
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .log-actions {
+    width: 100%;
+  }
+
+  .log-actions input {
+    flex: 1;
+  }
+
+  .form-actions {
+    justify-content: stretch;
+  }
+
+  .form-actions button {
+    flex: 1;
   }
 }
