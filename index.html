@@ -1,727 +1,663 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Art and Choi Project Management</title>
-
-  <!-- External Libraries -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
-  <!-- App Styles -->
-  <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#7c3aed">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ACPM">
+<link rel="manifest" href="./manifest.json">
+<title>ACPM — LeBuild Construction</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <base target="_blank">
 </head>
 <body>
 
-  <!-- ═══════════════════════════════════════════════════════
-       HEADER
-       ═══════════════════════════════════════════════════════ -->
-  <header class="app-header">
-    <div class="logo-sub">Art and Choi Project Management</div>
-    <div class="hdr-right">
-      <button class="btn-hub" onclick="exitHub()">📂 Hub</button>
-      <span class="badge badge-g">☁️ Synced</span>
+<!-- HEADER -->
+<header class="hdr">
+  <div class="hdr-brand">
+    <div class="hdr-logo">LB</div>
+    <div>
+      <div class="hdr-name">ACPM</div>
+      <div class="hdr-sub">LeBuild Design &amp; Construction</div>
     </div>
-  </header>
+  </div>
+  <div class="hdr-right">
+    <span class="badge badge-green" id="syncBadge">☁️ Synced</span>
+    <button class="btn-hub" onclick="exitHub()">📂 Hub</button>
+  </div>
+</header>
 
-  <!-- ═══════════════════════════════════════════════════════
-       MAIN CONTENT
-       ═══════════════════════════════════════════════════════ -->
-  <main class="main">
+<div class="main">
 
-    <!-- PWA Install Prompt -->
-    <div id="installBar" class="install-bar hidden">
-      <p>Install this app for offline access</p>
-      <div class="install-actions">
-        <button class="btn-install" id="installBtn">Install App</button>
-        <button class="btn-install-dismiss" onclick="document.getElementById('installBar').classList.add('hidden')">✕</button>
-      </div>
+<!-- INSTALL BAR -->
+<div id="installBar" class="install-bar hidden">
+  <p>📱 Install ACPM on your phone — works offline!</p>
+  <div style="display:flex;gap:8px">
+    <button class="btn-install" id="installBtn">Install App</button>
+    <button class="btn-install-dismiss" onclick="document.getElementById('installBar').classList.add('hidden')">✕</button>
+  </div>
+</div>
+
+<!-- ═══ HUB VIEW ═══════════════════════════════════════════════ -->
+<section id="hubView">
+
+  <!-- Create project -->
+  <div class="card hub-create-card">
+    <div class="card-title">
+      <span class="ct-icon" style="background:rgba(124,58,237,.15)">🏗</span>
+      New Project Site
     </div>
-
-    <!-- ═════════════════════════════════════════════════════
-         HUB VIEW — Project Dashboard
-         ═════════════════════════════════════════════════════ -->
-    <section id="hubView" class="view-hub">
-
-      <!-- Create New Project -->
-      <article class="card card-create">
-        <h2 class="sec-label">New Project</h2>
-        <div class="create-grid">
-          <input id="newName" type="text" placeholder="Project name">
-          <input id="newLaborBudget" type="number" placeholder="Labor Budget (₱)" inputmode="decimal">
-          <input id="newMaterialBudget" type="number" placeholder="Materials Budget (₱)" inputmode="decimal">
-        </div>
-        <div class="form-actions">
-          <button class="btn-create" onclick="createProject()">+ Create Project</button>
-        </div>
-      </article>
-
-      <!-- Search -->
-      <div class="search-bar">
-        <input type="text" id="projectSearch" placeholder="🔍 Search projects..." oninput="filterProjects(this.value)">
-      </div>
-
-      <!-- Hub Tabs -->
-      <nav class="hub-tab-row">
-        <button id="hubTab_active" class="hub-tab tab-active" onclick="showHubTab('active')">🏗 Active</button>
-        <button id="hubTab_completed" class="hub-tab" onclick="showHubTab('completed')">✓ Completed</button>
-      </nav>
-
-      <!-- Active Projects Pane -->
-      <div id="activeProjectsPane" class="tab-pane pane-active">
-        <!-- NEW: Dashboard Summary -->
-        <article class="card card-summary">
-          <h2 class="sec-label">Dashboard Summary</h2>
-          <div id="dashboardSummary">
-            <p class="empty-hint">Loading dashboard...</p>
-          </div>
-        </article>
-
-        <div id="projectGrid">
-          <p class="hub-empty">Loading...</p>
-        </div>
-        <article class="card card-comparison">
-          <h2 class="sec-label">Budget Comparison</h2>
-          <div id="comparisonView">
-            <p class="empty-hint">Add 2+ projects to compare.</p>
-          </div>
-        </article>
-      </div>
-
-      <!-- Completed Projects Pane -->
-      <div id="completedProjectsPane" class="tab-pane pane-completed hidden">
-        <div id="completedGrid">
-          <p class="hub-empty">No completed projects.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ═════════════════════════════════════════════════════
-         WORKSPACE VIEW — Individual Project
-         ═════════════════════════════════════════════════════ -->
-    <section id="workspaceView" class="view-workspace hidden">
-
-      <!-- Workspace Header -->
-      <header class="ws-header">
-        <div class="ws-title-wrap">
-          <h1 class="ws-title" id="wsName">—</h1>
-          <button class="btn-unlock-ws" onclick="unlockForEdit()">🔓 Unlock</button>
-        </div>
-        <div id="lockedBanner" class="locked-banner hidden">
-          🔒 Read-only mode — <button onclick="unlockForEdit()">Unlock</button>
-        </div>
-        <div class="ws-actions">
-          <button class="btn-export-data" onclick="exportAllData()">⬇️ Export</button>
-          <button class="btn-back" onclick="exitHub()">← Hub</button>
-        </div>
-      </header>
-
-      <!-- Workspace Tabs -->
-      <nav class="ws-tab-bar">
-        <button id="tab_labor" class="tab-btn tab-active" onclick="switchTab('labor')">👷 Labor</button>
-        <button id="tab_materials" class="tab-btn" onclick="switchTab('materials')">📦 Orders</button>
-        <button id="tab_billing" class="tab-btn" onclick="switchTab('billing')">💰 Billing</button>
-        <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')">📋 Change Orders</button>
-        <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')">📒 Site Log</button>
-        <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')">🏪 Suppliers</button>
-      </nav>
-
-      <!-- ═════════════════════════════════════════════════
-           LABOR PANEL
-           ═════════════════════════════════════════════════ -->
-      <section id="panel_labor" class="panel panel-labor">
-
-        <!-- KPI Cards -->
-        <div class="kpi-row">
-          <div class="kpi-card">
-            <span class="kpi-label">Labor Budget</span>
-            <span class="kpi-num" id="lbBudget">₱0.00</span>
-          </div>
-          <div class="kpi-card">
-            <span class="kpi-label">Disbursed</span>
-            <span class="kpi-num kpi-danger" id="lbSpent">₱0.00</span>
-          </div>
-          <div class="kpi-card">
-            <span class="kpi-label">Remaining</span>
-            <span class="kpi-num kpi-safe" id="lbLeft">₱0.00</span>
-          </div>
-        </div>
-
-        <div class="two-col">
-          <!-- Left Column: Trades & Roster -->
-          <div class="col-left">
-
-            <!-- Trades -->
-            <article class="card card-trades">
-              <div class="trade-input-row">
-                <input id="newTradeName" type="text" placeholder="e.g., Carpenter" onkeydown="if(event.key==='Enter')addTrade()">
-                <button class="btn-add-sm" onclick="addTrade()">+ Add</button>
-              </div>
-              <div id="tradeList">
-                <p class="empty-hint">No trades yet.</p>
-              </div>
-            </article>
-
-            <!-- Staff Roster -->
-            <article class="card card-roster">
-              <h2 class="card-title">👷 Staff Roster</h2>
-              <div class="worker-form">
-                <input id="workerName" type="text" placeholder="Worker name">
-                <input id="workerRate" type="number" placeholder="Daily rate" inputmode="decimal">
-                <select id="workerTradeSelect">
-                  <option value="">— Select Trade —</option>
-                </select>
-              </div>
-              <button class="btn-add-worker" onclick="addWorker()">+ Deploy Worker</button>
-              <div id="rosterList"></div>
-            </article>
-          </div>
-
-          <!-- Right Column: Timecards -->
-          <div class="col-right">
-
-            <!-- Week Selector -->
-            <div class="card card-week">
-              <div class="tc-date-grp">
-                <label for="weekStart">From</label>
-                <input id="weekStart" type="date">
-                <label for="weekEnd">To</label>
-                <input id="weekEnd" type="date">
-                <button class="btn-apply" onclick="applyWeek()">Apply</button>
-              </div>
-              <div class="tc-action-row">
-                <button class="btn-rfp" onclick="generateRFP()">📄 RFP</button>
-                <button class="btn-compile" onclick="compilePayroll()">✅ Compile</button>
-              </div>
-            </div>
-
-            <!-- Timecard Grid -->
-            <div id="timecardGrid">
-              <p class="empty-hint">Add workers first.</p>
-            </div>
-
-            <!-- Attendance Summary -->
-            <article class="card card-attendance">
-              <h2 class="card-title">📊 Attendance Summary</h2>
-              <div id="attendanceSummary">
-                <p class="empty-hint">No data yet.</p>
-              </div>
-            </article>
-          </div>
-        </div>
-
-        <!-- Payroll Logs Archive -->
-        <article class="card card-payroll-archive">
-          <header class="card-header">
-            <h2 class="card-title">📋 Payroll Logs Archive</h2>
-            <button class="btn-export-sm" onclick="exportPayrollCSV()">⬇️ CSV</button>
-          </header>
-          <div class="history-split">
-            <div class="table-wrap">
-              <table class="hist-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Period</th>
-                    <th>Workers</th>
-                    <th class="num">Gross</th>
-                    <th class="num">Net</th>
-                  </tr>
-                </thead>
-                <tbody id="payrollLogsBody">
-                  <tr><td colspan="5" class="empty">No payroll logs yet.</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div id="tradeTotals">
-              <p class="empty-hint">No data yet.</p>
-            </div>
-          </div>
-        </article>
-
-        <!-- NEW: Timecard History — Archived Daily Attendance -->
-        <article class="card card-tc-history">
-          <header class="card-header">
-            <h2 class="card-title">📚 Daily Attendance History</h2>
-            <p class="empty-hint" style="font-size:11px">View past attendance records from compiled payrolls. Click a period to expand.</p>
-          </header>
-          <div id="timecardHistoryList">
-            <p class="empty-hint">No archived attendance yet. Compile payroll to save records.</p>
-          </div>
-        </article>
-      </section>
-
-      <!-- ═════════════════════════════════════════════════
-           MATERIALS PANEL
-           ═════════════════════════════════════════════════ -->
-      <section id="panel_materials" class="panel panel-materials hidden">
-
-        <!-- KPI Cards -->
-        <div class="kpi-row">
-          <div class="kpi-card">
-            <span class="kpi-label">Materials Budget</span>
-            <span class="kpi-num" id="mbBudget">₱0.00</span>
-          </div>
-          <div class="kpi-card">
-            <span class="kpi-label">Spent</span>
-            <span class="kpi-num kpi-danger" id="mbSpent">₱0.00</span>
-          </div>
-          <div class="kpi-card">
-            <span class="kpi-label">Remaining</span>
-            <span class="kpi-num kpi-safe" id="mbLeft">₱0.00</span>
-          </div>
-        </div>
-
-        <!-- New Purchase Order -->
-        <article class="card card-po-form">
-          <h2 class="card-title">🛒 New Purchase Order</h2>
-          <div class="po-meta-grid">
-            <div class="po-supplier-row">
-              <select id="poSupplierSelect" onchange="applySupplierSelection()">
-                <option value="">— Quick-select supplier —</option>
-              </select>
-              <input id="poSupplier" type="text" placeholder="Or type supplier name">
-            </div>
-            <input id="poDate" type="date">
-            <input id="poNotes" type="text" placeholder="Notes (optional)">
-          </div>
-          <div class="po-item-form">
-            <input id="poItemDesc" type="text" placeholder="Item description">
-            <input id="poItemSize" type="text" placeholder="Size (e.g. 12mm)">
-            <input id="poItemQty" type="number" placeholder="Qty" inputmode="decimal">
-            <input id="poItemUnit" type="text" placeholder="Unit">
-            <input id="poItemCost" type="number" placeholder="Unit cost" inputmode="decimal">
-            <button class="btn-add-sm" onclick="addDraftItem()">+ Add</button>
-          </div>
-          <div id="draftList">
-            <p class="empty-hint">No items yet.</p>
-          </div>
-          <footer class="po-draft-footer">
-            <span class="draft-total" id="draftTotal">₱0.00</span>
-            <button class="btn-submit-po" onclick="submitPO()">Submit PO →</button>
-          </footer>
-        </article>
-
-        <!-- Materials Ledger -->
-        <article class="card card-ledger">
-          <header class="card-header">
-            <h2 class="card-title">📋 Materials Ledger <span class="ledger-count" id="ledgerCount"></span></h2>
-            <button class="btn-export-sm" onclick="exportLedgerCSV()">⬇️ CSV</button>
-          </header>
-          <div class="table-wrap">
-            <table class="led-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Supplier</th>
-                  <th>Item</th>
-                  <th>Size</th>
-                  <th>Qty</th>
-                  <th class="num">Unit Cost</th>
-                  <th class="num">Total</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="ledgerBody">
-                <tr><td colspan="9" class="empty">No ledger entries yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <footer class="led-footer">
-            <span class="footer-label">Paid:</span>
-            <span class="footer-total" id="ledgerTotal">₱0.00</span>
-          </footer>
-        </article>
-
-        <!-- Materials Summary -->
-        <article class="card card-summary">
-          <h2 class="card-title">📦 Materials Summary — by Item & Size</h2>
-          <div id="materialsSummary">
-            <p class="empty-hint">No data yet.</p>
-          </div>
-        </article>
-
-        <!-- PO History -->
-        <article class="card card-po-history">
-          <header class="card-header">
-            <h2 class="card-title">🗂️ PO History</h2>
-            <input type="text" placeholder="🔍 Search POs..." oninput="filterPOHistory(this.value)">
-          </header>
-          <div id="poHistory">
-            <p class="empty-hint">No orders yet.</p>
-          </div>
-        </article>
-      </section>
-
-      <!-- ═════════════════════════════════════════════════
-           BILLING PANEL
-           ═════════════════════════════════════════════════ -->
-      <section id="panel_billing" class="panel panel-billing hidden">
-
-        <!-- Contract Setup -->
-        <article class="card card-contract-form">
-          <div class="contract-form-grid">
-            <input id="contractClient" type="text" placeholder="Client / Owner name">
-            <input id="contractAmount" type="number" placeholder="Contract Amount (₱)" inputmode="decimal">
-            <input id="contractDownPct" type="number" placeholder="Down Payment %" inputmode="decimal">
-            <input id="contractRetention" type="number" placeholder="Retention % (e.g. 10)" inputmode="decimal">
-            <input id="contractStart" type="date">
-            <input id="contractEnd" type="date">
-          </div>
-          <div class="form-actions">
-            <button class="btn-add-sm" onclick="saveContract()">Save Contract</button>
-          </div>
-        </article>
-
-        <!-- Contract Dashboard -->
-        <article class="card card-contract-dash">
-          <header class="card-header">
-            <div class="contract-title">
-              <span class="contract-amount" id="cdAmount">—</span>
-              <span class="contract-meta">Client: <span id="cdClient">—</span> · <span id="cdDates">—</span></span>
-            </div>
-            <div class="contract-actions">
-              <button class="btn-export-sm" onclick="exportBillingSummary()">⬇️ CSV</button>
-              <button class="btn-mc" onclick="editContract()">✎ Edit</button>
-            </div>
-          </header>
-          <div class="billing-progress-wrap">
-            <div id="cdProgressBar" class="billing-fill bar-ok" style="width:0%"></div>
-          </div>
-          <p class="progress-pct" id="cdProgressPct">0% collected</p>
-          <div class="contract-info-grid">
-            <div class="ci-block">
-              <span class="ci-label">Down Payment</span>
-              <span class="ci-val" id="cdDownPay">—</span>
-            </div>
-            <div class="ci-block">
-              <span class="ci-label">Retention</span>
-              <span class="ci-val" id="cdRetention">—</span>
-            </div>
-            <div class="ci-block">
-              <span class="ci-label">Total Billed</span>
-              <span class="ci-val" id="cdTotalBilled">₱0.00</span>
-            </div>
-            <div class="ci-block">
-              <span class="ci-label">Total Collected</span>
-              <span class="ci-val ci-safe" id="cdTotalCollected">₱0.00</span>
-            </div>
-            <div class="ci-block">
-              <span class="ci-label">Retention Held</span>
-              <span class="ci-val" id="cdRetentionHeld">₱0.00</span>
-            </div>
-            <div class="ci-block">
-              <span class="ci-label">Net Collected</span>
-              <span class="ci-val ci-safe" id="cdNetCollected">₱0.00</span>
-            </div>
-            <div class="ci-block ci-full">
-              <span class="ci-label">Outstanding Receivables</span>
-              <span class="ci-val-lg" id="cdOutstanding">₱0.00</span>
-            </div>
-            <div class="ci-block ci-full">
-              <span class="ci-label">Remaining Billable</span>
-              <span class="ci-val-lg" id="cdBillable">₱0.00</span>
-            </div>
-          </div>
-        </article>
-
-        <!-- Billing Requests -->
-        <article class="card card-billing-req">
-          <header class="card-header">
-            <h2 class="card-title">📋 Billing Requests</h2>
-            <div class="filter-group">
-              <button class="filter-btn" onclick="filterBillings('all')">All</button>
-              <button class="filter-btn" onclick="filterBillings('pending')">Pending</button>
-              <button class="filter-btn" onclick="filterBillings('sent')">Sent</button>
-              <button class="filter-btn" onclick="filterBillings('collected')">Collected</button>
-            </div>
-          </header>
-          <div class="billing-form-grid">
-            <input id="billDesc" type="text" placeholder="Description (e.g. 2nd tranche — roofing complete)">
-            <input id="billDate" type="date">
-            <input id="billAmount" type="number" placeholder="Amount (₱)" inputmode="decimal">
-            <button class="btn-add-sm" onclick="addBillingRequest()">+ Add</button>
-          </div>
-          <div class="table-wrap">
-            <table class="hist-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Description</th>
-                  <th>Status</th>
-                  <th class="num">Amount</th>
-                  <th>Action</th>
-                  <th>Delete</th>
-                </tr>
-              </thead>
-              <tbody id="billingsBody">
-                <tr><td colspan="6" class="empty">No billing requests yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </article>
-
-        <!-- Collections -->
-        <article class="card card-collections">
-          <h2 class="card-title">💵 Collections</h2>
-          <div class="billing-form-grid">
-            <input id="colDesc" type="text" placeholder="Description (e.g. 2nd tranche payment)">
-            <input id="colDate" type="date">
-            <input id="colAmount" type="number" placeholder="Amount received (₱)" inputmode="decimal">
-            <button class="btn-add-sm" onclick="addCollection()">+ Record</button>
-          </div>
-          <div class="table-wrap">
-            <table class="hist-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Description</th>
-                  <th class="num">Amount</th>
-                  <th>Delete</th>
-                </tr>
-              </thead>
-              <tbody id="collectionsBody">
-                <tr><td colspan="4" class="empty">No collections yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </article>
-      </section>
-
-      <!-- ═════════════════════════════════════════════════
-           CHANGE ORDERS PANEL
-           ═════════════════════════════════════════════════ -->
-      <section id="panel_changeorders" class="panel panel-changeorders hidden">
-
-        <!-- KPI Cards -->
-        <div class="kpi-row">
-          <div class="kpi-card">
-            <span class="kpi-label">Total COs</span>
-            <span class="kpi-num" id="coCount">0</span>
-          </div>
-          <div class="kpi-card">
-            <span class="kpi-label">Approved Value</span>
-            <span class="kpi-num kpi-safe" id="coTotalApproved">₱0.00</span>
-          </div>
-          <div class="kpi-card">
-            <span class="kpi-label">Pending Value</span>
-            <span class="kpi-num kpi-warn" id="coTotalPending">₱0.00</span>
-          </div>
-          <div class="kpi-card">
-            <span class="kpi-label">Labor Impact</span>
-            <span class="kpi-num" id="coLaborImpact">₱0.00</span>
-          </div>
-        </div>
-
-        <!-- New Change Order -->
-        <article class="card card-co-form">
-          <h2 class="card-title">📋 New Change Order</h2>
-          <div class="co-form-grid">
-            <input id="coDesc" type="text" placeholder="Description of additional/change work">
-            <input id="coReqBy" type="text" placeholder="Requested by">
-            <input id="coDate" type="date">
-            <input id="coNotes" type="text" placeholder="Notes (optional)">
-          </div>
-          <div class="co-impact-row">
-            <div class="impact-field">
-              <label for="coLaborImpact">Labor Impact (₱)</label>
-              <input id="coLaborImpact" type="number" placeholder="0.00 (use negative for deductions)" inputmode="decimal">
-            </div>
-            <div class="impact-field">
-              <label for="coMaterialsImpact">Materials Impact (₱)</label>
-              <input id="coMaterialsImpact" type="number" placeholder="0.00" inputmode="decimal">
-            </div>
-          </div>
-          <div class="form-actions">
-            <button class="btn-add-sm" onclick="addChangeOrder()">+ Submit Change Order</button>
-          </div>
-        </article>
-
-        <!-- Change Order List -->
-        <header class="list-header">
-          <div class="filter-group">
-            <button class="filter-btn" onclick="filterCOs('all')">All</button>
-            <button class="filter-btn" onclick="filterCOs('pending')">Pending</button>
-            <button class="filter-btn" onclick="filterCOs('approved')">Approved</button>
-            <button class="filter-btn" onclick="filterCOs('rejected')">Rejected</button>
-          </div>
-          <button class="btn-export-sm" onclick="exportCOsCSV()">⬇️ CSV</button>
-        </header>
-        <div id="coList">
-          <p class="empty-hint">No change orders yet.</p>
-        </div>
-      </section>
-
-      <!-- ═════════════════════════════════════════════════
-           SITE LOG PANEL
-           ═════════════════════════════════════════════════ -->
-      <section id="panel_sitelog" class="panel panel-sitelog hidden">
-
-        <!-- NEW: Site Log Summary -->
-        <div id="siteLogSummary" class="card" style="margin-bottom:12px">
-          <p class="empty-hint">Loading site log summary...</p>
-        </div>
-
-        <article class="card card-log">
-          <header class="card-header">
-            <h2 class="card-title">📒 Daily Site Log</h2>
-            <div class="log-actions">
-              <input type="text" placeholder="🔍 Search logs..." oninput="filterLogs(this.value)">
-              <button class="btn-rfp" onclick="exportSiteLogs()">⬇️ Export</button>
-            </div>
-          </header>
-          <div class="log-form">
-            <div class="log-date-row">
-              <input id="logDate" type="date">
-              <input id="logWeather" type="text" placeholder="Weather (e.g. Sunny, Rainy)">
-            </div>
-            <textarea id="logNotes" rows="3" placeholder="What happened on site today?"></textarea>
-          </div>
-          <div class="form-actions">
-            <button class="btn-add-sm" onclick="saveLog()">+ Save Entry</button>
-          </div>
-          <div id="siteLogList">
-            <p class="empty-hint">No entries yet.</p>
-          </div>
-        </article>
-      </section>
-
-      <!-- ═════════════════════════════════════════════════
-           SUPPLIERS PANEL
-           ═════════════════════════════════════════════════ -->
-      <section id="panel_suppliers" class="panel panel-suppliers hidden">
-
-        <article class="card card-supplier-form">
-          <h2 class="card-title">🏪 Add Supplier</h2>
-          <div class="supplier-form">
-            <input id="supName" type="text" placeholder="Supplier name (required)">
-            <input id="supContact" type="text" placeholder="Contact / phone">
-            <input id="supSpecialty" type="text" placeholder="Specialty (e.g. Hardware)">
-            <input id="supBank" type="text" placeholder="Bank Name">
-            <input id="supAccNum" type="text" placeholder="Account No.">
-            <input id="supAccName" type="text" placeholder="Account Name">
-            <button class="btn-add-supplier" onclick="addSupplier()">+ Add Supplier</button>
-          </div>
-        </article>
-
-        <!-- Search -->
-        <div class="search-bar">
-          <input type="text" id="supplierSearch" placeholder="🔍 Search suppliers..." oninput="filterSuppliers(this.value)">
-        </div>
-
-        <!-- Supplier List -->
-        <div id="supplierList">
-          <p class="empty-hint">No suppliers yet.</p>
-        </div>
-      </section>
-    </section>
-  </main>
-
-  <!-- ═══════════════════════════════════════════════════════
-       MODALS
-       ═══════════════════════════════════════════════════════ -->
-
-  <!-- RFP Modal -->
-  <div id="rfpModal" class="modal-overlay hidden">
-    <div class="modal-box">
-      <h2 class="modal-title">Request for Payment</h2>
-      <textarea id="rfpOutput" readonly></textarea>
-      <div class="modal-actions">
-        <button class="btn-mc" onclick="closeRFP()">Close</button>
-        <button class="btn-copy" onclick="copyRFP()">📋 Copy</button>
-        <button class="btn-pdf" onclick="downloadRFP()">⬇️ PDF</button>
-      </div>
+    <div class="create-grid">
+      <input id="newName"           type="text"   placeholder="Project name (e.g., Batangas Phase 1)">
+      <input id="newLaborBudget"    type="number" placeholder="Labor Budget (₱)" inputmode="decimal">
+      <input id="newMaterialBudget" type="number" placeholder="Materials Budget (₱)" inputmode="decimal">
+    </div>
+    <div style="display:flex;justify-content:flex-end">
+      <button class="btn-create" onclick="createProject()">+ Create Project</button>
     </div>
   </div>
 
-  <!-- Payroll Confirm Modal -->
-  <div id="payrollModal" class="modal-overlay hidden">
-    <div class="modal-box">
-      <h2 class="modal-title">Confirm Payroll</h2>
-      <div class="payroll-summary">
-        <div class="pay-row">
-          <span class="pay-label">Period</span>
-          <span class="pay-val" id="payrollPeriod">—</span>
+  <!-- Search -->
+  <div class="hub-search-wrap">
+    <span class="hub-search-icon">🔍</span>
+    <input id="projectSearch" type="text" placeholder="Search projects..." oninput="filterProjects(this.value)">
+  </div>
+
+  <!-- Hub tabs -->
+  <div class="hub-tab-row">
+    <button id="hubTab_active"    class="hub-tab tab-active" onclick="showHubTab('active')">🏗 Active Projects</button>
+    <button id="hubTab_completed" class="hub-tab"            onclick="showHubTab('completed')">✓ Completed</button>
+  </div>
+
+  <!-- Active pane -->
+  <div id="activeProjectsPane">
+    <!-- Dashboard summary -->
+    <div class="dash-summary" id="dashSummary" style="margin-bottom:20px">
+      <div class="sec-label">Dashboard Summary</div>
+      <div class="dash-summary-grid">
+        <div class="dash-stat">
+          <div class="dash-stat-label">Active Projects</div>
+          <div class="dash-stat-val" id="dsSumActive">—</div>
         </div>
-        <div class="pay-row">
-          <span class="pay-label">Gross Payroll</span>
-          <span class="pay-val" id="payrollGross">₱0.00</span>
+        <div class="dash-stat">
+          <div class="dash-stat-label">Total Budget</div>
+          <div class="dash-stat-val text-purple" id="dsSumBudget">—</div>
         </div>
-        <div class="pay-row">
-          <span class="pay-label">Pending Advances</span>
-          <span class="pay-val pay-danger" id="totalAdvances">₱0.00</span>
+        <div class="dash-stat">
+          <div class="dash-stat-label">Total Spent</div>
+          <div class="dash-stat-val text-red" id="dsSumSpent">—</div>
         </div>
-        <div id="advanceDeductList"></div>
-        <div class="pay-deduct-row">
-          <label for="manualDeductInput">Manual Deduction</label>
-          <input id="manualDeductInput" type="number" placeholder="0.00" oninput="updatePayrollNet()" inputmode="decimal">
+        <div class="dash-stat">
+          <div class="dash-stat-label">Remaining</div>
+          <div class="dash-stat-val text-green" id="dsSumRemaining">—</div>
         </div>
-        <div class="pay-net">Net: <span id="payrollNet">₱0.00</span></div>
+        <div class="dash-stat">
+          <div class="dash-stat-label">Overall Progress</div>
+          <div class="dash-stat-val" id="dsSumProgress">—</div>
+        </div>
       </div>
-      <div class="modal-actions">
-        <button class="btn-mc" onclick="closePayrollModal()">Cancel</button>
-        <button class="btn-save-payroll" onclick="confirmSavePayroll()">💾 Save Payroll</button>
-      </div>
+    </div>
+
+    <div id="projectGrid"><p class="hub-empty">Loading projects...</p></div>
+
+    <!-- Budget comparison -->
+    <div class="card gap">
+      <div class="sec-label">Budget Comparison — All Projects</div>
+      <div id="comparisonView"><p class="empty-hint">Add 2+ projects to see comparison.</p></div>
     </div>
   </div>
 
-  <!-- Cash Advance Modal -->
-  <div id="advanceModal" class="modal-overlay hidden">
-    <div class="modal-box">
-      <h2 class="modal-title">Cash Advance — <span id="advanceWorkerName">Worker</span></h2>
-      <div class="advance-form">
+  <!-- Completed pane -->
+  <div id="completedProjectsPane" class="hidden">
+    <div id="completedGrid"><p class="hub-empty">No completed projects yet.</p></div>
+  </div>
+
+</section>
+
+
+<!-- ═══ WORKSPACE VIEW ══════════════════════════════════════════ -->
+<section id="workspaceView" class="hidden">
+
+  <!-- Locked banner -->
+  <div id="lockedBanner" class="locked-banner hidden">
+    <span>⚠ This project is marked <strong>Completed</strong> — viewing read-only.</span>
+    <button class="btn-unlock-ws" onclick="unlockForEdit()">🔓 Unlock for Edit</button>
+  </div>
+
+  <!-- Workspace topbar -->
+  <div class="ws-topbar">
+    <div class="ws-left">
+      <div class="ws-project-badge">
+        <span class="ws-project-label">Active Site</span>
+        <span class="ws-project-name" id="wsName">—</span>
+      </div>
+    </div>
+    <div class="ws-actions">
+      <button class="btn-ws-back" onclick="exitHub()">← Back to Hub</button>
+    </div>
+  </div>
+
+  <!-- Tab navigation -->
+  <div class="tab-scroll">
+    <div class="tab-group">
+      <button id="tab_labor"        class="tab-btn tab-active" onclick="switchTab('labor')">👷 Labor</button>
+      <button id="tab_materials"    class="tab-btn"            onclick="switchTab('materials')">📦 Orders</button>
+      <button id="tab_billing"      class="tab-btn"            onclick="switchTab('billing')">💰 Billing</button>
+      <button id="tab_changeorders" class="tab-btn"            onclick="switchTab('changeorders')">📋 Change Orders</button>
+      <button id="tab_sitelog"      class="tab-btn"            onclick="switchTab('sitelog')">📒 Site Log</button>
+      <button id="tab_suppliers"    class="tab-btn"            onclick="switchTab('suppliers')">🏪 Suppliers</button>
+    </div>
+  </div>
+
+
+  <!-- ═══ LABOR PANEL ═══════════════════════════════════════════ -->
+  <div id="laborPanel">
+    <div id="laborBudgetWarn" class="hidden budget-warn-bar"></div>
+    <div class="kpi-row">
+      <div class="kpi-card kpi-purple">
+        <span class="kpi-label">Labor Budget</span>
+        <span class="kpi-num" id="lbBudget">₱0.00</span>
+      </div>
+      <div class="kpi-card kpi-red">
+        <span class="kpi-label">Disbursed</span>
+        <span class="kpi-num kpi-danger" id="lbSpent">₱0.00</span>
+      </div>
+      <div class="kpi-card kpi-green">
+        <span class="kpi-label">Remaining</span>
+        <span class="kpi-num kpi-safe" id="lbLeft">₱0.00</span>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <!-- Left: Trades + Roster -->
+      <div>
+        <div class="card">
+          <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">🏷️</span> Trades</div>
+          <div class="trade-input-row">
+            <input id="newTradeName" type="text" placeholder="e.g., Carpenter" onkeydown="if(event.key==='Enter')addTrade()">
+            <button class="btn-add-sm" onclick="addTrade()">+ Add</button>
+          </div>
+          <div id="tradeList"><p class="empty-hint">No trades yet.</p></div>
+        </div>
+        <div class="card gap">
+          <div class="card-title"><span class="ct-icon" style="background:rgba(16,185,129,.1)">👷</span> Staff Roster</div>
+          <div class="worker-form">
+            <input id="workerName" type="text"   placeholder="Worker name">
+            <input id="workerRate" type="number" placeholder="Daily rate (₱)" inputmode="decimal">
+            <select id="workerTradeSelect"><option value="">— Select Trade —</option></select>
+          </div>
+          <button class="btn-add-worker" onclick="addWorker()">+ Deploy Worker to Roster</button>
+          <div id="rosterList"></div>
+        </div>
+      </div>
+
+      <!-- Right: Timecard -->
+      <div>
+        <div class="tc-controls">
+          <div class="tc-date-row">
+            <div class="tc-date-grp">
+              <label>Week Start</label>
+              <input id="weekStart" type="date">
+            </div>
+            <div class="tc-date-grp">
+              <label>Week End</label>
+              <input id="weekEnd" type="date">
+            </div>
+            <button class="btn-apply" onclick="applyWeek()">Apply</button>
+          </div>
+          <div class="tc-action-row">
+            <button class="btn-rfp"     onclick="generateRFP()">📄 RFP</button>
+            <button class="btn-compile" onclick="compilePayroll()">✅ Compile Payroll</button>
+          </div>
+        </div>
+        <div id="timecardGrid"><p class="empty-hint" style="padding:20px">Add workers to start tracking attendance.</p></div>
+        <div class="card gap">
+          <div class="card-title"><span class="ct-icon" style="background:rgba(245,158,11,.1)">📊</span> Attendance Summary — This Period</div>
+          <div id="attendanceSummary"><p class="empty-hint">No attendance data yet.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payroll Archive -->
+    <div class="card gap">
+      <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.1)">📋</span> Payroll Logs Archive</div>
+      <div class="history-split">
+        <div class="overflow-scroll">
+          <table class="hist-table">
+            <thead><tr>
+              <th>Date Saved</th><th>Period</th><th>Trade Breakdown</th>
+              <th style="text-align:right">Gross</th><th style="text-align:right">Net</th>
+            </tr></thead>
+            <tbody id="payrollLogsBody"><tr><td colspan="5" class="empty-cell">No payroll logs yet.</td></tr></tbody>
+          </table>
+        </div>
+        <div>
+          <div class="sec-label">Expenses by Trade</div>
+          <div id="tradeTotals"><p class="empty-hint">No data yet.</p></div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /laborPanel -->
+
+
+  <!-- ═══ MATERIALS PANEL ════════════════════════════════════════ -->
+  <div id="materialsPanel" class="hidden">
+    <div id="matBudgetWarn" class="hidden budget-warn-bar"></div>
+    <div class="kpi-row">
+      <div class="kpi-card kpi-purple">
+        <span class="kpi-label">Materials Budget</span>
+        <span class="kpi-num" id="mbBudget">₱0.00</span>
+      </div>
+      <div class="kpi-card kpi-red">
+        <span class="kpi-label">Total Spent</span>
+        <span class="kpi-num kpi-danger" id="mbSpent">₱0.00</span>
+      </div>
+      <div class="kpi-card kpi-green">
+        <span class="kpi-label">Remaining</span>
+        <span class="kpi-num kpi-safe" id="mbLeft">₱0.00</span>
+      </div>
+    </div>
+
+    <!-- PO Builder -->
+    <div class="card">
+      <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">🛒</span> New Purchase Order</div>
+      <div class="po-meta-grid">
+        <div>
+          <select id="poSupplierSelect" onchange="applySupplierSelection()" style="margin-bottom:8px">
+            <option value="">— Quick-select supplier —</option>
+          </select>
+          <input id="poSupplier" type="text" placeholder="Or type supplier name">
+        </div>
+        <input id="poDate" type="date">
+        <input id="poNotes" type="text" placeholder="Notes / reference (optional)" style="grid-column:1/-1">
+      </div>
+      <div class="po-item-form">
+        <input id="poItemDesc" type="text"   placeholder="Item description">
+        <input id="poItemSize" type="text"   placeholder="Size (e.g. 12mm)">
+        <input id="poItemQty"  type="number" placeholder="Qty" inputmode="decimal">
+        <input id="poItemUnit" type="text"   placeholder="Unit">
+        <input id="poItemCost" type="number" placeholder="Unit cost (₱)" inputmode="decimal">
+        <button class="btn-add-sm" onclick="addDraftItem()">+ Add</button>
+      </div>
+      <div id="draftList"><p class="empty-hint">No items yet. Fill the form and click + Add.</p></div>
+      <div class="po-draft-footer">
+        <div>
+          <span style="font-size:11px;color:var(--muted2)">PO Total</span>
+          <span style="font-size:20px;font-weight:900;color:var(--amber);margin-left:8px" id="draftTotal">₱0.00</span>
+        </div>
+        <button class="btn-submit-po" onclick="submitPO()">Submit Purchase Order →</button>
+      </div>
+    </div>
+
+    <!-- Materials Ledger -->
+    <div class="card gap">
+      <div class="card-title">
+        <span class="ct-icon" style="background:rgba(245,158,11,.1)">📋</span>
+        Materials Ledger
+        <span style="font-size:11px;font-weight:400;color:var(--muted2)" id="ledgerCount"></span>
+      </div>
+      <div class="overflow-scroll">
+        <table class="led-table">
+          <thead><tr>
+            <th>Date</th><th>Supplier</th><th>Description</th><th>Size</th>
+            <th>Qty / Unit</th><th class="text-right">Unit Cost</th><th class="text-right">Total</th>
+            <th>Status</th><th style="text-align:center">Del</th>
+          </tr></thead>
+          <tbody id="ledgerBody"><tr><td colspan="9" class="empty-cell">No items yet.</td></tr></tbody>
+        </table>
+      </div>
+      <div class="led-footer">
+        <span style="font-size:11px;color:var(--muted2)">Total Paid / Delivered</span>
+        <span style="font-size:18px;font-weight:900;color:var(--amber)" id="ledgerTotal">₱0.00</span>
+      </div>
+    </div>
+
+    <!-- Materials Summary -->
+    <div class="card gap">
+      <div class="card-title"><span class="ct-icon" style="background:rgba(16,185,129,.1)">📦</span> Materials Summary — by Item &amp; Size</div>
+      <div id="materialsSummary"><p class="empty-hint">No data yet.</p></div>
+    </div>
+
+    <!-- PO History -->
+    <div class="card gap">
+      <div class="card-title"><span class="ct-icon" style="background:rgba(59,130,246,.1)">🗂️</span> PO History</div>
+      <div id="poHistory"><p class="empty-hint" style="padding:10px 0">No purchase orders yet.</p></div>
+    </div>
+  </div><!-- /materialsPanel -->
+
+
+  <!-- ═══ BILLING PANEL ══════════════════════════════════════════ -->
+  <div id="billingPanel" class="hidden">
+
+    <!-- Contract setup form (shown when no contract) -->
+    <div id="contractSetupForm" class="card">
+      <div class="card-title"><span class="ct-icon" style="background:rgba(245,158,11,.1)">📄</span> Setup Contract</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <input id="contractClient" type="text"   placeholder="Client / Owner name" style="grid-column:1/-1">
+        <input id="contractAmount" type="number" placeholder="Contract Amount (₱)" inputmode="decimal">
+        <input id="contractDownPct"   type="number" placeholder="Down Payment %" inputmode="decimal">
+        <input id="contractRetention" type="number" placeholder="Retention % (e.g. 10)" inputmode="decimal">
+        <input id="contractStart" type="date">
+        <input id="contractEnd"   type="date">
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn-add-sm" onclick="saveContract()">💾 Save Contract</button>
+      </div>
+    </div>
+
+    <!-- Contract dashboard (shown when contract exists) -->
+    <div id="contractDashboard" class="hidden">
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+          <div>
+            <div class="sec-label">Contract</div>
+            <div style="font-size:24px;font-weight:900" id="cdAmount">—</div>
+            <div style="font-size:12px;color:var(--muted2);margin-top:3px">
+              Client: <strong id="cdClient">—</strong> &nbsp;·&nbsp; <span id="cdDates">—</span>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--muted2);margin-bottom:4px">Down Payment &nbsp;<strong id="cdDownPay">—</strong></div>
+            <div style="font-size:11px;color:var(--muted2)">Retention &nbsp;<strong id="cdRetention">—</strong></div>
+          </div>
+          <button class="btn-ws-secondary" onclick="editContract()">✎ Edit Contract</button>
+        </div>
+        <div class="billing-progress-wrap">
+          <div id="cdProgressBar" class="billing-fill bar-purple" style="width:0%"></div>
+        </div>
+        <div style="font-size:11px;color:var(--muted2);margin-bottom:16px" id="cdProgressPct">0% collected</div>
+        <div class="contract-info-grid">
+          <div class="ci-block"><span class="ci-label">Total Billed</span><span class="ci-val" id="cdTotalBilled">₱0.00</span></div>
+          <div class="ci-block"><span class="ci-label">Total Collected</span><span class="ci-val ci-safe" id="cdTotalCollected">₱0.00</span></div>
+          <div class="ci-block"><span class="ci-label">Retention Held</span><span class="ci-val" id="cdRetentionHeld">₱0.00</span></div>
+          <div class="ci-block"><span class="ci-label">Net Collected</span><span class="ci-val ci-safe" id="cdNetCollected">₱0.00</span></div>
+          <div class="ci-block" style="grid-column:1/-1">
+            <span class="ci-label">Outstanding Receivables</span>
+            <span class="ci-val-lg" id="cdOutstanding">₱0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Billing requests -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title"><span class="ct-icon" style="background:rgba(59,130,246,.1)">📤</span> Billing Requests</div>
+        <div class="billing-form-grid">
+          <input id="billDesc"   type="text"   placeholder="Description (e.g. 2nd tranche — roofing complete)">
+          <input id="billDate"   type="date">
+          <input id="billAmount" type="number" placeholder="Amount (₱)" inputmode="decimal">
+          <button class="btn-add-sm" onclick="addBillingRequest()">+ Add</button>
+        </div>
+        <div class="overflow-scroll">
+          <table class="hist-table">
+            <thead><tr>
+              <th>Billing #</th><th>Date</th><th>Description</th>
+              <th style="text-align:right">Amount</th><th>Status</th><th style="text-align:center">Del</th>
+            </tr></thead>
+            <tbody id="billingsBody"><tr><td colspan="6" class="empty-cell">No billing requests yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Collections -->
+      <div class="card">
+        <div class="card-title"><span class="ct-icon" style="background:rgba(16,185,129,.1)">📥</span> Collections Received</div>
+        <div class="billing-form-grid">
+          <input id="colDesc"   type="text"   placeholder="Description (e.g. 2nd tranche payment received)">
+          <input id="colDate"   type="date">
+          <input id="colAmount" type="number" placeholder="Amount received (₱)" inputmode="decimal">
+          <button class="btn-add-sm" onclick="addCollection()">+ Record</button>
+        </div>
+        <div class="overflow-scroll">
+          <table class="hist-table">
+            <thead><tr>
+              <th>Date</th><th>Description</th><th style="text-align:right">Amount</th><th style="text-align:center">Del</th>
+            </tr></thead>
+            <tbody id="collectionsBody"><tr><td colspan="4" class="empty-cell">No collections yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div><!-- /billingPanel -->
+
+
+  <!-- ═══ CHANGE ORDERS PANEL ════════════════════════════════════ -->
+  <div id="changeordersPanel" class="hidden">
+    <div class="co-kpi-row">
+      <div class="kpi-card">
+        <span class="kpi-label">Total COs</span>
+        <span class="kpi-num text-purple" id="coCount" style="font-size:16px">0 change orders</span>
+      </div>
+      <div class="kpi-card kpi-green">
+        <span class="kpi-label">Approved Value</span>
+        <span class="kpi-num kpi-safe" id="coTotalApproved">₱0.00</span>
+      </div>
+      <div class="kpi-card kpi-amber">
+        <span class="kpi-label">Pending Value</span>
+        <span class="kpi-num kpi-warn" id="coTotalPending">₱0.00</span>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Labor Impact</span>
+        <span class="kpi-num" id="coLaborImpact">₱0.00</span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">📋</span> New Change Order</div>
+      <div class="co-form-grid">
+        <input id="coDesc"  type="text" placeholder="Description of additional / change work" style="grid-column:1/-1">
+        <input id="coReqBy" type="text" placeholder="Requested by (client/owner name)">
+        <input id="coDate"  type="date">
+        <input id="coNotes" type="text" placeholder="Notes (optional)">
+      </div>
+      <div class="co-impact-row">
+        <div class="co-impact-label-wrap">
+          <label>👷 Labor Cost Impact (₱) — use negative for deductions</label>
+          <input id="coLaborImpact" type="number" placeholder="0.00" inputmode="decimal">
+        </div>
+        <div class="co-impact-label-wrap">
+          <label>📦 Materials Cost Impact (₱)</label>
+          <input id="coMaterialsImpact" type="number" placeholder="0.00" inputmode="decimal">
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn-add-sm" onclick="addChangeOrder()">+ Submit Change Order</button>
+      </div>
+    </div>
+
+    <div id="coList"><p class="empty-hint">No change orders yet. Create one above.</p></div>
+  </div><!-- /changeordersPanel -->
+
+
+  <!-- ═══ SITE LOG PANEL ══════════════════════════════════════════ -->
+  <div id="sitelogPanel" class="hidden">
+    <div class="card">
+      <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">📒</span> Daily Site Log</div>
+      <div class="log-form">
+        <div class="log-date-row">
+          <input id="logDate" type="date">
+          <textarea id="logNotes" rows="3" placeholder="What happened on site today? Notes, progress, issues, deliveries..."></textarea>
+        </div>
+        <div style="display:flex;justify-content:flex-end">
+          <button class="btn-add-sm" onclick="saveLog()">+ Save Entry</button>
+        </div>
+      </div>
+      <div id="siteLogList"><p class="empty-hint">No entries yet. Add your first log above.</p></div>
+    </div>
+  </div><!-- /sitelogPanel -->
+
+
+  <!-- ═══ SUPPLIERS PANEL ════════════════════════════════════════ -->
+  <div id="suppliersPanel" class="hidden">
+    <div class="card">
+      <div class="card-title"><span class="ct-icon" style="background:rgba(13,148,136,.15)">🏪</span> Supplier Directory</div>
+      <div class="supplier-form">
+        <input id="supName"      type="text" placeholder="Supplier name (required)">
+        <input id="supContact"   type="text" placeholder="Contact / phone">
+        <input id="supSpecialty" type="text" placeholder="Specialty (e.g. Hardware)">
+        <button class="btn-add-sm" onclick="addSupplier()">+ Add</button>
+      </div>
+      <div class="supplier-form-row2">
+        <input id="supBank"    type="text" placeholder="Bank Name (e.g. BPI)">
+        <input id="supAccNum"  type="text" placeholder="Account Number">
+        <input id="supAccName" type="text" placeholder="Account Name">
+      </div>
+      <div id="supplierList"><p class="empty-hint">No suppliers yet.</p></div>
+    </div>
+  </div><!-- /suppliersPanel -->
+
+</section><!-- /workspaceView -->
+
+</div><!-- /main -->
+
+
+<!-- ═══ RFP MODAL ══════════════════════════════════════════════ -->
+<div id="rfpModal" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:700px">
+    <div class="modal-title">📄 Request for Payment (RFP)</div>
+    <textarea id="rfpOutput" readonly></textarea>
+    <div class="modal-actions">
+      <button class="btn-mc"   onclick="closeRFP()">Close</button>
+      <button class="btn-copy" onclick="copyRFP()">📋 Copy Text</button>
+      <button class="btn-pdf"  onclick="downloadRFP()">⬇️ Download PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAYROLL CONFIRM MODAL ══════════════════════════════════ -->
+<div id="payrollModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-title">✅ Confirm Payroll — <span id="payrollPeriod" style="color:var(--purple-xl)"></span></div>
+    <div class="payroll-summary">
+      <div class="pay-row"><span class="pay-label">Gross Payroll</span><span class="pay-val" id="payrollGross">₱0.00</span></div>
+      <div class="pay-row"><span class="pay-label">Total Pending Advances</span><span class="pay-val text-red" id="totalAdvances">₱0.00</span></div>
+      <div id="advanceDeductList"></div>
+      <div class="pay-deduct-row">
+        <label>Deduction Amount (₱) — enter how much to deduct this payroll</label>
+        <input id="manualDeductInput" type="number" placeholder="0.00" oninput="updatePayrollNet()" inputmode="decimal">
+      </div>
+      <div class="pay-net">Net Payroll: <span id="payrollNet">₱0.00</span></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-mc"           onclick="closePayrollModal()">Cancel</button>
+      <button class="btn-save-payroll" onclick="confirmSavePayroll()">💾 Save Payroll Log</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CASH ADVANCE MODAL ════════════════════════════════════ -->
+<div id="advanceModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-title">₱ Cash Advances — <span id="advanceWorkerName" style="color:var(--purple-xl)"></span></div>
+    <div class="advance-form">
+      <div>
+        <label style="display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:5px">Date</label>
         <input id="advanceDate" type="date">
+      </div>
+      <div>
+        <label style="display:block;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:5px">Amount (₱)</label>
         <input id="advanceAmount" type="number" placeholder="0.00" inputmode="decimal">
-        <input id="advanceNotes" type="text" placeholder="Notes (optional)">
       </div>
-      <button class="btn-save-adv" onclick="saveAdvance()">+ Save Advance</button>
-      <div id="advanceHistory"></div>
-      <div class="advance-total-row">
-        <span class="total-label">Total Advances</span>
-        <span class="total-val" id="advanceTotalLabel">₱0.00</span>
-      </div>
-      <div class="modal-actions">
-        <button class="btn-mc" onclick="closeAdvanceModal()">Close</button>
-      </div>
+      <input id="advanceNotes" type="text" placeholder="Notes (optional)" style="grid-column:1/-1">
+    </div>
+    <button class="btn-save-adv" onclick="saveAdvance()">+ Save Advance Record</button>
+    <div id="advanceHistory"></div>
+    <div class="advance-total-row">
+      <span>Total Pending Advances</span>
+      <span class="text-red" id="advanceTotalLabel">₱0.00</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-mc" onclick="closeAdvanceModal()">Close</button>
     </div>
   </div>
+</div>
 
-  <!-- Edit Supplier Modal -->
-  <div id="editSupplierModal" class="modal-overlay hidden">
-    <div class="modal-box">
-      <h2 class="modal-title">Edit Supplier</h2>
-      <input type="hidden" id="editSupKey">
-      <div class="edit-supplier-form">
-        <input id="editSupName" type="text" placeholder="Supplier name">
-        <input id="editSupContact" type="text" placeholder="Contact / phone">
-        <input id="editSupSpec" type="text" placeholder="Specialty">
-        <input id="editSupBank" type="text" placeholder="Bank Name">
-        <input id="editSupAccNum" type="text" placeholder="Account No.">
-        <input id="editSupAccName" type="text" placeholder="Account Name">
-      </div>
-      <div class="modal-actions">
-        <button class="btn-mc" onclick="closeEditSupplier()">Cancel</button>
-        <button class="btn-save-payroll" onclick="saveEditSupplier()">💾 Save Changes</button>
-      </div>
+<!-- ═══ EDIT SUPPLIER MODAL ═══════════════════════════════════ -->
+<div id="editSupplierModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-title">✎ Edit Supplier</div>
+    <input type="hidden" id="editSupKey">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <input id="editSupName"    type="text" placeholder="Supplier name" style="grid-column:1/-1">
+      <input id="editSupContact" type="text" placeholder="Contact / phone">
+      <input id="editSupSpec"    type="text" placeholder="Specialty">
+      <input id="editSupBank"    type="text" placeholder="Bank Name">
+      <input id="editSupAccNum"  type="text" placeholder="Account Number">
+      <input id="editSupAccName" type="text" placeholder="Account Name">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-mc"  onclick="closeEditSupplier()">Cancel</button>
+      <button class="btn-pdf" onclick="saveEditSupplier()">💾 Save Changes</button>
     </div>
   </div>
+</div>
 
-  <!-- ═══════════════════════════════════════════════════════
-       SCRIPTS — Load Order is Critical
-       ═══════════════════════════════════════════════════════ -->
-  <script src="labor.js"></script>
-  <script src="materials.js"></script>
-  <script src="sitelog.js"></script>
-  <script src="suppliers.js"></script>
-  <script src="billing.js"></script>
-  <script src="changeorders.js"></script>
-  <script src="main.js"></script>
 
+<!-- ═══ SCRIPTS ═══════════════════════════════════════════════ -->
+<script src="main.js"></script>
+<script src="labor.js"></script>
+<script src="materials.js"></script>
+<script src="sitelog.js"></script>
+<script src="suppliers.js"></script>
+<script src="billing.js"></script>
+<script src="changeorders.js"></script>
+
+<script>
+// ── Project search filter ─────────────────────────────────────
+function filterProjects(query) {
+  const q = query.toLowerCase();
+  document.querySelectorAll('.proj-card').forEach(card => {
+    const name = card.querySelector('.proj-name')?.textContent.toLowerCase() || '';
+    card.style.display = name.includes(q) ? '' : 'none';
+  });
+}
+
+// ── Dashboard summary updater ─────────────────────────────────
+// Called from main.js renderHub() with all project data
+function updateDashSummary(projects) {
+  let totalBudget = 0, totalSpent = 0, activeCount = 0;
+  projects.filter(p => p.status !== 'completed').forEach(p => {
+    totalBudget += (parseFloat(p.laborBudget)||0) + (parseFloat(p.materialBudget)||0);
+    totalSpent  += (parseFloat(p.laborSpent)||0)  + (parseFloat(p.materialSpent)||0);
+    activeCount++;
+  });
+  const remaining = totalBudget - totalSpent;
+  const progress  = totalBudget > 0 ? Math.round((totalSpent/totalBudget)*100) : 0;
+  setText('dsSumActive',    activeCount);
+  setText('dsSumBudget',    peso(totalBudget));
+  setText('dsSumSpent',     peso(totalSpent));
+  setText('dsSumRemaining', peso(remaining));
+  setText('dsSumProgress',  progress + '%');
+  const allOk = projects.every(p => {
+    const lb = parseFloat(p.laborBudget)||0, mb = parseFloat(p.materialBudget)||0;
+    const ls = parseFloat(p.laborSpent)||0,  ms = parseFloat(p.materialSpent)||0;
+    return pct(ls,lb) < 95 && pct(ms,mb) < 95;
+  });
+  const warn = document.getElementById('dashHealthMsg');
+  if (warn) warn.textContent = allOk ? '✓ All projects are within budget limits.' : '⚠ One or more projects are near budget limits!';
+}
+
+// ── PWA install prompt ────────────────────────────────────────
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferredPrompt = e;
+  document.getElementById('installBar').classList.remove('hidden');
+});
+document.getElementById('installBtn')?.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') document.getElementById('installBar').classList.add('hidden');
+  deferredPrompt = null;
+});
+window.addEventListener('appinstalled', () => {
+  document.getElementById('installBar').classList.add('hidden');
+});
+</script>
 </body>
 </html>
