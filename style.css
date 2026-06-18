@@ -345,7 +345,6 @@ select option{background:var(--surface2)}
 .log-date-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
 .log-date-row input{width:160px;flex-shrink:0}
 .log-date-row textarea{flex:1;min-width:200px;resize:vertical;min-height:80px}
-#siteLogList{display:flex;flex-direction:column;gap:10px;max-height:500px;overflow-y:auto;padding-right:4px;min-height:0}
 .log-month-group{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:10px}
 .log-month-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface2);border-bottom:1px solid var(--border)}
 .log-month-label{font-size:13px;font-weight:800;color:var(--blue-l);letter-spacing:.05em}
@@ -425,6 +424,22 @@ select option{background:var(--surface2)}
 /* ── Panel ────────────────────────────────────────────── */
 .panel{display:flex;flex-direction:column;gap:12px;position:relative}
 
+.panel-sitelog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+}
+
+@media (max-width: 600px) {
+  .panel-sitelog {
+    max-height: calc(100vh - 140px);
+  }
+}
+
+
+
 
 
 
@@ -449,11 +464,7 @@ select option{background:var(--surface2)}
   overflow-y: auto;
 }
 
-.modal-overlay.hidden {
-  display: none !important;
-  visibility: hidden;
-  opacity: 0;
-}
+.modal-overlay
 
 .modal-box {
   position: relative;
@@ -641,45 +652,11 @@ select option{background:var(--surface2)}
    ════════════════════════════════════════════════════════ */
 
 /* Ensure siteLogList can scroll */
-#siteLogList {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 500px;
-  overflow-y: auto;
-  padding-right: 4px;
-  min-height: 0;
-  -webkit-overflow-scrolling: touch;
-}
-
 /* Ensure parent containers allow scroll */
-.panel-sitelog {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: calc(100vh - 200px);
-  overflow-y: auto;
-}
-
 /* Ensure card doesn't block scroll */
-.card-log {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: calc(100vh - 150px);
-  overflow-y: auto;
-}
-
 /* Fix for mobile */
 @media (max-width: 600px) {
-  #siteLogList {
-    max-height: 400px;
   }
-
-  .panel-sitelog {
-    max-height: calc(100vh - 150px);
-  }
-}
 
 
 /* ════════════════════════════════════════════════════════
@@ -687,31 +664,31 @@ select option{background:var(--surface2)}
    ════════════════════════════════════════════════════════ */
 
 /* Force scroll on siteLogList */
-#siteLogList {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 10px !important;
-  max-height: 60vh !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  padding-right: 8px !important;
-  -webkit-overflow-scrolling: touch !important;
-  scrollbar-width: thin !important;
-}
-
 /* Ensure the card containing siteLogList can grow */
-.card:has(#siteLogList) {
+/* Ensure panel allows scroll */
+/* ════════════════════════════════════════════════════════
+   SITE LOGLIST — Clean consolidated styles
+   ════════════════════════════════════════════════════════ */
+
+#siteLogList {
   display: flex;
   flex-direction: column;
-  max-height: 80vh;
+  gap: 10px;
+  max-height: 60vh;
   overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
 }
 
-/* Ensure panel allows scroll */
-.panel-sitelog {
-  max-height: 90vh;
-  overflow-y: auto;
+@media (max-width: 600px) {
+  #siteLogList {
+    max-height: 50vh;
+  }
 }
+
+
 
 /* Scrollbar styling for siteLogList */
 #siteLogList::-webkit-scrollbar {

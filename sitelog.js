@@ -146,7 +146,8 @@ function watchSiteLog(pid) {
     console.log('✅ SiteLog rendering complete');
     
     // Ensure scroll works
-    setTimeout(ensureScrollable, 100);
+    // Ensure scrollable after DOM update
+    requestAnimationFrame(() => setTimeout(ensureScrollable, 50));
   }, error => {
     console.error('❌ Firebase error in watchSiteLog:', error);
     showToast('Error loading site logs: ' + error.message, 'error');
@@ -301,69 +302,39 @@ function filterLogs(query) {
 // SCROLL FIX — Ensure siteLogList is scrollable
 // ════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════
+// SCROLL FIX — Ensure siteLogList scrolls properly
+// ════════════════════════════════════════════════════════
+
 function ensureScrollable() {
   const el = $('siteLogList');
-  if (!el) {
-    console.log('❌ siteLogList not found');
-    return;
+  if (!el) return;
+
+  const computed = window.getComputedStyle(el);
+
+  // Only fix if the container can't actually scroll
+  if (computed.overflowY !== 'auto' && computed.overflowY !== 'scroll') {
+    el.style.overflowY = 'auto';
+  }
+  if (!computed.maxHeight || computed.maxHeight === 'none') {
+    el.style.maxHeight = '60vh';
   }
 
-  // Get computed styles
-  const computed = window.getComputedStyle(el);
-  console.log('📏 siteLogList styles:', {
-    maxHeight: computed.maxHeight,
-    overflowY: computed.overflowY,
-    overflowX: computed.overflowX,
-    display: computed.display,
-    height: computed.height
-  });
-
-  // Force scroll styles via JS
-  el.style.maxHeight = '500px';
-  el.style.overflowY = 'scroll';
-  el.style.overflowX = 'hidden';
-  el.style.display = 'block';
-
-  // Check dimensions
-  console.log('📏 Dimensions:', {
-    scrollHeight: el.scrollHeight,
-    clientHeight: el.clientHeight,
-    offsetHeight: el.offsetHeight
-  });
-
-  // Check if content is taller than container
-  const isOverflowing = el.scrollHeight > el.clientHeight;
-  console.log('📏 Is overflowing:', isOverflowing);
-
-  // Make ALL parents scrollable
+  // Ensure parent containers don't clip content
   let parent = el.parentElement;
   let level = 0;
-  while (parent && parent !== document.body && level < 5) {
-    const parentComputed = window.getComputedStyle(parent);
-    console.log(`📏 Parent ${level} (${parent.className}):`, {
-      overflowY: parentComputed.overflowY,
-      overflowX: parentComputed.overflowX,
-      maxHeight: parentComputed.maxHeight,
-      height: parentComputed.height
-    });
-
-    // If parent has overflow hidden, change it
-    if (parentComputed.overflowY === 'hidden' || parentComputed.overflow === 'hidden') {
-      parent.style.overflowY = 'auto';
-      console.log(`📏 Fixed parent ${level} overflow`);
+  while (parent && parent !== document.body && level < 4) {
+    const pComputed = window.getComputedStyle(parent);
+    if (pComputed.overflow === 'hidden') {
+      parent.style.overflow = 'visible';
     }
-
     parent = parent.parentElement;
     level++;
   }
 }
 
-// Call after rendering
-setTimeout(ensureScrollable, 100);
-
-
 // ════════════════════════════════════════════════════════
-// MANUAL REFRESH — For debugging scroll and data issues
+// MANUAL REFRESH
 // ════════════════════════════════════════════════════════
 
 function refreshSiteLogs() {
