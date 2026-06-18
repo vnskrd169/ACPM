@@ -9,13 +9,87 @@
 <meta name="apple-mobile-web-app-title" content="ACPM">
 <link rel="manifest" href="./manifest.json">
 <title>ACPM — LeBuild Construction</title>
-<link rel="stylesheet" href="style.css">
+<!-- ═══ SCRIPTS ═══════════════════════════════════════════════ -->
+<script src="main.js"></script>
+<script src="labor.js"></script>
+<script src="materials.js"></script>
+<script src="sitelog.js"></script>
+<script src="suppliers.js"></script>
+<script src="billing.js"></script>
+<script src="changeorders.js"></script>
+
+<script>
+// ── Project search filter ─────────────────────────────────────
+function filterProjects(query) {
+  const q = query.toLowerCase();
+  document.querySelectorAll('.proj-card').forEach(card => {
+    const name = card.querySelector('.proj-name')?.textContent.toLowerCase() || '';
+    card.style.display = name.includes(q) ? '' : 'none';
+  });
+}
+
+// ── Dashboard summary updater ─────────────────────────────────
+function updateDashSummary(projects) {
+  let totalBudget = 0, totalSpent = 0, activeCount = 0;
+  projects.filter(p => p.status !== 'completed').forEach(p => {
+    totalBudget += (parseFloat(p.laborBudget)||0) + (parseFloat(p.materialBudget)||0);
+    totalSpent  += (parseFloat(p.laborSpent)||0)  + (parseFloat(p.materialSpent)||0);
+    activeCount++;
+  });
+  const remaining = totalBudget - totalSpent;
+  const progress  = totalBudget > 0 ? Math.round((totalSpent/totalBudget)*100) : 0;
+  setText('dsSumActive',    activeCount);
+  setText('dsSumBudget',    peso(totalBudget));
+  setText('dsSumSpent',     peso(totalSpent));
+  setText('dsSumRemaining', peso(remaining));
+  setText('dsSumProgress',  progress + '%');
+}
+
+// ── PWA install prompt ────────────────────────────────────────
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); deferredPrompt = e;
+  document.getElementById('installBar').classList.remove('hidden');
+});
+document.getElementById('installBtn')?.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  if (outcome === 'accepted') document.getElementById('installBar').classList.add('hidden');
+  deferredPrompt = null;
+});
+window.addEventListener('appinstalled', () => {
+  document.getElementById('installBar').classList.add('hidden');
+});
+
+//-- Toggle switch para mag white theme--
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  if (current === 'light') {
+    html.removeAttribute('data-theme');
+    localStorage.setItem('theme', 'dark');
+  } else {
+    html.setAttribute('data-theme', 'light');
+    localStorage.setItem('theme', 'light');
+  }
+}
+
+// Load saved theme on page load
+(function loadTheme() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <base target="_blank">
 <base target="_blank">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -600,79 +674,6 @@
 </div>
 
 
-<!-- ═══ SCRIPTS ═══════════════════════════════════════════════ -->
-<script src="main.js"></script>
-<script src="labor.js"></script>
-<script src="materials.js"></script>
-<script src="sitelog.js"></script>
-<script src="suppliers.js"></script>
-<script src="billing.js"></script>
-<script src="changeorders.js"></script>
 
-<script>
-// ── Project search filter ─────────────────────────────────────
-function filterProjects(query) {
-  const q = query.toLowerCase();
-  document.querySelectorAll('.proj-card').forEach(card => {
-    const name = card.querySelector('.proj-name')?.textContent.toLowerCase() || '';
-    card.style.display = name.includes(q) ? '' : 'none';
-  });
-}
-
-// ── Dashboard summary updater ─────────────────────────────────
-function updateDashSummary(projects) {
-  let totalBudget = 0, totalSpent = 0, activeCount = 0;
-  projects.filter(p => p.status !== 'completed').forEach(p => {
-    totalBudget += (parseFloat(p.laborBudget)||0) + (parseFloat(p.materialBudget)||0);
-    totalSpent  += (parseFloat(p.laborSpent)||0)  + (parseFloat(p.materialSpent)||0);
-    activeCount++;
-  });
-  const remaining = totalBudget - totalSpent;
-  const progress  = totalBudget > 0 ? Math.round((totalSpent/totalBudget)*100) : 0;
-  setText('dsSumActive',    activeCount);
-  setText('dsSumBudget',    peso(totalBudget));
-  setText('dsSumSpent',     peso(totalSpent));
-  setText('dsSumRemaining', peso(remaining));
-  setText('dsSumProgress',  progress + '%');
-}
-
-// ── PWA install prompt ────────────────────────────────────────
-let deferredPrompt;
-window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault(); deferredPrompt = e;
-  document.getElementById('installBar').classList.remove('hidden');
-});
-document.getElementById('installBtn')?.addEventListener('click', async () => {
-  if (!deferredPrompt) return;
-  deferredPrompt.prompt();
-  const { outcome } = await deferredPrompt.userChoice;
-  if (outcome === 'accepted') document.getElementById('installBar').classList.add('hidden');
-  deferredPrompt = null;
-});
-window.addEventListener('appinstalled', () => {
-  document.getElementById('installBar').classList.add('hidden');
-});
-
-//-- Toggle switch para mag white theme--
-function toggleTheme() {
-  const html = document.documentElement;
-  const current = html.getAttribute('data-theme');
-  if (current === 'light') {
-    html.removeAttribute('data-theme');
-    localStorage.setItem('theme', 'dark');
-  } else {
-    html.setAttribute('data-theme', 'light');
-    localStorage.setItem('theme', 'light');
-  }
-}
-
-// Load saved theme on page load
-(function loadTheme() {
-  const saved = localStorage.getItem('theme');
-  if (saved === 'light') {
-    document.documentElement.setAttribute('data-theme', 'light');
-  }
-})();
-</script>
 </body>
 </html>
