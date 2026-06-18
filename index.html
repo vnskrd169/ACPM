@@ -29,9 +29,9 @@
     </div>
   </div>
   <div class="hdr-right">
+    <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">🌓</button>
     <span class="badge badge-green" id="syncBadge">☁️ Synced</span>
     <button class="btn-hub" onclick="exitHub()">📂 Hub</button>
-    <button class="theme-toggle" onclick="document.documentElement.toggleAttribute('data-theme', 'light')" title="Toggle theme">🌓</button>
   </div>
 </header>
 
@@ -652,6 +652,27 @@ document.getElementById('installBtn')?.addEventListener('click', async () => {
 window.addEventListener('appinstalled', () => {
   document.getElementById('installBar').classList.add('hidden');
 });
+
+//-- Toggle switch para mag white theme--
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  if (current === 'light') {
+    html.removeAttribute('data-theme');
+    localStorage.setItem('theme', 'dark');
+  } else {
+    html.setAttribute('data-theme', 'light');
+    localStorage.setItem('theme', 'light');
+  }
+}
+
+// Load saved theme on page load
+(function loadTheme() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
 </script>
 </body>
 </html>
