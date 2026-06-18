@@ -91,11 +91,16 @@ function watchSiteLog(pid) {
 
       const monthHeader = document.createElement('div');
       monthHeader.className = 'log-month-header';
-      monthHeader.innerHTML = `<span class="log-month-label">📅 ${monthLabel}</span><span class="log-month-count">${monthCount} entr${monthCount !== 1 ? 'ies' : 'y'}</span>`;
+      monthHeader.innerHTML = `<span class="log-month-label"><span class="log-month-toggle">▼</span> 📅 ${monthLabel}</span><span class="log-month-count">${monthCount} entr${monthCount !== 1 ? 'ies' : 'y'}</span>`;
+      monthHeader.onclick = () => monthGroup.classList.toggle('collapsed');
       monthGroup.appendChild(monthHeader);
 
       // Sort dates within month descending
       const sortedDates = Object.keys(byMonth[monthKey]).sort((a, b) => b.localeCompare(a));
+
+      // Create scrollable body container for month entries
+      const monthBody = document.createElement('div');
+      monthBody.className = 'log-month-body';
 
       sortedDates.forEach(date => {
         const dayGroup = document.createElement('div');
@@ -136,9 +141,10 @@ function watchSiteLog(pid) {
           dayGroup.appendChild(div);
         });
 
-        monthGroup.appendChild(dayGroup);
+        monthBody.appendChild(dayGroup);
       });
 
+      monthGroup.appendChild(monthBody);
       el.appendChild(monthGroup);
     });
 
