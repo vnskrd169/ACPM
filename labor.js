@@ -16,6 +16,7 @@ const ATTENDANCE_STATUS = {
 
 function initLabor(pid) {
   _lpid = pid;
+  _workersRegistered = false;
   detachLaborListeners();
   loadPayrollConfig(pid);
   watchLaborBudget(pid);
@@ -67,7 +68,7 @@ function watchLaborBudget(pid) {
   const ref = firebase.database().ref(`projects/${pid}`);
   laborListen(ref, snap => {
     const d = snap.val() || {};
-    const budget = parseFloat(d.laborBudget) || 0;
+    const budget = (parseFloat(d.laborBudget) || 0) + (parseFloat(d.laborBudgetDelta) || 0);
     const spent = parseFloat(d.laborSpent) || 0;
     const left = budget - spent;
     const p = pct(spent, budget);
@@ -232,13 +233,16 @@ async function addWorker() {
 
 async function removeWorker(wid) {
   if (!_lpid || !confirm('Remove this worker and ALL their attendance records?\n\nThis cannot be undone.')) return;
-  await safeDb(() => firebase.database().ref(`projects/${_lpid}/workers/${wid}`).remove(), 'Failed to remove worker');
-  
+
+  // Atomic multi-path delete: worker + all their attendance + advances in one write
   const attSnap = await firebase.database().ref(`projects/${_lpid}/attendance/${wid}`).once('value');
-  const removes = [];
-  attSnap.forEach(c => removes.push(c.key));
-  await Promise.all(removes.map(k => safeDb(() => firebase.database().ref(`projects/${_lpid}/attendance/${wid}/${k}`).remove(), 'Failed to remove attendance')));
-  
+  const advSnap = await firebase.database().ref(`projects/${_lpid}/advances/${wid}`).once('value');
+  const updates = {};
+  updates[`projects/${_lpid}/workers/${wid}`] = null;
+  attSnap.forEach(c => { updates[`projects/${_lpid}/attendance/${wid}/${c.key}`] = null; });
+  advSnap.forEach(c => { updates[`projects/${_lpid}/advances/${wid}/${c.key}`] = null; });
+
+  await safeDb(() => firebase.database().ref().update(updates), 'Failed to remove worker');
   auditLog('delete', 'worker', wid, { projectId: _lpid });
   showToast('Worker removed');
 }
@@ -832,7 +836,7 @@ function downloadSinglePayslip(wid) {
   doc.setFontSize(8).setFont('helvetica', 'normal');
   doc.text(`Generated: ${new Date().toLocaleDateString('en-PH')} · ACPM System`, 105, 280, { align: 'center' });
   
-  doc.save(`Payslip_${worker.name.replace(/\\s+/g, '_')}_${d.start}.pdf`);
+  doc.save(`Payslip_${worker.name.replace(/\s+/g, '_')}_${d.start}.pdf`);
 }
 
 function downloadAllPayslips() {
@@ -988,7 +992,7 @@ async function generateRFP() {
   );
 
   window._rfpData = { lines, start, end, grand, byTrade, pid: _lpid };
-  $('rfpOutput').value = lines.join('\\n');
+  $('rfpOutput').value = lines.join('\n');
   $('rfpModal').classList.remove('hidden');
 }
 
@@ -1124,9 +1128,9 @@ async function exportPayrollCSV() {
   snap.forEach(c => rows.push(c.val()));
   rows.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
-  let csv = 'Date,Period,Regular,OT,Night Diff,Gross,Deductions,Net\\n';
+  let csv = 'Date,Period,Regular,OT,Night Diff,Gross,Deductions,Net\n';
   rows.forEach(r => {
-    csv += `${r.savedDate || ''},${r.period || ''},${r.regular || 0},${r.ot || 0},${r.nightDiff || 0},${r.gross || 0},${r.deductions || 0},${r.net || r.gross || 0}\\n`;
+    csv += `${r.savedDate || ''},${r.period || ''},${r.regular || 0},${r.ot || 0},${r.nightDiff || 0},${r.gross || 0},${r.deductions || 0},${r.net || r.gross || 0}\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });

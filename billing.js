@@ -322,24 +322,24 @@ async function exportBillingSummary() {
   ]);
 
   const contract = contractSnap.val() || {};
-  let csv = 'ACPM Billing Summary\\n';
-  csv += `Project,${_bpid}\\n`;
-  csv += `Client,${escapeCsv(contract.client || 'N/A')}\\n`;
-  csv += `Contract Amount,${contract.amount || 0}\\n`;
-  csv += `Retention %,${contract.retention || 0}\\n\\n`;
+  let csv = 'ACPM Billing Summary\n';
+  csv += `Project,${_bpid}\n`;
+  csv += `Client,${escapeCsv(contract.client || 'N/A')}\n`;
+  csv += `Contract Amount,${contract.amount || 0}\n`;
+  csv += `Retention %,${contract.retention || 0}\n\n`;
 
-  csv += 'BILLING REQUESTS\\n';
-  csv += 'Seq,Date,Description,Amount,Status\\n';
+  csv += 'BILLING REQUESTS\n';
+  csv += 'Seq,Date,Description,Amount,Status\n';
   bSnap.forEach(c => {
     const b = c.val();
-    csv += `${b.seq || ''},${b.date || ''},${escapeCsv(b.description || '')},${b.amount || 0},${b.status || 'pending'}\\n`;
+    csv += `${b.seq || ''},${b.date || ''},${escapeCsv(b.description || '')},${b.amount || 0},${b.status || 'pending'}\n`;
   });
 
-  csv += '\\nCOLLECTIONS\\n';
-  csv += 'Date,Description,Amount\\n';
+  csv += '\nCOLLECTIONS\n';
+  csv += 'Date,Description,Amount\n';
   cSnap.forEach(c => {
     const col = c.val();
-    csv += `${col.date || ''},${escapeCsv(col.description || '')},${col.amount || 0}\\n`;
+    csv += `${col.date || ''},${escapeCsv(col.description || '')},${col.amount || 0}\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -350,12 +350,4 @@ async function exportBillingSummary() {
   a.click();
   URL.revokeObjectURL(url);
   showToast('Billing summary exported!');
-}
-
-function escapeCsv(text) {
-  if (!text) return '';
-  if (text.includes(',') || text.includes('"') || text.includes('\\n')) {
-    return '"' + text.replace(/"/g, '""') + '"';
-  }
-  return text;
 }

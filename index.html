@@ -9,7 +9,11 @@
 <meta name="apple-mobile-web-app-title" content="ACPM">
 <link rel="manifest" href="./manifest.json">
 <title>ACPM — LeBuild Construction</title>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
+<!-- utils.js MUST load first — defines $, peso, escapeCsv, withBusy, etc. -->
+<script src="utils.js"></script>
 <script src="main.js"></script>
 <script src="labor.js"></script>
 <script src="materials.js"></script>
@@ -345,6 +349,7 @@ window.addEventListener('appinstalled', () => {
           <select id="poSupplierSelect" onchange="applySupplierSelection()" style="margin-bottom:8px">
             <option value="">— Quick-select supplier —</option>
           </select>
+          <input type="hidden" id="poSupplierId">
           <input id="poSupplier" type="text" placeholder="Or type supplier name">
         </div>
         <input id="poDate" type="date">
@@ -452,7 +457,7 @@ window.addEventListener('appinstalled', () => {
             <div class="contract-dash-small">Down Payment &nbsp;<strong id="cdDownPay">—</strong></div>
             <div class="contract-dash-small">Retention &nbsp;<strong id="cdRetention">—</strong></div>
           </div>
-          <button class="btn-ws-secondary" onclick="editContract()">✎ Edit Contract</button>
+          <button class="btn-ws-secondary" onclick="openEditContractModal()">✎ Edit Contract</button>
         </div>
         <div class="billing-progress-wrap">
           <div id="cdProgressBar" class="billing-fill bar-purple" style="width:0%"></div>
@@ -562,6 +567,10 @@ window.addEventListener('appinstalled', () => {
   <div id="sitelogPanel" class="panel hidden">
     <div class="card">
       <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">📒</span> Daily Site Log</div>
+      <div id="siteLogSummary" class="log-summary-bar"></div>
+      <div class="log-filter-row">
+        <input type="text" id="logFilterInput" placeholder="Filter logs..." oninput="filterLogs(this.value)">
+      </div>
       <div class="log-form">
         <div class="log-date-row">
           <input id="logDate" type="date">
@@ -691,10 +700,7 @@ window.addEventListener('appinstalled', () => {
       </div>
     </div>
     <div id="deliveryItemsList"></div>
-    <div class="delivery-photo-row">
-      <label class="field-label">Photo of Delivery (optional)</label>
-      <input type="file" id="deliveryPhoto" accept="image/*" capture="environment">
-    </div>
+    <!-- TODO: Firebase Storage — add delivery photo upload here when wiring storage. -->
     <div class="modal-actions">
       <button class="btn-mc" onclick="closeDeliveryModal()">Cancel</button>
       <button class="btn-save-adv" onclick="confirmDelivery()">✓ Confirm Delivery & Update Inventory</button>
@@ -725,6 +731,25 @@ window.addEventListener('appinstalled', () => {
     <div class="modal-actions">
       <button class="btn-mc" onclick="closeInvoiceModal()">Cancel</button>
       <button class="btn-save-adv" onclick="confirmInvoice()">✓ Approve Invoice</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ EDIT CONTRACT MODAL (non-destructive) ══════════════════ -->
+<div id="editContractModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-title">✎ Edit Contract</div>
+    <div class="contract-form-grid">
+      <input id="editContractClient" type="text" placeholder="Client / Owner name" style="grid-column:1/-1">
+      <input id="editContractAmount" type="number" placeholder="Contract Amount (₱)" inputmode="decimal">
+      <input id="editContractDownPct" type="number" placeholder="Down Payment %" inputmode="decimal">
+      <input id="editContractRetention" type="number" placeholder="Retention % (e.g. 10)" inputmode="decimal">
+      <input id="editContractStart" type="date">
+      <input id="editContractEnd" type="date">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-mc" onclick="closeEditContractModal()">Cancel</button>
+      <button class="btn-pdf" onclick="saveEditContract()">💾 Save Changes</button>
     </div>
   </div>
 </div>

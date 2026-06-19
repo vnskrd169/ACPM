@@ -56,29 +56,6 @@ function watchGlobalSuppliers() {
   });
 }
 
-function refreshSupplierDropdown(snap) {
-  const sel = $('poSupplierSelect');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— Quick-select supplier —</option>';
-  if (snap && snap.exists()) {
-    const suppliers = [];
-    snap.forEach(c => suppliers.push(c.val()));
-    suppliers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    suppliers.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.name;
-      opt.textContent = `${s.name}${s.specialty ? ' (' + s.specialty + ')' : ''}`;
-      sel.appendChild(opt);
-    });
-  }
-}
-
-function applySupplierSelection() {
-  const sel = $('poSupplierSelect');
-  const inp = $('poSupplier');
-  if (sel && inp && sel.value) { inp.value = sel.value; sel.value = ''; }
-}
-
 async function addSupplier() {
   const name = $('supName')?.value.trim();
   const contact = $('supContact')?.value.trim() || '';
@@ -165,10 +142,10 @@ async function exportSuppliersCSV() {
   const snap = await firebase.database().ref('suppliers').once('value');
   if (!snap.exists()) { showToast('No suppliers to export.', 'warn'); return; }
 
-  let csv = 'Name,Contact,Specialty,Bank Name,Account Number,Account Name\\n';
+  let csv = 'Name,Contact,Specialty,Bank Name,Account Number,Account Name\n';
   snap.forEach(c => {
     const s = c.val();
-    csv += `${escapeCsv(s.name || '')},${escapeCsv(s.contact || '')},${escapeCsv(s.specialty || '')},${escapeCsv(s.bankName || '')},${escapeCsv(s.accNum || '')},${escapeCsv(s.accName || '')}\\n`;
+    csv += `${escapeCsv(s.name || '')},${escapeCsv(s.contact || '')},${escapeCsv(s.specialty || '')},${escapeCsv(s.bankName || '')},${escapeCsv(s.accNum || '')},${escapeCsv(s.accName || '')}\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -179,12 +156,4 @@ async function exportSuppliersCSV() {
   a.click();
   URL.revokeObjectURL(url);
   showToast('Suppliers exported!');
-}
-
-function escapeCsv(text) {
-  if (!text) return '';
-  if (text.includes(',') || text.includes('"') || text.includes('\\n')) {
-    return '"' + text.replace(/"/g, '""') + '"';
-  }
-  return text;
 }

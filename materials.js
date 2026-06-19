@@ -6,6 +6,7 @@ let _matListeners = [];
 let _inventory = {};
 let _currentDeliveryPO = null;
 let _currentInvoicePO = null;
+let _prevMatSpent = -1;
 
 function initMaterials(pid) {
   _mpid = pid; _draftItems = [];
@@ -33,7 +34,7 @@ function watchMatBudget(pid) {
   const ref = firebase.database().ref(`projects/${pid}`);
   matListen(ref, snap => {
     const d = snap.val() || {};
-    const budget = parseFloat(d.materialBudget) || 0;
+    const budget = (parseFloat(d.materialBudget) || 0) + (parseFloat(d.materialBudgetDelta) || 0);
     const spent = parseFloat(d.materialSpent) || 0;
     const left = budget - spent;
     const p = pct(spent, budget);
@@ -126,29 +127,6 @@ function loadGlobalSuppliersForPO() {
   firebase.database().ref('suppliers').once('value', snap => {
     refreshSupplierDropdown(snap);
   });
-}
-
-function refreshSupplierDropdown(snap) {
-  const sel = $('poSupplierSelect');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— Quick-select supplier —</option>';
-  if (snap && snap.exists()) {
-    const suppliers = [];
-    snap.forEach(c => suppliers.push(c.val()));
-    suppliers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-    suppliers.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.name;
-      opt.textContent = `${s.name}${s.specialty ? ' (' + s.specialty + ')' : ''}`;
-      sel.appendChild(opt);
-    });
-  }
-}
-
-function applySupplierSelection() {
-  const sel = $('poSupplierSelect');
-  const inp = $('poSupplier');
-  if (sel && inp && sel.value) { inp.value = sel.value; sel.value = ''; }
 }
 
 // ══════════════════════════════════════════════════════
@@ -353,25 +331,32 @@ function closeDeliveryModal() {
 
 async function confirmDelivery() {
   if (!_mpid || !_currentDeliveryPO) return;
-  
-  const poSnap = await firebase.database().ref(`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}`).once('value');
+
+  const [poSnap, invSnap] = await Promise.all([
+    firebase.database().ref(`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}`).once('value'),
+    firebase.database().ref(`projects/${_mpid}/inventory`).once('value')
+  ]);
   const po = poSnap.val();
   if (!po) return;
-  
+
+  // Build live inventory map from fresh snapshot (avoids stale global race)
+  const liveInv = {};
+  invSnap.forEach(c => { liveInv[c.key] = c.val(); });
+
   const deliveryDate = $('deliveryDate')?.value;
   const deliveryRef = $('deliveryRef')?.value.trim() || '';
   const photoFile = $('deliveryPhoto')?.files[0];
-  
+
   if (!deliveryDate) { showToast('Enter delivery date.', 'error'); return; }
-  
+
   const receivedItems = [];
   const invUpdates = {};
   let allGood = true;
-  
+
   (po.items || []).forEach((item, i) => {
     const qtyReceived = parseFloat($(`delQty_${i}`)?.value) || 0;
     const condition = $(`delCondition_${i}`)?.value || 'good';
-    
+
     if (qtyReceived > 0) {
       receivedItems.push({
         desc: item.desc,
@@ -381,10 +366,10 @@ async function confirmDelivery() {
         unit: item.unit,
         condition
       });
-      
-      // Update inventory
+
+      // Update inventory from live snapshot, not stale global
       const invKey = `${item.desc}||${item.size || ''}`;
-      const current = _inventory[invKey]?.qtyOnHand || 0;
+      const current = liveInv[invKey]?.qtyOnHand || 0;
       invUpdates[`projects/${_mpid}/inventory/${invKey}`] = {
         item: item.desc,
         size: item.size || '',
@@ -393,7 +378,7 @@ async function confirmDelivery() {
         lastReceived: deliveryDate,
         lastUpdated: Date.now()
       };
-      
+
       if (condition !== 'good') allGood = false;
     }
   });
@@ -561,7 +546,10 @@ function watchLedger(pid) {
     tbody.appendChild(fragment);
     setText('ledgerTotal', peso(paidTotal));
     setText('ledgerCount', `${orderCount} item${orderCount !== 1 ? 's' : ''}`);
-    firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal });
+    if (paidTotal !== _prevMatSpent) {
+      firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal });
+      _prevMatSpent = paidTotal;
+    }
     updateMaterialsSummary(snap);
   });
 }
@@ -828,10 +816,10 @@ async function exportLedgerCSV() {
   const snap = await firebase.database().ref(`projects/${_mpid}/ledger`).once('value');
   if (!snap.exists()) { showToast('No ledger data to export.', 'warn'); return; }
 
-  let csv = 'Date,Supplier,Description,Size,Qty,Unit,Unit Cost,Total,Status\\n';
+  let csv = 'Date,Supplier,Description,Size,Qty,Unit,Unit Cost,Total,Status\n';
   snap.forEach(c => {
     const m = c.val();
-    csv += `${m.date || ''},${escapeCsv(m.supplier || '')},${escapeCsv(m.desc || '')},${escapeCsv(m.size || '')},${m.qty || 0},${escapeCsv(m.unit || '')},${m.cost || 0},${m.total || 0},${m.status || 'ordered'}\\n`;
+    csv += `${m.date || ''},${escapeCsv(m.supplier || '')},${escapeCsv(m.desc || '')},${escapeCsv(m.size || '')},${m.qty || 0},${escapeCsv(m.unit || '')},${m.cost || 0},${m.total || 0},${m.status || 'ordered'}\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -842,14 +830,6 @@ async function exportLedgerCSV() {
   a.click();
   URL.revokeObjectURL(url);
   showToast('Ledger exported to CSV!');
-}
-
-function escapeCsv(text) {
-  if (!text) return '';
-  if (text.includes(',') || text.includes('"') || text.includes('\\n')) {
-    return '"' + text.replace(/"/g, '""') + '"';
-  }
-  return text;
 }
 
 // Filter PO history

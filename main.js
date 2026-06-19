@@ -1,6 +1,14 @@
 
+// ════════════════════════════════════════════════════════════
+//  ACPM — main.js
+//  Firebase init, Hub (project dashboard), Workspace lifecycle.
+//  Shared helpers ($, peso, escapeHtml, escapeCsv, withBusy,
+//  delegateEvent, normalizeInvKey, auditLog, etc.) live in utils.js.
+// ════════════════════════════════════════════════════════════
 
-// ── Firebase Config (v8) — TODO: Migrate to v9 modular + Firestore ──
+// ── Firebase Config (v8) ────────────────────────────────────
+// TODO: Migrate to v9 modular SDK + Firestore.
+// TODO: Replace with real Firebase Auth identity.
 const firebaseConfig = {
   apiKey: "AIzaSyD27f2CgxK1Gq8fH1iDDK9F2j2CgxK1Gq8",
   authDomain: "acpm-project-system.firebaseapp.com",
@@ -16,87 +24,30 @@ firebase.initializeApp(firebaseConfig);
 // ── Globals ───────────────────────────────────────────────
 let _currentPid = null;
 let _hubListeners = [];
-let _searchDebounce = null;
 let _isReadOnly = false;
-let _currentUser = { uid: 'anonymous', role: 'admin', name: 'System' }; // TODO: Replace with Firebase Auth
+let _currentUser = { uid: 'anonymous', role: 'admin', name: 'System' }; // TODO: Firebase Auth
 
-// ── DOM helpers ───────────────────────────────────────────
-const $ = id => document.getElementById(id);
-const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
-const setHTML = (id, html) => { const el = $(id); if (el) el.innerHTML = html; };
-
-function peso(n) {
-  if (n === undefined || n === null) return '₱0.00';
-  const num = parseFloat(n) || 0;
-  return '₱' + num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function pct(part, whole) {
-  if (!whole || !parseFloat(whole)) return 0;
-  return Math.round((parseFloat(part) / parseFloat(whole)) * 100);
-}
-
-function budgetBarClass(p) {
-  return p >= 95 ? 'bar-danger' : p >= 80 ? 'bar-warn' : 'bar-ok';
-}
-
-function escapeHtml(text) {
-  if (text === null || text === undefined) return '';
-  const div = document.createElement('div');
-  div.textContent = String(text);
-  return div.innerHTML;
-}
-
-// ── Toast ─────────────────────────────────────────────────
-function showToast(msg, type = 'success') {
-  const existing = document.querySelector('.toast-msg');
-  if (existing) existing.remove();
-  const toast = document.createElement('div');
-  toast.className = `toast-msg toast-${type}`;
-  toast.textContent = msg;
-  toast.style.cssText = `position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
-    background:${type === 'error' ? '#450a0a' : type === 'warn' ? '#451a03' : '#064e3b'};
-    color:${type === 'error' ? '#ef4444' : type === 'warn' ? '#f59e0b' : '#34d399'};
-    border:1px solid ${type === 'error' ? '#7f1d1d' : type === 'warn' ? '#78350f' : '#065f46'};
-    padding:10px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:1000;
-    box-shadow:0 4px 12px rgba(0,0,0,.4);`;
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
-}
-
-// ── Safe DB wrapper with audit logging ────────────────────
-async function safeDb(fn, errMsg) {
-  try { 
-    const result = await fn();
-    return result;
-  } catch (e) { 
-    console.error(e); 
-    showToast(errMsg || 'Database error', 'error'); 
-    throw e; 
-  }
-}
-
-// ── Audit log helper (prepares for Firestore) ─────────────
-function auditLog(action, entityType, entityId, details = {}) {
-  const logEntry = {
-    action,
-    entityType,
-    entityId,
-    details,
-    userId: _currentUser.uid,
-    userName: _currentUser.name,
-    userRole: _currentUser.role,
-    timestamp: Date.now(),
-    date: new Date().toLocaleDateString('en-PH'),
-    projectId: _currentPid || null
+// ════════════════════════════════════════════════════════════
+//  Effective-budget helper
+//  Baselines (laborBudget/materialBudget) are IMMUTABLE.
+//  Change orders contribute a derived delta stored on the project.
+//  Effective = baseline + delta. Used by hub + workspace everywhere.
+// ════════════════════════════════════════════════════════════
+function effectiveBudget(p) {
+  const laborBase = parseFloat(p.laborBudget) || 0;
+  const matBase = parseFloat(p.materialBudget) || 0;
+  const laborDelta = parseFloat(p.laborBudgetDelta) || 0;
+  const matDelta = parseFloat(p.materialBudgetDelta) || 0;
+  return {
+    labor: laborBase + laborDelta,
+    material: matBase + matDelta,
+    total: laborBase + matBase + laborDelta + matDelta
   };
-  // Currently logs to console; TODO: Send to Firestore `auditLogs` collection
-  console.log('📝 AUDIT:', logEntry);
 }
 
-// ════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 //  HUB — Project Dashboard
-// ════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 
 window.onload = () => {
   try {
@@ -104,10 +55,8 @@ window.onload = () => {
     connectedRef.on('value', snap => {
       const badge = $('syncBadge');
       if (snap.val() === true) {
-        console.log('✅ Connected to Firebase');
         if (badge) { badge.textContent = '☁️ Synced'; badge.className = 'badge badge-green'; }
       } else {
-        console.log('❌ Not connected to Firebase');
         if (badge) { badge.textContent = '⚠️ Offline'; badge.className = 'badge badge-amber'; }
         showToast('Working offline. Changes will sync when connected.', 'warn');
       }
@@ -117,7 +66,6 @@ window.onload = () => {
   }
 
   showHubTab('active');
-  renderHub();
   initPWA();
 };
 
@@ -128,22 +76,18 @@ function initPWA() {
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
     window.deferredPrompt = e;
-    const bar = $('installBar');
-    if (bar) bar.classList.remove('hidden');
+    $('installBar')?.classList.remove('hidden');
   });
-  const installBtn = $('installBtn');
-  if (installBtn) {
-    installBtn.addEventListener('click', async () => {
-      const prompt = window.deferredPrompt;
-      if (!prompt) return;
-      prompt.prompt();
-      const result = await prompt.userChoice;
-      if (result.outcome === 'accepted') {
-        $('installBar')?.classList.add('hidden');
-        showToast('App installed!');
-      }
-    });
-  }
+  $('installBtn')?.addEventListener('click', async () => {
+    const prompt = window.deferredPrompt;
+    if (!prompt) return;
+    prompt.prompt();
+    const result = await prompt.userChoice;
+    if (result.outcome === 'accepted') {
+      $('installBar')?.classList.add('hidden');
+      showToast('App installed!');
+    }
+  });
 }
 
 function showHubTab(tab) {
@@ -165,26 +109,24 @@ function renderHub() {
   const ref = firebase.database().ref('projects').orderByChild('status').equalTo(isActive ? 'active' : 'completed');
 
   ref.on('value', snap => {
-    const grid = isActive ? $('projectGrid') : $('completedGrid');
-    if (!grid) return;
-    grid.innerHTML = '';
+    const el = isActive ? $('projectGrid') : $('completedGrid');
+    if (!el) return;
+    el.innerHTML = '';
 
     const projects = [];
     snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
     projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     if (!projects.length) {
-      grid.innerHTML = `<p class="hub-empty">No ${isActive ? 'active' : 'completed'} projects. Create one above!</p>`;
+      el.innerHTML = `<p class="hub-empty">No ${isActive ? 'active' : 'completed'} projects. Create one above!</p>`;
       renderDashboardSummary([]);
       renderComparison([]);
       return;
     }
 
     const fragment = document.createDocumentFragment();
-    projects.forEach(p => {
-      fragment.appendChild(buildProjectCard(p));
-    });
-    grid.appendChild(fragment);
+    projects.forEach(p => fragment.appendChild(buildProjectCard(p)));
+    el.appendChild(fragment);
 
     renderDashboardSummary(projects);
     renderComparison(projects);
@@ -196,26 +138,30 @@ function renderHub() {
   _hubListeners.push(ref);
 }
 
+// Hub card uses data-pid attributes; one delegated listener handles all actions.
+// No user-controlled text is interpolated into onclick.
 function buildProjectCard(p) {
   const div = document.createElement('div');
   div.className = `proj-card ${p.status === 'completed' ? 'proj-card-done' : ''}`;
   div.setAttribute('data-name', (p.name || '').toLowerCase());
+  div.setAttribute('data-pid', p.id);
 
-  const laborBudget = parseFloat(p.laborBudget) || 0;
+  const eff = effectiveBudget(p);
   const laborSpent = parseFloat(p.laborSpent) || 0;
-  const matBudget = parseFloat(p.materialBudget) || 0;
   const matSpent = parseFloat(p.materialSpent) || 0;
-  const totalBudget = laborBudget + matBudget;
   const totalSpent = laborSpent + matSpent;
-  const remaining = totalBudget - totalSpent;
-  const pctUsed = pct(totalSpent, totalBudget);
+  const remaining = eff.total - totalSpent;
+  const pctUsed = pct(totalSpent, eff.total);
 
-  const isHealthy = pctUsed < 80;
   const isWarning = pctUsed >= 80 && pctUsed < 95;
   const isCritical = pctUsed >= 95;
 
   const statusClass = p.status === 'completed' ? 'completed-tag' : 'active-tag';
   const statusText = p.status === 'completed' ? 'COMPLETED' : 'ACTIVE';
+
+  const hasDelta = (parseFloat(p.laborBudgetDelta) || 0) || (parseFloat(p.materialBudgetDelta) || 0);
+  const coNote = hasDelta
+    ? `<div class="budget-sub" style="color:var(--purple-xl)">↻ includes approved change orders</div>` : '';
 
   div.innerHTML = `
     <div class="proj-card-top">
@@ -229,100 +175,109 @@ function buildProjectCard(p) {
     <div class="budget-section">
       <div class="budget-row">
         <span class="budget-label">💰 Total Budget</span>
-        <span class="budget-val">${peso(totalBudget)}</span>
+        <span class="budget-val">${peso(eff.total)}</span>
       </div>
       <div class="mini-bar">
-        <div class="mini-fill ${isCritical ? 'bar-danger' : isWarning ? 'bar-warn' : 'bar-ok'}" style="width:${Math.min(pctUsed, 100)}%"></div>
+        <div class="mini-fill ${budgetBarClass(pctUsed)}" style="width:${Math.min(pctUsed, 100)}%"></div>
       </div>
       <div class="budget-sub">
-        ${isCritical ? '<span class="warn-tag">⚠ CRITICAL</span>' : isWarning ? '<span class="warn-tag">⚠ WARNING</span>' : '<span style="color:var(--green)">✓ Healthy</span>'}
+        ${isCritical ? '<span class="warn-tag critical">⚠ CRITICAL</span>' : isWarning ? '<span class="warn-tag">⚠ WARNING</span>' : '<span style="color:var(--green)">✓ Healthy</span>'}
         <span>${peso(totalSpent)} spent · ${pctUsed}%</span>
       </div>
+      ${coNote}
       <div class="budget-row" style="margin-top:6px">
         <span class="budget-label">👷 Labor</span>
-        <span class="budget-val">${peso(laborBudget)}</span>
+        <span class="budget-val">${peso(eff.labor)}</span>
       </div>
       <div class="mini-bar">
-        <div class="mini-fill ${pct(laborSpent, laborBudget) >= 95 ? 'bar-danger' : pct(laborSpent, laborBudget) >= 80 ? 'bar-warn' : 'bar-ok'}" style="width:${Math.min(pct(laborSpent, laborBudget), 100)}%"></div>
+        <div class="mini-fill ${budgetBarClass(pct(laborSpent, eff.labor))}" style="width:${Math.min(pct(laborSpent, eff.labor), 100)}%"></div>
       </div>
-      <div class="budget-sub">${peso(laborSpent)} spent · ${pct(laborSpent, laborBudget)}%</div>
+      <div class="budget-sub">${peso(laborSpent)} spent · ${pct(laborSpent, eff.labor)}%</div>
       <div class="budget-row" style="margin-top:6px">
         <span class="budget-label">📦 Materials</span>
-        <span class="budget-val">${peso(matBudget)}</span>
+        <span class="budget-val">${peso(eff.material)}</span>
       </div>
       <div class="mini-bar">
-        <div class="mini-fill ${pct(matSpent, matBudget) >= 95 ? 'bar-danger' : pct(matSpent, matBudget) >= 80 ? 'bar-warn' : 'bar-ok'}" style="width:${Math.min(pct(matSpent, matBudget), 100)}%"></div>
+        <div class="mini-fill ${budgetBarClass(pct(matSpent, eff.material))}" style="width:${Math.min(pct(matSpent, eff.material), 100)}%"></div>
       </div>
-      <div class="budget-sub">${peso(matSpent)} spent · ${pct(matSpent, matBudget)}%</div>
+      <div class="budget-sub">${peso(matSpent)} spent · ${pct(matSpent, eff.material)}%</div>
     </div>
     <div class="proj-actions">
-      ${p.status === 'active' 
-        ? `<button class="proj-open-btn" onclick="enterProject('${p.id}')">Open Workspace →</button>
-           <button class="btn-complete" onclick="markComplete('${p.id}')">✓ Done</button>`
-        : `<button class="btn-reopen" onclick="reopenProject('${p.id}')">↻ Reopen</button>`
+      ${p.status === 'active'
+        ? `<button class="proj-open-btn" data-action="open">Open Workspace →</button>
+           <button class="btn-complete" data-action="complete">✓ Done</button>`
+        : `<button class="btn-reopen" data-action="reopen">↻ Reopen</button>`
       }
-      <button class="btn-delete" onclick="deleteProject('${p.id}')">🗑</button>
+      <button class="btn-delete" data-action="delete">🗑</button>
     </div>
   `;
+
+  // Delegated actions for this card.
+  div.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === 'open') enterProject(p.id);
+    else if (action === 'complete') markComplete(p.id);
+    else if (action === 'reopen') reopenProject(p.id);
+    else if (action === 'delete') deleteProject(p.id);
+  });
 
   return div;
 }
 
 function renderDashboardSummary(projects) {
-  const el = $('dashboardSummary');
+  const el = $('dashSummary');
   if (!el) return;
 
-  if (!projects.length) {
-    el.innerHTML = '<p class="empty-hint">No projects yet. Create one above.</p>';
-    return;
-  }
-
   const active = projects.filter(p => p.status === 'active').length;
-  const totalBudget = projects.reduce((s, p) => s + (parseFloat(p.laborBudget) || 0) + (parseFloat(p.materialBudget) || 0), 0);
-  const totalSpent = projects.reduce((s, p) => s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
+  const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
+  const totalSpent = projects.reduce((s, p) =>
+    s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
   const remaining = totalBudget - totalSpent;
   const overallPct = pct(totalSpent, totalBudget);
 
   const critical = projects.filter(p => {
-    const totalB = (parseFloat(p.laborBudget) || 0) + (parseFloat(p.materialBudget) || 0);
-    const totalS = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
-    return pct(totalS, totalB) >= 95;
+    const eff = effectiveBudget(p);
+    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    return pct(spent, eff.total) >= 95;
   }).length;
 
   const warning = projects.filter(p => {
-    const totalB = (parseFloat(p.laborBudget) || 0) + (parseFloat(p.materialBudget) || 0);
-    const totalS = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
-    const pUsed = pct(totalS, totalB);
+    const eff = effectiveBudget(p);
+    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    const pUsed = pct(spent, eff.total);
     return pUsed >= 80 && pUsed < 95;
   }).length;
 
-  el.innerHTML = `
-    <div class="kpi-row">
-      <div class="kpi-card">
-        <span class="kpi-label">Active Projects</span>
-        <span class="kpi-num">${active}</span>
-      </div>
-      <div class="kpi-card">
-        <span class="kpi-label">Total Budget</span>
-        <span class="kpi-num">${peso(totalBudget)}</span>
-      </div>
-      <div class="kpi-card">
-        <span class="kpi-label">Total Spent</span>
-        <span class="kpi-num kpi-danger">${peso(totalSpent)}</span>
-      </div>
-      <div class="kpi-card">
-        <span class="kpi-label">Remaining</span>
-        <span class="kpi-num ${remaining < 0 ? 'kpi-danger' : 'kpi-safe'}">${peso(remaining)}</span>
-      </div>
-      <div class="kpi-card">
-        <span class="kpi-label">Overall Progress</span>
-        <span class="kpi-num ${overallPct >= 95 ? 'kpi-danger' : overallPct >= 80 ? 'kpi-warn' : 'kpi-safe'}">${overallPct}%</span>
-      </div>
-    </div>
-    ${critical > 0 ? `<div class="budget-warn-bar warn-critical">⚠ ${critical} project${critical !== 1 ? 's' : ''} with CRITICAL budget usage!</div>` : ''}
-    ${warning > 0 && critical === 0 ? `<div class="budget-warn-bar warn-high">⚠ ${warning} project${warning !== 1 ? 's' : ''} with HIGH budget usage.</div>` : ''}
-    ${critical === 0 && warning === 0 ? `<div style="font-size:12px;color:var(--green);padding:8px 0">✓ All projects are within budget limits.</div>` : ''}
-  `;
+  // Populate the hub summary stat tiles.
+  setText('dsSumActive', active);
+  setText('dsSumBudget', peso(totalBudget));
+  setText('dsSumSpent', peso(totalSpent));
+  const remEl = $('dsSumRemaining');
+  if (remEl) {
+    remEl.textContent = peso(remaining);
+    remEl.className = `dash-stat-val ${remaining < 0 ? 'text-red' : 'text-green'}`;
+  }
+  const progEl = $('dsSumProgress');
+  if (progEl) {
+    progEl.textContent = overallPct + '%';
+    progEl.className = `dash-stat-val ${overallPct >= 95 ? 'text-red' : overallPct >= 80 ? 'text-amber' : 'text-green'}`;
+  }
+
+  // Append dynamic warning line under the tiles (re-render safe).
+  let warn = document.getElementById('dashWarnLine');
+  if (!warn) {
+    warn = document.createElement('div');
+    warn.id = 'dashWarnLine';
+    el.appendChild(warn);
+  }
+  warn.innerHTML =
+    critical > 0
+      ? `<div class="budget-warn-bar warn-critical">⚠ ${critical} project${critical !== 1 ? 's' : ''} with CRITICAL budget usage!</div>`
+      : warning > 0
+        ? `<div class="budget-warn-bar warn-high">⚠ ${warning} project${warning !== 1 ? 's' : ''} with HIGH budget usage.</div>`
+        : `<div style="font-size:12px;color:var(--green);padding:8px 0">✓ All projects are within budget limits.</div>`;
 }
 
 function renderComparison(projects) {
@@ -334,27 +289,28 @@ function renderComparison(projects) {
     return;
   }
 
-  const maxBudget = Math.max(...projects.map(p => (parseFloat(p.laborBudget) || 0) + (parseFloat(p.materialBudget) || 0)));
+  const totals = projects.map(p => effectiveBudget(p).total);
+  const maxBudget = Math.max(...totals);
 
-  el.innerHTML = projects.map(p => {
-    const totalB = (parseFloat(p.laborBudget) || 0) + (parseFloat(p.materialBudget) || 0);
-    const totalS = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
-    const pUsed = pct(totalS, totalB);
-    const barWidth = maxBudget ? (totalB / maxBudget) * 100 : 0;
-
+  el.innerHTML = projects.map((p, i) => {
+    const eff = effectiveBudget(p);
+    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    const pUsed = pct(spent, eff.total);
+    const barWidth = maxBudget ? (totals[i] / maxBudget) * 100 : 0;
     return `
       <div class="cmp-row">
         <span class="cmp-name">${escapeHtml(p.name || 'Untitled')}</span>
         <div class="cmp-bars">
-          <div class="cmp-bar-wrap"><div class="mini-fill ${pUsed >= 95 ? 'bar-danger' : pUsed >= 80 ? 'bar-warn' : 'bar-ok'}" style="width:${barWidth}%"></div></div>
+          <div class="cmp-bar-wrap"><div class="mini-fill ${budgetBarClass(pUsed)}" style="width:${barWidth}%"></div></div>
         </div>
         <span class="cmp-pct">${pUsed}%</span>
-        <span class="cmp-total">${peso(totalS)} / ${peso(totalB)}</span>
-      </div>
-    `;
+        <span class="cmp-total">${peso(spent)} / ${peso(eff.total)}</span>
+      </div>`;
   }).join('');
 }
 
+// Debounced project search (called from the input's oninput in index.html).
+let _searchDebounce = null;
 function filterProjects(query) {
   if (_searchDebounce) clearTimeout(_searchDebounce);
   _searchDebounce = setTimeout(() => {
@@ -367,30 +323,33 @@ function filterProjects(query) {
 }
 
 async function createProject() {
-  const name = $('newName')?.value.trim();
-  const laborBudget = parseFloat($('newLaborBudget')?.value) || 0;
-  const materialBudget = parseFloat($('newMaterialBudget')?.value) || 0;
+  const btn = event?.currentTarget;
+  await withBusy(btn, async () => {
+    const name = $('newName')?.value.trim();
+    const laborBudget = parseFloat($('newLaborBudget')?.value) || 0;
+    const materialBudget = parseFloat($('newMaterialBudget')?.value) || 0;
 
-  if (!name) { showToast('Enter project name.', 'error'); return; }
-  if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
+    if (!name) { showToast('Enter project name.', 'error'); return; }
+    if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
 
-  const dupCheck = await firebase.database().ref('projects').orderByChild('name').equalTo(name).once('value');
-  if (dupCheck.exists()) { showToast('A project with that name already exists.', 'error'); return; }
+    const dupCheck = await firebase.database().ref('projects').orderByChild('name').equalTo(name).once('value');
+    if (dupCheck.exists()) { showToast('A project with that name already exists.', 'error'); return; }
 
-  const now = Date.now();
-  const projectData = {
-    name, laborBudget, materialBudget,
-    laborSpent: 0, materialSpent: 0,
-    status: 'active',
-    createdAt: now,
-    createdDate: new Date().toLocaleDateString('en-PH'),
-    payrollConfig: { type: 'weekly', startDay: 1, overtimeThreshold: 8, nightDiffRate: 1.1 }
-  };
+    const projectData = {
+      name, laborBudget, materialBudget,
+      laborSpent: 0, materialSpent: 0, materialCommitted: 0,
+      laborBudgetDelta: 0, materialBudgetDelta: 0,   // CO-derived; recomputed by changeorders module
+      status: 'active',
+      createdAt: Date.now(),
+      createdDate: new Date().toLocaleDateString('en-PH'),
+      payrollConfig: { type: 'weekly', overtimeThreshold: 8, nightDiffRate: 1.1 }
+    };
 
-  await safeDb(() => firebase.database().ref('projects').push(projectData), 'Failed to create project');
-  $('newName').value = ''; $('newLaborBudget').value = ''; $('newMaterialBudget').value = '';
-  auditLog('create', 'project', null, { name, laborBudget, materialBudget });
-  showToast(`Project "${name}" created!`);
+    await safeDb(() => firebase.database().ref('projects').push(projectData), 'Failed to create project');
+    $('newName').value = ''; $('newLaborBudget').value = ''; $('newMaterialBudget').value = '';
+    auditLog('create', 'project', null, { name, laborBudget, materialBudget });
+    showToast(`Project "${name}" created!`);
+  });
 }
 
 async function markComplete(pid) {
@@ -411,7 +370,7 @@ async function deleteProject(pid) {
   if (!confirm('⚠️ WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nType DELETE to confirm:')) return;
   const confirmText = prompt('Type DELETE to confirm permanent deletion:');
   if (confirmText !== 'DELETE') { showToast('Deletion cancelled.', 'warn'); return; }
-  
+
   await safeDb(() => firebase.database().ref(`projects/${pid}`).remove(), 'Failed to delete');
   auditLog('delete', 'project', pid, {});
   showToast('Project and all data deleted', 'warn');
@@ -422,9 +381,9 @@ function detachHubListeners() {
   _hubListeners = [];
 }
 
-// ════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 //  WORKSPACE — Enter / Exit
-// ════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════
 
 async function enterProject(pid) {
   _currentPid = pid;
@@ -438,9 +397,9 @@ async function enterProject(pid) {
 
   _isReadOnly = false;
   $('lockedBanner')?.classList.add('hidden');
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('read-only'));
+  document.querySelectorAll('.panel').forEach(pn => pn.classList.remove('read-only'));
 
-  // Init all modules
+  // Init all modules (each registers its own listeners + detach fn).
   initLabor(pid);
   initMaterials(pid);
   initBilling(pid);
@@ -453,6 +412,7 @@ async function enterProject(pid) {
 }
 
 function exitHub() {
+  // Detach every module's listeners cleanly (no orphans, no leaked DB reads).
   detachLaborListeners();
   detachMatListeners();
   detachBillingListeners();
@@ -487,13 +447,11 @@ async function exportAllData() {
   const data = snap.val();
   if (!data) return;
 
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `ACPM_${_currentPid}_${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(
+    `ACPM_${_currentPid}_${new Date().toISOString().slice(0, 10)}.json`,
+    JSON.stringify(data, null, 2),
+    'application/json'
+  );
   auditLog('export', 'project', _currentPid, { format: 'json' });
   showToast('Project data exported!');
 }
@@ -508,7 +466,6 @@ window.addEventListener('keydown', e => {
       e.preventDefault();
     }
   }
-  // Ctrl+S for save (prevent browser save)
   if (e.ctrlKey && e.key === 's') {
     e.preventDefault();
     showToast('Auto-saved to Firebase ☁️', 'success');
