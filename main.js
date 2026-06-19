@@ -1,4 +1,3 @@
-
 // ════════════════════════════════════════════════════════════
 //  ACPM — main.js
 //  Firebase init, Hub (project dashboard), Workspace lifecycle.
@@ -6,9 +5,14 @@
 //  delegateEvent, normalizeInvKey, auditLog, etc.) live in utils.js.
 // ════════════════════════════════════════════════════════════
 
-// ── Firebase Config (v8) ────────────────────────────────────
-// TODO: Migrate to v9 modular SDK + Firestore.
+// ── Firebase Config (v9 modular) ─────────────────────────────
+// TODO: Migrate to Firestore.
 // TODO: Replace with real Firebase Auth identity.
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getDatabase, ref, onValue, get, set, update, push, remove, query, orderByChild, equalTo, off
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+
 const firebaseConfig = {
   apiKey: "AIzaSyA7xFArtly4jCZZEt34TTmfNfK94RoWMaA",
   authDomain: "acpm-project-system.firebaseapp.com",
@@ -17,11 +21,15 @@ const firebaseConfig = {
   storageBucket: "acpm-project-system.firebasestorage.app",
   messagingSenderId: "330800177544",
   appId: "1:330800177544:web:8f29dcd81ca39976849a3d"
-
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// Expose for other (still-compat-shaped) module files during migration.
+// Once every module file is converted to modular imports, this line can be removed.
+window._db = db;
 // ── Globals ───────────────────────────────────────────────
 let _currentPid = null;
 let _hubListeners = [];
@@ -52,8 +60,8 @@ function effectiveBudget(p) {
 
 window.onload = () => {
   try {
-    const connectedRef = firebase.database().ref('.info/connected');
-    connectedRef.on('value', snap => {
+    const connectedRef = ref(db, '.info/connected');
+    onValue(connectedRef, snap => {
       const badge = $('syncBadge');
       if (snap.val() === true) {
         if (badge) { badge.textContent = '☁️ Synced'; badge.className = 'badge badge-green'; }
@@ -107,9 +115,9 @@ function renderHub() {
   const grid = isActive ? $('projectGrid') : $('completedGrid');
   if (grid) grid.innerHTML = '<p class="hub-empty">Loading...</p>';
 
-  const ref = firebase.database().ref('projects').orderByChild('status').equalTo(isActive ? 'active' : 'completed');
+  const projectsRef = query(ref(db, 'projects'), orderByChild('status'), equalTo(isActive ? 'active' : 'completed'));
 
-  ref.on('value', snap => {
+  const unsubscribe = onValue(projectsRef, snap => {
     const el = isActive ? $('projectGrid') : $('completedGrid');
     if (!el) return;
     el.innerHTML = '';
@@ -136,7 +144,7 @@ function renderHub() {
     if (grid) grid.innerHTML = `<p class="hub-empty">Error loading projects. Check console.</p>`;
     showToast('Error loading projects: ' + error.message, 'error');
   });
-  _hubListeners.push(ref);
+  _hubListeners.push(unsubscribe);
 }
 
 // Hub card uses data-pid attributes; one delegated listener handles all actions.
@@ -333,7 +341,7 @@ async function createProject() {
     if (!name) { showToast('Enter project name.', 'error'); return; }
     if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
 
-    const dupCheck = await firebase.database().ref('projects').orderByChild('name').equalTo(name).once('value');
+    const dupCheck = await get(query(ref(db, 'projects'), orderByChild('name'), equalTo(name)));
     if (dupCheck.exists()) { showToast('A project with that name already exists.', 'error'); return; }
 
     const projectData = {
@@ -346,7 +354,7 @@ async function createProject() {
       payrollConfig: { type: 'weekly', overtimeThreshold: 8, nightDiffRate: 1.1 }
     };
 
-    await safeDb(() => firebase.database().ref('projects').push(projectData), 'Failed to create project');
+    await safeDb(() => push(ref(db, 'projects'), projectData), 'Failed to create project');
     $('newName').value = ''; $('newLaborBudget').value = ''; $('newMaterialBudget').value = '';
     auditLog('create', 'project', null, { name, laborBudget, materialBudget });
     showToast(`Project "${name}" created!`);
@@ -355,14 +363,14 @@ async function createProject() {
 
 async function markComplete(pid) {
   if (!confirm('Mark this project as completed?\n\nThis will lock the project for editing.')) return;
-  await safeDb(() => firebase.database().ref(`projects/${pid}`).update({ status: 'completed', completedAt: Date.now() }), 'Failed to update');
+  await safeDb(() => update(ref(db, `projects/${pid}`), { status: 'completed', completedAt: Date.now() }), 'Failed to update');
   auditLog('complete', 'project', pid, {});
   showToast('Project marked as completed');
 }
 
 async function reopenProject(pid) {
   if (!confirm('Reopen this project?')) return;
-  await safeDb(() => firebase.database().ref(`projects/${pid}`).update({ status: 'active', reopenedAt: Date.now() }), 'Failed to update');
+  await safeDb(() => update(ref(db, `projects/${pid}`), { status: 'active', reopenedAt: Date.now() }), 'Failed to update');
   auditLog('reopen', 'project', pid, {});
   showToast('Project reopened');
 }
@@ -372,13 +380,13 @@ async function deleteProject(pid) {
   const confirmText = prompt('Type DELETE to confirm permanent deletion:');
   if (confirmText !== 'DELETE') { showToast('Deletion cancelled.', 'warn'); return; }
 
-  await safeDb(() => firebase.database().ref(`projects/${pid}`).remove(), 'Failed to delete');
+  await safeDb(() => remove(ref(db, `projects/${pid}`)), 'Failed to delete');
   auditLog('delete', 'project', pid, {});
   showToast('Project and all data deleted', 'warn');
 }
 
 function detachHubListeners() {
-  _hubListeners.forEach(ref => ref.off());
+  _hubListeners.forEach(unsubscribe => unsubscribe());
   _hubListeners = [];
 }
 
@@ -388,7 +396,7 @@ function detachHubListeners() {
 
 async function enterProject(pid) {
   _currentPid = pid;
-  const snap = await firebase.database().ref(`projects/${pid}`).once('value');
+  const snap = await get(ref(db, `projects/${pid}`));
   const p = snap.val();
   if (!p) { showToast('Project not found.', 'error'); return; }
 
@@ -444,7 +452,7 @@ function unlockForEdit() {
 
 async function exportAllData() {
   if (!_currentPid) return;
-  const snap = await firebase.database().ref(`projects/${_currentPid}`).once('value');
+  const snap = await get(ref(db, `projects/${_currentPid}`));
   const data = snap.val();
   if (!data) return;
 
