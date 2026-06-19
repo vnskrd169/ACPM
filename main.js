@@ -5,22 +5,22 @@
 //  Shared helpers ($, peso, escapeHtml, escapeCsv, withBusy,
 //  delegateEvent, normalizeInvKey, auditLog, etc.) live in utils.js.
 // ════════════════════════════════════════════════════════════
-
+import { initializeApp } from "firebase/app";
 // ── Firebase Config (v8) ────────────────────────────────────
 // TODO: Migrate to v9 modular SDK + Firestore.
 // TODO: Replace with real Firebase Auth identity.
 const firebaseConfig = {
-  apiKey: "AIzaSyD27f2CgxK1Gq8fH1iDDK9F2j2CgxK1Gq8",
+  apiKey: "AIzaSyA7xFArtly4jCZZEt34TTmfNfK94RoWMaA",
   authDomain: "acpm-project-system.firebaseapp.com",
   databaseURL: "https://acpm-project-system-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "acpm-project-system",
-  storageBucket: "acpm-project-system.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abcdef1234567890"
+  storageBucket: "acpm-project-system.firebasestorage.app",
+  messagingSenderId: "330800177544",
+  appId: "1:330800177544:web:8f29dcd81ca39976849a3d"
 };
 
-firebase.initializeApp(firebaseConfig);
-
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
 // ── Globals ───────────────────────────────────────────────
 let _currentPid = null;
 let _hubListeners = [];
