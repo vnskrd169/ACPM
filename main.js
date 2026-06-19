@@ -480,3 +480,20 @@ window.addEventListener('keydown', e => {
     showToast('Auto-saved to Firebase ☁️', 'success');
   }
 });
+
+// ── Expose to global scope ────────────────────────────────────
+// Required because this file is loaded as <script type="module">,
+// so top-level functions are NOT automatically global. Anything
+// referenced via inline onclick="" / oninput="" in index.html
+// must be attached to window explicitly here.
+window.createProject = createProject;
+window.markComplete = markComplete;
+window.reopenProject = reopenProject;
+window.deleteProject = deleteProject;
+window.enterProject = enterProject;
+window.exitHub = exitHub;
+window.switchTab = switchTab;
+window.unlockForEdit = unlockForEdit;
+window.exportAllData = exportAllData;
+window.filterProjects = filterProjects;
+window.showHubTab = showHubTab;
