@@ -29,9 +29,9 @@ function watchGlobalSuppliers() {
     const fragment = document.createDocumentFragment();
     suppliers.forEach(s => {
       const bankLine = (s.bankName || s.accNum)
-        ? `<div class="supplier-bank">🏦 ${escapeHtml(s.bankName || '')} ${s.accNum ? '· Acct: ' + escapeHtml(s.accNum) : ''} ${s.accName ? '· ' + escapeHtml(s.accName) : ''}</div>`
+        ? `<div class="supplier-bank">\u1F3E6 ${escapeHtml(s.bankName || '')} ${s.accNum ? '\u00B7 Acct: ' + escapeHtml(s.accNum) : ''} ${s.accName ? '\u00B7 ' + escapeHtml(s.accName) : ''}</div>`
         : '';
-      
+
       const card = document.createElement('div');
       card.className = 'supplier-card';
       card.setAttribute('data-name', escapeHtml((s.name || '').toLowerCase()));
@@ -39,15 +39,20 @@ function watchGlobalSuppliers() {
         <div class="supplier-info">
           <span class="supplier-name">${escapeHtml(s.name)}</span>
           ${s.specialty ? `<span class="supplier-specialty">${escapeHtml(s.specialty)}</span>` : ''}
-          ${s.contact ? `<span class="supplier-contact">📞 ${escapeHtml(s.contact)}</span>` : ''}
+          ${s.contact ? `<span class="supplier-contact">\u1F4DE ${escapeHtml(s.contact)}</span>` : ''}
           ${bankLine}
         </div>
         <div class="supplier-actions">
-          <button class="btn-use-supplier" aria-label="Use ${escapeHtml(s.name)} in PO" onclick="useSupplierInPO('${escapeHtml(s.name).replace(/'/g, "\\'")}')">Use in PO</button>
-          <button class="btn-edit-supplier" aria-label="Edit ${escapeHtml(s.name)}" onclick="openEditSupplier('${s.key}')">✎ Edit</button>
-          <button class="btn-del-supplier" aria-label="Delete ${escapeHtml(s.name)}" onclick="deleteSupplier('${s.key}','${escapeHtml(s.name).replace(/'/g, "\\'")}')">✕</button>
+          <button class="btn-use-supplier" data-name="${escapeHtml(s.name).replace(/'/g, "\\'")}">Use in PO</button>
+          <button class="btn-edit-supplier" data-key="${s.key}">\u270E Edit</button>
+          <button class="btn-del-supplier" data-key="${s.key}" data-name="${escapeHtml(s.name).replace(/'/g, "\\'")}">\u2715</button>
         </div>
       `;
+
+      card.querySelector('.btn-use-supplier').addEventListener('click', (e) => useSupplierInPO(e.target.dataset.name));
+      card.querySelector('.btn-edit-supplier').addEventListener('click', (e) => openEditSupplier(e.target.dataset.key));
+      card.querySelector('.btn-del-supplier').addEventListener('click', (e) => deleteSupplier(e.target.dataset.key, e.target.dataset.name));
+
       fragment.appendChild(card);
     });
 
@@ -65,16 +70,20 @@ async function addSupplier() {
   const accName = $('supAccName')?.value.trim() || '';
   if (!name) { showToast('Enter supplier name.', 'error'); return; }
   if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
-  
+
+  // Check for duplicate
+  const dupSnap = await firebase.database().ref('suppliers').orderByChild('name').equalTo(name).once('value');
+  if (dupSnap.exists()) { showToast(`Supplier "${name}" already exists.`, 'error'); return; }
+
   await safeDb(() => firebase.database().ref('suppliers').push({
-    name, contact, specialty: spec, bankName: bank, accNum, accName, addedAt: Date.now(), addedBy: _currentUser.uid
+    name, contact, specialty: spec, bankName: bank, accNum, accName, addedAt: Date.now(), addedBy: window._currentUser.uid
   }), 'Failed to add supplier');
-  
+
   ['supName', 'supContact', 'supSpecialty', 'supBank', 'supAccNum', 'supAccName'].forEach(id => {
     const e = $(id); if (e) e.value = '';
   });
   auditLog('create', 'supplier', null, { name });
-  showToast(`✅ ${name} added`);
+  showToast(`\u2705 ${name} added`);
 }
 
 function openEditSupplier(key) {
@@ -105,14 +114,14 @@ async function saveEditSupplier() {
   const accName = $('editSupAccName').value.trim() || '';
   if (!name) { showToast('Name required.', 'error'); return; }
   if (name.length > 50) { showToast('Name too long.', 'error'); return; }
-  
+
   await safeDb(() => firebase.database().ref(`suppliers/${key}`).update({
-    name, contact, specialty: spec, bankName: bank, accNum, accName, updatedAt: Date.now(), updatedBy: _currentUser.uid
+    name, contact, specialty: spec, bankName: bank, accNum, accName, updatedAt: Date.now(), updatedBy: window._currentUser.uid
   }), 'Failed to update supplier');
-  
+
   closeEditSupplier();
   auditLog('update', 'supplier', key, { name });
-  showToast(`${name} updated ✓`);
+  showToast(`${name} updated \u2713`);
 }
 
 async function deleteSupplier(key, name) {
@@ -148,12 +157,18 @@ async function exportSuppliersCSV() {
     csv += `${escapeCsv(s.name || '')},${escapeCsv(s.contact || '')},${escapeCsv(s.specialty || '')},${escapeCsv(s.bankName || '')},${escapeCsv(s.accNum || '')},${escapeCsv(s.accName || '')}\n`;
   });
 
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `Suppliers_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(`Suppliers_${new Date().toISOString().slice(0,10)}.csv`, csv, 'text/csv');
   showToast('Suppliers exported!');
 }
+
+// ── Expose to global scope ────────────────────────────────────
+window.initSuppliers = initSuppliers;
+window.detachSupplierListeners = detachSupplierListeners;
+window.addSupplier = addSupplier;
+window.openEditSupplier = openEditSupplier;
+window.closeEditSupplier = closeEditSupplier;
+window.saveEditSupplier = saveEditSupplier;
+window.deleteSupplier = deleteSupplier;
+window.useSupplierInPO = useSupplierInPO;
+window.filterSuppliers = filterSuppliers;
+window.exportSuppliersCSV = exportSuppliersCSV;

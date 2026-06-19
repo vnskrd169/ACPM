@@ -1,17 +1,16 @@
-
-
 let _lpid = null;
 let _laborListeners = [];
-let _payrollConfig = { type: 'weekly', startDay: 1, overtimeThreshold: 8, nightDiffRate: 1.1 };
+let _payrollConfig = { type: 'weekly', startDay: 1, overtimeThreshold: 8, nightDiffRate: 1.1, govDeductionsEnabled: false, sssEmployerPct: 8.5, philhealthPct: 3, pagibigEmployerAmt: 100 };
 let _pendingPayrollData = null;
+let _workersRegistered = false;
 
 const ATTENDANCE_STATUS = {
-  present: { label: 'Present', multiplier: 1.0, hours: 8 },
-  half:    { label: 'Half Day', multiplier: 0.5, hours: 4 },
-  absent:  { label: 'Absent', multiplier: 0, hours: 0 },
-  leave:   { label: 'Paid Leave', multiplier: 1.0, hours: 8 },
-  rest:    { label: 'Rest Day', multiplier: 0, hours: 0 },
-  holiday: { label: 'Holiday', multiplier: 2.0, hours: 8 }
+  present:  { label: 'Present',    multiplier: 1.0, hours: 8 },
+  half:     { label: 'Half Day',   multiplier: 0.5, hours: 4 },
+  absent:   { label: 'Absent',     multiplier: 0,   hours: 0 },
+  leave:    { label: 'Paid Leave', multiplier: 1.0, hours: 8 },
+  rest:     { label: 'Rest Day',   multiplier: 0,   hours: 0 },
+  holiday:  { label: 'Holiday',    multiplier: 2.0, hours: 8 }
 };
 
 function initLabor(pid) {
@@ -23,6 +22,17 @@ function initLabor(pid) {
   watchTrades(pid);
   watchPayrollLogs(pid);
   watchTimecardHistory(pid);
+
+  // Set default week range
+  const today = new Date();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const ws = $('weekStart');
+  const we = $('weekEnd');
+  if (ws && !ws.value) ws.value = monday.toISOString().slice(0, 10);
+  if (we && !we.value) we.value = sunday.toISOString().slice(0, 10);
 }
 
 function detachLaborListeners() {
@@ -45,19 +55,42 @@ function loadPayrollConfig(pid) {
     const cycleEl = $('payrollCycle');
     const otEl = $('otThreshold');
     const nightEl = $('nightDiffRate');
+    const govEl = $('govDeductionsEnabled');
+    const sssEl = $('sssEmployerPct');
+    const philEl = $('philhealthPct');
+    const pagiEl = $('pagibigEmployerAmt');
+
     if (cycleEl) cycleEl.value = _payrollConfig.type;
     if (otEl) otEl.value = _payrollConfig.overtimeThreshold;
     if (nightEl) nightEl.value = _payrollConfig.nightDiffRate;
+    if (govEl) govEl.checked = !!_payrollConfig.govDeductionsEnabled;
+    if (sssEl) sssEl.value = _payrollConfig.sssEmployerPct || 8.5;
+    if (philEl) philEl.value = _payrollConfig.philhealthPct || 3;
+    if (pagiEl) pagiEl.value = _payrollConfig.pagibigEmployerAmt || 100;
+
+    // Toggle gov deductions config visibility
+    const govConfig = $('govDeductionsConfig');
+    if (govConfig) govConfig.classList.toggle('hidden', !_payrollConfig.govDeductionsEnabled);
   });
 }
 
 async function savePayrollConfig() {
   if (!_lpid) return;
+  const govEnabled = $('govDeductionsEnabled')?.checked || false;
   const config = {
     type: $('payrollCycle')?.value || 'weekly',
     overtimeThreshold: parseFloat($('otThreshold')?.value) || 8,
-    nightDiffRate: parseFloat($('nightDiffRate')?.value) || 1.1
+    nightDiffRate: parseFloat($('nightDiffRate')?.value) || 1.1,
+    govDeductionsEnabled: govEnabled,
+    sssEmployerPct: parseFloat($('sssEmployerPct')?.value) || 8.5,
+    philhealthPct: parseFloat($('philhealthPct')?.value) || 3,
+    pagibigEmployerAmt: parseFloat($('pagibigEmployerAmt')?.value) || 100
   };
+
+  // Toggle visibility of gov deductions config
+  const govConfig = $('govDeductionsConfig');
+  if (govConfig) govConfig.classList.toggle('hidden', !govEnabled);
+
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/payrollConfig`).set(config), 'Failed to save config');
   _payrollConfig = config;
   showToast('Payroll settings saved');
@@ -81,8 +114,8 @@ function watchLaborBudget(pid) {
       wb.classList.toggle('hidden', p < 80);
       wb.className = `budget-warn-bar ${p >= 95 ? 'warn-critical' : 'warn-high'} ${p < 80 ? 'hidden' : ''}`;
       wb.textContent = p >= 95
-        ? `⚠ CRITICAL — Labor budget ${p}% used! Only ${peso(left)} remaining.`
-        : `⚠ WARNING — Labor budget ${p}% used. ${peso(left)} remaining.`;
+        ? `\u26A0\uFE0F CRITICAL \u2014 Labor budget ${p}% used! Only ${peso(left)} remaining.`
+        : `\u26A0\uFE0F WARNING \u2014 Labor budget ${p}% used. ${peso(left)} remaining.`;
     }
   });
 }
@@ -98,7 +131,11 @@ function watchTrades(pid) {
     _tradesSnap = snap;
     renderTradeChips(snap);
     populateTradeSelect(snap);
-    watchWorkers(pid);
+    // Attach worker listeners only once
+    if (!_workersRegistered) {
+      _workersRegistered = true;
+      watchWorkers(pid);
+    }
   });
 }
 
@@ -111,8 +148,17 @@ function renderTradeChips(snap) {
     const chip = document.createElement('div');
     chip.className = 'trade-chip';
     chip.innerHTML = `<span class="trade-chip-name">${escapeHtml(t.name)}</span>
-      <button class="chip-edit" aria-label="Rename trade" onclick="renameTrade('${c.key}','${escapeHtml(t.name)}')">✎</button>
-      <button class="chip-del" aria-label="Delete trade" onclick="deleteTrade('${c.key}','${escapeHtml(t.name)}')">✕</button>`;
+      <button class="chip-edit" aria-label="Rename trade" data-action="rename" data-key="${c.key}" data-name="${escapeHtml(t.name)}">\u270E</button>
+      <button class="chip-del" aria-label="Delete trade" data-action="delete" data-key="${c.key}" data-name="${escapeHtml(t.name)}">\u2715</button>`;
+
+    // Delegated events instead of inline onclick
+    chip.querySelector('[data-action="rename"]').addEventListener('click', (e) => {
+      renameTrade(e.target.dataset.key, e.target.dataset.name);
+    });
+    chip.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+      deleteTrade(e.target.dataset.key, e.target.dataset.name);
+    });
+
     el.appendChild(chip);
   });
 }
@@ -122,6 +168,11 @@ async function addTrade() {
   const name = inp?.value.trim();
   if (!name || !_lpid) return;
   if (name.length > 30) { showToast('Trade name too long (max 30).', 'error'); return; }
+
+  // Check for duplicate trade name
+  const snap = await firebase.database().ref(`projects/${_lpid}/trades`).orderByChild('name').equalTo(name).once('value');
+  if (snap.exists()) { showToast(`Trade "${name}" already exists.`, 'error'); return; }
+
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades`).push({ name }), 'Failed to add trade');
   inp.value = '';
   auditLog('create', 'trade', null, { name, projectId: _lpid });
@@ -147,7 +198,7 @@ async function deleteTrade(key, name) {
 function populateTradeSelect(snap) {
   const sel = $('workerTradeSelect'); if (!sel) return;
   const prev = sel.value;
-  sel.innerHTML = '<option value="">— Select Trade —</option>';
+  sel.innerHTML = '<option value="">\u2014 Select Trade \u2014</option>';
   snap?.forEach(c => {
     const opt = document.createElement('option');
     opt.value = c.val().name;
@@ -160,12 +211,8 @@ function populateTradeSelect(snap) {
 // ══════════════════════════════════════════════════════
 //  WORKERS
 // ══════════════════════════════════════════════════════
-let _workersRegistered = false;
 
 function watchWorkers(pid) {
-  if (_workersRegistered) return;
-  _workersRegistered = true;
-
   const wRef = firebase.database().ref(`projects/${pid}/workers`);
   laborListen(wRef, wSnap => {
     firebase.database().ref(`projects/${pid}/advances`).once('value', allAdvSnap => {
@@ -205,11 +252,19 @@ function renderRoster(wSnap, pid, allAdvSnap) {
     div.innerHTML = `<div class="roster-info">
       <span class="roster-name">${escapeHtml(w.name)}</span>
       <span class="roster-trade-tag">${escapeHtml(w.trade || 'No Trade')}</span>
-      <span class="adv-badge-wrap">${pending > 0 ? `<span class="adv-badge">₱${pending.toLocaleString()} advance</span>` : ''}</span>
+      <span class="adv-badge-wrap">${pending > 0 ? `<span class="adv-badge">\u20B1${pending.toLocaleString()} advance</span>` : ''}</span>
     </div>
     <span class="roster-rate">${peso(w.dailyRate)}/day</span>
-    <button class="btn-advance" onclick="openAdvanceModal('${wid}','${escapeHtml(w.name)}')">₱ Advance</button>
-    <button class="del-worker" aria-label="Remove worker" onclick="removeWorker('${wid}')">✕</button>`;
+    <button class="btn-advance" data-action="advance" data-wid="${wid}" data-name="${escapeHtml(w.name)}">\u20B1 Advance</button>
+    <button class="del-worker" aria-label="Remove worker" data-action="remove" data-wid="${wid}">\u2715</button>`;
+
+    div.querySelector('[data-action="advance"]').addEventListener('click', (e) => {
+      openAdvanceModal(e.target.dataset.wid, e.target.dataset.name);
+    });
+    div.querySelector('[data-action="remove"]').addEventListener('click', (e) => {
+      removeWorker(e.target.dataset.wid);
+    });
+
     el.appendChild(div);
   });
 }
@@ -223,8 +278,17 @@ async function addWorker() {
   if (!trade) { showToast('Select a trade.', 'error'); return; }
   if (rate <= 0) { showToast('Enter daily rate.', 'error'); return; }
   if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
-  
-  const workerData = { name, trade, dailyRate: rate, addedAt: Date.now(), addedBy: _currentUser.uid };
+
+  // Check for duplicate worker name
+  const dupSnap = await firebase.database().ref(`projects/${_lpid}/workers`).orderByChild('name').equalTo(name).once('value');
+  if (dupSnap.exists()) { showToast(`Worker "${name}" already exists.`, 'error'); return; }
+
+  // Validate daily rate is reasonable (not extreme)
+  if (rate > 50000) {
+    if (!confirm(`Daily rate ${peso(rate)} seems very high. Continue?`)) return;
+  }
+
+  const workerData = { name, trade, dailyRate: rate, addedAt: Date.now(), addedBy: window._currentUser.uid };
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/workers`).push(workerData), 'Failed to add worker');
   $('workerName').value = ''; $('workerRate').value = '';
   auditLog('create', 'worker', null, { name, trade, rate, projectId: _lpid });
@@ -234,7 +298,7 @@ async function addWorker() {
 async function removeWorker(wid) {
   if (!_lpid || !confirm('Remove this worker and ALL their attendance records?\n\nThis cannot be undone.')) return;
 
-  // Atomic multi-path delete: worker + all their attendance + advances in one write
+  // Atomic multi-path delete
   const attSnap = await firebase.database().ref(`projects/${_lpid}/attendance/${wid}`).once('value');
   const advSnap = await firebase.database().ref(`projects/${_lpid}/advances/${wid}`).once('value');
   const updates = {};
@@ -256,6 +320,8 @@ function openAdvanceModal(wid, name) {
   _advWid = wid; _advName = name;
   const nameEl = $('advanceWorkerName');
   if (nameEl) nameEl.textContent = name;
+  const dateEl = $('advanceDate');
+  if (dateEl) dateEl.value = new Date().toISOString().slice(0, 10);
   loadAdvanceHistory(wid);
   $('advanceModal').classList.remove('hidden');
 }
@@ -280,7 +346,9 @@ function loadAdvanceHistory(wid) {
         <span class="advance-amt">${peso(a.amount)}</span>
         ${a.notes ? `<span class="advance-note">${escapeHtml(a.notes)}</span>` : ''}
         <span class="advance-status ${a.deducted ? 'adv-deducted' : 'adv-pending'}">${a.deducted ? 'Deducted' : 'Pending'}</span>
-        <button class="del-advance" aria-label="Delete advance" onclick="deleteAdvance('${wid}','${c.key}')">✕</button>`;
+        <button class="del-advance" aria-label="Delete advance" data-key="${c.key}">\u2715</button>`;
+
+      row.querySelector('.del-advance').addEventListener('click', () => deleteAdvance(wid, c.key));
       el.appendChild(row);
     });
     setText('advanceTotalLabel', peso(total));
@@ -295,16 +363,21 @@ async function saveAdvance() {
   if (!date) { showToast('Enter date.', 'error'); return; }
   if (amount <= 0) { showToast('Enter amount.', 'error'); return; }
   if (notes.length > 200) { showToast('Notes too long (max 200).', 'error'); return; }
-  
+
+  // Validate date not in future
+  const inputDate = new Date(date + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (inputDate > today) { showToast('Date cannot be in the future.', 'error'); return; }
+
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${_advWid}`).push({
-    date, amount, notes, deducted: false, deductedAmount: 0, addedAt: Date.now(), addedBy: _currentUser.uid
+    date, amount, notes, deducted: false, deductedAmount: 0, addedAt: Date.now(), addedBy: window._currentUser.uid
   }), 'Failed to save advance');
-  
+
   $('advanceDate').value = ''; $('advanceAmount').value = ''; $('advanceNotes').value = '';
   loadAdvanceHistory(_advWid);
   auditLog('create', 'advance', null, { workerId: _advWid, amount, projectId: _lpid });
   showToast(`Advance of ${peso(amount)} saved for ${_advName}`);
-  
+
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
     firebase.database().ref(`projects/${_lpid}/advances`).once('value', allAdvSnap => {
       renderRoster(wSnap, _lpid, allAdvSnap);
@@ -325,7 +398,7 @@ async function deleteAdvance(wid, key) {
 }
 
 // ══════════════════════════════════════════════════════
-//  TIMECARD GRID (Enhanced with Status Dropdowns)
+//  TIMECARD GRID
 // ══════════════════════════════════════════════════════
 function buildGrid(pid, wSnap, attSnap) {
   const container = $('timecardGrid'); if (!container) return;
@@ -364,37 +437,36 @@ function buildGrid(pid, wSnap, attSnap) {
     let tradeTotal = 0;
     const rows = workers.map(w => {
       let sub = 0, daysPresent = 0, daysHalf = 0, daysHoliday = 0, otHours = 0;
-      
+
       const cells = days.map(d => {
         const att = attendance[w.id]?.[d.iso] || { status: 'absent', overtimeHours: 0, nightDiffHours: 0 };
         const status = att.status || 'absent';
         const config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.absent;
-        const dayPay = w.dailyRate * config.multiplier;
-        
+
         if (status === 'present' || status === 'leave') daysPresent++;
         if (status === 'half') daysHalf++;
         if (status === 'holiday') daysHoliday++;
         otHours += att.overtimeHours || 0;
-        
+
         const pay = calculateGrossPay(w.dailyRate, att);
         sub += pay.total;
-        
-        const statusOptions = Object.entries(ATTENDANCE_STATUS).map(([key, val]) => 
+
+        const statusOptions = Object.entries(ATTENDANCE_STATUS).map(([key, val]) =>
           `<option value="${key}" ${status === key ? 'selected' : ''}>${val.label}</option>`
         ).join('');
-        
+
         return `<td class="g-cell">
-          <select class="attendance-sel status-${status}" onchange="markAttendance('${w.id}','${d.iso}',this.value,0,0,'')">
+          <select class="attendance-sel status-${status}" data-wid="${w.id}" data-date="${d.iso}" onchange="handleAttendanceChange(this)">
             ${statusOptions}
           </select>
-          <input type="number" class="ot-input" placeholder="OT" value="${att.overtimeHours || ''}" 
+          <input type="number" class="ot-input" placeholder="OT" value="${att.overtimeHours || ''}"
             onchange="updateAttendanceOT('${w.id}','${d.iso}',this.value)" title="Overtime hours">
         </td>`;
       }).join('');
-      
+
       tradeTotal += sub;
       summaryData[w.id] = { name: w.name, trade, rate: w.dailyRate, days: daysPresent + daysHalf * 0.5 + daysHoliday, sub, otHours };
-      
+
       return `<tr class="g-row">
         <td class="g-name">${escapeHtml(w.name)}</td>
         <td class="g-rate">${peso(w.dailyRate)}</td>
@@ -426,6 +498,19 @@ function buildGrid(pid, wSnap, attSnap) {
   updateAttendanceSummary(summaryData);
 }
 
+// ── Handle attendance dropdown change with proper class update ──
+function handleAttendanceChange(selectEl) {
+  const wid = selectEl.dataset.wid;
+  const iso = selectEl.dataset.date;
+  const status = selectEl.value;
+
+  // Update visual class
+  selectEl.className = `attendance-sel status-${status}`;
+
+  // Save to Firebase
+  markAttendance(wid, iso, status, 0, 0, '');
+}
+
 // ── Calculate Gross Pay with OT & Night Diff ───────────────
 function calculateGrossPay(rate, att) {
   const status = att.status || 'absent';
@@ -438,8 +523,14 @@ function calculateGrossPay(rate, att) {
 
 async function markAttendance(wid, iso, status, overtimeHours = 0, nightDiffHours = 0, notes = '') {
   if (!_lpid) return;
+
+  // Validate date is not in the future
+  const inputDate = new Date(iso + 'T00:00:00');
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  if (inputDate > today) { showToast('Cannot mark attendance for future dates.', 'error'); return; }
+
   const config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.present;
-  
+
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/attendance/${wid}/${iso}`).set({
     workerId: wid, date: iso, status,
     regularHours: config.hours,
@@ -449,7 +540,7 @@ async function markAttendance(wid, iso, status, overtimeHours = 0, nightDiffHour
     multiplier: config.multiplier,
     notes,
     markedAt: Date.now(),
-    markedBy: _currentUser.uid
+    markedBy: window._currentUser.uid
   }), 'Failed to save attendance');
 }
 
@@ -484,6 +575,12 @@ function getWeekDays() {
 
 function applyWeek() {
   if (!_lpid) return;
+  const ws = $('weekStart')?.value;
+  const we = $('weekEnd')?.value;
+  if (ws && we && new Date(ws) > new Date(we)) {
+    showToast('Week start must be before week end.', 'error');
+    return;
+  }
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
     firebase.database().ref(`projects/${_lpid}/attendance`).once('value', attSnap => {
       buildGrid(_lpid, wSnap, attSnap);
@@ -518,12 +615,12 @@ function updateAttendanceSummary(data) {
 }
 
 // ══════════════════════════════════════════════════════
-//  COMPILE PAYROLL (Enhanced with Full Breakdown)
+//  COMPILE PAYROLL (with Government Deductions)
 // ══════════════════════════════════════════════════════
 async function compilePayroll() {
   if (!_lpid) return;
-  const start = $('weekStart')?.value || '—';
-  const end = $('weekEnd')?.value || '—';
+  const start = $('weekStart')?.value || '\u2014';
+  const end = $('weekEnd')?.value || '\u2014';
 
   const [wSnap, attSnap, advSnap, projSnap] = await Promise.all([
     firebase.database().ref(`projects/${_lpid}/workers`).once('value'),
@@ -549,17 +646,17 @@ async function compilePayroll() {
     if (!w) return;
 
     let workerRegular = 0, workerOT = 0, workerNight = 0, workerDays = 0;
-    
+
     workerAtt.forEach(daySnap => {
       const att = daySnap.val();
       if (!weekSet.has(att.date)) return;
-      
+
       const pay = calculateGrossPay(w.dailyRate, att);
       workerRegular += pay.regularPay;
       workerOT += pay.otPay;
       workerNight += pay.nightDiffPay;
       if (att.status !== 'absent' && att.status !== 'rest') workerDays++;
-      
+
       attendanceToArchive.push({ ...att, compiledAt: Date.now() });
     });
 
@@ -570,7 +667,7 @@ async function compilePayroll() {
     grandGross += workerGross;
 
     if (!byTrade[w.trade]) byTrade[w.trade] = { workers: {}, total: 0, regular: 0, ot: 0, night: 0 };
-    
+
     byTrade[w.trade].workers[wid] = {
       name: w.name, rate: w.dailyRate, days: workerDays,
       regular: workerRegular, ot: workerOT, night: workerNight, gross: workerGross
@@ -592,15 +689,15 @@ async function compilePayroll() {
     const wid = workerAdv.key;
     const wname = workers[wid]?.name || wid;
     const workerGross = workerPayroll[wid]?.gross || 0;
-    
+
     workerAdv.forEach(advEntry => {
       const a = advEntry.val();
       if (a.deducted) return;
-      
+
       const remaining = a.amount - (a.deductedAmount || 0);
       const maxDeduct = Math.min(workerGross * 0.2, remaining);
       const deductThisPayroll = maxDeduct > 0 ? maxDeduct : 0;
-      
+
       if (!pendingAdvances[wid]) pendingAdvances[wid] = { name: wname, advances: [], totalDeduct: 0 };
       pendingAdvances[wid].advances.push({
         key: advEntry.key,
@@ -613,29 +710,70 @@ async function compilePayroll() {
     });
   });
 
+  // Government deductions calculation
+  let sssEmployerTotal = 0, philhealthEmployerTotal = 0, pagibigEmployerTotal = 0;
+  const govEnabled = _payrollConfig.govDeductionsEnabled;
+
+  if (govEnabled) {
+    const sssRate = (_payrollConfig.sssEmployerPct || 8.5) / 100;
+    const philRate = (_payrollConfig.philhealthPct || 3) / 100;
+    const pagibigAmt = _payrollConfig.pagibigEmployerAmt || 100;
+
+    Object.values(workerPayroll).forEach(wp => {
+      if (wp.gross > 0) {
+        sssEmployerTotal += wp.gross * sssRate;
+        philhealthEmployerTotal += wp.gross * philRate;
+        pagibigEmployerTotal += pagibigAmt;
+      }
+    });
+  }
+
   _pendingPayrollData = {
     start, end,
     grandRegular, grandOT, grandNight, grandGross,
     byTrade, pendingAdvances, totalPending,
     prevSpent: parseFloat(projSnap.val()?.laborSpent) || 0,
     attendanceToArchive,
-    workerPayroll
+    workerPayroll,
+    govEnabled,
+    sssEmployerTotal,
+    philhealthEmployerTotal,
+    pagibigEmployerTotal,
+    employerTotalCost: grandGross + sssEmployerTotal + philhealthEmployerTotal + pagibigEmployerTotal
   };
-  
+
   showPayrollModal();
 }
 
 function showPayrollModal() {
   const d = _pendingPayrollData; if (!d) return;
-  
+
   setText('payrollRegular', peso(d.grandRegular));
   setText('payrollOT', peso(d.grandOT));
   setText('payrollNight', peso(d.grandNight));
   setText('payrollGross', peso(d.grandGross));
-  
+
   const periodEl = $('payrollPeriod');
-  if (periodEl) periodEl.textContent = `${d.start} – ${d.end}`;
+  if (periodEl) periodEl.textContent = `${d.start} \u2013 ${d.end}`;
   setText('totalAdvances', peso(d.totalPending));
+
+  // Government deductions display
+  const govDisplay = $('govDeductionsDisplay');
+  if (govDisplay) {
+    govDisplay.classList.toggle('hidden', !d.govEnabled);
+    if (d.govEnabled) {
+      setText('sssEmployerDisplay', peso(d.sssEmployerTotal));
+      setText('philhealthEmployerDisplay', peso(d.philhealthEmployerTotal));
+      setText('pagibigEmployerDisplay', peso(d.pagibigEmployerTotal));
+    }
+  }
+
+  // Employer total cost
+  const costDisplay = $('employerCostDisplay');
+  if (costDisplay) {
+    costDisplay.textContent = `Employer Total Cost: ${peso(d.employerTotalCost)}`;
+    costDisplay.classList.toggle('hidden', !d.govEnabled);
+  }
 
   const advList = $('advanceDeductList');
   if (advList) {
@@ -645,7 +783,7 @@ function showPayrollModal() {
           `<div class="adv-deduct-row">
             <span class="adv-deduct-name">${escapeHtml(w.name)}</span>
             <span class="adv-deduct-detail">
-              ${w.advances.map(a => `₱${a.deductThisPayroll.toLocaleString('en-PH', {minimumFractionDigits:2})} of ₱${a.remainingAfter.toLocaleString('en-PH', {minimumFractionDigits:2})} remaining`).join(' · ')}
+              ${w.advances.map(a => `\u20B1${a.deductThisPayroll.toLocaleString('en-PH', {minimumFractionDigits:2})} of \u20B1${a.remainingAfter.toLocaleString('en-PH', {minimumFractionDigits:2})} remaining`).join(' \u00B7 ')}
             </span>
           </div>`
         ).join('');
@@ -681,15 +819,15 @@ async function confirmSavePayroll() {
 
   // Archive attendance
   updates[`projects/${_lpid}/attendanceHistory/${logKey}`] = {
-    period: `${d.start}–${d.end}`,
+    period: `${d.start}\u2013${d.end}`,
     savedAt: Date.now(),
     entries: d.attendanceToArchive,
-    compiledBy: _currentUser.uid
+    compiledBy: window._currentUser.uid
   };
 
-  // Save payroll log
-  updates[`projects/${_lpid}/payrollLogs/${logKey}`] = {
-    period: `${d.start}–${d.end}`,
+  // Save payroll log with gov deductions
+  const logData = {
+    period: `${d.start}\u2013${d.end}`,
     gross: d.grandGross,
     regular: d.grandRegular,
     ot: d.grandOT,
@@ -700,10 +838,21 @@ async function confirmSavePayroll() {
     workerDetails: d.workerPayroll,
     savedAt: Date.now(),
     savedDate: new Date().toLocaleDateString('en-PH'),
-    savedBy: _currentUser.uid,
+    savedBy: window._currentUser.uid,
     status: 'finalized'
   };
 
+  // Add government deductions to log if enabled
+  if (d.govEnabled) {
+    logData.govDeductions = {
+      sssEmployer: d.sssEmployerTotal,
+      philhealthEmployer: d.philhealthEmployerTotal,
+      pagibigEmployer: d.pagibigEmployerTotal,
+      employerTotalCost: d.employerTotalCost
+    };
+  }
+
+  updates[`projects/${_lpid}/payrollLogs/${logKey}`] = logData;
   updates[`projects/${_lpid}/laborSpent`] = d.prevSpent + net;
 
   // Update advances with amortization
@@ -727,8 +876,8 @@ async function confirmSavePayroll() {
     return;
   }
 
-  auditLog('payroll', 'payroll', logKey, { 
-    period: d.start + '–' + d.end, gross: d.grandGross, net, projectId: _lpid 
+  auditLog('payroll', 'payroll', logKey, {
+    period: d.start + '\u2013' + d.end, gross: d.grandGross, net, projectId: _lpid
   });
 
   const endDate = $('weekEnd')?.value;
@@ -742,46 +891,67 @@ async function confirmSavePayroll() {
   }
 
   closePayrollModal();
-  showToast(`✅ Payroll saved! Gross: ${peso(d.grandGross)} · Net: ${peso(net)}`);
+  showToast(`\u2705 Payroll saved! Gross: ${peso(d.grandGross)} \u00B7 Net: ${peso(net)}${d.govEnabled ? ` \u00B7 Employer Cost: ${peso(d.employerTotalCost)}` : ''}`);
   applyWeek();
 }
 
 // ══════════════════════════════════════════════════════
-//  PAYSLIP GENERATION
+//  PAYSLIP GENERATION (with Government Deductions)
 // ══════════════════════════════════════════════════════
 function generatePayslips() {
   const d = _pendingPayrollData;
   if (!d) return;
-  
+
   const list = $('payslipList');
   if (!list) return;
-  
+
   list.innerHTML = '';
+
+  // Calculate per-worker gov deductions if enabled
+  const sssRate = d.govEnabled ? ((d.sssEmployerTotal / d.grandGross) || 0) : 0;
+  const philRate = d.govEnabled ? ((d.philhealthEmployerTotal / d.grandGross) || 0) : 0;
+  const pagibigAmt = d.govEnabled ? (d.pagibigEmployerTotal / Object.keys(d.workerPayroll).length) : 0;
+
   Object.entries(d.workerPayroll).forEach(([wid, worker]) => {
     const advances = d.pendingAdvances[wid];
     const totalDeductions = (advances?.totalDeduct || 0);
     const netPay = worker.gross - totalDeductions;
-    
+
     const slip = document.createElement('div');
     slip.className = 'payslip-card';
+
+    let govDeductionsHTML = '';
+    if (d.govEnabled && worker.gross > 0) {
+      const sss = worker.gross * sssRate;
+      const phil = worker.gross * philRate;
+      govDeductionsHTML = `
+        <div class="payslip-row"><span>SSS (Employer)</span><span>${peso(sss)}</span></div>
+        <div class="payslip-row"><span>PhilHealth (Employer)</span><span>${peso(phil)}</span></div>
+        <div class="payslip-row"><span>Pag-IBIG (Employer)</span><span>${peso(pagibigAmt)}</span></div>
+      `;
+    }
+
     slip.innerHTML = `
       <div class="payslip-hdr">
         <span class="payslip-name">${escapeHtml(worker.name)}</span>
-        <span class="payslip-period">${d.start} – ${d.end}</span>
+        <span class="payslip-period">${d.start} \u2013 ${d.end}</span>
       </div>
       <div class="payslip-body">
         <div class="payslip-row"><span>Regular Pay</span><span>${peso(worker.regular)}</span></div>
         <div class="payslip-row"><span>Overtime</span><span>${peso(worker.ot)}</span></div>
         <div class="payslip-row"><span>Night Differential</span><span>${peso(worker.night)}</span></div>
         <div class="payslip-row payslip-gross"><span>Gross</span><span>${peso(worker.gross)}</span></div>
-        <div class="payslip-row"><span>Advances</span><span class="text-red">-${peso(totalDeductions)}</span></div>
+        ${totalDeductions > 0 ? `<div class="payslip-row"><span>Cash Advances</span><span class="text-red">-${peso(totalDeductions)}</span></div>` : ''}
+        ${govDeductionsHTML}
         <div class="payslip-row payslip-net"><span>NET PAY</span><span class="text-green">${peso(netPay)}</span></div>
       </div>
-      <button class="btn-ws-secondary" onclick="downloadSinglePayslip('${wid}')">⬇️ PDF</button>
+      <button class="btn-ws-secondary" data-wid="${wid}">\u2B07\uFE0F PDF</button>
     `;
+
+    slip.querySelector('[data-wid]').addEventListener('click', () => downloadSinglePayslip(wid));
     list.appendChild(slip);
   });
-  
+
   $('payslipModal').classList.remove('hidden');
 }
 
@@ -792,55 +962,61 @@ function downloadSinglePayslip(wid) {
   if (!d || !window.jspdf) return;
   const worker = d.workerPayroll[wid];
   if (!worker) return;
-  
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const advances = d.pendingAdvances[wid];
   const totalDeductions = (advances?.totalDeduct || 0);
   const netPay = worker.gross - totalDeductions;
-  
+
   doc.setFontSize(18).setFont('helvetica', 'bold');
   doc.text('PAYSLIP', 105, 20, { align: 'center' });
   doc.setFontSize(10).setFont('helvetica', 'normal');
-  doc.text(`LeBuild Design & Construction`, 105, 28, { align: 'center' });
-  doc.text(`Project: ${_lpid}`, 105, 33, { align: 'center' });
-  
+  doc.text('LeBuild Design & Construction', 105, 28, { align: 'center' });
+
   doc.setFontSize(12).setFont('helvetica', 'bold');
   doc.text(worker.name, 20, 45);
   doc.setFontSize(10).setFont('helvetica', 'normal');
-  doc.text(`Period: ${d.start} – ${d.end}`, 20, 52);
+  doc.text(`Period: ${d.start} \u2013 ${d.end}`, 20, 52);
   doc.text(`Daily Rate: ${peso(worker.rate)}`, 20, 58);
-  
+
   let y = 70;
   doc.setFontSize(11).setFont('helvetica', 'bold');
   doc.text('EARNINGS', 20, y); y += 7;
   doc.setFontSize(10).setFont('helvetica', 'normal');
-  doc.text(`Regular Pay`, 25, y); doc.text(peso(worker.regular), 180, y, { align: 'right' }); y += 6;
-  doc.text(`Overtime`, 25, y); doc.text(peso(worker.ot), 180, y, { align: 'right' }); y += 6;
-  doc.text(`Night Differential`, 25, y); doc.text(peso(worker.night), 180, y, { align: 'right' }); y += 8;
-  
+  doc.text('Regular Pay', 25, y); doc.text(peso(worker.regular), 180, y, { align: 'right' }); y += 6;
+  doc.text('Overtime', 25, y); doc.text(peso(worker.ot), 180, y, { align: 'right' }); y += 6;
+  doc.text('Night Differential', 25, y); doc.text(peso(worker.night), 180, y, { align: 'right' }); y += 8;
+
   doc.setFontSize(11).setFont('helvetica', 'bold');
-  doc.text(`Gross Pay`, 25, y); doc.text(peso(worker.gross), 180, y, { align: 'right' }); y += 10;
-  
-  doc.setFontSize(11).setFont('helvetica', 'bold');
-  doc.text('DEDUCTIONS', 20, y); y += 7;
-  doc.setFontSize(10).setFont('helvetica', 'normal');
-  doc.text(`Cash Advances`, 25, y); doc.text(`-${peso(totalDeductions)}`, 180, y, { align: 'right' }); y += 8;
-  
+  doc.text('Gross Pay', 25, y); doc.text(peso(worker.gross), 180, y, { align: 'right' }); y += 10;
+
+  if (totalDeductions > 0) {
+    doc.setFontSize(11).setFont('helvetica', 'bold');
+    doc.text('DEDUCTIONS', 20, y); y += 7;
+    doc.setFontSize(10).setFont('helvetica', 'normal');
+    doc.text('Cash Advances', 25, y); doc.text(`-${peso(totalDeductions)}`, 180, y, { align: 'right' }); y += 8;
+  }
+
   doc.setDrawColor(0).setLineWidth(0.5);
   doc.line(20, y, 190, y); y += 8;
-  
+
   doc.setFontSize(14).setFont('helvetica', 'bold');
-  doc.text(`NET PAY`, 25, y); doc.text(peso(netPay), 180, y, { align: 'right' });
-  
+  doc.text('NET PAY', 25, y); doc.text(peso(netPay), 180, y, { align: 'right' });
+
+  if (d.govEnabled) {
+    y += 10;
+    doc.setFontSize(8).setFont('helvetica', 'normal');
+    doc.text('* Govt deductions (SSS/PhilHealth/Pag-IBIG) are employer share and do not reduce net pay.', 20, y);
+  }
+
   doc.setFontSize(8).setFont('helvetica', 'normal');
-  doc.text(`Generated: ${new Date().toLocaleDateString('en-PH')} · ACPM System`, 105, 280, { align: 'center' });
-  
+  doc.text(`Generated: ${new Date().toLocaleDateString('en-PH')} \u00B7 ACPM System`, 105, 280, { align: 'center' });
+
   doc.save(`Payslip_${worker.name.replace(/\s+/g, '_')}_${d.start}.pdf`);
 }
 
 function downloadAllPayslips() {
-  // Batch download or zip — simplified for now
   showToast('Individual download recommended for now', 'warn');
 }
 
@@ -877,12 +1053,12 @@ function renderTimecardHistory(snap) {
     const div = document.createElement('div');
     div.className = 'tc-history-card';
     div.innerHTML = `
-      <div class="tc-history-hdr" onclick="toggleTCHistory('${e.key}')">
+      <div class="tc-history-hdr" data-key="${e.key}">
         <div class="tc-history-left">
-          <span class="tc-history-period">📅 ${e.period || '—'}</span>
-          <span class="tc-history-meta">${e.tcCount} entries · ${new Date(e.savedAt).toLocaleDateString('en-PH')}</span>
+          <span class="tc-history-period">\u1F4C5 ${e.period || '\u2014'}</span>
+          <span class="tc-history-meta">${e.tcCount} entries \u00B7 ${new Date(e.savedAt).toLocaleDateString('en-PH')}</span>
         </div>
-        <span class="tc-history-toggle" id="tcToggle_${e.key}">▼</span>
+        <span class="tc-history-toggle" id="tcToggle_${e.key}">\u25BC</span>
       </div>
       <div class="tc-history-body hidden" id="tcBody_${e.key}">
         <div class="tc-history-table-wrap">
@@ -895,6 +1071,7 @@ function renderTimecardHistory(snap) {
         </div>
       </div>
     `;
+    div.querySelector('.tc-history-hdr').addEventListener('click', () => toggleTCHistory(e.key));
     el.appendChild(div);
   });
 }
@@ -904,9 +1081,9 @@ function renderTimecardRows(entries) {
   const rows = [...entries].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   return rows.map(tc => `
     <tr class="s-row">
-      <td class="s-cell">${escapeHtml(tc.workerId || '—')}</td>
-      <td class="s-cell s-trade">${escapeHtml(tc.trade || '—')}</td>
-      <td class="s-cell">${tc.date || '—'}</td>
+      <td class="s-cell">${escapeHtml(tc.workerId || '\u2014')}</td>
+      <td class="s-cell s-trade">${escapeHtml(tc.trade || '\u2014')}</td>
+      <td class="s-cell">${tc.date || '\u2014'}</td>
       <td class="s-cell">${ATTENDANCE_STATUS[tc.status]?.label || tc.status}</td>
       <td class="s-cell s-center">${tc.overtimeHours || 0}h</td>
       <td class="s-cell s-right">${peso(tc.dailyRate)}</td>
@@ -920,7 +1097,7 @@ function toggleTCHistory(key) {
   if (!body || !toggle) return;
   const isHidden = body.classList.contains('hidden');
   body.classList.toggle('hidden', !isHidden);
-  toggle.textContent = isHidden ? '▲' : '▼';
+  toggle.textContent = isHidden ? '\u25B2' : '\u25BC';
 }
 
 // ══════════════════════════════════════════════════════
@@ -928,8 +1105,8 @@ function toggleTCHistory(key) {
 // ══════════════════════════════════════════════════════
 async function generateRFP() {
   if (!_lpid) return;
-  const start = $('weekStart')?.value || '—';
-  const end = $('weekEnd')?.value || '—';
+  const start = $('weekStart')?.value || '\u2014';
+  const end = $('weekEnd')?.value || '\u2014';
 
   const [wSnap, attSnap] = await Promise.all([
     firebase.database().ref(`projects/${_lpid}/workers`).once('value'),
@@ -941,26 +1118,26 @@ async function generateRFP() {
 
   const byTrade = {};
   let grand = 0;
-  
+
   attSnap.forEach(workerAtt => {
     const wid = workerAtt.key;
     const w = workers[wid];
     if (!w) return;
-    
+
     workerAtt.forEach(daySnap => {
       const tc = daySnap.val();
       if (tc.status === 'absent' || tc.status === 'rest') return;
       if (!byTrade[tc.trade || w.trade]) byTrade[tc.trade || w.trade] = [];
-      
-      let e = byTrade[tc.trade || w.trade].find(x => x.name === w.name);
-      if (!e) {
-        e = { name: w.name, rate: w.dailyRate, days: 0, sub: 0, ot: 0 };
-        byTrade[tc.trade || w.trade].push(e);
+
+      let entry = byTrade[tc.trade || w.trade].find(x => x.name === w.name);
+      if (!entry) {
+        entry = { name: w.name, rate: w.dailyRate, days: 0, sub: 0, ot: 0 };
+        byTrade[tc.trade || w.trade].push(entry);
       }
       const pay = calculateGrossPay(w.dailyRate, tc);
-      e.days += (tc.status === 'half' ? 0.5 : 1);
-      e.sub += pay.total;
-      e.ot += pay.otPay;
+      entry.days += (tc.status === 'half' ? 0.5 : 1);
+      entry.sub += pay.total;
+      entry.ot += pay.otPay;
       grand += pay.total;
     });
   });
@@ -969,11 +1146,11 @@ async function generateRFP() {
 
   const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
   const lines = [
-    `REQUEST FOR PAYMENT (RFP)`,
+    'REQUEST FOR PAYMENT (RFP)',
     `Project : ${_lpid}`,
     `Period  : ${start} to ${end}`,
     `Date    : ${today}`,
-    '─'.repeat(52), ''
+    '\u2500'.repeat(52), ''
   ];
 
   Object.entries(byTrade).forEach(([trade, ws]) => {
@@ -986,7 +1163,7 @@ async function generateRFP() {
   });
 
   lines.push(
-    '─'.repeat(52),
+    '\u2500'.repeat(52),
     `  ${'TOTAL LABOR PAYROLL'.padEnd(48)} ${peso(grand).padStart(12)}`,
     '', 'Prepared by: ___________________________', 'Approved by: ___________________________'
   );
@@ -998,11 +1175,19 @@ async function generateRFP() {
 
 function closeRFP() { $('rfpModal').classList.add('hidden'); }
 
-function copyRFP() {
+// Modern Clipboard API
+async function copyRFP() {
   const ta = $('rfpOutput');
-  ta.select();
-  document.execCommand('copy');
-  showToast('RFP copied to clipboard!');
+  if (!ta) return;
+  try {
+    await navigator.clipboard.writeText(ta.value);
+    showToast('RFP copied to clipboard!');
+  } catch (err) {
+    // Fallback for older browsers
+    ta.select();
+    document.execCommand('copy');
+    showToast('RFP copied to clipboard!');
+  }
 }
 
 function downloadRFP() {
@@ -1027,7 +1212,7 @@ function downloadRFP() {
     ws.forEach(w => {
       doc.setFont('helvetica', 'normal').setFontSize(8);
       doc.text(w.name, lm + 3, y);
-      doc.text(`${w.days} day/s × ${peso(w.rate)}`, lm + 55, y);
+      doc.text(`${w.days} day/s \u00D7 ${peso(w.rate)}`, lm + 55, y);
       doc.text(peso(w.sub), rm, y, { align: 'right' }); y += 5;
     });
     doc.setFont('helvetica', 'bold').setFontSize(8);
@@ -1074,15 +1259,19 @@ function watchPayrollLogs(pid) {
         tradeTotals[t] = (tradeTotals[t] || 0) + (d.total || 0);
       });
       const breakdown = e.byTrade
-        ? Object.entries(e.byTrade).map(([t, d]) => `${escapeHtml(t)}: ${peso(d.total)}`).join(' · ')
-        : '—';
+        ? Object.entries(e.byTrade).map(([t, d]) => `${escapeHtml(t)}: ${peso(d.total)}`).join(' \u00B7 ')
+        : '\u2014';
+
+      const govNote = e.govDeductions
+        ? `<br><span style="font-size:10px;color:var(--blue)">Gov: ${peso(e.govDeductions.employerTotalCost)} total cost</span>`
+        : '';
 
       const tr = document.createElement('tr');
       tr.className = 'hist-row';
       tr.innerHTML = `
-        <td class="h-cell">${e.savedDate || '—'}</td>
-        <td class="h-cell">${e.period || '—'}</td>
-        <td class="h-cell h-breakdown">${breakdown}</td>
+        <td class="h-cell">${e.savedDate || '\u2014'}</td>
+        <td class="h-cell">${e.period || '\u2014'}</td>
+        <td class="h-cell h-breakdown">${breakdown}${govNote}</td>
         <td class="h-cell h-amount">
           ${e.deductions > 0 ? `<span class="deduct-badge">-${peso(e.deductions)}</span> ` : ''}
           ${peso(e.gross || 0)}
@@ -1128,17 +1317,44 @@ async function exportPayrollCSV() {
   snap.forEach(c => rows.push(c.val()));
   rows.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
-  let csv = 'Date,Period,Regular,OT,Night Diff,Gross,Deductions,Net\n';
+  let csv = 'Date,Period,Regular,OT,Night Diff,Gross,Deductions,Net,GovDeductions\n';
   rows.forEach(r => {
-    csv += `${r.savedDate || ''},${r.period || ''},${r.regular || 0},${r.ot || 0},${r.nightDiff || 0},${r.gross || 0},${r.deductions || 0},${r.net || r.gross || 0}\n`;
+    const gov = r.govDeductions ? peso(r.govDeductions.employerTotalCost) : '';
+    csv += `${r.savedDate || ''},${r.period || ''},${r.regular || 0},${r.ot || 0},${r.nightDiff || 0},${r.gross || 0},${r.deductions || 0},${r.net || r.gross || 0},${gov}\n`;
   });
 
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `Payroll_${_lpid}_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(`Payroll_${_lpid}_${new Date().toISOString().slice(0,10)}.csv`, csv, 'text/csv');
   showToast('Payroll CSV exported!');
 }
+
+// ── Expose to global scope ────────────────────────────────────
+window.initLabor = initLabor;
+window.detachLaborListeners = detachLaborListeners;
+window.savePayrollConfig = savePayrollConfig;
+window.addTrade = addTrade;
+window.renameTrade = renameTrade;
+window.deleteTrade = deleteTrade;
+window.addWorker = addWorker;
+window.removeWorker = removeWorker;
+window.openAdvanceModal = openAdvanceModal;
+window.closeAdvanceModal = closeAdvanceModal;
+window.saveAdvance = saveAdvance;
+window.deleteAdvance = deleteAdvance;
+window.handleAttendanceChange = handleAttendanceChange;
+window.markAttendance = markAttendance;
+window.updateAttendanceOT = updateAttendanceOT;
+window.applyWeek = applyWeek;
+window.compilePayroll = compilePayroll;
+window.closePayrollModal = closePayrollModal;
+window.updatePayrollNet = updatePayrollNet;
+window.confirmSavePayroll = confirmSavePayroll;
+window.generatePayslips = generatePayslips;
+window.closePayslipModal = closePayslipModal;
+window.downloadSinglePayslip = downloadSinglePayslip;
+window.downloadAllPayslips = downloadAllPayslips;
+window.generateRFP = generateRFP;
+window.closeRFP = closeRFP;
+window.copyRFP = copyRFP;
+window.downloadRFP = downloadRFP;
+window.exportPayrollCSV = exportPayrollCSV;
+window.toggleTCHistory = toggleTCHistory;

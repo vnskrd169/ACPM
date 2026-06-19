@@ -1,18 +1,10 @@
 // ════════════════════════════════════════════════════════════
 //  ACPM — main.js
-//  Firebase init, Hub (project dashboard), Workspace lifecycle.
-//  Shared helpers ($, peso, escapeHtml, escapeCsv, withBusy,
-//  delegateEvent, normalizeInvKey, auditLog, etc.) live in utils.js.
+//  Firebase v8 compat init, Hub (project dashboard), Workspace lifecycle.
+//  All modules use firebase.database() (v8 compat global).
 // ════════════════════════════════════════════════════════════
 
-// ── Firebase Config (v9 modular) ─────────────────────────────
-// TODO: Migrate to Firestore.
-// TODO: Replace with real Firebase Auth identity.
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import {
-  getDatabase, ref, onValue, get, set, update, push, remove, query, orderByChild, equalTo, off
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
-
+// ── Firebase Config (v8 compat) ─────────────────────────────
 const firebaseConfig = {
   apiKey: "AIzaSyA7xFArtly4jCZZEt34TTmfNfK94RoWMaA",
   authDomain: "acpm-project-system.firebaseapp.com",
@@ -23,24 +15,22 @@ const firebaseConfig = {
   appId: "1:330800177544:web:8f29dcd81ca39976849a3d"
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-
-// Expose for other (still-compat-shaped) module files during migration.
-// Once every module file is converted to modular imports, this line can be removed.
+// Initialize Firebase v8 compat
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 window._db = db;
+
 // ── Globals ───────────────────────────────────────────────
-let _currentPid = null;
+window._currentPid = null;
 let _hubListeners = [];
-let _isReadOnly = false;
-let _currentUser = { uid: 'anonymous', role: 'admin', name: 'System' }; // TODO: Firebase Auth
+window._isReadOnly = false;
+window._currentUser = { uid: 'anonymous', role: 'admin', name: 'System' };
 
 // ════════════════════════════════════════════════════════════
 //  Effective-budget helper
 //  Baselines (laborBudget/materialBudget) are IMMUTABLE.
 //  Change orders contribute a derived delta stored on the project.
-//  Effective = baseline + delta. Used by hub + workspace everywhere.
+//  Effective = baseline + delta.
 // ════════════════════════════════════════════════════════════
 function effectiveBudget(p) {
   const laborBase = parseFloat(p.laborBudget) || 0;
@@ -58,15 +48,15 @@ function effectiveBudget(p) {
 //  HUB — Project Dashboard
 // ════════════════════════════════════════════════════════════
 
-window.onload = () => {
+window.addEventListener('DOMContentLoaded', () => {
   try {
-    const connectedRef = ref(db, '.info/connected');
-    onValue(connectedRef, snap => {
+    const connectedRef = db.ref('.info/connected');
+    connectedRef.on('value', snap => {
       const badge = $('syncBadge');
       if (snap.val() === true) {
-        if (badge) { badge.textContent = '☁️ Synced'; badge.className = 'badge badge-green'; }
+        if (badge) { badge.textContent = '\u2601\uFE0F Synced'; badge.className = 'badge badge-green'; }
       } else {
-        if (badge) { badge.textContent = '⚠️ Offline'; badge.className = 'badge badge-amber'; }
+        if (badge) { badge.textContent = '\u26A0\uFE0F Offline'; badge.className = 'badge badge-amber'; }
         showToast('Working offline. Changes will sync when connected.', 'warn');
       }
     });
@@ -76,7 +66,7 @@ window.onload = () => {
 
   showHubTab('active');
   initPWA();
-};
+});
 
 function initPWA() {
   if ('serviceWorker' in navigator) {
@@ -115,9 +105,9 @@ function renderHub() {
   const grid = isActive ? $('projectGrid') : $('completedGrid');
   if (grid) grid.innerHTML = '<p class="hub-empty">Loading...</p>';
 
-  const projectsRef = query(ref(db, 'projects'), orderByChild('status'), equalTo(isActive ? 'active' : 'completed'));
+  const projectsRef = db.ref('projects').orderByChild('status').equalTo(isActive ? 'active' : 'completed');
 
-  const unsubscribe = onValue(projectsRef, snap => {
+  const unsubscribe = projectsRef.on('value', snap => {
     const el = isActive ? $('projectGrid') : $('completedGrid');
     if (!el) return;
     el.innerHTML = '';
@@ -147,8 +137,6 @@ function renderHub() {
   _hubListeners.push(unsubscribe);
 }
 
-// Hub card uses data-pid attributes; one delegated listener handles all actions.
-// No user-controlled text is interpolated into onclick.
 function buildProjectCard(p) {
   const div = document.createElement('div');
   div.className = `proj-card ${p.status === 'completed' ? 'proj-card-done' : ''}`;
@@ -170,7 +158,7 @@ function buildProjectCard(p) {
 
   const hasDelta = (parseFloat(p.laborBudgetDelta) || 0) || (parseFloat(p.materialBudgetDelta) || 0);
   const coNote = hasDelta
-    ? `<div class="budget-sub" style="color:var(--purple-xl)">↻ includes approved change orders</div>` : '';
+    ? `<div class="budget-sub" style="color:var(--purple-xl)">&#x21BB; includes approved change orders</div>` : '';
 
   div.innerHTML = `
     <div class="proj-card-top">
@@ -183,19 +171,19 @@ function buildProjectCard(p) {
     </div>
     <div class="budget-section">
       <div class="budget-row">
-        <span class="budget-label">💰 Total Budget</span>
+        <span class="budget-label">&#x1F4B0; Total Budget</span>
         <span class="budget-val">${peso(eff.total)}</span>
       </div>
       <div class="mini-bar">
         <div class="mini-fill ${budgetBarClass(pctUsed)}" style="width:${Math.min(pctUsed, 100)}%"></div>
       </div>
       <div class="budget-sub">
-        ${isCritical ? '<span class="warn-tag critical">⚠ CRITICAL</span>' : isWarning ? '<span class="warn-tag">⚠ WARNING</span>' : '<span style="color:var(--green)">✓ Healthy</span>'}
+        ${isCritical ? '<span class="warn-tag critical">&#x26A0; CRITICAL</span>' : isWarning ? '<span class="warn-tag">&#x26A0; WARNING</span>' : '<span style="color:var(--green)">&#x2713; Healthy</span>'}
         <span>${peso(totalSpent)} spent · ${pctUsed}%</span>
       </div>
       ${coNote}
       <div class="budget-row" style="margin-top:6px">
-        <span class="budget-label">👷 Labor</span>
+        <span class="budget-label">&#x1F477; Labor</span>
         <span class="budget-val">${peso(eff.labor)}</span>
       </div>
       <div class="mini-bar">
@@ -203,7 +191,7 @@ function buildProjectCard(p) {
       </div>
       <div class="budget-sub">${peso(laborSpent)} spent · ${pct(laborSpent, eff.labor)}%</div>
       <div class="budget-row" style="margin-top:6px">
-        <span class="budget-label">📦 Materials</span>
+        <span class="budget-label">&#x1F4E6; Materials</span>
         <span class="budget-val">${peso(eff.material)}</span>
       </div>
       <div class="mini-bar">
@@ -213,15 +201,14 @@ function buildProjectCard(p) {
     </div>
     <div class="proj-actions">
       ${p.status === 'active'
-        ? `<button class="proj-open-btn" data-action="open">Open Workspace →</button>
-           <button class="btn-complete" data-action="complete">✓ Done</button>`
-        : `<button class="btn-reopen" data-action="reopen">↻ Reopen</button>`
+        ? `<button class="proj-open-btn" data-action="open">Open Workspace &#x2192;</button>
+           <button class="btn-complete" data-action="complete">&#x2713; Done</button>`
+        : `<button class="btn-reopen" data-action="reopen">&#x21BB; Reopen</button>`
       }
-      <button class="btn-delete" data-action="delete">🗑</button>
+      <button class="btn-delete" data-action="delete">&#x1F5D1;</button>
     </div>
   `;
 
-  // Delegated actions for this card.
   div.addEventListener('click', e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
@@ -259,7 +246,6 @@ function renderDashboardSummary(projects) {
     return pUsed >= 80 && pUsed < 95;
   }).length;
 
-  // Populate the hub summary stat tiles.
   setText('dsSumActive', active);
   setText('dsSumBudget', peso(totalBudget));
   setText('dsSumSpent', peso(totalSpent));
@@ -274,7 +260,6 @@ function renderDashboardSummary(projects) {
     progEl.className = `dash-stat-val ${overallPct >= 95 ? 'text-red' : overallPct >= 80 ? 'text-amber' : 'text-green'}`;
   }
 
-  // Append dynamic warning line under the tiles (re-render safe).
   let warn = document.getElementById('dashWarnLine');
   if (!warn) {
     warn = document.createElement('div');
@@ -283,10 +268,10 @@ function renderDashboardSummary(projects) {
   }
   warn.innerHTML =
     critical > 0
-      ? `<div class="budget-warn-bar warn-critical">⚠ ${critical} project${critical !== 1 ? 's' : ''} with CRITICAL budget usage!</div>`
+      ? `<div class="budget-warn-bar warn-critical">&#x26A0; ${critical} project${critical !== 1 ? 's' : ''} with CRITICAL budget usage!</div>`
       : warning > 0
-        ? `<div class="budget-warn-bar warn-high">⚠ ${warning} project${warning !== 1 ? 's' : ''} with HIGH budget usage.</div>`
-        : `<div style="font-size:12px;color:var(--green);padding:8px 0">✓ All projects are within budget limits.</div>`;
+        ? `<div class="budget-warn-bar warn-high">&#x26A0; ${warning} project${warning !== 1 ? 's' : ''} with HIGH budget usage.</div>`
+        : `<div style="font-size:12px;color:var(--green);padding:8px 0">&#x2713; All projects are within budget limits.</div>`;
 }
 
 function renderComparison(projects) {
@@ -318,7 +303,6 @@ function renderComparison(projects) {
   }).join('');
 }
 
-// Debounced project search (called from the input's oninput in index.html).
 let _searchDebounce = null;
 function filterProjects(query) {
   if (_searchDebounce) clearTimeout(_searchDebounce);
@@ -341,20 +325,20 @@ async function createProject() {
     if (!name) { showToast('Enter project name.', 'error'); return; }
     if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
 
-    const dupCheck = await get(query(ref(db, 'projects'), orderByChild('name'), equalTo(name)));
+    const dupCheck = await db.ref('projects').orderByChild('name').equalTo(name).once('value');
     if (dupCheck.exists()) { showToast('A project with that name already exists.', 'error'); return; }
 
     const projectData = {
       name, laborBudget, materialBudget,
       laborSpent: 0, materialSpent: 0, materialCommitted: 0,
-      laborBudgetDelta: 0, materialBudgetDelta: 0,   // CO-derived; recomputed by changeorders module
+      laborBudgetDelta: 0, materialBudgetDelta: 0,
       status: 'active',
       createdAt: Date.now(),
       createdDate: new Date().toLocaleDateString('en-PH'),
       payrollConfig: { type: 'weekly', overtimeThreshold: 8, nightDiffRate: 1.1 }
     };
 
-    await safeDb(() => push(ref(db, 'projects'), projectData), 'Failed to create project');
+    await safeDb(() => db.ref('projects').push(projectData), 'Failed to create project');
     $('newName').value = ''; $('newLaborBudget').value = ''; $('newMaterialBudget').value = '';
     auditLog('create', 'project', null, { name, laborBudget, materialBudget });
     showToast(`Project "${name}" created!`);
@@ -363,30 +347,30 @@ async function createProject() {
 
 async function markComplete(pid) {
   if (!confirm('Mark this project as completed?\n\nThis will lock the project for editing.')) return;
-  await safeDb(() => update(ref(db, `projects/${pid}`), { status: 'completed', completedAt: Date.now() }), 'Failed to update');
+  await safeDb(() => db.ref(`projects/${pid}`).update({ status: 'completed', completedAt: Date.now() }), 'Failed to update');
   auditLog('complete', 'project', pid, {});
   showToast('Project marked as completed');
 }
 
 async function reopenProject(pid) {
   if (!confirm('Reopen this project?')) return;
-  await safeDb(() => update(ref(db, `projects/${pid}`), { status: 'active', reopenedAt: Date.now() }), 'Failed to update');
+  await safeDb(() => db.ref(`projects/${pid}`).update({ status: 'active', reopenedAt: Date.now() }), 'Failed to update');
   auditLog('reopen', 'project', pid, {});
   showToast('Project reopened');
 }
 
 async function deleteProject(pid) {
-  if (!confirm('⚠️ WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nType DELETE to confirm:')) return;
+  if (!confirm('\u26A0\uFE0F WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nType DELETE to confirm:')) return;
   const confirmText = prompt('Type DELETE to confirm permanent deletion:');
   if (confirmText !== 'DELETE') { showToast('Deletion cancelled.', 'warn'); return; }
 
-  await safeDb(() => remove(ref(db, `projects/${pid}`)), 'Failed to delete');
+  await safeDb(() => db.ref(`projects/${pid}`).remove(), 'Failed to delete');
   auditLog('delete', 'project', pid, {});
   showToast('Project and all data deleted', 'warn');
 }
 
 function detachHubListeners() {
-  _hubListeners.forEach(unsubscribe => unsubscribe());
+  _hubListeners.forEach(unsubscribe => unsubscribe.off());
   _hubListeners = [];
 }
 
@@ -395,8 +379,8 @@ function detachHubListeners() {
 // ════════════════════════════════════════════════════════════
 
 async function enterProject(pid) {
-  _currentPid = pid;
-  const snap = await get(ref(db, `projects/${pid}`));
+  window._currentPid = pid;
+  const snap = await db.ref(`projects/${pid}`).once('value');
   const p = snap.val();
   if (!p) { showToast('Project not found.', 'error'); return; }
 
@@ -404,11 +388,11 @@ async function enterProject(pid) {
   $('hubView').classList.add('hidden');
   $('workspaceView').classList.remove('hidden');
 
-  _isReadOnly = false;
+  window._isReadOnly = false;
   $('lockedBanner')?.classList.add('hidden');
   document.querySelectorAll('.panel').forEach(pn => pn.classList.remove('read-only'));
 
-  // Init all modules (each registers its own listeners + detach fn).
+  // Init all modules
   initLabor(pid);
   initMaterials(pid);
   initBilling(pid);
@@ -416,12 +400,14 @@ async function enterProject(pid) {
   initSiteLog(pid);
   initSuppliers();
 
+  // Load project notes
+  loadProjectNotes(pid);
+
   switchTab('labor');
   auditLog('enter', 'project', pid, { name: p.name });
 }
 
 function exitHub() {
-  // Detach every module's listeners cleanly (no orphans, no leaked DB reads).
   detachLaborListeners();
   detachMatListeners();
   detachBillingListeners();
@@ -431,7 +417,7 @@ function exitHub() {
 
   $('workspaceView').classList.add('hidden');
   $('hubView').classList.remove('hidden');
-  _currentPid = null;
+  window._currentPid = null;
   renderHub();
 }
 
@@ -443,26 +429,49 @@ function switchTab(tab) {
 }
 
 function unlockForEdit() {
-  _isReadOnly = false;
+  window._isReadOnly = false;
   $('lockedBanner')?.classList.add('hidden');
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('read-only'));
-  auditLog('unlock', 'project', _currentPid, {});
+  auditLog('unlock', 'project', window._currentPid, {});
   showToast('Workspace unlocked for editing');
 }
 
 async function exportAllData() {
-  if (!_currentPid) return;
-  const snap = await get(ref(db, `projects/${_currentPid}`));
+  const pid = window._currentPid;
+  if (!pid) return;
+  const snap = await db.ref(`projects/${pid}`).once('value');
   const data = snap.val();
   if (!data) return;
 
   downloadTextFile(
-    `ACPM_${_currentPid}_${new Date().toISOString().slice(0, 10)}.json`,
+    `ACPM_${pid}_${new Date().toISOString().slice(0, 10)}.json`,
     JSON.stringify(data, null, 2),
     'application/json'
   );
-  auditLog('export', 'project', _currentPid, { format: 'json' });
+  auditLog('export', 'project', pid, { format: 'json' });
   showToast('Project data exported!');
+}
+
+// ════════════════════════════════════════════════════════════
+//  PROJECT NOTES
+// ════════════════════════════════════════════════════════════
+function loadProjectNotes(pid) {
+  db.ref(`projects/${pid}/notes`).on('value', snap => {
+    const ta = $('projectNotesInput');
+    if (ta && document.activeElement !== ta) {
+      ta.value = snap.val()?.text || '';
+    }
+  });
+}
+
+async function saveProjectNotes() {
+  const pid = window._currentPid;
+  if (!pid) return;
+  const text = $('projectNotesInput')?.value?.trim() || '';
+  await safeDb(() => db.ref(`projects/${pid}/notes`).set({
+    text, updatedAt: Date.now(), updatedBy: window._currentUser.uid
+  }), 'Failed to save notes');
+  showToast('Notes saved');
 }
 
 // Keyboard shortcuts
@@ -477,15 +486,11 @@ window.addEventListener('keydown', e => {
   }
   if (e.ctrlKey && e.key === 's') {
     e.preventDefault();
-    showToast('Auto-saved to Firebase ☁️', 'success');
+    showToast('Auto-saved to Firebase \u2601\uFE0F', 'success');
   }
 });
 
 // ── Expose to global scope ────────────────────────────────────
-// Required because this file is loaded as <script type="module">,
-// so top-level functions are NOT automatically global. Anything
-// referenced via inline onclick="" / oninput="" in index.html
-// must be attached to window explicitly here.
 window.createProject = createProject;
 window.markComplete = markComplete;
 window.reopenProject = reopenProject;
@@ -497,3 +502,4 @@ window.unlockForEdit = unlockForEdit;
 window.exportAllData = exportAllData;
 window.filterProjects = filterProjects;
 window.showHubTab = showHubTab;
+window.saveProjectNotes = saveProjectNotes;

@@ -63,8 +63,8 @@ function watchSiteLog(pid) {
 
       const monthHeader = document.createElement('div');
       monthHeader.className = 'log-month-header';
-      monthHeader.innerHTML = `<span class="log-month-label"><span class="log-month-toggle">▼</span> 📅 ${monthLabel}</span><span class="log-month-count">${monthCount} entr${monthCount !== 1 ? 'ies' : 'y'}</span>`;
-      monthHeader.onclick = () => monthGroup.classList.toggle('collapsed');
+      monthHeader.innerHTML = `<span class="log-month-label"><span class="log-month-toggle">\u25BC</span> \u1F4C5 ${monthLabel}</span><span class="log-month-count">${monthCount} entr${monthCount !== 1 ? 'ies' : 'y'}</span>`;
+      monthHeader.addEventListener('click', () => monthGroup.classList.toggle('collapsed'));
       monthGroup.appendChild(monthHeader);
 
       const monthBody = document.createElement('div');
@@ -82,30 +82,32 @@ function watchSiteLog(pid) {
         try {
           dayLabel = new Date(date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         } catch { dayLabel = date; }
-        dayHeader.innerHTML = `<span class="log-day-label">📆 ${dayLabel}</span><span class="log-day-count">${byMonth[monthKey][date].length} entr${byMonth[monthKey][date].length !== 1 ? 'ies' : 'y'}</span>`;
+        dayHeader.innerHTML = `<span class="log-day-label">\u1F4C6 ${dayLabel}</span><span class="log-day-count">${byMonth[monthKey][date].length} entr${byMonth[monthKey][date].length !== 1 ? 'ies' : 'y'}</span>`;
         dayGroup.appendChild(dayHeader);
 
         byMonth[monthKey][date].forEach(e => {
           const locHTML = e.location
-            ? `<a class="log-loc" href="https://maps.google.com/?q=${e.location}" target="_blank" rel="noopener">📍 Location</a>`
+            ? `<a class="log-loc" href="https://maps.google.com/?q=${e.location}" target="_blank" rel="noopener">\u1F4CD Location</a>`
             : '';
-          const timeHTML = e.time ? `<span class="log-time">⏰ ${e.time}</span>` : '';
-          const weatherHTML = e.weather ? `<span class="log-weather">🌤️ ${escapeHtml(e.weather)}</span>` : '';
+          const timeHTML = e.time ? `<span class="log-time">\u23F0 ${e.time}</span>` : '';
+          const weatherHTML = e.weather ? `<span class="log-weather">\u1F324\uFE0F ${escapeHtml(e.weather)}</span>` : '';
 
           const div = document.createElement('div');
           div.className = 'log-entry';
           div.setAttribute('data-id', e.id);
           div.innerHTML = `
             <div class="log-entry-hdr">
-              <span class="log-date">${e.date || '—'}</span>
+              <span class="log-date">${e.date || '\u2014'}</span>
               ${timeHTML}
               ${weatherHTML}
               ${locHTML}
               <span class="log-saved">${e.savedDate || ''}</span>
-              <button class="del-log" aria-label="Delete log" onclick="deleteLog('${e.id}')">✕</button>
+              <button class="del-log" aria-label="Delete log" data-lid="${e.id}">\u2715</button>
             </div>
-            <p class="log-notes">${escapeHtml(e.notes || '').replace(/\\n/g, '<br>')}</p>
+            <p class="log-notes">${escapeHtml(e.notes || '').replace(/\n/g, '<br>')}</p>
             ${e.photos ? `<div class="log-photos">${e.photos.map(p => `<img src="${p}" class="log-photo" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}`;
+
+          div.querySelector('[data-lid]').addEventListener('click', () => deleteLog(e.id));
           dayGroup.appendChild(div);
         });
 
@@ -138,9 +140,9 @@ function renderSiteLogSummary(entries) {
   if (summaryEl) {
     summaryEl.innerHTML = `
       <div class="log-summary-row">
-        <span class="log-summary-item">📝 ${total} total log${total !== 1 ? 's' : ''}</span>
-        <span class="log-summary-item">📍 ${withLocation} with location</span>
-        <span class="log-summary-item">📅 ${thisWeek} this week</span>
+        <span class="log-summary-item">\u1F4DD ${total} total log${total !== 1 ? 's' : ''}</span>
+        <span class="log-summary-item">\u1F4CD ${withLocation} with location</span>
+        <span class="log-summary-item">\u1F4C5 ${thisWeek} this week</span>
       </div>`;
   }
 }
@@ -157,13 +159,18 @@ async function saveLog() {
   if (!notes) { showToast('Write something first.', 'error'); return; }
   if (notes.length > 2000) { showToast('Notes too long (max 2000 chars).', 'error'); return; }
 
+  // Validate date not in future
+  const inputDate = new Date(date + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (inputDate > today) { showToast('Log date cannot be in the future.', 'error'); return; }
+
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
   const savedDate = now.toLocaleDateString('en-PH');
 
   const logData = {
     date, notes, weather,
-    time: timeStr, savedAt: Date.now(), savedDate, savedBy: _currentUser.uid
+    time: timeStr, savedAt: Date.now(), savedDate, savedBy: window._currentUser.uid
   };
 
   const doSave = async (data) => {
@@ -179,18 +186,18 @@ async function saveLog() {
         logData.location = `${pos.coords.latitude},${pos.coords.longitude}`;
         await doSave(logData);
         auditLog('create', 'siteLog', null, { date, hasLocation: true, projectId: _slpid });
-        showToast('Log saved with location 📍');
+        showToast('Log saved with location \u1F4CD');
       },
       async () => {
         await doSave(logData);
         auditLog('create', 'siteLog', null, { date, hasLocation: false, projectId: _slpid });
-        showToast('Log saved ✓');
+        showToast('Log saved \u2713');
       },
       { timeout: 4000, enableHighAccuracy: true }
     );
   } else {
     await doSave(logData);
-    showToast('Log saved ✓');
+    showToast('Log saved \u2713');
   }
 }
 
@@ -211,29 +218,23 @@ async function exportSiteLogs() {
   entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
   const lines = [
-    '═══════════════════════════════════════════════════════════════',
+    '\u2550'.repeat(63),
     '  SITE LOG EXPORT',
     `  Project: ${_slpid}`,
     `  Generated: ${new Date().toLocaleDateString('en-PH')}`,
-    '═══════════════════════════════════════════════════════════════',
+    '\u2550'.repeat(63),
     ''
   ];
 
   entries.forEach(e => {
-    lines.push(`📅 ${e.date} ${e.time || ''}`);
+    lines.push(`\u1F4C5 ${e.date} ${e.time || ''}`);
     lines.push(`   ${e.notes}`);
-    if (e.weather) lines.push(`   🌤️ ${e.weather}`);
-    if (e.location) lines.push(`   📍 ${e.location}`);
+    if (e.weather) lines.push(`   \u1F324\uFE0F ${e.weather}`);
+    if (e.location) lines.push(`   \u1F4CD ${e.location}`);
     lines.push('');
   });
 
-  const blob = new Blob([lines.join('\\n')], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `SiteLog_${_slpid}_${new Date().toISOString().slice(0,10)}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(`SiteLog_${_slpid}_${new Date().toISOString().slice(0,10)}.txt`, lines.join('\n'), 'text/plain');
   showToast('Site log exported!');
 }
 
@@ -258,3 +259,11 @@ function filterLogs(query) {
     }
   }, 150);
 }
+
+// ── Expose to global scope ────────────────────────────────────
+window.initSiteLog = initSiteLog;
+window.detachSiteLogListeners = detachSiteLogListeners;
+window.saveLog = saveLog;
+window.deleteLog = deleteLog;
+window.exportSiteLogs = exportSiteLogs;
+window.filterLogs = filterLogs;

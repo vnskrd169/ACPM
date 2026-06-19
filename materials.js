@@ -1,5 +1,3 @@
-
-
 let _mpid = null;
 let _draftItems = [];
 let _matListeners = [];
@@ -17,6 +15,10 @@ function initMaterials(pid) {
   watchPOHistory(pid);
   watchInventory(pid);
   loadGlobalSuppliersForPO();
+
+  // Set default PO date to today
+  const poDate = $('poDate');
+  if (poDate && !poDate.value) poDate.value = new Date().toISOString().slice(0, 10);
 }
 
 function detachMatListeners() {
@@ -47,8 +49,8 @@ function watchMatBudget(pid) {
       wb.classList.toggle('hidden', p < 80);
       wb.className = `budget-warn-bar ${p >= 95 ? 'warn-critical' : 'warn-high'} ${p < 80 ? 'hidden' : ''}`;
       wb.textContent = p >= 95
-        ? `⚠ CRITICAL — Materials budget ${p}% used! Only ${peso(left)} left.`
-        : `⚠ WARNING — Materials budget ${p}% used. ${peso(left)} remaining.`;
+        ? `\u26A0\uFE0F CRITICAL \u2014 Materials budget ${p}% used! Only ${peso(left)} left.`
+        : `\u26A0\uFE0F WARNING \u2014 Materials budget ${p}% used. ${peso(left)} remaining.`;
     }
   });
 }
@@ -58,6 +60,7 @@ function watchInventory(pid) {
   const ref = firebase.database().ref(`projects/${pid}/inventory`);
   matListen(ref, snap => {
     _inventory = {};
+    snap.forEach(c => { _inventory[c.key] = c.val(); });
     renderInventoryList(snap);
     renderInventoryAlerts(snap);
   });
@@ -66,16 +69,16 @@ function watchInventory(pid) {
 function renderInventoryList(snap) {
   const el = $('inventoryList'); if (!el) return;
   el.innerHTML = '';
-  
+
   if (!snap.exists()) {
     el.innerHTML = '<p class="empty-hint">No inventory tracked yet. Record deliveries to update stock.</p>';
     return;
   }
-  
+
   const items = [];
   snap.forEach(c => items.push({ key: c.key, ...c.val() }));
   items.sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
-  
+
   const table = document.createElement('table');
   table.className = 'summary-table';
   table.innerHTML = `
@@ -88,12 +91,12 @@ function renderInventoryList(snap) {
         const isLow = item.qtyOnHand <= (item.reorderPoint || 0);
         return `<tr class="s-row ${isLow ? 'inventory-low' : ''}">
           <td class="s-cell s-bold">${escapeHtml(item.item)}</td>
-          <td class="s-cell">${escapeHtml(item.size) || '—'}</td>
+          <td class="s-cell">${escapeHtml(item.size) || '\u2014'}</td>
           <td class="s-cell s-center ${isLow ? 'text-red' : 'text-green'}">${item.qtyOnHand}</td>
           <td class="s-cell">${escapeHtml(item.unit)}</td>
           <td class="s-cell s-center">${item.reorderPoint || 0}</td>
-          <td class="s-cell">${isLow ? '🔴 LOW STOCK' : '✓ OK'}</td>
-          <td class="s-cell">${item.lastReceived || '—'}</td>
+          <td class="s-cell">${isLow ? '\u1F534 LOW STOCK' : '\u2713 OK'}</td>
+          <td class="s-cell">${item.lastReceived || '\u2014'}</td>
         </tr>`;
       }).join('')}
     </tbody>
@@ -105,7 +108,7 @@ function renderInventoryAlerts(snap) {
   const container = $('inventoryAlertContainer');
   if (!container) return;
   container.innerHTML = '';
-  
+
   const alerts = [];
   snap.forEach(c => {
     const item = c.val();
@@ -113,11 +116,11 @@ function renderInventoryAlerts(snap) {
       alerts.push(`${escapeHtml(item.item)} (${item.qtyOnHand} ${escapeHtml(item.unit)})`);
     }
   });
-  
+
   if (alerts.length) {
     const banner = document.createElement('div');
     banner.className = 'budget-warn-bar warn-critical';
-    banner.innerHTML = `🔴 LOW STOCK ALERT: ${alerts.join(' · ')}`;
+    banner.innerHTML = `\u1F534 LOW STOCK ALERT: ${alerts.join(' \u00B7 ')}`;
     container.appendChild(banner);
   }
 }
@@ -142,7 +145,7 @@ function addDraftItem() {
   if (qty <= 0) { showToast('Enter valid quantity.', 'error'); return; }
   if (cost <= 0) { showToast('Enter valid unit cost.', 'error'); return; }
   if (desc.length > 100) { showToast('Description too long (max 100).', 'error'); return; }
-  
+
   _draftItems.push({ desc, size, qty, unit, cost, total: qty * cost });
   ['poItemDesc', 'poItemSize', 'poItemQty', 'poItemUnit', 'poItemCost'].forEach(id => {
     const e = $(id); if (e) e.value = '';
@@ -159,7 +162,7 @@ function renderDraft() {
     el.innerHTML = '<p class="empty-hint">No items yet. Fill the form above and click + Add Item.</p>';
     setText('draftTotal', peso(0)); return;
   }
-  
+
   const fragment = document.createDocumentFragment();
   _draftItems.forEach((item, i) => {
     const row = document.createElement('div');
@@ -169,8 +172,9 @@ function renderDraft() {
       <span class="draft-qty">${item.qty} ${escapeHtml(item.unit)}</span>
       <span class="draft-cost">${peso(item.cost)}/unit</span>
       <span class="draft-total">${peso(item.total)}</span>
-      <button class="draft-del" aria-label="Remove item" onclick="removeDraftItem(${i})">✕</button>
+      <button class="draft-del" aria-label="Remove item" data-index="${i}">\u2715</button>
     `;
+    row.querySelector('.draft-del').addEventListener('click', () => removeDraftItem(i));
     fragment.appendChild(row);
   });
   el.innerHTML = '';
@@ -192,15 +196,20 @@ async function submitPO() {
   if (!date) { showToast('Enter PO date.', 'error'); return; }
   if (supplier.length > 50) { showToast('Supplier name too long.', 'error'); return; }
 
+  // Validate date not in future
+  const inputDate = new Date(date + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (inputDate > today) { showToast('PO date cannot be in the future.', 'error'); return; }
+
   const total = _draftItems.reduce((s, x) => s + x.total, 0);
 
   // Budget check
   const budgetSnap = await firebase.database().ref(`projects/${_mpid}`).once('value');
   const budget = budgetSnap.val();
-  const remaining = (budget.materialBudget || 0) - (budget.materialSpent || 0);
-  
+  const remaining = ((parseFloat(budget.materialBudget) || 0) + (parseFloat(budget.materialBudgetDelta) || 0)) - (parseFloat(budget.materialSpent) || 0);
+
   if (total > remaining) {
-    if (!confirm(`⚠ This PO (${peso(total)}) exceeds remaining budget (${peso(remaining)}). Submit anyway?`)) return;
+    if (!confirm(`\u26A0\uFE0F This PO (${peso(total)}) exceeds remaining budget (${peso(remaining)}). Submit anyway?`)) return;
   }
 
   const counterRef = firebase.database().ref(`projects/${_mpid}/poCounter`);
@@ -219,7 +228,7 @@ async function submitPO() {
     total, seq,
     status: 'pending_approval',
     approvalWorkflow: {
-      submittedBy: _currentUser.uid,
+      submittedBy: window._currentUser.uid,
       submittedAt: Date.now(),
       approvedBy: null,
       approvedAt: null
@@ -253,14 +262,14 @@ async function submitPO() {
   // Set reorder points for new items if not exists
   const invUpdates = {};
   _draftItems.forEach(item => {
-    const invKey = `${item.desc}||${item.size || ''}`;
+    const invKey = normalizeInvKey(item.desc, item.size);
     if (!_inventory[invKey]) {
       invUpdates[invKey] = {
         item: item.desc,
         size: item.size || '',
         unit: item.unit,
         qtyOnHand: 0,
-        reorderPoint: Math.ceil(item.qty * 0.3), // Default: 30% of first order
+        reorderPoint: Math.ceil(item.qty * 0.3),
         lastUpdated: Date.now()
       };
     }
@@ -274,7 +283,7 @@ async function submitPO() {
   const sel = $('poSupplierSelect'); if (sel) sel.value = '';
   renderDraft();
   auditLog('create', 'purchaseOrder', poRef.key, { seq, supplier, total, projectId: _mpid });
-  showToast(`📋 PO #${String(seq).padStart(3, '0')} submitted for approval`);
+  showToast(`\u1F4CB PO #${String(seq).padStart(3, '0')} submitted for approval`);
 }
 
 // ── Approve PO ──────────────────────────────────────────────
@@ -282,15 +291,15 @@ async function approvePO(poId) {
   if (!_mpid) return;
   await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).update({
     status: 'approved',
-    'approvalWorkflow.approvedBy': _currentUser.uid,
+    'approvalWorkflow.approvedBy': window._currentUser.uid,
     'approvalWorkflow.approvedAt': Date.now()
   }), 'Failed to approve PO');
-  
+
   const ledgerSnap = await firebase.database().ref(`projects/${_mpid}/ledger`).orderByChild('poId').equalTo(poId).once('value');
   const updates = {};
   ledgerSnap.forEach(c => { updates[`${c.key}/status`] = 'ordered'; });
   await firebase.database().ref(`projects/${_mpid}/ledger`).update(updates);
-  
+
   auditLog('approve', 'purchaseOrder', poId, { projectId: _mpid });
   showToast('PO approved and ready to order');
 }
@@ -303,7 +312,7 @@ function openDeliveryModal(poId) {
   firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).once('value', snap => {
     const po = snap.val();
     if (!po) return;
-    
+
     const list = $('deliveryItemsList');
     if (list) {
       list.innerHTML = (po.items || []).map((item, i) => `
@@ -339,15 +348,19 @@ async function confirmDelivery() {
   const po = poSnap.val();
   if (!po) return;
 
-  // Build live inventory map from fresh snapshot (avoids stale global race)
+  // Build live inventory map from fresh snapshot
   const liveInv = {};
   invSnap.forEach(c => { liveInv[c.key] = c.val(); });
 
   const deliveryDate = $('deliveryDate')?.value;
   const deliveryRef = $('deliveryRef')?.value.trim() || '';
-  const photoFile = $('deliveryPhoto')?.files[0];
 
   if (!deliveryDate) { showToast('Enter delivery date.', 'error'); return; }
+
+  // Validate delivery date not in future
+  const inputDate = new Date(deliveryDate + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (inputDate > today) { showToast('Delivery date cannot be in the future.', 'error'); return; }
 
   const receivedItems = [];
   const invUpdates = {};
@@ -367,10 +380,10 @@ async function confirmDelivery() {
         condition
       });
 
-      // Update inventory from live snapshot, not stale global
-      const invKey = `${item.desc}||${item.size || ''}`;
+      // Update inventory from live snapshot
+      const invKey = normalizeInvKey(item.desc, item.size);
       const current = liveInv[invKey]?.qtyOnHand || 0;
-      invUpdates[`projects/${_mpid}/inventory/${invKey}`] = {
+      invUpdates[invKey] = {
         item: item.desc,
         size: item.size || '',
         unit: item.unit,
@@ -382,39 +395,40 @@ async function confirmDelivery() {
       if (condition !== 'good') allGood = false;
     }
   });
-  
+
   if (!receivedItems.length) { showToast('Enter quantities received.', 'error'); return; }
-  
+
   const deliveryKey = firebase.database().ref().push().key;
   const updates = {};
-  
+
   updates[`projects/${_mpid}/deliveries/${deliveryKey}`] = {
     poId: _currentDeliveryPO,
     date: deliveryDate,
     reference: deliveryRef,
     items: receivedItems,
-    photo: null, // TODO: Upload to Firebase Storage
     receivedAt: Date.now(),
-    receivedBy: _currentUser.uid,
+    receivedBy: window._currentUser.uid,
     status: allGood ? 'complete' : 'has_issues'
   };
-  
+
   // Update PO status
   const totalOrdered = po.items.reduce((s, i) => s + i.qty, 0);
   const totalReceived = receivedItems.reduce((s, i) => s + i.qtyReceived, 0);
   const deliveryStatus = totalReceived >= totalOrdered ? 'fully_delivered' : 'partially_delivered';
-  
+
   updates[`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}/deliveryStatus`] = deliveryStatus;
   updates[`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}/lastDelivery`] = deliveryKey;
   updates[`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}/lastDeliveryDate`] = deliveryDate;
-  
-  Object.assign(updates, invUpdates);
-  
+
+  Object.assign(updates, Object.fromEntries(
+    Object.entries(invUpdates).map(([k, v]) => [`projects/${_mpid}/inventory/${k}`, v])
+  ));
+
   await safeDb(() => firebase.database().ref().update(updates), 'Failed to record delivery');
   auditLog('delivery', 'purchaseOrder', _currentDeliveryPO, { deliveryKey, items: receivedItems.length, projectId: _mpid });
-  
+
   closeDeliveryModal();
-  showToast(`📦 Delivery recorded! ${allGood ? 'All items good.' : 'Some items have issues.'}`);
+  showToast(`\u1F4E6 Delivery recorded! ${allGood ? 'All items good.' : 'Some items have issues.'}`);
 }
 
 // ══════════════════════════════════════════════════════
@@ -437,25 +451,30 @@ function closeInvoiceModal() {
 
 async function confirmInvoice() {
   if (!_mpid || !_currentInvoicePO) return;
-  
+
   const invoiceNo = $('invoiceNo')?.value.trim();
   const invoiceDate = $('invoiceDate')?.value;
   const invoiceAmount = parseFloat($('invoiceAmount')?.value) || 0;
-  
+
   if (!invoiceNo) { showToast('Enter invoice number.', 'error'); return; }
   if (!invoiceDate) { showToast('Enter invoice date.', 'error'); return; }
   if (invoiceAmount <= 0) { showToast('Enter invoice amount.', 'error'); return; }
-  
+
+  // Validate date not in future
+  const inputDate = new Date(invoiceDate + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (inputDate > today) { showToast('Invoice date cannot be in the future.', 'error'); return; }
+
   const [poSnap, delSnap] = await Promise.all([
     firebase.database().ref(`projects/${_mpid}/purchaseOrders/${_currentInvoicePO}`).once('value'),
     firebase.database().ref(`projects/${_mpid}/deliveries`).orderByChild('poId').equalTo(_currentInvoicePO).once('value')
   ]);
-  
+
   const po = poSnap.val();
   const deliveries = [];
   delSnap.forEach(c => deliveries.push(c.val()));
-  
-  const totalDelivered = deliveries.reduce((sum, d) => 
+
+  const totalDelivered = deliveries.reduce((sum, d) =>
     sum + d.items.reduce((s, i) => s + i.qtyReceived, 0), 0
   );
   const totalOrdered = po.items.reduce((s, i) => s + i.qty, 0);
@@ -465,11 +484,11 @@ async function confirmInvoice() {
       return s + (poItem ? item.qtyReceived * poItem.cost : 0);
     }, 0);
   }, 0);
-  
+
   const qtyMatch = Math.abs(totalDelivered - totalOrdered) < 0.01;
   const valueMatch = Math.abs(invoiceAmount - (po.total || 0)) < 1;
   const matchStatus = qtyMatch && valueMatch ? 'matched' : 'mismatch';
-  
+
   await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders/${_currentInvoicePO}`).update({
     invoiceNo,
     invoiceAmount,
@@ -485,14 +504,14 @@ async function confirmInvoice() {
       valueMatch,
       status: matchStatus,
       approvedAt: Date.now(),
-      approvedBy: _currentUser.uid
+      approvedBy: window._currentUser.uid
     }
   }), 'Failed to approve invoice');
-  
+
   auditLog('invoice', 'purchaseOrder', _currentInvoicePO, { invoiceNo, amount: invoiceAmount, matchStatus, projectId: _mpid });
-  
+
   closeInvoiceModal();
-  showToast(`Invoice ${matchStatus === 'matched' ? '✓ 3-way matched' : '⚠ Mismatch detected — review needed'}`);
+  showToast(`Invoice ${matchStatus === 'matched' ? '\u2713 3-way matched' : '\u26A0 Mismatch detected \u2014 review needed'}`);
 }
 
 // ══════════════════════════════════════════════════════
@@ -516,20 +535,20 @@ function watchLedger(pid) {
     snap.forEach(c => {
       const key = c.key, m = c.val();
       orderCount++;
-      const isPaid = m.status === 'paid';
+      const isPaid = m.status === 'paid' || m.status === 'delivered';
       if (isPaid) paidTotal += m.total || 0;
-      
+
       const statusOpts = ['pending_approval','ordered','delivered','paid','cancelled'].map(s =>
-        `<option value="${s}" ${m.status === s ? 'selected' : ''}>${s.replace('_', ' ').replace(/\\b\\w/g, l => l.toUpperCase())}</option>`
+        `<option value="${s}" ${m.status === s ? 'selected' : ''}>${s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>`
       ).join('');
-      
+
       const tr = document.createElement('tr');
       tr.className = `led-row ${m.status === 'cancelled' ? 'led-cancelled' : ''}`;
       tr.innerHTML = `
-        <td class="l-cell">${m.date || '—'}</td>
-        <td class="l-cell l-supplier">${escapeHtml(m.supplier || '—')}</td>
+        <td class="l-cell">${m.date || '\u2014'}</td>
+        <td class="l-cell l-supplier">${escapeHtml(m.supplier || '\u2014')}</td>
         <td class="l-cell l-desc">${escapeHtml(m.desc)}</td>
-        <td class="l-cell">${escapeHtml(m.size || '—')}</td>
+        <td class="l-cell">${escapeHtml(m.size || '\u2014')}</td>
         <td class="l-cell l-center">${m.qty} ${escapeHtml(m.unit)}</td>
         <td class="l-cell l-right">${peso(m.cost)}</td>
         <td class="l-cell l-right l-bold">${peso(m.total)}</td>
@@ -537,7 +556,7 @@ function watchLedger(pid) {
           <select class="status-sel" onchange="updateLedgerStatus('${key}',this.value)">${statusOpts}</select>
         </td>
         <td class="l-cell l-center">
-          <button class="del-item-btn" aria-label="Delete item" onclick="deleteLedgerItem('${key}','${escapeHtml(m.desc || '').replace(/'/g, "\\'")}')">✕</button>
+          <button class="del-item-btn" aria-label="Delete item" onclick="deleteLedgerItem('${key}','${escapeHtml(m.desc || '').replace(/'/g, "\\'")}')">\u2715</button>
         </td>
       `;
       fragment.appendChild(tr);
@@ -579,7 +598,7 @@ function updateMaterialsSummary(snap) {
   snap.forEach(c => {
     const m = c.val();
     if (m.status === 'cancelled') return;
-    const key = `${m.desc}||${m.size || ''}`;
+    const key = normalizeInvKey(m.desc, m.size);
     if (!grouped[key]) grouped[key] = { desc: m.desc, size: m.size || '', totalQty: 0, unit: m.unit || '', totalCost: 0, count: 0 };
     grouped[key].totalQty += parseFloat(m.qty) || 0;
     grouped[key].totalCost += parseFloat(m.total) || 0;
@@ -597,7 +616,7 @@ function updateMaterialsSummary(snap) {
       ${Object.values(grouped).sort((a, b) => b.totalCost - a.totalCost).map(g => `
         <tr class="s-row">
           <td class="s-cell s-bold">${escapeHtml(g.desc)}</td>
-          <td class="s-cell">${escapeHtml(g.size) || '—'}</td>
+          <td class="s-cell">${escapeHtml(g.size) || '\u2014'}</td>
           <td class="s-cell s-center">${g.totalQty}</td>
           <td class="s-cell">${escapeHtml(g.unit)}</td>
           <td class="s-cell s-right s-bold">${peso(g.totalCost)}</td>
@@ -649,7 +668,7 @@ function watchPOHistory(pid) {
 
       const monthHeader = document.createElement('div');
       monthHeader.className = 'po-month-header';
-      monthHeader.innerHTML = `<span class="po-month-label">📅 ${monthLabel}</span><span class="po-month-count">${byMonth[monthKey].length} PO${byMonth[monthKey].length !== 1 ? 's' : ''}</span>`;
+      monthHeader.innerHTML = `<span class="po-month-label">\u1F4C5 ${monthLabel}</span><span class="po-month-count">${byMonth[monthKey].length} PO${byMonth[monthKey].length !== 1 ? 's' : ''}</span>`;
       monthGroup.appendChild(monthHeader);
 
       byMonth[monthKey].forEach(po => {
@@ -662,23 +681,23 @@ function watchPOHistory(pid) {
           </div>`).join('');
 
         const statusBadge = {
-          pending_approval: '<span class="po-status-badge po-pending">⏳ Pending Approval</span>',
-          approved: '<span class="po-status-badge po-approved">✓ Approved</span>',
-          ordered: '<span class="po-status-badge po-ordered">📦 Ordered</span>',
-          partially_delivered: '<span class="po-status-badge po-partial">📦 Partial Delivery</span>',
-          fully_delivered: '<span class="po-status-badge po-delivered">✓ Delivered</span>',
-          cancelled: '<span class="po-status-badge po-cancelled">✕ Cancelled</span>'
+          pending_approval: '<span class="po-status-badge po-pending">\u23F3 Pending Approval</span>',
+          approved: '<span class="po-status-badge po-approved">\u2713 Approved</span>',
+          ordered: '<span class="po-status-badge po-ordered">\u1F4E6 Ordered</span>',
+          partially_delivered: '<span class="po-status-badge po-partial">\u1F4E6 Partial Delivery</span>',
+          fully_delivered: '<span class="po-status-badge po-delivered">\u2713 Delivered</span>',
+          cancelled: '<span class="po-status-badge po-cancelled">\u2715 Cancelled</span>'
         }[po.status] || `<span class="po-status-badge">${po.status}</span>`;
 
-        const urgencyBadge = po.urgency === 'critical' ? '<span class="urgency-badge urgency-critical">🔴 CRITICAL</span>' : 
-                            po.urgency === 'urgent' ? '<span class="urgency-badge urgency-urgent">⚠️ URGENT</span>' : '';
+        const urgencyBadge = po.urgency === 'critical' ? '<span class="urgency-badge urgency-critical">\u1F534 CRITICAL</span>' :
+                            po.urgency === 'urgent' ? '<span class="urgency-badge urgency-urgent">\u26A0\uFE0F URGENT</span>' : '';
 
-        const deliveryBadge = po.deliveryStatus === 'fully_delivered' ? '<span class="del-badge del-ok">✓ Delivered</span>' :
-                             po.deliveryStatus === 'partially_delivered' ? '<span class="del-badge del-partial">📦 Partial</span>' :
+        const deliveryBadge = po.deliveryStatus === 'fully_delivered' ? '<span class="del-badge del-ok">\u2713 Delivered</span>' :
+                             po.deliveryStatus === 'partially_delivered' ? '<span class="del-badge del-partial">\u1F4E6 Partial</span>' :
                              '<span class="del-badge del-none">Not Delivered</span>';
 
-        const invoiceBadge = po.invoiceStatus === 'matched' ? '<span class="inv-badge inv-matched">✓ 3-Way Matched</span>' :
-                            po.invoiceStatus === 'mismatch' ? '<span class="inv-badge inv-mismatch">⚠ Mismatch</span>' :
+        const invoiceBadge = po.invoiceStatus === 'matched' ? '<span class="inv-badge inv-matched">\u2713 3-Way Matched</span>' :
+                            po.invoiceStatus === 'mismatch' ? '<span class="inv-badge inv-mismatch">\u26A0 Mismatch</span>' :
                             '<span class="inv-badge inv-none">No Invoice</span>';
 
         const poCard = document.createElement('div');
@@ -686,25 +705,25 @@ function watchPOHistory(pid) {
         poCard.id = `poc_${po.id}`;
         poCard.setAttribute('data-supplier', escapeHtml((po.supplier || '').toLowerCase()));
         poCard.setAttribute('data-date', po.date || '');
-        
+
         // Action buttons based on status
         let actions = '';
         if (po.status === 'pending_approval') {
-          actions = `<button class="po-approve-btn" onclick="approvePO('${po.id}')">✓ Approve PO</button>`;
+          actions = `<button class="po-approve-btn" data-po="${po.id}" data-action="approve">\u2713 Approve PO</button>`;
         } else if (po.status === 'approved' || po.status === 'ordered') {
           actions = `
-            <button class="po-mark-btn" onclick="openDeliveryModal('${po.id}')">📦 Record Delivery</button>
-            <button class="po-mark-btn po-paid-btn" onclick="openInvoiceModal('${po.id}')">📋 Approve Invoice</button>
+            <button class="po-mark-btn" data-po="${po.id}" data-action="delivery">\u1F4E6 Record Delivery</button>
+            <button class="po-mark-btn po-paid-btn" data-po="${po.id}" data-action="invoice">\u1F4CB Approve Invoice</button>
           `;
         } else if (po.deliveryStatus === 'fully_delivered' && po.invoiceStatus !== 'matched') {
-          actions = `<button class="po-mark-btn po-paid-btn" onclick="openInvoiceModal('${po.id}')">📋 Approve Invoice</button>`;
+          actions = `<button class="po-mark-btn po-paid-btn" data-po="${po.id}" data-action="invoice">\u1F4CB Approve Invoice</button>`;
         }
 
         poCard.innerHTML = `
           <div class="po-card-hdr">
             <div>
               <div class="po-status-row">${statusBadge} ${urgencyBadge}</div>
-              <p class="po-date-lbl">${po.date} · PO-${String(po.seq || '???').padStart(3, '0')}</p>
+              <p class="po-date-lbl">${po.date} \u00B7 PO-${String(po.seq || '???').padStart(3, '0')}</p>
               <p class="po-supplier">${escapeHtml(po.supplier)}</p>
               ${po.notes ? `<p class="po-notes">${escapeHtml(po.notes)}</p>` : ''}
               <div class="po-badges-row">${deliveryBadge} ${invoiceBadge}</div>
@@ -713,7 +732,7 @@ function watchPOHistory(pid) {
               <span class="po-total">${peso(po.total)}</span>
               <div class="po-btns">
                 ${actions}
-                <button class="po-export-btn" onclick="exportPOImage('${po.id}')">📷 Image</button>
+                <button class="po-export-btn" data-po="${po.id}" data-action="export">\u1F4F7 Image</button>
               </div>
             </div>
           </div>
@@ -721,6 +740,19 @@ function watchPOHistory(pid) {
             <span>Item / Size</span><span>Qty</span><span>Unit Cost</span><span>Total</span>
           </div>
           ${itemRows}`;
+
+        // Attach delegated events
+        poCard.querySelectorAll('[data-action]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            const action = e.target.dataset.action;
+            const poId = e.target.dataset.po;
+            if (action === 'approve') approvePO(poId);
+            else if (action === 'delivery') openDeliveryModal(poId);
+            else if (action === 'invoice') openInvoiceModal(poId);
+            else if (action === 'export') exportPOImage(poId);
+          });
+        });
+
         monthGroup.appendChild(poCard);
       });
 
@@ -740,7 +772,7 @@ async function exportPOImage(poId) {
   suppSnap.forEach(c => {
     const s = c.val();
     if (s.name === po.supplier && (s.bankName || s.accNum)) {
-      bankInfo = `${s.bankName || ''} ${s.accNum ? '· Acct: ' + s.accNum : ''} ${s.accName ? '· ' + s.accName : ''}`.trim();
+      bankInfo = `${s.bankName || ''} ${s.accNum ? '\u00B7 Acct: ' + s.accNum : ''} ${s.accName ? '\u00B7 ' + s.accName : ''}`.trim();
     }
   });
 
@@ -772,7 +804,7 @@ async function exportPOImage(poId) {
     <div style="background:#f3f4f6;border-radius:10px;padding:12px 16px;margin-bottom:20px">
       <div style="font-size:10px;color:#6b7280;font-weight:700;margin-bottom:3px">SUPPLIER</div>
       <div style="font-size:17px;font-weight:900">${escapeHtml(po.supplier)}</div>
-      ${bankInfo ? `<div style="font-size:12px;color:#374151;margin-top:4px;font-weight:600">🏦 ${escapeHtml(bankInfo)}</div>` : ''}
+      ${bankInfo ? `<div style="font-size:12px;color:#374151;margin-top:4px;font-weight:600">\u1F3E6 ${escapeHtml(bankInfo)}</div>` : ''}
       ${po.notes ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(po.notes)}</div>` : ''}
     </div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px">
@@ -791,14 +823,14 @@ async function exportPOImage(poId) {
       </div>
     </div>
     <div style="margin-top:20px;padding-top:12px;border-top:1px solid #e5e7eb;font-size:10px;color:#9ca3af;text-align:center">
-      ACPM · Art and Choi Project Management · Generated ${new Date().toLocaleDateString('en-PH')}
+      ACPM \u00B7 Art and Choi Project Management \u00B7 Generated ${new Date().toLocaleDateString('en-PH')}
     </div>`;
 
   document.body.appendChild(wrap);
   try {
     const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
     const link = document.createElement('a');
-    link.download = `PO_${po.supplier.replace(/\\s+/g, '_')}_${po.date}.png`;
+    link.download = `PO_${po.supplier.replace(/\s+/g, '_')}_${po.date}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
     showToast('PO image downloaded!');
@@ -822,13 +854,7 @@ async function exportLedgerCSV() {
     csv += `${m.date || ''},${escapeCsv(m.supplier || '')},${escapeCsv(m.desc || '')},${escapeCsv(m.size || '')},${m.qty || 0},${escapeCsv(m.unit || '')},${m.cost || 0},${m.total || 0},${m.status || 'ordered'}\n`;
   });
 
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `Ledger_${_mpid}_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(`Ledger_${_mpid}_${new Date().toISOString().slice(0,10)}.csv`, csv, 'text/csv');
   showToast('Ledger exported to CSV!');
 }
 
@@ -852,3 +878,22 @@ function filterPOHistory(query) {
     }
   }, 150);
 }
+
+// ── Expose to global scope ────────────────────────────────────
+window.initMaterials = initMaterials;
+window.detachMatListeners = detachMatListeners;
+window.addDraftItem = addDraftItem;
+window.removeDraftItem = removeDraftItem;
+window.submitPO = submitPO;
+window.approvePO = approvePO;
+window.openDeliveryModal = openDeliveryModal;
+window.closeDeliveryModal = closeDeliveryModal;
+window.confirmDelivery = confirmDelivery;
+window.openInvoiceModal = openInvoiceModal;
+window.closeInvoiceModal = closeInvoiceModal;
+window.confirmInvoice = confirmInvoice;
+window.updateLedgerStatus = updateLedgerStatus;
+window.deleteLedgerItem = deleteLedgerItem;
+window.exportLedgerCSV = exportLedgerCSV;
+window.filterPOHistory = filterPOHistory;
+window.exportPOImage = exportPOImage;

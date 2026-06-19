@@ -1,16 +1,18 @@
-const CACHE_NAME = 'acpm-v1'; // Bump version when you deploy updates
+const CACHE_NAME = 'acpm-v2'; // Bumped to v2 for updated deployment
 const ASSETS = [
   './',
   './index.html',
   './style.css',
+  './utils.js',
   './main.js',
   './labor.js',
   './materials.js',
   './billing.js',
   './changeorders.js',
   './sitelog.js',
-  './suppliers.js'
-  // Removed Firebase CDN — let browser handle these, or use local copies
+  './suppliers.js',
+  './manifest.json'
+  // CDN assets (Firebase, jsPDF, html2canvas) are not cached — let browser handle
 ];
 
 // Install: Cache app shell
@@ -20,7 +22,7 @@ self.addEventListener('install', e => {
       .then(c => c.addAll(ASSETS))
       .catch(err => {
         console.error('Cache install failed:', err);
-        // Don't fail install if some assets can't cache
+        // Non-critical: app still works via network
       })
   );
   self.skipWaiting();
@@ -39,11 +41,12 @@ self.addEventListener('activate', e => {
 // Fetch: Network-first for app, cache fallback
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  
+
   // Skip Firebase API calls (Realtime DB uses WebSockets)
   const url = new URL(e.request.url);
-  if (url.hostname.includes('firebaseio.com') || 
-      url.hostname.includes('googleapis.com')) {
+  if (url.hostname.includes('firebaseio.com') ||
+      url.hostname.includes('googleapis.com') ||
+      url.hostname.includes('gstatic.com')) {
     return; // Let Firebase handle these natively
   }
 
@@ -61,8 +64,8 @@ self.addEventListener('fetch', e => {
         // Fallback to cache
         return caches.match(e.request).then(cached => {
           if (cached) return cached;
-          // If nothing cached, return offline page (optional)
-          return new Response('Offline — no cached data available', {
+          // If nothing cached, return offline indicator
+          return new Response('Offline \u2014 no cached data available. Please connect to the internet.', {
             status: 503,
             headers: { 'Content-Type': 'text/plain' }
           });

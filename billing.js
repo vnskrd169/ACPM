@@ -48,6 +48,11 @@ async function saveContract() {
   if (!client) { showToast('Enter client name.', 'error'); return; }
   if (client.length > 100) { showToast('Client name too long.', 'error'); return; }
 
+  // Validate dates
+  if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+    showToast('Contract end date must be after start date.', 'error'); return;
+  }
+
   const downPayment = amount * (downpct / 100);
 
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/contract`).set({
@@ -55,7 +60,7 @@ async function saveContract() {
     client, startDate, endDate,
     savedAt: Date.now(),
     savedDate: new Date().toLocaleDateString('en-PH'),
-    savedBy: _currentUser.uid
+    savedBy: window._currentUser.uid
   }), 'Failed to save contract');
 
   if (downPayment > 0) {
@@ -65,36 +70,65 @@ async function saveContract() {
       description: 'Down Payment',
       type: 'down_payment',
       savedAt: Date.now(),
-      savedBy: _currentUser.uid
+      savedBy: window._currentUser.uid
     }), 'Failed to record down payment');
   }
   auditLog('create', 'contract', null, { client, amount, projectId: _bpid });
-  showToast('Contract saved ✓');
+  showToast('Contract saved \u2713');
 }
 
-async function editContract() {
-  if (!confirm('Edit contract details?\\n\\nDown payment collection will not be removed.')) return;
-  const snap = await firebase.database().ref(`projects/${_bpid}/contract`).once('value');
-  const c = snap.val() || {};
-  $('contractAmount').value = c.amount || '';
-  $('contractDownPct').value = c.downPct || '';
-  $('contractRetention').value = c.retention || '';
-  $('contractClient').value = c.client || '';
-  $('contractStart').value = c.startDate || '';
-  $('contractEnd').value = c.endDate || '';
-  
-  await safeDb(() => firebase.database().ref(`projects/${_bpid}/contractTemp`).set(c), 'Failed to backup contract');
-  await safeDb(() => firebase.database().ref(`projects/${_bpid}/contract`).remove(), 'Failed to remove contract');
-  auditLog('edit', 'contract', null, { projectId: _bpid });
-  showToast('Contract removed for editing');
+function openEditContractModal() {
+  firebase.database().ref(`projects/${_bpid}/contract`).once('value', snap => {
+    const c = snap.val() || {};
+    $('editContractClient').value = c.client || '';
+    $('editContractAmount').value = c.amount || '';
+    $('editContractDownPct').value = c.downPct || '';
+    $('editContractRetention').value = c.retention || '';
+    $('editContractStart').value = c.startDate || '';
+    $('editContractEnd').value = c.endDate || '';
+    $('editContractModal').classList.remove('hidden');
+  });
+}
+
+function closeEditContractModal() {
+  $('editContractModal').classList.add('hidden');
+}
+
+async function saveEditContract() {
+  if (!_bpid) return;
+  const amount = parseFloat($('editContractAmount').value) || 0;
+  const downpct = parseFloat($('editContractDownPct').value) || 0;
+  const retention = parseFloat($('editContractRetention').value) || 0;
+  const client = $('editContractClient').value.trim();
+  const startDate = $('editContractStart').value;
+  const endDate = $('editContractEnd').value;
+
+  if (amount <= 0) { showToast('Enter contract amount.', 'error'); return; }
+  if (!client) { showToast('Enter client name.', 'error'); return; }
+  if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+    showToast('End date must be after start date.', 'error'); return;
+  }
+
+  const downPayment = amount * (downpct / 100);
+
+  await safeDb(() => firebase.database().ref(`projects/${_bpid}/contract`).update({
+    amount, downPct: downpct, downPayment, retention,
+    client, startDate, endDate,
+    updatedAt: Date.now(),
+    updatedBy: window._currentUser.uid
+  }), 'Failed to update contract');
+
+  closeEditContractModal();
+  auditLog('update', 'contract', null, { client, amount, projectId: _bpid });
+  showToast('Contract updated \u2713');
 }
 
 function renderContractDashboard(c, pid) {
-  setText('cdClient', c.client || '—');
+  setText('cdClient', c.client || '\u2014');
   setText('cdAmount', peso(c.amount));
   setText('cdDownPay', `${peso(c.downPayment)} (${c.downPct || 0}%)`);
   setText('cdRetention', `${c.retention || 0}%`);
-  setText('cdDates', `${c.startDate || '—'} → ${c.endDate || '—'}`);
+  setText('cdDates', `${c.startDate || '\u2014'} \u2192 ${c.endDate || '\u2014'}`);
 
   Promise.all([
     firebase.database().ref(`projects/${pid}/billings`).once('value'),
@@ -107,14 +141,12 @@ function renderContractDashboard(c, pid) {
     const retentionHeld = totalCollected * ((c.retention || 0) / 100);
     const netCollected = totalCollected - retentionHeld;
     const outstanding = (c.amount || 0) - totalCollected;
-    const billable = (c.amount || 0) - totalBilled;
 
     setText('cdTotalBilled', peso(totalBilled));
     setText('cdTotalCollected', peso(totalCollected));
     setText('cdRetentionHeld', peso(retentionHeld));
     setText('cdNetCollected', peso(netCollected));
     setText('cdOutstanding', peso(outstanding));
-    setText('cdBillable', peso(billable));
 
     const pctCollected = pct(totalCollected, c.amount);
     const bar = $('cdProgressBar');
@@ -153,14 +185,14 @@ function watchBillings(pid) {
         collected: 'bill-collected',
         cancelled: 'bill-cancelled'
       }[b.status] || 'bill-pending';
-      
+
       const tr = document.createElement('tr');
       tr.className = 'bill-row';
       tr.setAttribute('data-status', b.status);
       tr.innerHTML = `
         <td class="b-cell">Billing #${b.seq || seq++}</td>
-        <td class="b-cell">${b.date || '—'}</td>
-        <td class="b-cell">${escapeHtml(b.description || '—')}</td>
+        <td class="b-cell">${b.date || '\u2014'}</td>
+        <td class="b-cell">${escapeHtml(b.description || '\u2014')}</td>
         <td class="b-cell b-right b-bold">${peso(b.amount)}</td>
         <td class="b-cell">
           <select class="status-sel ${statusClass}" onchange="updateBillingStatus('${b.id}',this.value)">
@@ -171,9 +203,10 @@ function watchBillings(pid) {
           </select>
         </td>
         <td class="b-cell b-center">
-          <button class="del-item-btn" aria-label="Delete billing" onclick="deleteBilling('${b.id}')">✕</button>
+          <button class="del-item-btn" aria-label="Delete billing" data-bid="${b.id}">\u2715</button>
         </td>
       `;
+      tr.querySelector('[data-bid]').addEventListener('click', () => deleteBilling(b.id));
       fragment.appendChild(tr);
     });
     tbody.appendChild(fragment);
@@ -190,6 +223,11 @@ async function addBillingRequest() {
   if (amount <= 0) { showToast('Enter billing amount.', 'error'); return; }
   if (desc.length > 200) { showToast('Description too long (max 200).', 'error'); return; }
 
+  // Validate date not in future
+  const inputDate = new Date(date + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (inputDate > today) { showToast('Billing date cannot be in the future.', 'error'); return; }
+
   const counterRef = firebase.database().ref(`projects/${_bpid}/billingCounter`);
   let seq;
   try {
@@ -203,9 +241,9 @@ async function addBillingRequest() {
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings`).push({
     date, description: desc, amount, seq, status: 'pending',
     savedAt: Date.now(),
-    savedBy: _currentUser.uid
+    savedBy: window._currentUser.uid
   }), 'Failed to add billing');
-  
+
   $('billDate').value = ''; $('billDesc').value = ''; $('billAmount').value = '';
   auditLog('create', 'billing', null, { seq, amount, projectId: _bpid });
   showToast(`Billing #${seq} added`);
@@ -213,8 +251,8 @@ async function addBillingRequest() {
 
 async function updateBillingStatus(key, status) {
   if (!_bpid) return;
-  await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings/${key}`).update({ 
-    status, updatedAt: Date.now(), updatedBy: _currentUser.uid 
+  await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings/${key}`).update({
+    status, updatedAt: Date.now(), updatedBy: window._currentUser.uid
   }), 'Failed to update status');
   auditLog('update', 'billing', key, { status, projectId: _bpid });
   showToast(`Status updated to ${status}`);
@@ -259,13 +297,16 @@ function watchCollections(pid) {
       const tr = document.createElement('tr');
       tr.className = 'bill-row';
       tr.innerHTML = `
-        <td class="b-cell">${col.date || '—'}</td>
-        <td class="b-cell">${escapeHtml(col.description || '—')}</td>
+        <td class="b-cell">${col.date || '\u2014'}</td>
+        <td class="b-cell">${escapeHtml(col.description || '\u2014')}</td>
         <td class="b-cell b-right b-bold" style="color:var(--green)">${peso(col.amount)}</td>
         <td class="b-cell b-center">
-          ${col.type !== 'down_payment' ? `<button class="del-item-btn" aria-label="Delete collection" onclick="deleteCollection('${col.id}')">✕</button>` : '<span style="font-size:10px;color:var(--muted)">DP</span>'}
+          ${col.type !== 'down_payment' ? `<button class="del-item-btn" aria-label="Delete collection" data-cid="${col.id}">\u2715</button>` : '<span style="font-size:10px;color:var(--muted)">DP</span>'}
         </td>
       `;
+      if (col.type !== 'down_payment') {
+        tr.querySelector('[data-cid]').addEventListener('click', () => deleteCollection(col.id));
+      }
       fragment.appendChild(tr);
     });
 
@@ -295,11 +336,16 @@ async function addCollection() {
   if (!desc) { showToast('Enter description.', 'error'); return; }
   if (amount <= 0) { showToast('Enter amount received.', 'error'); return; }
   if (desc.length > 200) { showToast('Description too long.', 'error'); return; }
-  
+
+  // Validate date not in future
+  const inputDate = new Date(date + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (inputDate > today) { showToast('Collection date cannot be in the future.', 'error'); return; }
+
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/collections`).push({
-    date, description: desc, amount, type: 'collection', savedAt: Date.now(), savedBy: _currentUser.uid
+    date, description: desc, amount, type: 'collection', savedAt: Date.now(), savedBy: window._currentUser.uid
   }), 'Failed to record collection');
-  
+
   $('colDate').value = ''; $('colDesc').value = ''; $('colAmount').value = '';
   auditLog('create', 'collection', null, { amount, projectId: _bpid });
   showToast(`Collection of ${peso(amount)} recorded`);
@@ -342,12 +388,21 @@ async function exportBillingSummary() {
     csv += `${col.date || ''},${escapeCsv(col.description || '')},${col.amount || 0}\n`;
   });
 
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `Billing_${_bpid}_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadTextFile(`Billing_${_bpid}_${new Date().toISOString().slice(0,10)}.csv`, csv, 'text/csv');
   showToast('Billing summary exported!');
 }
+
+// ── Expose to global scope ────────────────────────────────────
+window.initBilling = initBilling;
+window.detachBillingListeners = detachBillingListeners;
+window.saveContract = saveContract;
+window.openEditContractModal = openEditContractModal;
+window.closeEditContractModal = closeEditContractModal;
+window.saveEditContract = saveEditContract;
+window.addBillingRequest = addBillingRequest;
+window.updateBillingStatus = updateBillingStatus;
+window.deleteBilling = deleteBilling;
+window.filterBillings = filterBillings;
+window.addCollection = addCollection;
+window.deleteCollection = deleteCollection;
+window.exportBillingSummary = exportBillingSummary;

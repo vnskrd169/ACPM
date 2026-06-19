@@ -1798,3 +1798,103 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 
 .history-split { display: grid; grid-template-columns: 1fr 280px; gap: 16px; align-items: start; }
 @media(max-width:800px) { .history-split { grid-template-columns: 1fr; } }
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ GOVERNMENT DEDUCTIONS (PH SSS/PhilHealth/Pag-IBIG) ═══════
+══════════════════════════════════════════════════════════════ */
+
+.gov-deductions-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+  margin-bottom: 8px;
+}
+
+.gov-deductions-toggle input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  min-height: auto;
+  accent-color: var(--purple);
+  cursor: pointer;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ INVENTORY LOW STOCK ════════════════════════════════════
+══════════════════════════════════════════════════════════════ */
+
+.inventory-low { background: rgba(239, 68, 68, 0.08) !important; }
+.inventory-low .s-cell { color: var(--red); }
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ PROJECT NOTES ══════════════════════════════════════════
+══════════════════════════════════════════════════════════════ */
+
+#projectNotesInput {
+  resize: vertical;
+  min-height: 50px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ TEXT UTILITY COLORS ════════════════════════════════════
+══════════════════════════════════════════════════════════════ */
+
+.text-blue  { color: var(--blue) !important; }
+.text-teal  { color: var(--teal) !important; }
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ 3-WAY MATCH RESULT ═════════════════════════════════════
+══════════════════════════════════════════════════════════════ */
+
+.match-result {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  font-size: 13px;
+}
+.match-result.matched {
+  border-color: var(--green);
+  background: var(--green-d);
+  color: var(--green-t);
+}
+.match-result.mismatch {
+  border-color: var(--red);
+  background: var(--red-d);
+  color: var(--red-t);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ CO IMPACT ROW (flex layout) ════════════════════════════
+══════════════════════════════════════════════════════════════ */
+
+.co-impact-row {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.co-impact-label-wrap {
+  flex: 1;
+}
+.co-impact-label-wrap label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.co-impact-label-wrap input {
+  width: 100%;
+}
+
+/* Responsive for co-impact-row */
+@media(max-width:600px) {
+  .co-impact-row { flex-direction: column; gap: 10px; }
+  .co-impact-label-wrap { width: 100%; }
+}

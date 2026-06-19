@@ -95,16 +95,18 @@ async function safeDb(fn, errMsg) {
 // ── Audit log (currently console-only; TODO: Firestore `auditLogs`) ──
 // TODO: Replace _currentUser with real Firebase Auth identity.
 function auditLog(action, entityType, entityId, details = {}) {
+  const user = (typeof window !== 'undefined' && window._currentUser) ? window._currentUser : { uid: 'anonymous', role: 'admin', name: 'System' };
+  const pid = (typeof window !== 'undefined' && window._currentPid) ? window._currentPid : null;
   const logEntry = {
     action, entityType, entityId, details,
-    userId: _currentUser.uid,
-    userName: _currentUser.name,
-    userRole: _currentUser.role,
+    userId: user.uid,
+    userName: user.name,
+    userRole: user.role,
     timestamp: Date.now(),
     date: new Date().toLocaleDateString('en-PH'),
-    projectId: _currentPid || null
+    projectId: pid
   };
-  console.log('📝 AUDIT:', logEntry);
+  console.log('\u1F4DD AUDIT:', logEntry);
 }
 
 // ════════════════════════════════════════════════════════════
