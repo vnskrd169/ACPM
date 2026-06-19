@@ -5,7 +5,7 @@
 //  Shared helpers ($, peso, escapeHtml, escapeCsv, withBusy,
 //  delegateEvent, normalizeInvKey, auditLog, etc.) live in utils.js.
 // ════════════════════════════════════════════════════════════
-import { initializeApp } from "firebase/app";
+
 // ── Firebase Config (v8) ────────────────────────────────────
 // TODO: Migrate to v9 modular SDK + Firestore.
 // TODO: Replace with real Firebase Auth identity.
@@ -17,6 +17,7 @@ const firebaseConfig = {
   storageBucket: "acpm-project-system.firebasestorage.app",
   messagingSenderId: "330800177544",
   appId: "1:330800177544:web:8f29dcd81ca39976849a3d"
+
 };
 
 // Initialize Firebase
