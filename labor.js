@@ -1,20 +1,32 @@
+
+
 let _lpid = null;
 let _laborListeners = [];
-let _payrollFilterDebounce = null;
+let _payrollConfig = { type: 'weekly', startDay: 1, overtimeThreshold: 8, nightDiffRate: 1.1 };
+let _pendingPayrollData = null;
+
+const ATTENDANCE_STATUS = {
+  present: { label: 'Present', multiplier: 1.0, hours: 8 },
+  half:    { label: 'Half Day', multiplier: 0.5, hours: 4 },
+  absent:  { label: 'Absent', multiplier: 0, hours: 0 },
+  leave:   { label: 'Paid Leave', multiplier: 1.0, hours: 8 },
+  rest:    { label: 'Rest Day', multiplier: 0, hours: 0 },
+  holiday: { label: 'Holiday', multiplier: 2.0, hours: 8 }
+};
 
 function initLabor(pid) {
   _lpid = pid;
   detachLaborListeners();
+  loadPayrollConfig(pid);
   watchLaborBudget(pid);
   watchTrades(pid);
   watchPayrollLogs(pid);
-  watchTimecardHistory(pid);  // NEW: View past attendance records
+  watchTimecardHistory(pid);
 }
 
 function detachLaborListeners() {
   _laborListeners.forEach(ref => ref.off());
   _laborListeners = [];
-  _workersRegistered = false;
 }
 
 function laborListen(ref, cb) {
@@ -22,23 +34,51 @@ function laborListen(ref, cb) {
   _laborListeners.push(ref);
 }
 
-// ── Budget KPIs ───────────────────────────────────────────────
+// ── Payroll Config ──────────────────────────────────────────
+function loadPayrollConfig(pid) {
+  firebase.database().ref(`projects/${pid}/payrollConfig`).once('value', snap => {
+    if (snap.exists()) {
+      _payrollConfig = { ..._payrollConfig, ...snap.val() };
+    }
+    // Update UI
+    const cycleEl = $('payrollCycle');
+    const otEl = $('otThreshold');
+    const nightEl = $('nightDiffRate');
+    if (cycleEl) cycleEl.value = _payrollConfig.type;
+    if (otEl) otEl.value = _payrollConfig.overtimeThreshold;
+    if (nightEl) nightEl.value = _payrollConfig.nightDiffRate;
+  });
+}
+
+async function savePayrollConfig() {
+  if (!_lpid) return;
+  const config = {
+    type: $('payrollCycle')?.value || 'weekly',
+    overtimeThreshold: parseFloat($('otThreshold')?.value) || 8,
+    nightDiffRate: parseFloat($('nightDiffRate')?.value) || 1.1
+  };
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/payrollConfig`).set(config), 'Failed to save config');
+  _payrollConfig = config;
+  showToast('Payroll settings saved');
+}
+
+// ── Budget KPIs ─────────────────────────────────────────────
 function watchLaborBudget(pid) {
   const ref = firebase.database().ref(`projects/${pid}`);
   laborListen(ref, snap => {
-    const d      = snap.val() || {};
+    const d = snap.val() || {};
     const budget = parseFloat(d.laborBudget) || 0;
-    const spent  = parseFloat(d.laborSpent)  || 0;
-    const left   = budget - spent;
-    const p      = pct(spent, budget);
+    const spent = parseFloat(d.laborSpent) || 0;
+    const left = budget - spent;
+    const p = pct(spent, budget);
     setText('lbBudget', peso(budget));
-    setText('lbSpent',  peso(spent));
+    setText('lbSpent', peso(spent));
     const el = $('lbLeft');
     if (el) { el.textContent = peso(left); el.className = `kpi-num ${left < 0 ? 'kpi-danger' : 'kpi-safe'}`; }
     const wb = $('laborBudgetWarn');
     if (wb) {
       wb.classList.toggle('hidden', p < 80);
-      wb.className  = `budget-warn-bar ${p >= 95 ? 'warn-critical' : 'warn-high'} ${p < 80 ? 'hidden' : ''}`;
+      wb.className = `budget-warn-bar ${p >= 95 ? 'warn-critical' : 'warn-high'} ${p < 80 ? 'hidden' : ''}`;
       wb.textContent = p >= 95
         ? `⚠ CRITICAL — Labor budget ${p}% used! Only ${peso(left)} remaining.`
         : `⚠ WARNING — Labor budget ${p}% used. ${peso(left)} remaining.`;
@@ -67,11 +107,12 @@ function renderTradeChips(snap) {
   if (!snap.exists()) { el.innerHTML = '<p class="empty-hint">No trades yet.</p>'; return; }
   snap.forEach(c => {
     const t = c.val();
-    el.innerHTML += `<div class="trade-chip">
-      <span class="trade-chip-name">${escapeHtml(t.name)}</span>
+    const chip = document.createElement('div');
+    chip.className = 'trade-chip';
+    chip.innerHTML = `<span class="trade-chip-name">${escapeHtml(t.name)}</span>
       <button class="chip-edit" aria-label="Rename trade" onclick="renameTrade('${c.key}','${escapeHtml(t.name)}')">✎</button>
-      <button class="chip-del" aria-label="Delete trade" onclick="deleteTrade('${c.key}','${escapeHtml(t.name)}')">✕</button>
-    </div>`;
+      <button class="chip-del" aria-label="Delete trade" onclick="deleteTrade('${c.key}','${escapeHtml(t.name)}')">✕</button>`;
+    el.appendChild(chip);
   });
 }
 
@@ -82,6 +123,7 @@ async function addTrade() {
   if (name.length > 30) { showToast('Trade name too long (max 30).', 'error'); return; }
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades`).push({ name }), 'Failed to add trade');
   inp.value = '';
+  auditLog('create', 'trade', null, { name, projectId: _lpid });
   showToast(`Trade "${name}" added`);
 }
 
@@ -90,12 +132,14 @@ async function renameTrade(key, old) {
   if (!n || !n.trim() || n === old || !_lpid) return;
   if (n.trim().length > 30) { showToast('Name too long.', 'error'); return; }
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades/${key}`).update({ name: n.trim() }), 'Failed to rename');
+  auditLog('update', 'trade', key, { oldName: old, newName: n.trim() });
   showToast(`Trade renamed to "${n.trim()}"`);
 }
 
 async function deleteTrade(key, name) {
   if (!_lpid || !confirm(`Delete trade "${name}"?\n\nWorkers with this trade will keep it.`)) return;
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades/${key}`).remove(), 'Failed to delete trade');
+  auditLog('delete', 'trade', key, { name });
   showToast(`Trade "${name}" deleted`, 'warn');
 }
 
@@ -103,7 +147,12 @@ function populateTradeSelect(snap) {
   const sel = $('workerTradeSelect'); if (!sel) return;
   const prev = sel.value;
   sel.innerHTML = '<option value="">— Select Trade —</option>';
-  snap?.forEach(c => { sel.innerHTML += `<option value="${escapeHtml(c.val().name)}">${escapeHtml(c.val().name)}</option>`; });
+  snap?.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.val().name;
+    opt.textContent = c.val().name;
+    sel.appendChild(opt);
+  });
   sel.value = prev;
 }
 
@@ -118,24 +167,22 @@ function watchWorkers(pid) {
 
   const wRef = firebase.database().ref(`projects/${pid}/workers`);
   laborListen(wRef, wSnap => {
-    // IMPROVED: Batch fetch all advances in one call instead of N+1
     firebase.database().ref(`projects/${pid}/advances`).once('value', allAdvSnap => {
       renderRoster(wSnap, pid, allAdvSnap);
-      firebase.database().ref(`projects/${pid}/timecards`).once('value', tcSnap => {
-        buildGrid(pid, wSnap, tcSnap);
+      firebase.database().ref(`projects/${pid}/attendance`).once('value', attSnap => {
+        buildGrid(pid, wSnap, attSnap);
       });
     });
   });
 
-  const tcRef = firebase.database().ref(`projects/${pid}/timecards`);
-  laborListen(tcRef, tcSnap => {
+  const attRef = firebase.database().ref(`projects/${pid}/attendance`);
+  laborListen(attRef, attSnap => {
     firebase.database().ref(`projects/${pid}/workers`).once('value', wSnap => {
-      buildGrid(pid, wSnap, tcSnap);
+      buildGrid(pid, wSnap, attSnap);
     });
   });
 }
 
-// IMPROVED: Accept pre-fetched advances snapshot
 function renderRoster(wSnap, pid, allAdvSnap) {
   const el = $('rosterList'); if (!el) return;
   el.innerHTML = '';
@@ -145,7 +192,6 @@ function renderRoster(wSnap, pid, allAdvSnap) {
     const w = c.val();
     const wid = c.key;
 
-    // Calculate pending advances from pre-fetched data
     let pending = 0;
     const workerAdv = allAdvSnap.child(wid);
     if (workerAdv.exists()) {
@@ -169,27 +215,31 @@ function renderRoster(wSnap, pid, allAdvSnap) {
 
 async function addWorker() {
   if (!_lpid) return;
-  const name  = $('workerName')?.value.trim();
+  const name = $('workerName')?.value.trim();
   const trade = $('workerTradeSelect')?.value;
-  const rate  = parseFloat($('workerRate')?.value) || 0;
-  if (!name)   { showToast('Enter worker name.', 'error'); return; }
-  if (!trade)  { showToast('Select a trade.', 'error'); return; }
+  const rate = parseFloat($('workerRate')?.value) || 0;
+  if (!name) { showToast('Enter worker name.', 'error'); return; }
+  if (!trade) { showToast('Select a trade.', 'error'); return; }
   if (rate <= 0) { showToast('Enter daily rate.', 'error'); return; }
   if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
-  await safeDb(() => firebase.database().ref(`projects/${_lpid}/workers`).push({
-    name, trade, dailyRate: rate, addedAt: Date.now()
-  }), 'Failed to add worker');
+  
+  const workerData = { name, trade, dailyRate: rate, addedAt: Date.now(), addedBy: _currentUser.uid };
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/workers`).push(workerData), 'Failed to add worker');
   $('workerName').value = ''; $('workerRate').value = '';
+  auditLog('create', 'worker', null, { name, trade, rate, projectId: _lpid });
   showToast(`${name} added to roster`);
 }
 
 async function removeWorker(wid) {
-  if (!_lpid || !confirm('Remove this worker and ALL their timecards?\n\nThis cannot be undone.')) return;
+  if (!_lpid || !confirm('Remove this worker and ALL their attendance records?\n\nThis cannot be undone.')) return;
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/workers/${wid}`).remove(), 'Failed to remove worker');
-  const tcSnap = await firebase.database().ref(`projects/${_lpid}/timecards`).once('value');
+  
+  const attSnap = await firebase.database().ref(`projects/${_lpid}/attendance/${wid}`).once('value');
   const removes = [];
-  tcSnap.forEach(c => { if (c.val().workerId === wid) removes.push(c.key); });
-  await Promise.all(removes.map(k => safeDb(() => firebase.database().ref(`projects/${_lpid}/timecards/${k}`).remove(), 'Failed to remove timecard')));
+  attSnap.forEach(c => removes.push(c.key));
+  await Promise.all(removes.map(k => safeDb(() => firebase.database().ref(`projects/${_lpid}/attendance/${wid}/${k}`).remove(), 'Failed to remove attendance')));
+  
+  auditLog('delete', 'worker', wid, { projectId: _lpid });
   showToast('Worker removed');
 }
 
@@ -200,7 +250,6 @@ let _advWid = null, _advName = '';
 
 function openAdvanceModal(wid, name) {
   _advWid = wid; _advName = name;
-  // FIXED: Use textContent instead of setText for worker name display
   const nameEl = $('advanceWorkerName');
   if (nameEl) nameEl.textContent = name;
   loadAdvanceHistory(wid);
@@ -221,13 +270,14 @@ function loadAdvanceHistory(wid) {
     snap.forEach(c => {
       const a = c.val();
       if (!a.deducted) total += a.amount || 0;
-      el.innerHTML += `<div class="advance-row">
-        <span class="advance-date">${a.date}</span>
+      const row = document.createElement('div');
+      row.className = 'advance-row';
+      row.innerHTML = `<span class="advance-date">${a.date}</span>
         <span class="advance-amt">${peso(a.amount)}</span>
         ${a.notes ? `<span class="advance-note">${escapeHtml(a.notes)}</span>` : ''}
         <span class="advance-status ${a.deducted ? 'adv-deducted' : 'adv-pending'}">${a.deducted ? 'Deducted' : 'Pending'}</span>
-        <button class="del-advance" aria-label="Delete advance" onclick="deleteAdvance('${wid}','${c.key}')">✕</button>
-      </div>`;
+        <button class="del-advance" aria-label="Delete advance" onclick="deleteAdvance('${wid}','${c.key}')">✕</button>`;
+      el.appendChild(row);
     });
     setText('advanceTotalLabel', peso(total));
   });
@@ -235,18 +285,22 @@ function loadAdvanceHistory(wid) {
 
 async function saveAdvance() {
   if (!_lpid || !_advWid) return;
-  const date   = $('advanceDate')?.value;
+  const date = $('advanceDate')?.value;
   const amount = parseFloat($('advanceAmount')?.value) || 0;
-  const notes  = $('advanceNotes')?.value.trim() || '';
-  if (!date)     { showToast('Enter date.', 'error'); return; }
+  const notes = $('advanceNotes')?.value.trim() || '';
+  if (!date) { showToast('Enter date.', 'error'); return; }
   if (amount <= 0) { showToast('Enter amount.', 'error'); return; }
   if (notes.length > 200) { showToast('Notes too long (max 200).', 'error'); return; }
+  
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${_advWid}`).push({
-    date, amount, notes, deducted: false, addedAt: Date.now()
+    date, amount, notes, deducted: false, deductedAmount: 0, addedAt: Date.now(), addedBy: _currentUser.uid
   }), 'Failed to save advance');
+  
   $('advanceDate').value = ''; $('advanceAmount').value = ''; $('advanceNotes').value = '';
   loadAdvanceHistory(_advWid);
+  auditLog('create', 'advance', null, { workerId: _advWid, amount, projectId: _lpid });
   showToast(`Advance of ${peso(amount)} saved for ${_advName}`);
+  
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
     firebase.database().ref(`projects/${_lpid}/advances`).once('value', allAdvSnap => {
       renderRoster(wSnap, _lpid, allAdvSnap);
@@ -258,6 +312,7 @@ async function deleteAdvance(wid, key) {
   if (!confirm('Remove this advance record?')) return;
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${wid}/${key}`).remove(), 'Failed to delete advance');
   loadAdvanceHistory(wid);
+  auditLog('delete', 'advance', key, { workerId: wid, projectId: _lpid });
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
     firebase.database().ref(`projects/${_lpid}/advances`).once('value', allAdvSnap => {
       renderRoster(wSnap, _lpid, allAdvSnap);
@@ -266,15 +321,20 @@ async function deleteAdvance(wid, key) {
 }
 
 // ══════════════════════════════════════════════════════
-//  TIMECARD GRID
+//  TIMECARD GRID (Enhanced with Status Dropdowns)
 // ══════════════════════════════════════════════════════
-function buildGrid(pid, wSnap, tcSnap) {
+function buildGrid(pid, wSnap, attSnap) {
   const container = $('timecardGrid'); if (!container) return;
   const days = getWeekDays();
-  const tc   = {};
-  tcSnap?.forEach(c => { tc[c.key] = c.val(); });
 
-  const weekKeys = new Set(days.map(d => d.iso));
+  const attendance = {};
+  attSnap?.forEach(workerAtt => {
+    const wid = workerAtt.key;
+    attendance[wid] = {};
+    workerAtt.forEach(daySnap => {
+      attendance[wid][daySnap.key] = daySnap.val();
+    });
+  });
 
   const byTrade = {};
   wSnap.forEach(c => {
@@ -299,16 +359,38 @@ function buildGrid(pid, wSnap, tcSnap) {
   Object.entries(byTrade).forEach(([trade, workers]) => {
     let tradeTotal = 0;
     const rows = workers.map(w => {
-      let sub = 0, daysPresent = 0;
+      let sub = 0, daysPresent = 0, daysHalf = 0, daysHoliday = 0, otHours = 0;
+      
       const cells = days.map(d => {
-        const key = `${w.id}_${d.iso}`;
-        const on  = weekKeys.has(d.iso) && tc[key]?.present || false;
-        if (on) { sub += w.dailyRate; daysPresent++; }
-        return `<td class="g-cell"><input type="checkbox" class="g-check" ${on ? 'checked' : ''}
-          onchange="markDay('${w.id}','${d.iso}',this.checked,${w.dailyRate},'${escapeHtml(trade)}')" aria-label="Mark attendance for ${escapeHtml(w.name)}"></td>`;
+        const att = attendance[w.id]?.[d.iso] || { status: 'absent', overtimeHours: 0, nightDiffHours: 0 };
+        const status = att.status || 'absent';
+        const config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.absent;
+        const dayPay = w.dailyRate * config.multiplier;
+        
+        if (status === 'present' || status === 'leave') daysPresent++;
+        if (status === 'half') daysHalf++;
+        if (status === 'holiday') daysHoliday++;
+        otHours += att.overtimeHours || 0;
+        
+        const pay = calculateGrossPay(w.dailyRate, att);
+        sub += pay.total;
+        
+        const statusOptions = Object.entries(ATTENDANCE_STATUS).map(([key, val]) => 
+          `<option value="${key}" ${status === key ? 'selected' : ''}>${val.label}</option>`
+        ).join('');
+        
+        return `<td class="g-cell">
+          <select class="attendance-sel status-${status}" onchange="markAttendance('${w.id}','${d.iso}',this.value,0,0,'')">
+            ${statusOptions}
+          </select>
+          <input type="number" class="ot-input" placeholder="OT" value="${att.overtimeHours || ''}" 
+            onchange="updateAttendanceOT('${w.id}','${d.iso}',this.value)" title="Overtime hours">
+        </td>`;
       }).join('');
+      
       tradeTotal += sub;
-      summaryData[w.id] = { name: w.name, trade, rate: w.dailyRate, days: daysPresent, sub };
+      summaryData[w.id] = { name: w.name, trade, rate: w.dailyRate, days: daysPresent + daysHalf * 0.5 + daysHoliday, sub, otHours };
+      
       return `<tr class="g-row">
         <td class="g-name">${escapeHtml(w.name)}</td>
         <td class="g-rate">${peso(w.dailyRate)}</td>
@@ -340,34 +422,57 @@ function buildGrid(pid, wSnap, tcSnap) {
   updateAttendanceSummary(summaryData);
 }
 
-async function markDay(wid, iso, present, rate, trade) {
-  if (!_lpid) return;
-  await safeDb(() => firebase.database().ref(`projects/${_lpid}/timecards/${wid}_${iso}`)
-    .set({ workerId: wid, date: iso, present, dailyRate: rate, trade }), 'Failed to save attendance');
+// ── Calculate Gross Pay with OT & Night Diff ───────────────
+function calculateGrossPay(rate, att) {
+  const status = att.status || 'absent';
+  const config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.absent;
+  const regularPay = rate * config.multiplier;
+  const otPay = (rate / 8 * 1.25) * (att.overtimeHours || 0);
+  const nightDiffPay = (rate / 8 * 0.1) * (att.nightDiffHours || 0);
+  return { regularPay, otPay, nightDiffPay, total: regularPay + otPay + nightDiffPay };
 }
 
-// IMPROVED: Timezone-safe date handling
+async function markAttendance(wid, iso, status, overtimeHours = 0, nightDiffHours = 0, notes = '') {
+  if (!_lpid) return;
+  const config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.present;
+  
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/attendance/${wid}/${iso}`).set({
+    workerId: wid, date: iso, status,
+    regularHours: config.hours,
+    overtimeHours: parseFloat(overtimeHours) || 0,
+    nightDiffHours: parseFloat(nightDiffHours) || 0,
+    paidHours: config.hours + (parseFloat(overtimeHours) || 0) + (parseFloat(nightDiffHours) || 0),
+    multiplier: config.multiplier,
+    notes,
+    markedAt: Date.now(),
+    markedBy: _currentUser.uid
+  }), 'Failed to save attendance');
+}
+
+async function updateAttendanceOT(wid, iso, otHours) {
+  if (!_lpid) return;
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/attendance/${wid}/${iso}`).update({
+    overtimeHours: parseFloat(otHours) || 0
+  }), 'Failed to update OT');
+}
+
 function getWeekDays() {
   const s = $('weekStart')?.value;
   const e = $('weekEnd')?.value;
   const days = [];
-
-  // Use noon to avoid DST issues
   const start = s ? new Date(s + 'T12:00:00') : (() => {
     const t = new Date();
     t.setHours(12, 0, 0, 0);
     t.setDate(t.getDate() - ((t.getDay() + 6) % 7));
     return t;
   })();
-
   const end = e ? new Date(e + 'T12:00:00') : new Date(start.getTime() + 6 * 86400000);
-
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const iso = d.toISOString().slice(0, 10);
     days.push({
       iso,
       short: d.toLocaleDateString('en-PH', { weekday: 'short' }),
-      num:   d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+      num: d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
     });
   }
   return days;
@@ -376,13 +481,12 @@ function getWeekDays() {
 function applyWeek() {
   if (!_lpid) return;
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
-    firebase.database().ref(`projects/${_lpid}/timecards`).once('value', tcSnap => {
-      buildGrid(_lpid, wSnap, tcSnap);
+    firebase.database().ref(`projects/${_lpid}/attendance`).once('value', attSnap => {
+      buildGrid(_lpid, wSnap, attSnap);
     });
   });
 }
 
-// ── Attendance Summary ────────────────────────────────────────
 function updateAttendanceSummary(data) {
   const el = $('attendanceSummary'); if (!el) return;
   const entries = Object.values(data);
@@ -390,7 +494,7 @@ function updateAttendanceSummary(data) {
   const grand = entries.reduce((s, w) => s + w.sub, 0);
   el.innerHTML = `<div style="overflow-x:auto"><table class="summary-table">
     <thead><tr>
-      <th>Worker</th><th>Trade</th><th>Rate/Day</th><th style="text-align:center">Days</th><th style="text-align:right">Subtotal</th>
+      <th>Worker</th><th>Trade</th><th>Rate/Day</th><th style="text-align:center">Days</th><th style="text-align:center">OT Hrs</th><th style="text-align:right">Subtotal</th>
     </tr></thead>
     <tbody>
       ${entries.map(w => `<tr class="s-row">
@@ -398,92 +502,133 @@ function updateAttendanceSummary(data) {
         <td class="s-cell s-trade">${escapeHtml(w.trade)}</td>
         <td class="s-cell">${peso(w.rate)}</td>
         <td class="s-cell s-center">${w.days}</td>
+        <td class="s-cell s-center">${w.otHours}</td>
         <td class="s-cell s-right s-bold">${peso(w.sub)}</td>
       </tr>`).join('')}
     </tbody>
     <tfoot><tr class="s-total-row">
-      <td class="s-cell" colspan="4">GROSS THIS PERIOD</td>
+      <td class="s-cell" colspan="5">GROSS THIS PERIOD</td>
       <td class="s-cell s-right s-bold">${peso(grand)}</td>
     </tr></tfoot>
   </table></div>`;
 }
 
 // ══════════════════════════════════════════════════════
-//  COMPILE PAYROLL — IMPROVED: Archive timecards before delete
+//  COMPILE PAYROLL (Enhanced with Full Breakdown)
 // ══════════════════════════════════════════════════════
-let _pendingPayrollData = null;
-
 async function compilePayroll() {
   if (!_lpid) return;
   const start = $('weekStart')?.value || '—';
-  const end   = $('weekEnd')?.value   || '—';
+  const end = $('weekEnd')?.value || '—';
 
-  const [wSnap, tcSnap, advSnap, projSnap] = await Promise.all([
+  const [wSnap, attSnap, advSnap, projSnap] = await Promise.all([
     firebase.database().ref(`projects/${_lpid}/workers`).once('value'),
-    firebase.database().ref(`projects/${_lpid}/timecards`).once('value'),
+    firebase.database().ref(`projects/${_lpid}/attendance`).once('value'),
     firebase.database().ref(`projects/${_lpid}/advances`).once('value'),
     firebase.database().ref(`projects/${_lpid}`).once('value')
   ]);
 
-  const days    = getWeekDays();
+  const days = getWeekDays();
   const weekSet = new Set(days.map(d => d.iso));
 
   const workers = {};
   wSnap.forEach(c => { workers[c.key] = c.val(); });
 
-  const byTrade = {}; 
-  let grand = 0;
-  const tcKeysToDelete = [];
-  const timecardArchive = {};  // NEW: Store timecards for archiving
+  const byTrade = {};
+  let grandRegular = 0, grandOT = 0, grandNight = 0, grandGross = 0;
+  const attendanceToArchive = [];
+  const workerPayroll = {};
 
-  tcSnap.forEach(c => {
-    const tc = c.val();
-    if (!tc.present || !weekSet.has(tc.date)) return;
-    const w = workers[tc.workerId]; 
+  attSnap.forEach(workerAtt => {
+    const wid = workerAtt.key;
+    const w = workers[wid];
     if (!w) return;
-    tcKeysToDelete.push(c.key);
-    // NEW: Archive the timecard data
-    timecardArchive[c.key] = { ...tc, compiledAt: Date.now() };
-    if (!byTrade[tc.trade]) byTrade[tc.trade] = { workers: {}, total: 0 };
-    const bt = byTrade[tc.trade];
-    if (!bt.workers[tc.workerId]) bt.workers[tc.workerId] = { name: w.name, rate: w.dailyRate, days: 0, subtotal: 0 };
-    bt.workers[tc.workerId].days++;
-    bt.workers[tc.workerId].subtotal += w.dailyRate;
-    bt.total += w.dailyRate;
-    grand    += w.dailyRate;
+
+    let workerRegular = 0, workerOT = 0, workerNight = 0, workerDays = 0;
+    
+    workerAtt.forEach(daySnap => {
+      const att = daySnap.val();
+      if (!weekSet.has(att.date)) return;
+      
+      const pay = calculateGrossPay(w.dailyRate, att);
+      workerRegular += pay.regularPay;
+      workerOT += pay.otPay;
+      workerNight += pay.nightDiffPay;
+      if (att.status !== 'absent' && att.status !== 'rest') workerDays++;
+      
+      attendanceToArchive.push({ ...att, compiledAt: Date.now() });
+    });
+
+    const workerGross = workerRegular + workerOT + workerNight;
+    grandRegular += workerRegular;
+    grandOT += workerOT;
+    grandNight += workerNight;
+    grandGross += workerGross;
+
+    if (!byTrade[w.trade]) byTrade[w.trade] = { workers: {}, total: 0, regular: 0, ot: 0, night: 0 };
+    
+    byTrade[w.trade].workers[wid] = {
+      name: w.name, rate: w.dailyRate, days: workerDays,
+      regular: workerRegular, ot: workerOT, night: workerNight, gross: workerGross
+    };
+    byTrade[w.trade].total += workerGross;
+    byTrade[w.trade].regular += workerRegular;
+    byTrade[w.trade].ot += workerOT;
+    byTrade[w.trade].night += workerNight;
+
+    workerPayroll[wid] = { gross: workerGross, regular: workerRegular, ot: workerOT, night: workerNight, name: w.name };
   });
 
-  if (!grand) { showToast('No attendance marked for this week yet.', 'warn'); return; }
+  if (!grandGross) { showToast('No attendance marked for this week.', 'warn'); return; }
 
-  const pendingAdvances = {}; 
+  // Process advances with SMART amortization
+  const pendingAdvances = {};
   let totalPending = 0;
   advSnap?.forEach(workerAdv => {
     const wid = workerAdv.key;
     const wname = workers[wid]?.name || wid;
+    const workerGross = workerPayroll[wid]?.gross || 0;
+    
     workerAdv.forEach(advEntry => {
       const a = advEntry.val();
-      if (!a.deducted) {
-        if (!pendingAdvances[wid]) pendingAdvances[wid] = { name: wname, advances: [], total: 0 };
-        pendingAdvances[wid].advances.push({ key: advEntry.key, ...a });
-        pendingAdvances[wid].total += a.amount || 0;
-        totalPending += a.amount || 0;
-      }
+      if (a.deducted) return;
+      
+      const remaining = a.amount - (a.deductedAmount || 0);
+      const maxDeduct = Math.min(workerGross * 0.2, remaining);
+      const deductThisPayroll = maxDeduct > 0 ? maxDeduct : 0;
+      
+      if (!pendingAdvances[wid]) pendingAdvances[wid] = { name: wname, advances: [], totalDeduct: 0 };
+      pendingAdvances[wid].advances.push({
+        key: advEntry.key,
+        ...a,
+        deductThisPayroll,
+        remainingAfter: remaining - deductThisPayroll
+      });
+      pendingAdvances[wid].totalDeduct += deductThisPayroll;
+      totalPending += deductThisPayroll;
     });
   });
 
   _pendingPayrollData = {
-    start, end, grand, byTrade, pendingAdvances, totalPending,
+    start, end,
+    grandRegular, grandOT, grandNight, grandGross,
+    byTrade, pendingAdvances, totalPending,
     prevSpent: parseFloat(projSnap.val()?.laborSpent) || 0,
-    tcKeysToDelete,
-    timecardArchive  // NEW: Include archive data
+    attendanceToArchive,
+    workerPayroll
   };
+  
   showPayrollModal();
 }
 
 function showPayrollModal() {
   const d = _pendingPayrollData; if (!d) return;
-  setText('payrollGross',  peso(d.grand));
-  // FIXED: Use textContent for period display
+  
+  setText('payrollRegular', peso(d.grandRegular));
+  setText('payrollOT', peso(d.grandOT));
+  setText('payrollNight', peso(d.grandNight));
+  setText('payrollGross', peso(d.grandGross));
+  
   const periodEl = $('payrollPeriod');
   if (periodEl) periodEl.textContent = `${d.start} – ${d.end}`;
   setText('totalAdvances', peso(d.totalPending));
@@ -495,21 +640,22 @@ function showPayrollModal() {
       : Object.values(d.pendingAdvances).map(w =>
           `<div class="adv-deduct-row">
             <span class="adv-deduct-name">${escapeHtml(w.name)}</span>
-            <span class="adv-deduct-detail">${w.advances.length} advance(s) · ${peso(w.total)}</span>
+            <span class="adv-deduct-detail">
+              ${w.advances.map(a => `₱${a.deductThisPayroll.toLocaleString('en-PH', {minimumFractionDigits:2})} of ₱${a.remainingAfter.toLocaleString('en-PH', {minimumFractionDigits:2})} remaining`).join(' · ')}
+            </span>
           </div>`
         ).join('');
   }
 
   $('manualDeductInput').value = '';
-  setText('payrollNet', peso(d.grand));
+  updatePayrollNet();
   $('payrollModal').classList.remove('hidden');
 }
 
 function updatePayrollNet() {
   if (!_pendingPayrollData) return;
   const deduct = parseFloat($('manualDeductInput')?.value) || 0;
-  const net = _pendingPayrollData.grand - deduct;
-  // IMPROVED: Show warning if net would be negative
+  const net = _pendingPayrollData.grandGross - _pendingPayrollData.totalPending - deduct;
   const netEl = $('payrollNet');
   if (netEl) {
     netEl.textContent = peso(net);
@@ -521,52 +667,52 @@ function closePayrollModal() { $('payrollModal').classList.add('hidden'); }
 
 async function confirmSavePayroll() {
   const d = _pendingPayrollData; if (!d) return;
-  const deduct = parseFloat($('manualDeductInput')?.value) || 0;
-  const net    = d.grand - deduct;
+  const manualDeduct = parseFloat($('manualDeductInput')?.value) || 0;
+  const net = d.grandGross - d.totalPending - manualDeduct;
 
-  // IMPROVED: Validate net is not negative
-  if (net < 0) {
-    showToast('Net payroll cannot be negative. Reduce deduction.', 'error');
-    return;
-  }
+  if (net < 0) { showToast('Net payroll cannot be negative.', 'error'); return; }
 
-  // IMPROVED: Atomic batch update using single update() call
-  const updates = {};
   const logKey = firebase.database().ref().push().key;
+  const updates = {};
 
-  // NEW: Archive timecards under this payroll log
-  if (d.timecardArchive && Object.keys(d.timecardArchive).length > 0) {
-    updates[`projects/${_lpid}/timecardHistory/${logKey}`] = {
-      period: `${d.start}–${d.end}`,
-      savedAt: Date.now(),
-      timecards: d.timecardArchive
-    };
-  }
+  // Archive attendance
+  updates[`projects/${_lpid}/attendanceHistory/${logKey}`] = {
+    period: `${d.start}–${d.end}`,
+    savedAt: Date.now(),
+    entries: d.attendanceToArchive,
+    compiledBy: _currentUser.uid
+  };
 
+  // Save payroll log
   updates[`projects/${_lpid}/payrollLogs/${logKey}`] = {
-    period     : `${d.start}–${d.end}`,
-    gross      : d.grand,
-    deductions : deduct,
-    net        : net,
-    byTrade    : d.byTrade,
-    savedAt    : Date.now(),
-    savedDate  : new Date().toLocaleDateString('en-PH')
+    period: `${d.start}–${d.end}`,
+    gross: d.grandGross,
+    regular: d.grandRegular,
+    ot: d.grandOT,
+    nightDiff: d.grandNight,
+    deductions: d.totalPending + manualDeduct,
+    net,
+    byTrade: d.byTrade,
+    workerDetails: d.workerPayroll,
+    savedAt: Date.now(),
+    savedDate: new Date().toLocaleDateString('en-PH'),
+    savedBy: _currentUser.uid,
+    status: 'finalized'
   };
 
   updates[`projects/${_lpid}/laborSpent`] = d.prevSpent + net;
 
-  // Mark advances as deducted
-  if (deduct > 0) {
+  // Update advances with amortization
+  if (d.totalPending > 0) {
     for (const [wid, wAdv] of Object.entries(d.pendingAdvances)) {
       for (const adv of wAdv.advances) {
-        updates[`projects/${_lpid}/advances/${wid}/${adv.key}/deducted`] = true;
+        const newDeducted = (adv.deductedAmount || 0) + adv.deductThisPayroll;
+        const isFullyPaid = newDeducted >= adv.amount;
+        updates[`projects/${_lpid}/advances/${wid}/${adv.key}/deductedAmount`] = newDeducted;
+        updates[`projects/${_lpid}/advances/${wid}/${adv.key}/deducted`] = isFullyPaid;
+        updates[`projects/${_lpid}/advances/${wid}/${adv.key}/lastDeductedAt`] = Date.now();
       }
     }
-  }
-
-  // Delete timecards from active
-  for (const k of d.tcKeysToDelete) {
-    updates[`projects/${_lpid}/timecards/${k}`] = null;
   }
 
   try {
@@ -577,6 +723,10 @@ async function confirmSavePayroll() {
     return;
   }
 
+  auditLog('payroll', 'payroll', logKey, { 
+    period: d.start + '–' + d.end, gross: d.grandGross, net, projectId: _lpid 
+  });
+
   const endDate = $('weekEnd')?.value;
   if (endDate) {
     const nextStart = new Date(endDate + 'T12:00:00');
@@ -584,27 +734,122 @@ async function confirmSavePayroll() {
     const nextEnd = new Date(nextStart);
     nextEnd.setDate(nextStart.getDate() + 6);
     if ($('weekStart')) $('weekStart').value = nextStart.toISOString().slice(0, 10);
-    if ($('weekEnd'))   $('weekEnd').value   = nextEnd.toISOString().slice(0, 10);
+    if ($('weekEnd')) $('weekEnd').value = nextEnd.toISOString().slice(0, 10);
   }
 
   closePayrollModal();
-  showToast(`✅ Payroll saved! Gross: ${peso(d.gross)} · Net: ${peso(net)}`);
+  showToast(`✅ Payroll saved! Gross: ${peso(d.grandGross)} · Net: ${peso(net)}`);
   applyWeek();
 }
 
 // ══════════════════════════════════════════════════════
-//  TIMECARD HISTORY — NEW: View past attendance records
+//  PAYSLIP GENERATION
+// ══════════════════════════════════════════════════════
+function generatePayslips() {
+  const d = _pendingPayrollData;
+  if (!d) return;
+  
+  const list = $('payslipList');
+  if (!list) return;
+  
+  list.innerHTML = '';
+  Object.entries(d.workerPayroll).forEach(([wid, worker]) => {
+    const advances = d.pendingAdvances[wid];
+    const totalDeductions = (advances?.totalDeduct || 0);
+    const netPay = worker.gross - totalDeductions;
+    
+    const slip = document.createElement('div');
+    slip.className = 'payslip-card';
+    slip.innerHTML = `
+      <div class="payslip-hdr">
+        <span class="payslip-name">${escapeHtml(worker.name)}</span>
+        <span class="payslip-period">${d.start} – ${d.end}</span>
+      </div>
+      <div class="payslip-body">
+        <div class="payslip-row"><span>Regular Pay</span><span>${peso(worker.regular)}</span></div>
+        <div class="payslip-row"><span>Overtime</span><span>${peso(worker.ot)}</span></div>
+        <div class="payslip-row"><span>Night Differential</span><span>${peso(worker.night)}</span></div>
+        <div class="payslip-row payslip-gross"><span>Gross</span><span>${peso(worker.gross)}</span></div>
+        <div class="payslip-row"><span>Advances</span><span class="text-red">-${peso(totalDeductions)}</span></div>
+        <div class="payslip-row payslip-net"><span>NET PAY</span><span class="text-green">${peso(netPay)}</span></div>
+      </div>
+      <button class="btn-ws-secondary" onclick="downloadSinglePayslip('${wid}')">⬇️ PDF</button>
+    `;
+    list.appendChild(slip);
+  });
+  
+  $('payslipModal').classList.remove('hidden');
+}
+
+function closePayslipModal() { $('payslipModal').classList.add('hidden'); }
+
+function downloadSinglePayslip(wid) {
+  const d = _pendingPayrollData;
+  if (!d || !window.jspdf) return;
+  const worker = d.workerPayroll[wid];
+  if (!worker) return;
+  
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const advances = d.pendingAdvances[wid];
+  const totalDeductions = (advances?.totalDeduct || 0);
+  const netPay = worker.gross - totalDeductions;
+  
+  doc.setFontSize(18).setFont('helvetica', 'bold');
+  doc.text('PAYSLIP', 105, 20, { align: 'center' });
+  doc.setFontSize(10).setFont('helvetica', 'normal');
+  doc.text(`LeBuild Design & Construction`, 105, 28, { align: 'center' });
+  doc.text(`Project: ${_lpid}`, 105, 33, { align: 'center' });
+  
+  doc.setFontSize(12).setFont('helvetica', 'bold');
+  doc.text(worker.name, 20, 45);
+  doc.setFontSize(10).setFont('helvetica', 'normal');
+  doc.text(`Period: ${d.start} – ${d.end}`, 20, 52);
+  doc.text(`Daily Rate: ${peso(worker.rate)}`, 20, 58);
+  
+  let y = 70;
+  doc.setFontSize(11).setFont('helvetica', 'bold');
+  doc.text('EARNINGS', 20, y); y += 7;
+  doc.setFontSize(10).setFont('helvetica', 'normal');
+  doc.text(`Regular Pay`, 25, y); doc.text(peso(worker.regular), 180, y, { align: 'right' }); y += 6;
+  doc.text(`Overtime`, 25, y); doc.text(peso(worker.ot), 180, y, { align: 'right' }); y += 6;
+  doc.text(`Night Differential`, 25, y); doc.text(peso(worker.night), 180, y, { align: 'right' }); y += 8;
+  
+  doc.setFontSize(11).setFont('helvetica', 'bold');
+  doc.text(`Gross Pay`, 25, y); doc.text(peso(worker.gross), 180, y, { align: 'right' }); y += 10;
+  
+  doc.setFontSize(11).setFont('helvetica', 'bold');
+  doc.text('DEDUCTIONS', 20, y); y += 7;
+  doc.setFontSize(10).setFont('helvetica', 'normal');
+  doc.text(`Cash Advances`, 25, y); doc.text(`-${peso(totalDeductions)}`, 180, y, { align: 'right' }); y += 8;
+  
+  doc.setDrawColor(0).setLineWidth(0.5);
+  doc.line(20, y, 190, y); y += 8;
+  
+  doc.setFontSize(14).setFont('helvetica', 'bold');
+  doc.text(`NET PAY`, 25, y); doc.text(peso(netPay), 180, y, { align: 'right' });
+  
+  doc.setFontSize(8).setFont('helvetica', 'normal');
+  doc.text(`Generated: ${new Date().toLocaleDateString('en-PH')} · ACPM System`, 105, 280, { align: 'center' });
+  
+  doc.save(`Payslip_${worker.name.replace(/\\s+/g, '_')}_${d.start}.pdf`);
+}
+
+function downloadAllPayslips() {
+  // Batch download or zip — simplified for now
+  showToast('Individual download recommended for now', 'warn');
+}
+
+// ══════════════════════════════════════════════════════
+//  TIMECARD HISTORY
 // ══════════════════════════════════════════════════════
 let _tcHistoryListener = null;
 
 function watchTimecardHistory(pid) {
   if (_tcHistoryListener) { _tcHistoryListener.off(); _tcHistoryListener = null; }
-  const ref = firebase.database().ref(`projects/${pid}/timecardHistory`);
+  const ref = firebase.database().ref(`projects/${pid}/attendanceHistory`);
   _tcHistoryListener = ref;
-  ref.on('value', snap => {
-    renderTimecardHistory(snap);
-  });
-  laborListen(ref, snap => renderTimecardHistory(snap));
+  ref.on('value', snap => renderTimecardHistory(snap));
 }
 
 function renderTimecardHistory(snap) {
@@ -619,7 +864,7 @@ function renderTimecardHistory(snap) {
   const entries = [];
   snap.forEach(c => {
     const data = c.val();
-    const tcCount = data.timecards ? Object.keys(data.timecards).length : 0;
+    const tcCount = data.entries ? data.entries.length : 0;
     entries.push({ key: c.key, ...data, tcCount });
   });
   entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
@@ -631,7 +876,7 @@ function renderTimecardHistory(snap) {
       <div class="tc-history-hdr" onclick="toggleTCHistory('${e.key}')">
         <div class="tc-history-left">
           <span class="tc-history-period">📅 ${e.period || '—'}</span>
-          <span class="tc-history-meta">${e.tcCount} timecard entries · ${new Date(e.savedAt).toLocaleDateString('en-PH')}</span>
+          <span class="tc-history-meta">${e.tcCount} entries · ${new Date(e.savedAt).toLocaleDateString('en-PH')}</span>
         </div>
         <span class="tc-history-toggle" id="tcToggle_${e.key}">▼</span>
       </div>
@@ -639,11 +884,9 @@ function renderTimecardHistory(snap) {
         <div class="tc-history-table-wrap">
           <table class="summary-table">
             <thead><tr>
-              <th>Worker</th><th>Trade</th><th>Date</th><th style="text-align:center">Present</th><th style="text-align:right">Rate</th>
+              <th>Worker</th><th>Trade</th><th>Date</th><th>Status</th><th style="text-align:center">OT</th><th style="text-align:right">Rate</th>
             </tr></thead>
-            <tbody>
-              ${renderTimecardRows(e.timecards)}
-            </tbody>
+            <tbody>${renderTimecardRows(e.entries)}</tbody>
           </table>
         </div>
       </div>
@@ -652,15 +895,16 @@ function renderTimecardHistory(snap) {
   });
 }
 
-function renderTimecardRows(timecards) {
-  if (!timecards) return '<tr><td colspan="5" class="empty-cell">No timecard data</td></tr>';
-  const rows = Object.values(timecards).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+function renderTimecardRows(entries) {
+  if (!entries || !entries.length) return '<tr><td colspan="6" class="empty-cell">No attendance data</td></tr>';
+  const rows = [...entries].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   return rows.map(tc => `
     <tr class="s-row">
       <td class="s-cell">${escapeHtml(tc.workerId || '—')}</td>
       <td class="s-cell s-trade">${escapeHtml(tc.trade || '—')}</td>
       <td class="s-cell">${tc.date || '—'}</td>
-      <td class="s-cell s-center">${tc.present ? '✅' : '❌'}</td>
+      <td class="s-cell">${ATTENDANCE_STATUS[tc.status]?.label || tc.status}</td>
+      <td class="s-cell s-center">${tc.overtimeHours || 0}h</td>
       <td class="s-cell s-right">${peso(tc.dailyRate)}</td>
     </tr>
   `).join('');
@@ -681,27 +925,40 @@ function toggleTCHistory(key) {
 async function generateRFP() {
   if (!_lpid) return;
   const start = $('weekStart')?.value || '—';
-  const end   = $('weekEnd')?.value   || '—';
+  const end = $('weekEnd')?.value || '—';
 
-  const [wSnap, tcSnap] = await Promise.all([
+  const [wSnap, attSnap] = await Promise.all([
     firebase.database().ref(`projects/${_lpid}/workers`).once('value'),
-    firebase.database().ref(`projects/${_lpid}/timecards`).once('value')
+    firebase.database().ref(`projects/${_lpid}/attendance`).once('value')
   ]);
 
   const workers = {};
   wSnap.forEach(c => { workers[c.key] = c.val(); });
 
-  const byTrade = {}; 
+  const byTrade = {};
   let grand = 0;
-  tcSnap.forEach(c => {
-    const tc = c.val(); 
-    if (!tc.present) return;
-    const w  = workers[tc.workerId]; 
+  
+  attSnap.forEach(workerAtt => {
+    const wid = workerAtt.key;
+    const w = workers[wid];
     if (!w) return;
-    if (!byTrade[tc.trade]) byTrade[tc.trade] = [];
-    let e = byTrade[tc.trade].find(x => x.name === w.name);
-    if (!e) { e = { name: w.name, rate: w.dailyRate, days: 0, sub: 0 }; byTrade[tc.trade].push(e); }
-    e.days++; e.sub += w.dailyRate; grand += w.dailyRate;
+    
+    workerAtt.forEach(daySnap => {
+      const tc = daySnap.val();
+      if (tc.status === 'absent' || tc.status === 'rest') return;
+      if (!byTrade[tc.trade || w.trade]) byTrade[tc.trade || w.trade] = [];
+      
+      let e = byTrade[tc.trade || w.trade].find(x => x.name === w.name);
+      if (!e) {
+        e = { name: w.name, rate: w.dailyRate, days: 0, sub: 0, ot: 0 };
+        byTrade[tc.trade || w.trade].push(e);
+      }
+      const pay = calculateGrossPay(w.dailyRate, tc);
+      e.days += (tc.status === 'half' ? 0.5 : 1);
+      e.sub += pay.total;
+      e.ot += pay.otPay;
+      grand += pay.total;
+    });
   });
 
   if (!grand) { showToast('No attendance data to generate RFP.', 'warn'); return; }
@@ -718,7 +975,7 @@ async function generateRFP() {
   Object.entries(byTrade).forEach(([trade, ws]) => {
     lines.push(trade.toUpperCase());
     ws.forEach(w => {
-      lines.push(`  ${w.name.padEnd(24)} ${String(w.days).padStart(2)} day/s x ${peso(w.rate).padStart(10)} = ${peso(w.sub).padStart(12)}`);
+      lines.push(`  ${w.name.padEnd(24)} ${String(w.days).padStart(4)} day/s x ${peso(w.rate).padStart(10)} = ${peso(w.sub).padStart(12)}`);
     });
     const sub = ws.reduce((s, w) => s + w.sub, 0);
     lines.push(`  ${'Trade Subtotal'.padEnd(48)} ${peso(sub).padStart(12)}`, '');
@@ -731,14 +988,14 @@ async function generateRFP() {
   );
 
   window._rfpData = { lines, start, end, grand, byTrade, pid: _lpid };
-  $('rfpOutput').value = lines.join('\n');
+  $('rfpOutput').value = lines.join('\\n');
   $('rfpModal').classList.remove('hidden');
 }
 
 function closeRFP() { $('rfpModal').classList.add('hidden'); }
 
 function copyRFP() {
-  const ta = $('rfpOutput'); 
+  const ta = $('rfpOutput');
   ta.select();
   document.execCommand('copy');
   showToast('RFP copied to clipboard!');
@@ -748,7 +1005,7 @@ function downloadRFP() {
   if (!window._rfpData) return;
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const lm = 20, rm = 190; 
+  const lm = 20, rm = 190;
   let y = 20;
 
   doc.setFontSize(14).setFont('helvetica', 'bold');
@@ -793,19 +1050,18 @@ function watchPayrollLogs(pid) {
   laborListen(ref, snap => {
     const tbody = $('payrollLogsBody'); if (!tbody) return;
     tbody.innerHTML = '';
-    const tradeTotals = {}; 
+    const tradeTotals = {};
     let grandTotal = 0;
 
     if (!snap.exists()) {
       tbody.innerHTML = `<tr><td colspan="5" class="empty-cell">No payroll logs yet. Compile a week to create the first record.</td></tr>`;
-      renderTradeTotals({}, 0); 
+      renderTradeTotals({}, 0);
       return;
     }
 
-    const rows = []; 
+    const rows = [];
     snap.forEach(c => rows.unshift({ id: c.key, ...c.val() }));
 
-    // FIXED: Use DocumentFragment for better performance
     const fragment = document.createDocumentFragment();
 
     rows.forEach(e => {
@@ -859,7 +1115,6 @@ function renderTradeTotals(totals, grand) {
   }).join('');
 }
 
-// Export payroll logs to CSV
 async function exportPayrollCSV() {
   if (!_lpid) return;
   const snap = await firebase.database().ref(`projects/${_lpid}/payrollLogs`).once('value');
@@ -869,9 +1124,9 @@ async function exportPayrollCSV() {
   snap.forEach(c => rows.push(c.val()));
   rows.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
-  let csv = 'Date,Period,Gross,Deductions,Net\n';
+  let csv = 'Date,Period,Regular,OT,Night Diff,Gross,Deductions,Net\\n';
   rows.forEach(r => {
-    csv += `${r.savedDate || ''},${r.period || ''},${r.gross || 0},${r.deductions || 0},${r.net || r.gross || 0}\n`;
+    csv += `${r.savedDate || ''},${r.period || ''},${r.regular || 0},${r.ot || 0},${r.nightDiff || 0},${r.gross || 0},${r.deductions || 0},${r.net || r.gross || 0}\\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });

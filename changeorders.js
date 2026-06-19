@@ -37,29 +37,33 @@ function watchChangeOrders(pid) {
     orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     let totalApproved = 0, totalPending = 0, totalLabor = 0, totalMaterials = 0;
+    const fragment = document.createDocumentFragment();
 
     orders.forEach(co => {
-      const laborImpact     = parseFloat(co.laborImpact)     || 0;
+      const laborImpact = parseFloat(co.laborImpact) || 0;
       const materialsImpact = parseFloat(co.materialsImpact) || 0;
-      const totalImpact     = laborImpact + materialsImpact;
+      const totalImpact = laborImpact + materialsImpact;
 
       if (co.status === 'approved') {
         totalApproved += totalImpact;
-        totalLabor    += laborImpact;
-        totalMaterials+= materialsImpact;
+        totalLabor += laborImpact;
+        totalMaterials += materialsImpact;
       }
       if (co.status === 'pending') totalPending += totalImpact;
 
       const statusMap = {
-        pending : { cls:'co-pending',  label:'⏳ Pending',  actions: `
+        pending: { cls: 'co-pending', label: '⏳ Pending', actions: `
           <button class="co-approve-btn" aria-label="Approve CO" onclick="approveRejectCO('${co.id}','approved')">✓ Approve</button>
           <button class="co-reject-btn" aria-label="Reject CO" onclick="approveRejectCO('${co.id}','rejected')">✕ Reject</button>` },
-        approved: { cls:'co-approved', label:'✓ Approved', actions: `<button class="co-revert-btn" aria-label="Revert CO" onclick="approveRejectCO('${co.id}','pending')">↩ Revert</button>` },
-        rejected: { cls:'co-rejected', label:'✕ Rejected', actions: `<button class="co-revert-btn" aria-label="Revert CO" onclick="approveRejectCO('${co.id}','pending')">↩ Revert</button>` }
+        approved: { cls: 'co-approved', label: '✓ Approved', actions: `<button class="co-revert-btn" aria-label="Revert CO" onclick="approveRejectCO('${co.id}','pending')">↩ Revert</button>` },
+        rejected: { cls: 'co-rejected', label: '✕ Rejected', actions: `<button class="co-revert-btn" aria-label="Revert CO" onclick="approveRejectCO('${co.id}','pending')">↩ Revert</button>` }
       };
       const s = statusMap[co.status] || statusMap.pending;
 
-      container.innerHTML += `<div class="co-card ${s.cls}" data-status="${co.status}">
+      const card = document.createElement('div');
+      card.className = `co-card ${s.cls}`;
+      card.setAttribute('data-status', co.status);
+      card.innerHTML = `
         <div class="co-card-hdr">
           <div class="co-card-left">
             <span class="co-number">CO-${String(co.seq || '?').padStart(3, '0')}</span>
@@ -86,19 +90,21 @@ function watchChangeOrders(pid) {
           </div>
         </div>
         <div class="co-actions">${s.actions}</div>
-      </div>`;
+      `;
+      fragment.appendChild(card);
     });
 
+    container.appendChild(fragment);
     renderCOSummary(orders, { totalApproved, totalPending, totalLabor, totalMaterials });
   });
 }
 
 function renderCOSummary(orders, totals) {
-  setText('coTotalApproved',   peso(totals.totalApproved   || 0));
-  setText('coTotalPending',    peso(totals.totalPending    || 0));
-  setText('coLaborImpact',     peso(totals.totalLabor      || 0));
-  setText('coMaterialsImpact', peso(totals.totalMaterials  || 0));
-  setText('coCount',           `${orders.length} change order${orders.length !== 1 ? 's' : ''}`);
+  setText('coTotalApproved', peso(totals.totalApproved || 0));
+  setText('coTotalPending', peso(totals.totalPending || 0));
+  setText('coLaborImpact', peso(totals.totalLabor || 0));
+  setText('coMaterialsImpact', peso(totals.totalMaterials || 0));
+  setText('coCount', `${orders.length} change order${orders.length !== 1 ? 's' : ''}`);
 }
 
 // ══════════════════════════════════════════════════════
@@ -106,20 +112,19 @@ function renderCOSummary(orders, totals) {
 // ══════════════════════════════════════════════════════
 async function addChangeOrder() {
   if (!_copid) return;
-  const desc      = $('coDesc').value.trim();
-  const reqBy     = $('coReqBy').value.trim();
-  const date      = $('coDate').value;
-  const labor     = parseFloat($('coLaborImpact').value)     || 0;
+  const desc = $('coDesc').value.trim();
+  const reqBy = $('coReqBy').value.trim();
+  const date = $('coDate').value;
+  const labor = parseFloat($('coLaborImpact').value) || 0;
   const materials = parseFloat($('coMaterialsImpact').value) || 0;
-  const notes     = $('coNotes').value.trim() || '';
+  const notes = $('coNotes').value.trim() || '';
 
-  if (!desc)  { showToast('Enter change order description.', 'error'); return; }
+  if (!desc) { showToast('Enter change order description.', 'error'); return; }
   if (!reqBy) { showToast('Enter who requested this.', 'error'); return; }
-  if (!date)  { showToast('Enter date.', 'error'); return; }
+  if (!date) { showToast('Enter date.', 'error'); return; }
   if (labor === 0 && materials === 0) { showToast('Enter at least one cost impact.', 'error'); return; }
   if (desc.length > 300) { showToast('Description too long (max 300).', 'error'); return; }
 
-  // FIXED: Atomic counter using transaction
   const counterRef = firebase.database().ref(`projects/${_copid}/coCounter`);
   let seq;
   try {
@@ -133,12 +138,13 @@ async function addChangeOrder() {
   await safeDb(() => firebase.database().ref(`projects/${_copid}/changeOrders`).push({
     seq, description: desc, requestedBy: reqBy, date,
     laborImpact: labor, materialsImpact: materials, notes,
-    status: 'pending', createdAt: Date.now()
+    status: 'pending', createdAt: Date.now(), createdBy: _currentUser.uid
   }), 'Failed to submit change order');
 
   ['coDesc', 'coReqBy', 'coDate', 'coLaborImpact', 'coMaterialsImpact', 'coNotes'].forEach(id => {
     const e = $(id); if (e) e.value = '';
   });
+  auditLog('create', 'changeOrder', null, { seq, labor, materials, projectId: _copid });
   showToast(`CO-${String(seq).padStart(3, '0')} submitted`);
 }
 
@@ -153,35 +159,36 @@ async function approveRejectCO(key, newStatus) {
     firebase.database().ref(`projects/${_copid}`).once('value')
   ]);
 
-  const co   = coSnap.val();
+  const co = coSnap.val();
   const proj = projSnap.val() || {};
   const oldStatus = co.status;
 
-  const laborImpact     = parseFloat(co.laborImpact)     || 0;
+  const laborImpact = parseFloat(co.laborImpact) || 0;
   const materialsImpact = parseFloat(co.materialsImpact) || 0;
 
-  let laborBudget    = parseFloat(proj.laborBudget)    || 0;
+  let laborBudget = parseFloat(proj.laborBudget) || 0;
   let materialBudget = parseFloat(proj.materialBudget) || 0;
 
   if (oldStatus === 'approved') {
-    laborBudget    -= laborImpact;
+    laborBudget -= laborImpact;
     materialBudget -= materialsImpact;
   }
 
   if (newStatus === 'approved') {
-    laborBudget    += laborImpact;
+    laborBudget += laborImpact;
     materialBudget += materialsImpact;
   }
 
-  // Batch update to prevent race conditions
   const updates = {};
   updates[`projects/${_copid}/changeOrders/${key}/status`] = newStatus;
   updates[`projects/${_copid}/changeOrders/${key}/${newStatus}At`] = Date.now();
+  updates[`projects/${_copid}/changeOrders/${key}/${newStatus}By`] = _currentUser.uid;
   updates[`projects/${_copid}/changeOrders/${key}/${newStatus}Date`] = new Date().toLocaleDateString('en-PH');
   updates[`projects/${_copid}/laborBudget`] = laborBudget;
   updates[`projects/${_copid}/materialBudget`] = materialBudget;
 
   await safeDb(() => firebase.database().ref().update(updates), 'Failed to update CO status');
+  auditLog('update', 'changeOrder', key, { oldStatus, newStatus, projectId: _copid });
 
   const action = newStatus === 'approved' ? 'approved ✓' : newStatus === 'rejected' ? 'rejected ✕' : 'reverted to pending';
   showToast(`CO-${String(co.seq).padStart(3, '0')} ${action}`);
@@ -195,17 +202,16 @@ async function deleteCO(key, status) {
     if (!confirm('Delete this change order?')) return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_copid}/changeOrders/${key}`).remove(), 'Failed to delete CO');
+  auditLog('delete', 'changeOrder', key, { status, projectId: _copid });
   showToast('Change order deleted', 'warn');
 }
 
-// Filter COs by status
 function filterCOs(status) {
   document.querySelectorAll('#coList .co-card').forEach(card => {
     card.style.display = (status === 'all' || card.getAttribute('data-status') === status) ? '' : 'none';
   });
 }
 
-// Export COs to CSV
 async function exportCOsCSV() {
   if (!_copid) return;
   const snap = await firebase.database().ref(`projects/${_copid}/changeOrders`).once('value');
@@ -235,4 +241,3 @@ function escapeCsv(text) {
   }
   return text;
 }
-

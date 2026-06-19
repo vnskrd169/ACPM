@@ -3,13 +3,8 @@ let _slListener = null;
 let _logFilterDebounce = null;
 
 function initSiteLog(pid) {
-  console.log('🔧 initSiteLog called for pid:', pid);
   _slpid = pid;
-  if (_slListener) { 
-    console.log('📡 Detaching old listener');
-    _slListener.off(); 
-    _slListener = null; 
-  }
+  if (_slListener) { _slListener.off(); _slListener = null; }
 
   const dateInp = $('logDate');
   if (dateInp) dateInp.value = new Date().toISOString().slice(0, 10);
@@ -18,46 +13,29 @@ function initSiteLog(pid) {
 }
 
 function detachSiteLogListeners() {
-  console.log('📡 Detaching site log listener');
   if (_slListener) { _slListener.off(); _slListener = null; }
 }
 
 function watchSiteLog(pid) {
-  console.log('👁️ watchSiteLog starting for pid:', pid);
   const ref = firebase.database().ref(`projects/${pid}/siteLogs`);
   _slListener = ref;
 
   ref.on('value', snap => {
-    console.log('📨 SiteLog data received:', snap.exists() ? 'EXISTS' : 'EMPTY', 'Key count:', snap.numChildren());
-
     const el = $('siteLogList');
-    if (!el) {
-      console.error('❌ siteLogList element not found!');
-      return;
-    }
-
+    if (!el) return;
     el.innerHTML = '';
 
     if (!snap.exists()) {
-      console.log('ℹ️ No site logs found');
-      el.innerHTML = '<p class="empty-hint">No logs yet. Add your first entry above.</p>';
+      el.innerHTML = '<p class="empty-hint">No logs yet. Add your first log above.</p>';
       renderSiteLogSummary([]);
       return;
     }
 
     const entries = [];
-    snap.forEach(c => {
-      const val = c.val();
-      console.log('📄 Entry:', c.key, 'Date:', val.date, 'Notes:', val.notes?.substring(0, 20));
-      entries.push({ id: c.key, ...val });
-    });
-
-    console.log('📊 Total entries:', entries.length);
-
-    // Sort by savedAt descending (newest first)
+    snap.forEach(c => entries.push({ id: c.key, ...c.val() }));
     entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
-    // Group by MONTH first, then by date
+    // Group by month, then by date
     const byMonth = {};
     entries.forEach(e => {
       const dateStr = e.date || 'Unknown';
@@ -67,23 +45,17 @@ function watchSiteLog(pid) {
       byMonth[monthKey][dateStr].push(e);
     });
 
-    console.log('📅 Month groups:', Object.keys(byMonth));
-
-    // Sort months descending
     const sortedMonths = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
 
     sortedMonths.forEach(monthKey => {
       const monthGroup = document.createElement('div');
       monthGroup.className = 'log-month-group';
 
-      // Month header
       let monthLabel = monthKey;
       if (monthKey !== 'Unknown') {
         try {
           const [year, month] = monthKey.split('-');
-          monthLabel = new Date(parseInt(year), parseInt(month) - 1, 1).toLocaleDateString('en-PH', { 
-            year: 'numeric', month: 'long' 
-          });
+          monthLabel = new Date(parseInt(year), parseInt(month) - 1, 1).toLocaleDateString('en-PH', { year: 'numeric', month: 'long' });
         } catch { monthLabel = monthKey; }
       }
 
@@ -95,12 +67,10 @@ function watchSiteLog(pid) {
       monthHeader.onclick = () => monthGroup.classList.toggle('collapsed');
       monthGroup.appendChild(monthHeader);
 
-      // Sort dates within month descending
-      const sortedDates = Object.keys(byMonth[monthKey]).sort((a, b) => b.localeCompare(a));
-
-      // Create scrollable body container for month entries
       const monthBody = document.createElement('div');
       monthBody.className = 'log-month-body';
+
+      const sortedDates = Object.keys(byMonth[monthKey]).sort((a, b) => b.localeCompare(a));
 
       sortedDates.forEach(date => {
         const dayGroup = document.createElement('div');
@@ -110,9 +80,7 @@ function watchSiteLog(pid) {
         dayHeader.className = 'log-day-header';
         let dayLabel;
         try {
-          dayLabel = new Date(date).toLocaleDateString('en-PH', { 
-            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
-          });
+          dayLabel = new Date(date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         } catch { dayLabel = date; }
         dayHeader.innerHTML = `<span class="log-day-label">📆 ${dayLabel}</span><span class="log-day-count">${byMonth[monthKey][date].length} entr${byMonth[monthKey][date].length !== 1 ? 'ies' : 'y'}</span>`;
         dayGroup.appendChild(dayHeader);
@@ -136,7 +104,7 @@ function watchSiteLog(pid) {
               <span class="log-saved">${e.savedDate || ''}</span>
               <button class="del-log" aria-label="Delete log" onclick="deleteLog('${e.id}')">✕</button>
             </div>
-            <p class="log-notes">${escapeHtml(e.notes || '').replace(/\n/g, '<br>')}</p>
+            <p class="log-notes">${escapeHtml(e.notes || '').replace(/\\n/g, '<br>')}</p>
             ${e.photos ? `<div class="log-photos">${e.photos.map(p => `<img src="${p}" class="log-photo" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}`;
           dayGroup.appendChild(div);
         });
@@ -149,13 +117,8 @@ function watchSiteLog(pid) {
     });
 
     renderSiteLogSummary(entries);
-    console.log('✅ SiteLog rendering complete');
-    
-    // Ensure scroll works
-    // Ensure scrollable after DOM update
-    requestAnimationFrame(() => setTimeout(ensureScrollable, 50));
   }, error => {
-    console.error('❌ Firebase error in watchSiteLog:', error);
+    console.error('Firebase error in watchSiteLog:', error);
     showToast('Error loading site logs: ' + error.message, 'error');
   });
 }
@@ -187,24 +150,20 @@ async function saveLog() {
   const dateInp = $('logDate');
   const notesInp = $('logNotes');
   const weatherInp = $('logWeather');
-  const date  = dateInp?.value;
+  const date = dateInp?.value;
   const notes = notesInp?.value.trim();
   const weather = weatherInp?.value.trim() || '';
-  if (!date)  { showToast('Select a date.', 'error'); return; }
+  if (!date) { showToast('Select a date.', 'error'); return; }
   if (!notes) { showToast('Write something first.', 'error'); return; }
   if (notes.length > 2000) { showToast('Notes too long (max 2000 chars).', 'error'); return; }
 
-  const now      = new Date();
-  const timeStr  = now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-  const savedDate= now.toLocaleDateString('en-PH');
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+  const savedDate = now.toLocaleDateString('en-PH');
 
-  const logData = { 
-    date, 
-    notes, 
-    weather,
-    time: timeStr, 
-    savedAt: Date.now(), 
-    savedDate 
+  const logData = {
+    date, notes, weather,
+    time: timeStr, savedAt: Date.now(), savedDate, savedBy: _currentUser.uid
   };
 
   const doSave = async (data) => {
@@ -219,10 +178,12 @@ async function saveLog() {
       async pos => {
         logData.location = `${pos.coords.latitude},${pos.coords.longitude}`;
         await doSave(logData);
+        auditLog('create', 'siteLog', null, { date, hasLocation: true, projectId: _slpid });
         showToast('Log saved with location 📍');
       },
       async () => {
         await doSave(logData);
+        auditLog('create', 'siteLog', null, { date, hasLocation: false, projectId: _slpid });
         showToast('Log saved ✓');
       },
       { timeout: 4000, enableHighAccuracy: true }
@@ -236,6 +197,7 @@ async function saveLog() {
 async function deleteLog(key) {
   if (!_slpid || !confirm('Delete this log entry?')) return;
   await safeDb(() => firebase.database().ref(`projects/${_slpid}/siteLogs/${key}`).remove(), 'Failed to delete log');
+  auditLog('delete', 'siteLog', key, { projectId: _slpid });
   showToast('Entry deleted', 'warn');
 }
 
@@ -265,7 +227,7 @@ async function exportSiteLogs() {
     lines.push('');
   });
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+  const blob = new Blob([lines.join('\\n')], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -279,84 +241,20 @@ function filterLogs(query) {
   if (_logFilterDebounce) clearTimeout(_logFilterDebounce);
   _logFilterDebounce = setTimeout(() => {
     const q = query.toLowerCase().trim();
-
     document.querySelectorAll('.log-entry').forEach(entry => {
       const text = entry.textContent.toLowerCase();
       entry.style.display = text.includes(q) ? '' : 'none';
     });
-
     document.querySelectorAll('.log-day-group').forEach(group => {
       const visible = group.querySelectorAll('.log-entry:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
-
     document.querySelectorAll('.log-month-group').forEach(group => {
       const visible = group.querySelectorAll('.log-day-group:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
-
     if (!q) {
-      document.querySelectorAll('.log-entry, .log-day-group, .log-month-group').forEach(el => {
-        el.style.display = '';
-      });
+      document.querySelectorAll('.log-entry, .log-day-group, .log-month-group').forEach(el => el.style.display = '');
     }
   }, 150);
 }
-
-
-// ════════════════════════════════════════════════════════
-// SCROLL FIX — Ensure siteLogList is scrollable
-// ════════════════════════════════════════════════════════
-
-// ════════════════════════════════════════════════════════
-// SCROLL FIX — Ensure siteLogList scrolls properly
-// ════════════════════════════════════════════════════════
-
-function ensureScrollable() {
-  const el = $('siteLogList');
-  if (!el) return;
-
-  const computed = window.getComputedStyle(el);
-
-  // Only fix if the container can't actually scroll
-  if (computed.overflowY !== 'auto' && computed.overflowY !== 'scroll') {
-    el.style.overflowY = 'auto';
-  }
-  if (!computed.maxHeight || computed.maxHeight === 'none') {
-    el.style.maxHeight = '60vh';
-  }
-
-  // Ensure parent containers don't clip content
-  let parent = el.parentElement;
-  let level = 0;
-  while (parent && parent !== document.body && level < 4) {
-    const pComputed = window.getComputedStyle(parent);
-    if (pComputed.overflow === 'hidden') {
-      parent.style.overflow = 'visible';
-    }
-    parent = parent.parentElement;
-    level++;
-  }
-}
-
-// ════════════════════════════════════════════════════════
-// MANUAL REFRESH
-// ════════════════════════════════════════════════════════
-
-function refreshSiteLogs() {
-  console.log('🔄 Manual refresh triggered');
-  if (_slpid) {
-    // Detach and reattach listener
-    if (_slListener) { _slListener.off(); _slListener = null; }
-    watchSiteLog(_slpid);
-    showToast('Site logs refreshed');
-  }
-}
-
-// Add keyboard shortcut for refresh (Ctrl+R in site log)
-document.addEventListener('keydown', e => {
-  if (e.ctrlKey && e.key === 'r' && document.querySelector('.panel-sitelog:not(.hidden)')) {
-    e.preventDefault();
-    refreshSiteLogs();
-  }
-});

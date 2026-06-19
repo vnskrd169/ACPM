@@ -37,15 +37,15 @@ function watchContract(pid) {
 
 async function saveContract() {
   if (!_bpid) return;
-  const amount    = parseFloat($('contractAmount').value)    || 0;
-  const downpct   = parseFloat($('contractDownPct').value)   || 0;
+  const amount = parseFloat($('contractAmount').value) || 0;
+  const downpct = parseFloat($('contractDownPct').value) || 0;
   const retention = parseFloat($('contractRetention').value) || 0;
-  const client    = $('contractClient').value.trim();
+  const client = $('contractClient').value.trim();
   const startDate = $('contractStart').value;
-  const endDate   = $('contractEnd').value;
+  const endDate = $('contractEnd').value;
 
   if (amount <= 0) { showToast('Enter contract amount.', 'error'); return; }
-  if (!client)     { showToast('Enter client name.', 'error'); return; }
+  if (!client) { showToast('Enter client name.', 'error'); return; }
   if (client.length > 100) { showToast('Client name too long.', 'error'); return; }
 
   const downPayment = amount * (downpct / 100);
@@ -54,7 +54,8 @@ async function saveContract() {
     amount, downPct: downpct, downPayment, retention,
     client, startDate, endDate,
     savedAt: Date.now(),
-    savedDate: new Date().toLocaleDateString('en-PH')
+    savedDate: new Date().toLocaleDateString('en-PH'),
+    savedBy: _currentUser.uid
   }), 'Failed to save contract');
 
   if (downPayment > 0) {
@@ -63,35 +64,37 @@ async function saveContract() {
       amount: downPayment,
       description: 'Down Payment',
       type: 'down_payment',
-      savedAt: Date.now()
+      savedAt: Date.now(),
+      savedBy: _currentUser.uid
     }), 'Failed to record down payment');
   }
+  auditLog('create', 'contract', null, { client, amount, projectId: _bpid });
   showToast('Contract saved ✓');
 }
 
-// IMPROVED: Safer contract edit — stores in temp field instead of deleting
 async function editContract() {
   if (!confirm('Edit contract details?\\n\\nDown payment collection will not be removed.')) return;
   const snap = await firebase.database().ref(`projects/${_bpid}/contract`).once('value');
   const c = snap.val() || {};
-  $('contractAmount').value    = c.amount    || '';
-  $('contractDownPct').value   = c.downPct   || '';
+  $('contractAmount').value = c.amount || '';
+  $('contractDownPct').value = c.downPct || '';
   $('contractRetention').value = c.retention || '';
-  $('contractClient').value    = c.client    || '';
-  $('contractStart').value     = c.startDate || '';
-  $('contractEnd').value       = c.endDate   || '';
-  // IMPROVED: Move to temp instead of deleting, so data isn't lost on refresh
+  $('contractClient').value = c.client || '';
+  $('contractStart').value = c.startDate || '';
+  $('contractEnd').value = c.endDate || '';
+  
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/contractTemp`).set(c), 'Failed to backup contract');
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/contract`).remove(), 'Failed to remove contract');
+  auditLog('edit', 'contract', null, { projectId: _bpid });
   showToast('Contract removed for editing');
 }
 
 function renderContractDashboard(c, pid) {
-  setText('cdClient',    c.client || '—');
-  setText('cdAmount',    peso(c.amount));
-  setText('cdDownPay',   `${peso(c.downPayment)} (${c.downPct || 0}%)`);
+  setText('cdClient', c.client || '—');
+  setText('cdAmount', peso(c.amount));
+  setText('cdDownPay', `${peso(c.downPayment)} (${c.downPct || 0}%)`);
   setText('cdRetention', `${c.retention || 0}%`);
-  setText('cdDates',     `${c.startDate || '—'} → ${c.endDate || '—'}`);
+  setText('cdDates', `${c.startDate || '—'} → ${c.endDate || '—'}`);
 
   Promise.all([
     firebase.database().ref(`projects/${pid}/billings`).once('value'),
@@ -102,22 +105,22 @@ function renderContractDashboard(c, pid) {
     cSnap.forEach(col => { totalCollected += col.val().amount || 0; });
 
     const retentionHeld = totalCollected * ((c.retention || 0) / 100);
-    const netCollected  = totalCollected - retentionHeld;
-    const outstanding   = (c.amount || 0) - totalCollected;
-    const billable      = (c.amount || 0) - totalBilled;
+    const netCollected = totalCollected - retentionHeld;
+    const outstanding = (c.amount || 0) - totalCollected;
+    const billable = (c.amount || 0) - totalBilled;
 
-    setText('cdTotalBilled',     peso(totalBilled));
-    setText('cdTotalCollected',  peso(totalCollected));
-    setText('cdRetentionHeld',   peso(retentionHeld));
-    setText('cdNetCollected',    peso(netCollected));
-    setText('cdOutstanding',     peso(outstanding));
-    setText('cdBillable',        peso(billable));
+    setText('cdTotalBilled', peso(totalBilled));
+    setText('cdTotalCollected', peso(totalCollected));
+    setText('cdRetentionHeld', peso(retentionHeld));
+    setText('cdNetCollected', peso(netCollected));
+    setText('cdOutstanding', peso(outstanding));
+    setText('cdBillable', peso(billable));
 
     const pctCollected = pct(totalCollected, c.amount);
     const bar = $('cdProgressBar');
-    if (bar) { 
-      bar.style.width = pctCollected + '%'; 
-      bar.className = `billing-fill ${budgetBarClass(pctCollected)}`; 
+    if (bar) {
+      bar.style.width = pctCollected + '%';
+      bar.className = `billing-fill ${budgetBarClass(pctCollected)}`;
     }
     setText('cdProgressPct', `${pctCollected}% collected`);
   });
@@ -138,26 +141,31 @@ function watchBillings(pid) {
       return;
     }
 
-    const rows = []; 
+    const rows = [];
     snap.forEach(c => rows.unshift({ id: c.key, ...c.val() }));
     rows.sort((a, b) => (a.seq || 0) - (b.seq || 0));
-    
+
+    const fragment = document.createDocumentFragment();
     rows.forEach(b => {
-      const statusClass = { 
-        pending: 'bill-pending', 
-        sent: 'bill-sent', 
-        collected: 'bill-collected', 
-        cancelled: 'bill-cancelled' 
+      const statusClass = {
+        pending: 'bill-pending',
+        sent: 'bill-sent',
+        collected: 'bill-collected',
+        cancelled: 'bill-cancelled'
       }[b.status] || 'bill-pending';
-      tbody.innerHTML += `<tr class="bill-row" data-status="${b.status}">
+      
+      const tr = document.createElement('tr');
+      tr.className = 'bill-row';
+      tr.setAttribute('data-status', b.status);
+      tr.innerHTML = `
         <td class="b-cell">Billing #${b.seq || seq++}</td>
         <td class="b-cell">${b.date || '—'}</td>
         <td class="b-cell">${escapeHtml(b.description || '—')}</td>
         <td class="b-cell b-right b-bold">${peso(b.amount)}</td>
         <td class="b-cell">
           <select class="status-sel ${statusClass}" onchange="updateBillingStatus('${b.id}',this.value)">
-            <option value="pending"   ${b.status === 'pending'   ? 'selected' : ''}>Pending</option>
-            <option value="sent"      ${b.status === 'sent'      ? 'selected' : ''}>Sent</option>
+            <option value="pending" ${b.status === 'pending' ? 'selected' : ''}>Pending</option>
+            <option value="sent" ${b.status === 'sent' ? 'selected' : ''}>Sent</option>
             <option value="collected" ${b.status === 'collected' ? 'selected' : ''}>Collected</option>
             <option value="cancelled" ${b.status === 'cancelled' ? 'selected' : ''}>Cancelled</option>
           </select>
@@ -165,23 +173,23 @@ function watchBillings(pid) {
         <td class="b-cell b-center">
           <button class="del-item-btn" aria-label="Delete billing" onclick="deleteBilling('${b.id}')">✕</button>
         </td>
-      </tr>`;
+      `;
+      fragment.appendChild(tr);
     });
+    tbody.appendChild(fragment);
   });
 }
 
-// FIXED: Use atomic transaction for sequence number instead of numChildren
 async function addBillingRequest() {
   if (!_bpid) return;
-  const date   = $('billDate').value;
-  const desc   = $('billDesc').value.trim();
+  const date = $('billDate').value;
+  const desc = $('billDesc').value.trim();
   const amount = parseFloat($('billAmount').value) || 0;
-  if (!date)     { showToast('Enter billing date.', 'error'); return; }
-  if (!desc)     { showToast('Enter description.', 'error'); return; }
+  if (!date) { showToast('Enter billing date.', 'error'); return; }
+  if (!desc) { showToast('Enter description.', 'error'); return; }
   if (amount <= 0) { showToast('Enter billing amount.', 'error'); return; }
   if (desc.length > 200) { showToast('Description too long (max 200).', 'error'); return; }
 
-  // FIXED: Atomic counter using transaction
   const counterRef = firebase.database().ref(`projects/${_bpid}/billingCounter`);
   let seq;
   try {
@@ -194,25 +202,31 @@ async function addBillingRequest() {
 
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings`).push({
     date, description: desc, amount, seq, status: 'pending',
-    savedAt: Date.now()
+    savedAt: Date.now(),
+    savedBy: _currentUser.uid
   }), 'Failed to add billing');
+  
   $('billDate').value = ''; $('billDesc').value = ''; $('billAmount').value = '';
+  auditLog('create', 'billing', null, { seq, amount, projectId: _bpid });
   showToast(`Billing #${seq} added`);
 }
 
 async function updateBillingStatus(key, status) {
   if (!_bpid) return;
-  await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings/${key}`).update({ status }), 'Failed to update status');
+  await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings/${key}`).update({ 
+    status, updatedAt: Date.now(), updatedBy: _currentUser.uid 
+  }), 'Failed to update status');
+  auditLog('update', 'billing', key, { status, projectId: _bpid });
   showToast(`Status updated to ${status}`);
 }
 
 async function deleteBilling(key) {
   if (!_bpid || !confirm('Delete this billing request?')) return;
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings/${key}`).remove(), 'Failed to delete billing');
+  auditLog('delete', 'billing', key, { projectId: _bpid });
   showToast('Billing request deleted', 'warn');
 }
 
-// Filter billings by status
 function filterBillings(status) {
   document.querySelectorAll('#billingsBody tr[data-status]').forEach(row => {
     row.style.display = (status === 'all' || row.getAttribute('data-status') === status) ? '' : 'none';
@@ -231,31 +245,39 @@ function watchCollections(pid) {
 
     if (!snap.exists()) {
       tbody.innerHTML = `<tr><td colspan="4" class="empty-cell">No collections yet.</td></tr>`;
-      setText('collectionGrand', peso(0)); 
+      setText('collectionGrand', peso(0));
       return;
     }
 
-    const rows = []; 
+    const rows = [];
     snap.forEach(c => rows.unshift({ id: c.key, ...c.val() }));
     rows.sort((a, b) => (a.savedAt || 0) - (b.savedAt || 0));
-    
+
+    const fragment = document.createDocumentFragment();
     rows.forEach(col => {
       grand += col.amount || 0;
-      tbody.innerHTML += `<tr class="bill-row">
+      const tr = document.createElement('tr');
+      tr.className = 'bill-row';
+      tr.innerHTML = `
         <td class="b-cell">${col.date || '—'}</td>
         <td class="b-cell">${escapeHtml(col.description || '—')}</td>
         <td class="b-cell b-right b-bold" style="color:var(--green)">${peso(col.amount)}</td>
         <td class="b-cell b-center">
           ${col.type !== 'down_payment' ? `<button class="del-item-btn" aria-label="Delete collection" onclick="deleteCollection('${col.id}')">✕</button>` : '<span style="font-size:10px;color:var(--muted)">DP</span>'}
         </td>
-      </tr>`;
+      `;
+      fragment.appendChild(tr);
     });
 
-    tbody.innerHTML += `<tr class="hist-total-row">
+    const totalTr = document.createElement('tr');
+    totalTr.className = 'hist-total-row';
+    totalTr.innerHTML = `
       <td class="b-cell" colspan="2">Total Collected</td>
       <td class="b-cell b-right" style="color:var(--green);font-weight:800">${peso(grand)}</td>
       <td></td>
-    </tr>`;
+    `;
+    fragment.appendChild(totalTr);
+    tbody.appendChild(fragment);
     setText('collectionGrand', peso(grand));
 
     firebase.database().ref(`projects/${pid}/contract`).once('value', cSnap => {
@@ -266,23 +288,27 @@ function watchCollections(pid) {
 
 async function addCollection() {
   if (!_bpid) return;
-  const date   = $('colDate').value;
-  const desc   = $('colDesc').value.trim();
+  const date = $('colDate').value;
+  const desc = $('colDesc').value.trim();
   const amount = parseFloat($('colAmount').value) || 0;
-  if (!date)     { showToast('Enter date received.', 'error'); return; }
-  if (!desc)     { showToast('Enter description.', 'error'); return; }
+  if (!date) { showToast('Enter date received.', 'error'); return; }
+  if (!desc) { showToast('Enter description.', 'error'); return; }
   if (amount <= 0) { showToast('Enter amount received.', 'error'); return; }
   if (desc.length > 200) { showToast('Description too long.', 'error'); return; }
+  
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/collections`).push({
-    date, description: desc, amount, type: 'collection', savedAt: Date.now()
+    date, description: desc, amount, type: 'collection', savedAt: Date.now(), savedBy: _currentUser.uid
   }), 'Failed to record collection');
+  
   $('colDate').value = ''; $('colDesc').value = ''; $('colAmount').value = '';
+  auditLog('create', 'collection', null, { amount, projectId: _bpid });
   showToast(`Collection of ${peso(amount)} recorded`);
 }
 
 async function deleteCollection(key) {
   if (!_bpid || !confirm('Remove this collection record?')) return;
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/collections/${key}`).remove(), 'Failed to remove collection');
+  auditLog('delete', 'collection', key, { projectId: _bpid });
   showToast('Collection removed', 'warn');
 }
 

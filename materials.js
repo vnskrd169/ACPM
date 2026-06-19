@@ -1,7 +1,11 @@
+
+
 let _mpid = null;
 let _draftItems = [];
 let _matListeners = [];
-let _poFilterDebounce = null;
+let _inventory = {};
+let _currentDeliveryPO = null;
+let _currentInvoicePO = null;
 
 function initMaterials(pid) {
   _mpid = pid; _draftItems = [];
@@ -10,7 +14,7 @@ function initMaterials(pid) {
   watchMatBudget(pid);
   watchLedger(pid);
   watchPOHistory(pid);
-  // FIXED: Actually load suppliers into dropdown
+  watchInventory(pid);
   loadGlobalSuppliersForPO();
 }
 
@@ -24,23 +28,23 @@ function matListen(ref, cb) {
   _matListeners.push(ref);
 }
 
-// ── Budget KPIs ───────────────────────────────────────────────
+// ── Budget KPIs ─────────────────────────────────────────────
 function watchMatBudget(pid) {
   const ref = firebase.database().ref(`projects/${pid}`);
   matListen(ref, snap => {
-    const d      = snap.val() || {};
+    const d = snap.val() || {};
     const budget = parseFloat(d.materialBudget) || 0;
-    const spent  = parseFloat(d.materialSpent)  || 0;
-    const left   = budget - spent;
-    const p      = pct(spent, budget);
+    const spent = parseFloat(d.materialSpent) || 0;
+    const left = budget - spent;
+    const p = pct(spent, budget);
     setText('mbBudget', peso(budget));
-    setText('mbSpent',  peso(spent));
+    setText('mbSpent', peso(spent));
     const el = $('mbLeft');
     if (el) { el.textContent = peso(left); el.className = `kpi-num ${left < 0 ? 'kpi-danger' : 'kpi-safe'}`; }
     const wb = $('matBudgetWarn');
     if (wb) {
       wb.classList.toggle('hidden', p < 80);
-      wb.className  = `budget-warn-bar ${p >= 95 ? 'warn-critical' : 'warn-high'} ${p < 80 ? 'hidden' : ''}`;
+      wb.className = `budget-warn-bar ${p >= 95 ? 'warn-critical' : 'warn-high'} ${p < 80 ? 'hidden' : ''}`;
       wb.textContent = p >= 95
         ? `⚠ CRITICAL — Materials budget ${p}% used! Only ${peso(left)} left.`
         : `⚠ WARNING — Materials budget ${p}% used. ${peso(left)} remaining.`;
@@ -48,14 +52,104 @@ function watchMatBudget(pid) {
   });
 }
 
-// ── Load global suppliers for PO quick-select ─────────────────
+// ── Inventory Tracking ──────────────────────────────────────
+function watchInventory(pid) {
+  const ref = firebase.database().ref(`projects/${pid}/inventory`);
+  matListen(ref, snap => {
+    _inventory = {};
+    renderInventoryList(snap);
+    renderInventoryAlerts(snap);
+  });
+}
+
+function renderInventoryList(snap) {
+  const el = $('inventoryList'); if (!el) return;
+  el.innerHTML = '';
+  
+  if (!snap.exists()) {
+    el.innerHTML = '<p class="empty-hint">No inventory tracked yet. Record deliveries to update stock.</p>';
+    return;
+  }
+  
+  const items = [];
+  snap.forEach(c => items.push({ key: c.key, ...c.val() }));
+  items.sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
+  
+  const table = document.createElement('table');
+  table.className = 'summary-table';
+  table.innerHTML = `
+    <thead><tr>
+      <th>Item</th><th>Size</th><th style="text-align:center">Stock</th><th>Unit</th>
+      <th style="text-align:center">Reorder Point</th><th>Status</th><th>Last Received</th>
+    </tr></thead>
+    <tbody>
+      ${items.map(item => {
+        const isLow = item.qtyOnHand <= (item.reorderPoint || 0);
+        return `<tr class="s-row ${isLow ? 'inventory-low' : ''}">
+          <td class="s-cell s-bold">${escapeHtml(item.item)}</td>
+          <td class="s-cell">${escapeHtml(item.size) || '—'}</td>
+          <td class="s-cell s-center ${isLow ? 'text-red' : 'text-green'}">${item.qtyOnHand}</td>
+          <td class="s-cell">${escapeHtml(item.unit)}</td>
+          <td class="s-cell s-center">${item.reorderPoint || 0}</td>
+          <td class="s-cell">${isLow ? '🔴 LOW STOCK' : '✓ OK'}</td>
+          <td class="s-cell">${item.lastReceived || '—'}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  `;
+  el.appendChild(table);
+}
+
+function renderInventoryAlerts(snap) {
+  const container = $('inventoryAlertContainer');
+  if (!container) return;
+  container.innerHTML = '';
+  
+  const alerts = [];
+  snap.forEach(c => {
+    const item = c.val();
+    if (item.qtyOnHand <= (item.reorderPoint || 0)) {
+      alerts.push(`${escapeHtml(item.item)} (${item.qtyOnHand} ${escapeHtml(item.unit)})`);
+    }
+  });
+  
+  if (alerts.length) {
+    const banner = document.createElement('div');
+    banner.className = 'budget-warn-bar warn-critical';
+    banner.innerHTML = `🔴 LOW STOCK ALERT: ${alerts.join(' · ')}`;
+    container.appendChild(banner);
+  }
+}
+
+// ── Load global suppliers for PO quick-select ───────────────
 function loadGlobalSuppliersForPO() {
   firebase.database().ref('suppliers').once('value', snap => {
     refreshSupplierDropdown(snap);
   });
 }
 
-// REMOVED: Duplicate applySupplierSelection (now only in suppliers.js)
+function refreshSupplierDropdown(snap) {
+  const sel = $('poSupplierSelect');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Quick-select supplier —</option>';
+  if (snap && snap.exists()) {
+    const suppliers = [];
+    snap.forEach(c => suppliers.push(c.val()));
+    suppliers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    suppliers.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.name;
+      opt.textContent = `${s.name}${s.specialty ? ' (' + s.specialty + ')' : ''}`;
+      sel.appendChild(opt);
+    });
+  }
+}
+
+function applySupplierSelection() {
+  const sel = $('poSupplierSelect');
+  const inp = $('poSupplier');
+  if (sel && inp && sel.value) { inp.value = sel.value; sel.value = ''; }
+}
 
 // ══════════════════════════════════════════════════════
 //  PO DRAFT BUILDER
@@ -63,13 +157,14 @@ function loadGlobalSuppliersForPO() {
 function addDraftItem() {
   const desc = $('poItemDesc')?.value.trim();
   const size = $('poItemSize')?.value.trim() || '';
-  const qty  = parseFloat($('poItemQty')?.value)  || 0;
+  const qty = parseFloat($('poItemQty')?.value) || 0;
   const unit = $('poItemUnit')?.value.trim() || '';
-  const cost = parseFloat($('poItemCost')?.value)  || 0;
-  if (!desc)  { showToast('Enter item description.', 'error'); return; }
+  const cost = parseFloat($('poItemCost')?.value) || 0;
+  if (!desc) { showToast('Enter item description.', 'error'); return; }
   if (qty <= 0) { showToast('Enter valid quantity.', 'error'); return; }
   if (cost <= 0) { showToast('Enter valid unit cost.', 'error'); return; }
   if (desc.length > 100) { showToast('Description too long (max 100).', 'error'); return; }
+  
   _draftItems.push({ desc, size, qty, unit, cost, total: qty * cost });
   ['poItemDesc', 'poItemSize', 'poItemQty', 'poItemUnit', 'poItemCost'].forEach(id => {
     const e = $(id); if (e) e.value = '';
@@ -86,33 +181,50 @@ function renderDraft() {
     el.innerHTML = '<p class="empty-hint">No items yet. Fill the form above and click + Add Item.</p>';
     setText('draftTotal', peso(0)); return;
   }
-  el.innerHTML = _draftItems.map((item, i) => `
-    <div class="draft-row">
+  
+  const fragment = document.createDocumentFragment();
+  _draftItems.forEach((item, i) => {
+    const row = document.createElement('div');
+    row.className = 'draft-row';
+    row.innerHTML = `
       <span class="draft-desc">${escapeHtml(item.desc)}${item.size ? ` <span class="draft-size">[${escapeHtml(item.size)}]</span>` : ''}</span>
       <span class="draft-qty">${item.qty} ${escapeHtml(item.unit)}</span>
       <span class="draft-cost">${peso(item.cost)}/unit</span>
       <span class="draft-total">${peso(item.total)}</span>
       <button class="draft-del" aria-label="Remove item" onclick="removeDraftItem(${i})">✕</button>
-    </div>`).join('');
+    `;
+    fragment.appendChild(row);
+  });
+  el.innerHTML = '';
+  el.appendChild(fragment);
   setText('draftTotal', peso(_draftItems.reduce((s, x) => s + x.total, 0)));
 }
 
-// ── Submit PO ─────────────────────────────────────────────────
+// ── Submit PO with Approval Workflow ────────────────────────
 async function submitPO() {
   if (!_mpid) return;
   if (!_draftItems.length) { showToast('Add at least one item first.', 'error'); return; }
 
   const supplier = $('poSupplier')?.value.trim();
-  const date     = $('poDate')?.value;
-  const notes    = $('poNotes')?.value.trim() || '';
+  const date = $('poDate')?.value;
+  const notes = $('poNotes')?.value.trim() || '';
+  const urgency = $('poUrgency')?.value || 'normal';
 
   if (!supplier) { showToast('Enter supplier name.', 'error'); return; }
-  if (!date)     { showToast('Enter PO date.', 'error'); return; }
+  if (!date) { showToast('Enter PO date.', 'error'); return; }
   if (supplier.length > 50) { showToast('Supplier name too long.', 'error'); return; }
 
   const total = _draftItems.reduce((s, x) => s + x.total, 0);
 
-  // FIXED: Use atomic counter for PO sequence instead of numChildren
+  // Budget check
+  const budgetSnap = await firebase.database().ref(`projects/${_mpid}`).once('value');
+  const budget = budgetSnap.val();
+  const remaining = (budget.materialBudget || 0) - (budget.materialSpent || 0);
+  
+  if (total > remaining) {
+    if (!confirm(`⚠ This PO (${peso(total)}) exceeds remaining budget (${peso(remaining)}). Submit anyway?`)) return;
+  }
+
   const counterRef = firebase.database().ref(`projects/${_mpid}/poCounter`);
   let seq;
   try {
@@ -124,38 +236,278 @@ async function submitPO() {
   }
 
   const po = {
-    supplier, date, notes,
-    items       : _draftItems,
+    supplier, date, notes, urgency,
+    items: _draftItems,
     total, seq,
-    status      : 'ordered',
-    createdAt   : Date.now(),
-    createdDate : new Date().toLocaleDateString('en-PH')
+    status: 'pending_approval',
+    approvalWorkflow: {
+      submittedBy: _currentUser.uid,
+      submittedAt: Date.now(),
+      approvedBy: null,
+      approvedAt: null
+    },
+    deliveryStatus: 'not_ordered',
+    invoiceStatus: 'none',
+    createdAt: Date.now(),
+    createdDate: new Date().toLocaleDateString('en-PH')
   };
 
   const poRef = await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders`).push(po), 'Failed to submit PO');
 
+  // Create ledger entries
   const ledgerUpdates = {};
   _draftItems.forEach((item, i) => {
     ledgerUpdates[`${poRef.key}_${i}`] = {
-      poId     : poRef.key,
+      poId: poRef.key,
       supplier, date,
-      desc     : item.desc,
-      size     : item.size || '',
-      qty      : item.qty,
-      unit     : item.unit,
-      cost     : item.cost,
-      total    : item.total,
-      status   : 'ordered',
+      desc: item.desc,
+      size: item.size || '',
+      qty: item.qty,
+      unit: item.unit,
+      cost: item.cost,
+      total: item.total,
+      status: 'pending_approval',
       createdAt: Date.now()
     };
   });
   await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger`).update(ledgerUpdates), 'Failed to update ledger');
 
+  // Set reorder points for new items if not exists
+  const invUpdates = {};
+  _draftItems.forEach(item => {
+    const invKey = `${item.desc}||${item.size || ''}`;
+    if (!_inventory[invKey]) {
+      invUpdates[invKey] = {
+        item: item.desc,
+        size: item.size || '',
+        unit: item.unit,
+        qtyOnHand: 0,
+        reorderPoint: Math.ceil(item.qty * 0.3), // Default: 30% of first order
+        lastUpdated: Date.now()
+      };
+    }
+  });
+  if (Object.keys(invUpdates).length) {
+    await firebase.database().ref(`projects/${_mpid}/inventory`).update(invUpdates);
+  }
+
   _draftItems = [];
   ['poSupplier', 'poDate', 'poNotes'].forEach(id => { const e = $(id); if (e) e.value = ''; });
   const sel = $('poSupplierSelect'); if (sel) sel.value = '';
   renderDraft();
-  showToast(`✅ PO #${String(seq).padStart(3, '0')} submitted to ${supplier}!`);
+  auditLog('create', 'purchaseOrder', poRef.key, { seq, supplier, total, projectId: _mpid });
+  showToast(`📋 PO #${String(seq).padStart(3, '0')} submitted for approval`);
+}
+
+// ── Approve PO ──────────────────────────────────────────────
+async function approvePO(poId) {
+  if (!_mpid) return;
+  await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).update({
+    status: 'approved',
+    'approvalWorkflow.approvedBy': _currentUser.uid,
+    'approvalWorkflow.approvedAt': Date.now()
+  }), 'Failed to approve PO');
+  
+  const ledgerSnap = await firebase.database().ref(`projects/${_mpid}/ledger`).orderByChild('poId').equalTo(poId).once('value');
+  const updates = {};
+  ledgerSnap.forEach(c => { updates[`${c.key}/status`] = 'ordered'; });
+  await firebase.database().ref(`projects/${_mpid}/ledger`).update(updates);
+  
+  auditLog('approve', 'purchaseOrder', poId, { projectId: _mpid });
+  showToast('PO approved and ready to order');
+}
+
+// ══════════════════════════════════════════════════════
+//  DELIVERY RECEIPT (3-Way Match Step 1)
+// ══════════════════════════════════════════════════════
+function openDeliveryModal(poId) {
+  _currentDeliveryPO = poId;
+  firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).once('value', snap => {
+    const po = snap.val();
+    if (!po) return;
+    
+    const list = $('deliveryItemsList');
+    if (list) {
+      list.innerHTML = (po.items || []).map((item, i) => `
+        <div class="delivery-item-row">
+          <span class="delivery-item-name">${escapeHtml(item.desc)} ${item.size ? `[${escapeHtml(item.size)}]` : ''}</span>
+          <span class="delivery-item-ordered">Ordered: ${item.qty} ${escapeHtml(item.unit)}</span>
+          <input type="number" class="delivery-qty-received" id="delQty_${i}" placeholder="Qty Received" inputmode="decimal">
+          <select id="delCondition_${i}">
+            <option value="good">Good</option>
+            <option value="damaged">Damaged</option>
+            <option value="incomplete">Incomplete</option>
+          </select>
+        </div>
+      `).join('');
+    }
+    $('deliveryDate').value = new Date().toISOString().slice(0, 10);
+    $('deliveryModal').classList.remove('hidden');
+  });
+}
+
+function closeDeliveryModal() {
+  $('deliveryModal').classList.add('hidden');
+  _currentDeliveryPO = null;
+}
+
+async function confirmDelivery() {
+  if (!_mpid || !_currentDeliveryPO) return;
+  
+  const poSnap = await firebase.database().ref(`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}`).once('value');
+  const po = poSnap.val();
+  if (!po) return;
+  
+  const deliveryDate = $('deliveryDate')?.value;
+  const deliveryRef = $('deliveryRef')?.value.trim() || '';
+  const photoFile = $('deliveryPhoto')?.files[0];
+  
+  if (!deliveryDate) { showToast('Enter delivery date.', 'error'); return; }
+  
+  const receivedItems = [];
+  const invUpdates = {};
+  let allGood = true;
+  
+  (po.items || []).forEach((item, i) => {
+    const qtyReceived = parseFloat($(`delQty_${i}`)?.value) || 0;
+    const condition = $(`delCondition_${i}`)?.value || 'good';
+    
+    if (qtyReceived > 0) {
+      receivedItems.push({
+        desc: item.desc,
+        size: item.size || '',
+        qtyOrdered: item.qty,
+        qtyReceived,
+        unit: item.unit,
+        condition
+      });
+      
+      // Update inventory
+      const invKey = `${item.desc}||${item.size || ''}`;
+      const current = _inventory[invKey]?.qtyOnHand || 0;
+      invUpdates[`projects/${_mpid}/inventory/${invKey}`] = {
+        item: item.desc,
+        size: item.size || '',
+        unit: item.unit,
+        qtyOnHand: current + qtyReceived,
+        lastReceived: deliveryDate,
+        lastUpdated: Date.now()
+      };
+      
+      if (condition !== 'good') allGood = false;
+    }
+  });
+  
+  if (!receivedItems.length) { showToast('Enter quantities received.', 'error'); return; }
+  
+  const deliveryKey = firebase.database().ref().push().key;
+  const updates = {};
+  
+  updates[`projects/${_mpid}/deliveries/${deliveryKey}`] = {
+    poId: _currentDeliveryPO,
+    date: deliveryDate,
+    reference: deliveryRef,
+    items: receivedItems,
+    photo: null, // TODO: Upload to Firebase Storage
+    receivedAt: Date.now(),
+    receivedBy: _currentUser.uid,
+    status: allGood ? 'complete' : 'has_issues'
+  };
+  
+  // Update PO status
+  const totalOrdered = po.items.reduce((s, i) => s + i.qty, 0);
+  const totalReceived = receivedItems.reduce((s, i) => s + i.qtyReceived, 0);
+  const deliveryStatus = totalReceived >= totalOrdered ? 'fully_delivered' : 'partially_delivered';
+  
+  updates[`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}/deliveryStatus`] = deliveryStatus;
+  updates[`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}/lastDelivery`] = deliveryKey;
+  updates[`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}/lastDeliveryDate`] = deliveryDate;
+  
+  Object.assign(updates, invUpdates);
+  
+  await safeDb(() => firebase.database().ref().update(updates), 'Failed to record delivery');
+  auditLog('delivery', 'purchaseOrder', _currentDeliveryPO, { deliveryKey, items: receivedItems.length, projectId: _mpid });
+  
+  closeDeliveryModal();
+  showToast(`📦 Delivery recorded! ${allGood ? 'All items good.' : 'Some items have issues.'}`);
+}
+
+// ══════════════════════════════════════════════════════
+//  INVOICE APPROVAL (3-Way Match Step 2)
+// ══════════════════════════════════════════════════════
+function openInvoiceModal(poId) {
+  _currentInvoicePO = poId;
+  $('invoicePoId').value = poId;
+  $('invoiceNo').value = '';
+  $('invoiceDate').value = new Date().toISOString().slice(0, 10);
+  $('invoiceAmount').value = '';
+  $('threeWayMatchResult').innerHTML = '';
+  $('invoiceModal').classList.remove('hidden');
+}
+
+function closeInvoiceModal() {
+  $('invoiceModal').classList.add('hidden');
+  _currentInvoicePO = null;
+}
+
+async function confirmInvoice() {
+  if (!_mpid || !_currentInvoicePO) return;
+  
+  const invoiceNo = $('invoiceNo')?.value.trim();
+  const invoiceDate = $('invoiceDate')?.value;
+  const invoiceAmount = parseFloat($('invoiceAmount')?.value) || 0;
+  
+  if (!invoiceNo) { showToast('Enter invoice number.', 'error'); return; }
+  if (!invoiceDate) { showToast('Enter invoice date.', 'error'); return; }
+  if (invoiceAmount <= 0) { showToast('Enter invoice amount.', 'error'); return; }
+  
+  const [poSnap, delSnap] = await Promise.all([
+    firebase.database().ref(`projects/${_mpid}/purchaseOrders/${_currentInvoicePO}`).once('value'),
+    firebase.database().ref(`projects/${_mpid}/deliveries`).orderByChild('poId').equalTo(_currentInvoicePO).once('value')
+  ]);
+  
+  const po = poSnap.val();
+  const deliveries = [];
+  delSnap.forEach(c => deliveries.push(c.val()));
+  
+  const totalDelivered = deliveries.reduce((sum, d) => 
+    sum + d.items.reduce((s, i) => s + i.qtyReceived, 0), 0
+  );
+  const totalOrdered = po.items.reduce((s, i) => s + i.qty, 0);
+  const totalDeliveredValue = deliveries.reduce((sum, d) => {
+    return sum + d.items.reduce((s, item) => {
+      const poItem = po.items.find(pi => pi.desc === item.desc && pi.size === item.size);
+      return s + (poItem ? item.qtyReceived * poItem.cost : 0);
+    }, 0);
+  }, 0);
+  
+  const qtyMatch = Math.abs(totalDelivered - totalOrdered) < 0.01;
+  const valueMatch = Math.abs(invoiceAmount - (po.total || 0)) < 1;
+  const matchStatus = qtyMatch && valueMatch ? 'matched' : 'mismatch';
+  
+  await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders/${_currentInvoicePO}`).update({
+    invoiceNo,
+    invoiceAmount,
+    invoiceDate,
+    invoiceStatus: matchStatus,
+    threeWayMatch: {
+      poTotal: po.total,
+      deliveredQty: totalDelivered,
+      orderedQty: totalOrdered,
+      deliveredValue: totalDeliveredValue,
+      invoiceAmount,
+      qtyMatch,
+      valueMatch,
+      status: matchStatus,
+      approvedAt: Date.now(),
+      approvedBy: _currentUser.uid
+    }
+  }), 'Failed to approve invoice');
+  
+  auditLog('invoice', 'purchaseOrder', _currentInvoicePO, { invoiceNo, amount: invoiceAmount, matchStatus, projectId: _mpid });
+  
+  closeInvoiceModal();
+  showToast(`Invoice ${matchStatus === 'matched' ? '✓ 3-way matched' : '⚠ Mismatch detected — review needed'}`);
 }
 
 // ══════════════════════════════════════════════════════
@@ -175,16 +527,20 @@ function watchLedger(pid) {
       updateMaterialsSummary(snap); return;
     }
 
+    const fragment = document.createDocumentFragment();
     snap.forEach(c => {
       const key = c.key, m = c.val();
       orderCount++;
-      // FIXED: Only count 'paid' as spent, not 'delivered'
       const isPaid = m.status === 'paid';
       if (isPaid) paidTotal += m.total || 0;
-      const statusOpts = ['ordered','delivered','paid','cancelled'].map(s =>
-        `<option value="${s}" ${m.status === s ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`
+      
+      const statusOpts = ['pending_approval','ordered','delivered','paid','cancelled'].map(s =>
+        `<option value="${s}" ${m.status === s ? 'selected' : ''}>${s.replace('_', ' ').replace(/\\b\\w/g, l => l.toUpperCase())}</option>`
       ).join('');
-      tbody.innerHTML += `<tr class="led-row ${m.status === 'cancelled' ? 'led-cancelled' : ''}">
+      
+      const tr = document.createElement('tr');
+      tr.className = `led-row ${m.status === 'cancelled' ? 'led-cancelled' : ''}`;
+      tr.innerHTML = `
         <td class="l-cell">${m.date || '—'}</td>
         <td class="l-cell l-supplier">${escapeHtml(m.supplier || '—')}</td>
         <td class="l-cell l-desc">${escapeHtml(m.desc)}</td>
@@ -196,11 +552,13 @@ function watchLedger(pid) {
           <select class="status-sel" onchange="updateLedgerStatus('${key}',this.value)">${statusOpts}</select>
         </td>
         <td class="l-cell l-center">
-          <button class="del-item-btn" aria-label="Delete item" onclick="deleteLedgerItem('${key}','${escapeHtml(m.desc || '').replace(/'/g, "\'")}')">✕</button>
+          <button class="del-item-btn" aria-label="Delete item" onclick="deleteLedgerItem('${key}','${escapeHtml(m.desc || '').replace(/'/g, "\\'")}')">✕</button>
         </td>
-      </tr>`;
+      `;
+      fragment.appendChild(tr);
     });
 
+    tbody.appendChild(fragment);
     setText('ledgerTotal', peso(paidTotal));
     setText('ledgerCount', `${orderCount} item${orderCount !== 1 ? 's' : ''}`);
     firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal });
@@ -211,12 +569,14 @@ function watchLedger(pid) {
 async function updateLedgerStatus(key, status) {
   if (!_mpid) return;
   await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger/${key}`).update({ status }), 'Failed to update status');
+  auditLog('update', 'ledger', key, { status, projectId: _mpid });
   showToast(`Status updated to ${status}`);
 }
 
 async function deleteLedgerItem(key, desc) {
   if (!_mpid || !confirm(`Delete "${desc}"?`)) return;
   await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger/${key}`).remove(), 'Failed to delete item');
+  auditLog('delete', 'ledger', key, { desc, projectId: _mpid });
   showToast('Item deleted', 'warn');
 }
 
@@ -233,8 +593,8 @@ function updateMaterialsSummary(snap) {
     if (m.status === 'cancelled') return;
     const key = `${m.desc}||${m.size || ''}`;
     if (!grouped[key]) grouped[key] = { desc: m.desc, size: m.size || '', totalQty: 0, unit: m.unit || '', totalCost: 0, count: 0 };
-    grouped[key].totalQty  += parseFloat(m.qty)   || 0;
-    grouped[key].totalCost += parseFloat(m.total)  || 0;
+    grouped[key].totalQty += parseFloat(m.qty) || 0;
+    grouped[key].totalCost += parseFloat(m.total) || 0;
     grouped[key].count++;
   });
 
@@ -260,7 +620,7 @@ function updateMaterialsSummary(snap) {
 }
 
 // ══════════════════════════════════════════════════════
-//  PO HISTORY — IMPROVED: Group by month with date filtering
+//  PO HISTORY (Enhanced with Actions)
 // ══════════════════════════════════════════════════════
 function watchPOHistory(pid) {
   const ref = firebase.database().ref(`projects/${pid}/purchaseOrders`);
@@ -276,7 +636,6 @@ function watchPOHistory(pid) {
     const entries = [];
     snap.forEach(c => entries.unshift({ id: c.key, ...c.val() }));
 
-    // IMPROVED: Group by month
     const byMonth = {};
     entries.forEach(po => {
       const dateStr = po.date || po.createdDate || 'Unknown';
@@ -292,9 +651,7 @@ function watchPOHistory(pid) {
       if (monthKey !== 'Unknown') {
         try {
           const [year, month] = monthKey.split('-');
-          monthLabel = new Date(parseInt(year), parseInt(month) - 1, 1).toLocaleDateString('en-PH', { 
-            year: 'numeric', month: 'long' 
-          });
+          monthLabel = new Date(parseInt(year), parseInt(month) - 1, 1).toLocaleDateString('en-PH', { year: 'numeric', month: 'long' });
         } catch { monthLabel = monthKey; }
       }
 
@@ -316,24 +673,59 @@ function watchPOHistory(pid) {
             <span class="po-item-total">${peso(it.total)}</span>
           </div>`).join('');
 
+        const statusBadge = {
+          pending_approval: '<span class="po-status-badge po-pending">⏳ Pending Approval</span>',
+          approved: '<span class="po-status-badge po-approved">✓ Approved</span>',
+          ordered: '<span class="po-status-badge po-ordered">📦 Ordered</span>',
+          partially_delivered: '<span class="po-status-badge po-partial">📦 Partial Delivery</span>',
+          fully_delivered: '<span class="po-status-badge po-delivered">✓ Delivered</span>',
+          cancelled: '<span class="po-status-badge po-cancelled">✕ Cancelled</span>'
+        }[po.status] || `<span class="po-status-badge">${po.status}</span>`;
+
+        const urgencyBadge = po.urgency === 'critical' ? '<span class="urgency-badge urgency-critical">🔴 CRITICAL</span>' : 
+                            po.urgency === 'urgent' ? '<span class="urgency-badge urgency-urgent">⚠️ URGENT</span>' : '';
+
+        const deliveryBadge = po.deliveryStatus === 'fully_delivered' ? '<span class="del-badge del-ok">✓ Delivered</span>' :
+                             po.deliveryStatus === 'partially_delivered' ? '<span class="del-badge del-partial">📦 Partial</span>' :
+                             '<span class="del-badge del-none">Not Delivered</span>';
+
+        const invoiceBadge = po.invoiceStatus === 'matched' ? '<span class="inv-badge inv-matched">✓ 3-Way Matched</span>' :
+                            po.invoiceStatus === 'mismatch' ? '<span class="inv-badge inv-mismatch">⚠ Mismatch</span>' :
+                            '<span class="inv-badge inv-none">No Invoice</span>';
+
         const poCard = document.createElement('div');
         poCard.className = 'po-card';
         poCard.id = `poc_${po.id}`;
         poCard.setAttribute('data-supplier', escapeHtml((po.supplier || '').toLowerCase()));
         poCard.setAttribute('data-date', po.date || '');
+        
+        // Action buttons based on status
+        let actions = '';
+        if (po.status === 'pending_approval') {
+          actions = `<button class="po-approve-btn" onclick="approvePO('${po.id}')">✓ Approve PO</button>`;
+        } else if (po.status === 'approved' || po.status === 'ordered') {
+          actions = `
+            <button class="po-mark-btn" onclick="openDeliveryModal('${po.id}')">📦 Record Delivery</button>
+            <button class="po-mark-btn po-paid-btn" onclick="openInvoiceModal('${po.id}')">📋 Approve Invoice</button>
+          `;
+        } else if (po.deliveryStatus === 'fully_delivered' && po.invoiceStatus !== 'matched') {
+          actions = `<button class="po-mark-btn po-paid-btn" onclick="openInvoiceModal('${po.id}')">📋 Approve Invoice</button>`;
+        }
+
         poCard.innerHTML = `
           <div class="po-card-hdr">
             <div>
-              <p class="po-date-lbl">${po.date} · ${po.createdDate || ''} · PO-${String(po.seq || '???').padStart(3, '0')}</p>
+              <div class="po-status-row">${statusBadge} ${urgencyBadge}</div>
+              <p class="po-date-lbl">${po.date} · PO-${String(po.seq || '???').padStart(3, '0')}</p>
               <p class="po-supplier">${escapeHtml(po.supplier)}</p>
               ${po.notes ? `<p class="po-notes">${escapeHtml(po.notes)}</p>` : ''}
+              <div class="po-badges-row">${deliveryBadge} ${invoiceBadge}</div>
             </div>
             <div class="po-card-right">
               <span class="po-total">${peso(po.total)}</span>
               <div class="po-btns">
-                <button class="po-mark-btn" aria-label="Mark delivered" onclick="markAllPO('${po.id}','delivered')">✓ Delivered</button>
-                <button class="po-mark-btn po-paid-btn" aria-label="Mark paid" onclick="markAllPO('${po.id}','paid')">✓ Paid</button>
-                <button class="po-export-btn" aria-label="Export PO" onclick="exportPOImage('${po.id}')">📷 Image</button>
+                ${actions}
+                <button class="po-export-btn" onclick="exportPOImage('${po.id}')">📷 Image</button>
               </div>
             </div>
           </div>
@@ -349,21 +741,11 @@ function watchPOHistory(pid) {
   });
 }
 
-async function markAllPO(poId, status) {
-  if (!_mpid) return;
-  if (!confirm(`Mark all items in this PO as ${status}?`)) return;
-  const snap = await firebase.database().ref(`projects/${_mpid}/ledger`).once('value');
-  const updates = {};
-  snap.forEach(c => { if (c.val().poId === poId) updates[`${c.key}/status`] = status; });
-  await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger`).update(updates), 'Failed to update PO status');
-  showToast(`All items marked as ${status}`);
-}
-
-// ── Export PO as PNG ──────────────────────────────────────────
+// ── Export PO as PNG ────────────────────────────────────────
 async function exportPOImage(poId) {
   if (!_mpid) return;
   const snap = await firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).once('value');
-  const po   = snap.val(); if (!po) return;
+  const po = snap.val(); if (!po) return;
 
   let bankInfo = '';
   const suppSnap = await firebase.database().ref('suppliers').once('value');
@@ -427,9 +809,9 @@ async function exportPOImage(poId) {
   document.body.appendChild(wrap);
   try {
     const canvas = await html2canvas(wrap, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
-    const link   = document.createElement('a');
-    link.download = `PO_${po.supplier.replace(/\s+/g, '_')}_${po.date}.png`;
-    link.href     = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.download = `PO_${po.supplier.replace(/\\s+/g, '_')}_${po.date}.png`;
+    link.href = canvas.toDataURL('image/png');
     link.click();
     showToast('PO image downloaded!');
   } catch(e) {
@@ -446,10 +828,10 @@ async function exportLedgerCSV() {
   const snap = await firebase.database().ref(`projects/${_mpid}/ledger`).once('value');
   if (!snap.exists()) { showToast('No ledger data to export.', 'warn'); return; }
 
-  let csv = 'Date,Supplier,Description,Size,Qty,Unit,Unit Cost,Total,Status\n';
+  let csv = 'Date,Supplier,Description,Size,Qty,Unit,Unit Cost,Total,Status\\n';
   snap.forEach(c => {
     const m = c.val();
-    csv += `${m.date || ''},${escapeCsv(m.supplier || '')},${escapeCsv(m.desc || '')},${escapeCsv(m.size || '')},${m.qty || 0},${escapeCsv(m.unit || '')},${m.cost || 0},${m.total || 0},${m.status || 'ordered'}\n`;
+    csv += `${m.date || ''},${escapeCsv(m.supplier || '')},${escapeCsv(m.desc || '')},${escapeCsv(m.size || '')},${m.qty || 0},${escapeCsv(m.unit || '')},${m.cost || 0},${m.total || 0},${m.status || 'ordered'}\\n`;
   });
 
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -464,36 +846,29 @@ async function exportLedgerCSV() {
 
 function escapeCsv(text) {
   if (!text) return '';
-  if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+  if (text.includes(',') || text.includes('"') || text.includes('\\n')) {
     return '"' + text.replace(/"/g, '""') + '"';
   }
   return text;
 }
 
-// Filter PO history by supplier — now debounced and also filters by month
+// Filter PO history
+let _poFilterDebounce = null;
 function filterPOHistory(query) {
   if (_poFilterDebounce) clearTimeout(_poFilterDebounce);
   _poFilterDebounce = setTimeout(() => {
     const q = query.toLowerCase().trim();
-
-    // Filter individual PO cards
     document.querySelectorAll('.po-card').forEach(card => {
       const supplier = card.getAttribute('data-supplier') || '';
       const date = card.getAttribute('data-date') || '';
       card.style.display = (supplier.includes(q) || date.includes(q)) ? '' : 'none';
     });
-
-    // Show/hide month groups based on visible children
     document.querySelectorAll('.po-month-group').forEach(group => {
       const visible = group.querySelectorAll('.po-card:not([style*="none"])').length;
       group.style.display = visible > 0 ? '' : 'none';
     });
-
-    // Restore visibility when query is cleared
     if (!q) {
-      document.querySelectorAll('.po-card, .po-month-group').forEach(el => {
-        el.style.display = '';
-      });
+      document.querySelectorAll('.po-card, .po-month-group').forEach(el => el.style.display = '');
     }
   }, 150);
 }

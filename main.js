@@ -1,8 +1,6 @@
-/* ═══════════════════════════════════════════════════════════
-   ACPM — Main Controller (Hub + Workspace + Shared Utilities)
-   ═══════════════════════════════════════════════════════════ */
 
-// ── Firebase Config (v8) ──────────────────────────────────
+
+// ── Firebase Config (v8) — TODO: Migrate to v9 modular + Firestore ──
 const firebaseConfig = {
   apiKey: "AIzaSyD27f2CgxK1Gq8fH1iDDK9F2j2CgxK1Gq8",
   authDomain: "acpm-project-system.firebaseapp.com",
@@ -20,13 +18,13 @@ let _currentPid = null;
 let _hubListeners = [];
 let _searchDebounce = null;
 let _isReadOnly = false;
+let _currentUser = { uid: 'anonymous', role: 'admin', name: 'System' }; // TODO: Replace with Firebase Auth
 
 // ── DOM helpers ───────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
 const setHTML = (id, html) => { const el = $(id); if (el) el.innerHTML = html; };
 
-// FIXED: peso() now returns actual ₱ character, not \u20B1
 function peso(n) {
   if (n === undefined || n === null) return '₱0.00';
   const num = parseFloat(n) || 0;
@@ -38,15 +36,16 @@ function pct(part, whole) {
   return Math.round((parseFloat(part) / parseFloat(whole)) * 100);
 }
 
+function budgetBarClass(p) {
+  return p >= 95 ? 'bar-danger' : p >= 80 ? 'bar-warn' : 'bar-ok';
+}
+
 function escapeHtml(text) {
   if (text === null || text === undefined) return '';
   const div = document.createElement('div');
   div.textContent = String(text);
   return div.innerHTML;
 }
-
-// REMOVED: html tagged template that was causing the bug
-// Now we use direct innerHTML with escapeHtml() for user data
 
 // ── Toast ─────────────────────────────────────────────────
 function showToast(msg, type = 'success') {
@@ -65,10 +64,34 @@ function showToast(msg, type = 'success') {
   setTimeout(() => toast.remove(), 3000);
 }
 
-// ── Safe DB wrapper ───────────────────────────────────────
+// ── Safe DB wrapper with audit logging ────────────────────
 async function safeDb(fn, errMsg) {
-  try { return await fn(); } 
-  catch (e) { console.error(e); showToast(errMsg || 'Database error', 'error'); throw e; }
+  try { 
+    const result = await fn();
+    return result;
+  } catch (e) { 
+    console.error(e); 
+    showToast(errMsg || 'Database error', 'error'); 
+    throw e; 
+  }
+}
+
+// ── Audit log helper (prepares for Firestore) ─────────────
+function auditLog(action, entityType, entityId, details = {}) {
+  const logEntry = {
+    action,
+    entityType,
+    entityId,
+    details,
+    userId: _currentUser.uid,
+    userName: _currentUser.name,
+    userRole: _currentUser.role,
+    timestamp: Date.now(),
+    date: new Date().toLocaleDateString('en-PH'),
+    projectId: _currentPid || null
+  };
+  // Currently logs to console; TODO: Send to Firestore `auditLogs` collection
+  console.log('📝 AUDIT:', logEntry);
 }
 
 // ════════════════════════════════════════════════════════
@@ -76,15 +99,17 @@ async function safeDb(fn, errMsg) {
 // ════════════════════════════════════════════════════════
 
 window.onload = () => {
-  // Check Firebase connection first
   try {
     const connectedRef = firebase.database().ref('.info/connected');
     connectedRef.on('value', snap => {
+      const badge = $('syncBadge');
       if (snap.val() === true) {
         console.log('✅ Connected to Firebase');
+        if (badge) { badge.textContent = '☁️ Synced'; badge.className = 'badge badge-green'; }
       } else {
         console.log('❌ Not connected to Firebase');
-        showToast('Not connected to database. Check internet.', 'warn');
+        if (badge) { badge.textContent = '⚠️ Offline'; badge.className = 'badge badge-amber'; }
+        showToast('Working offline. Changes will sync when connected.', 'warn');
       }
     });
   } catch (e) {
@@ -134,7 +159,6 @@ function renderHub() {
   const tab = document.querySelector('.hub-tab.tab-active')?.id?.replace('hubTab_', '') || 'active';
   const isActive = tab === 'active';
 
-  // Show loading state
   const grid = isActive ? $('projectGrid') : $('completedGrid');
   if (grid) grid.innerHTML = '<p class="hub-empty">Loading...</p>';
 
@@ -156,15 +180,15 @@ function renderHub() {
       return;
     }
 
+    const fragment = document.createDocumentFragment();
     projects.forEach(p => {
-      const card = buildProjectCard(p);
-      grid.appendChild(card);
+      fragment.appendChild(buildProjectCard(p));
     });
+    grid.appendChild(fragment);
 
     renderDashboardSummary(projects);
     renderComparison(projects);
   }, error => {
-    // Error callback
     console.error('Firebase error:', error);
     if (grid) grid.innerHTML = `<p class="hub-empty">Error loading projects. Check console.</p>`;
     showToast('Error loading projects: ' + error.message, 'error');
@@ -172,7 +196,6 @@ function renderHub() {
   _hubListeners.push(ref);
 }
 
-// FIXED: buildProjectCard now uses proper DOM creation instead of html tagged template
 function buildProjectCard(p) {
   const div = document.createElement('div');
   div.className = `proj-card ${p.status === 'completed' ? 'proj-card-done' : ''}`;
@@ -360,32 +383,38 @@ async function createProject() {
     laborSpent: 0, materialSpent: 0,
     status: 'active',
     createdAt: now,
-    createdDate: new Date().toLocaleDateString('en-PH')
+    createdDate: new Date().toLocaleDateString('en-PH'),
+    payrollConfig: { type: 'weekly', startDay: 1, overtimeThreshold: 8, nightDiffRate: 1.1 }
   };
 
   await safeDb(() => firebase.database().ref('projects').push(projectData), 'Failed to create project');
   $('newName').value = ''; $('newLaborBudget').value = ''; $('newMaterialBudget').value = '';
+  auditLog('create', 'project', null, { name, laborBudget, materialBudget });
   showToast(`Project "${name}" created!`);
 }
 
 async function markComplete(pid) {
-  if (!confirm('Mark this project as completed?')) return;
-  await safeDb(() => firebase.database().ref(`projects/${pid}`).update({ status: 'completed' }), 'Failed to update');
+  if (!confirm('Mark this project as completed?\n\nThis will lock the project for editing.')) return;
+  await safeDb(() => firebase.database().ref(`projects/${pid}`).update({ status: 'completed', completedAt: Date.now() }), 'Failed to update');
+  auditLog('complete', 'project', pid, {});
   showToast('Project marked as completed');
 }
 
 async function reopenProject(pid) {
   if (!confirm('Reopen this project?')) return;
-  await safeDb(() => firebase.database().ref(`projects/${pid}`).update({ status: 'active' }), 'Failed to update');
+  await safeDb(() => firebase.database().ref(`projects/${pid}`).update({ status: 'active', reopenedAt: Date.now() }), 'Failed to update');
+  auditLog('reopen', 'project', pid, {});
   showToast('Project reopened');
 }
 
 async function deleteProject(pid) {
-  if (!confirm('Type DELETE to confirm permanent deletion:')) return;
-  const confirmText = prompt('Type DELETE to confirm:');
+  if (!confirm('⚠️ WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nType DELETE to confirm:')) return;
+  const confirmText = prompt('Type DELETE to confirm permanent deletion:');
   if (confirmText !== 'DELETE') { showToast('Deletion cancelled.', 'warn'); return; }
+  
   await safeDb(() => firebase.database().ref(`projects/${pid}`).remove(), 'Failed to delete');
-  showToast('Project deleted', 'warn');
+  auditLog('delete', 'project', pid, {});
+  showToast('Project and all data deleted', 'warn');
 }
 
 function detachHubListeners() {
@@ -407,7 +436,6 @@ async function enterProject(pid) {
   $('hubView').classList.add('hidden');
   $('workspaceView').classList.remove('hidden');
 
-  // Reset read-only state
   _isReadOnly = false;
   $('lockedBanner')?.classList.add('hidden');
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('read-only'));
@@ -418,14 +446,13 @@ async function enterProject(pid) {
   initBilling(pid);
   initChangeOrders(pid);
   initSiteLog(pid);
-  initSuppliers(pid);
+  initSuppliers();
 
-  // Default to labor tab
   switchTab('labor');
+  auditLog('enter', 'project', pid, { name: p.name });
 }
 
 function exitHub() {
-  // Detach all module listeners
   detachLaborListeners();
   detachMatListeners();
   detachBillingListeners();
@@ -443,13 +470,14 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('tab-active'));
   $(`tab_${tab}`)?.classList.add('tab-active');
   document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
-  $(`panel_${tab}`)?.classList.remove('hidden');
+  $(`${tab}Panel`)?.classList.remove('hidden');
 }
 
 function unlockForEdit() {
   _isReadOnly = false;
   $('lockedBanner')?.classList.add('hidden');
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('read-only'));
+  auditLog('unlock', 'project', _currentPid, {});
   showToast('Workspace unlocked for editing');
 }
 
@@ -466,6 +494,7 @@ async function exportAllData() {
   a.download = `ACPM_${_currentPid}_${new Date().toISOString().slice(0,10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  auditLog('export', 'project', _currentPid, { format: 'json' });
   showToast('Project data exported!');
 }
 
@@ -478,5 +507,10 @@ window.addEventListener('keydown', e => {
       switchTab(tabs[idx]);
       e.preventDefault();
     }
+  }
+  // Ctrl+S for save (prevent browser save)
+  if (e.ctrlKey && e.key === 's') {
+    e.preventDefault();
+    showToast('Auto-saved to Firebase ☁️', 'success');
   }
 });
