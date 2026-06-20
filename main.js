@@ -135,9 +135,13 @@ function renderHub() {
       if (isAll) {
         renderDashboardSummary([], 'All');
         renderComparison([], 'comparisonViewAll');
+        renderDashboardAlerts([]);
       } else if (tab === 'active') {
         renderDashboardSummary([]);
         renderComparison([]);
+        renderDashboardAlerts([]);
+      } else {
+        renderCompletedSummary([]);
       }
       return;
     }
@@ -149,9 +153,13 @@ function renderHub() {
     if (isAll) {
       renderDashboardSummary(projects, 'All');
       renderComparison(projects, 'comparisonViewAll');
+      renderDashboardAlerts(projects);
     } else if (tab === 'active') {
       renderDashboardSummary(projects);
       renderComparison(projects);
+      renderDashboardAlerts(projects);
+    } else {
+      renderCompletedSummary(projects);
     }
   }, error => {
     console.error('Firebase error:', error);
@@ -161,22 +169,7 @@ function renderHub() {
   _hubListeners.push(projectsRef);
 }
 
-    const fragment = document.createDocumentFragment();
-    projects.forEach(p => fragment.appendChild(buildProjectCard(p)));
-    el.appendChild(fragment);
-
-    renderDashboardSummary(projects);
-    renderComparison(projects);
-  error => {
-    console.error('Firebase error:', error);
-    if (grid) grid.innerHTML = `<p class="hub-empty">Error loading projects. Check console.</p>`;
-    showToast('Error loading projects: ' + error.message, 'error');
-  };
-  // Firebase v8: push the REF (has .off()), not the callback (doesn't).
-  _hubListeners.push(projectsRef);
-
-
-  function buildProjectCard(p) {
+function buildProjectCard(p) {
     const div = document.createElement('div');
     div.className = `proj-card ${p.status === 'completed' ? 'proj-card-done' : ''}`;
     div.setAttribute('data-name', (p.name || '').toLowerCase());
@@ -219,7 +212,10 @@ function renderHub() {
           <h3 class="proj-name">${escapeHtml(p.name || 'Untitled')}</h3>
           <span class="proj-date">Created ${p.createdDate || '—'}</span>
         </div>
-        <span class="${statusClass}">${statusText}</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${buildProgressRing(pctUsed, isCritical, isWarning)}
+          <span class="${statusClass}">${statusText}</span>
+        </div>
       </div>
       <div class="budget-section">
         <div class="budget-row">
@@ -257,6 +253,7 @@ function renderHub() {
              <button class="btn-complete" data-action="complete">&#x2713; Done</button>`
           : `<button class="btn-reopen" data-action="reopen">&#x21BB; Reopen</button>`
         }
+        <button class="btn-edit-proj" data-action="edit">&#x270E; Edit</button>
         <button class="btn-delete" data-action="delete">&#x1F5D1;</button>
       </div>
     `;
@@ -268,6 +265,7 @@ function renderHub() {
       if (action === 'open') enterProject(p.id);
       else if (action === 'complete') markComplete(p.id);
       else if (action === 'reopen') reopenProject(p.id);
+      else if (action === 'edit') openEditProjectModal(p.id);
       else if (action === 'delete') deleteProject(p.id);
     });
   
@@ -561,11 +559,192 @@ window.addEventListener('keydown', e => {
   }
 });
 
+// ════════════════════════════════════════════════════════════
+//  PROGRESS RING (SVG Donut)
+// ════════════════════════════════════════════════════════════
+function buildProgressRing(pctUsed, isCritical, isWarning) {
+  const circumference = 2 * Math.PI * 18; // r=18, viewBox 40x40
+  const offset = circumference - (Math.min(pctUsed, 100) / 100) * circumference;
+  const color = isCritical ? 'var(--red)' : isWarning ? 'var(--amber)' : 'var(--green)';
+  const bgColor = isCritical ? 'var(--red-glow)' : isWarning ? 'var(--amber-glow)' : 'var(--green-glow)';
+  return `<svg class="proj-ring" viewBox="0 0 40 40" width="44" height="44">
+    <circle cx="20" cy="20" r="18" fill="none" stroke="${bgColor}" stroke-width="3"/>
+    <circle cx="20" cy="20" r="18" fill="none" stroke="${color}" stroke-width="3"
+      stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"
+      stroke-linecap="round" transform="rotate(-90 20 20)"
+      style="transition:stroke-dashoffset 0.6s ease"/>
+    <text x="20" y="20" text-anchor="middle" dominant-baseline="central"
+      fill="var(--text)" font-size="9" font-weight="800">${pctUsed}%</text>
+  </svg>`;
+}
+
+// ════════════════════════════════════════════════════════════
+//  EDIT PROJECT
+// ════════════════════════════════════════════════════════════
+window._editProjectId = null;
+
+function openEditProjectModal(pid) {
+  const snap = db.ref(`projects/${pid}`).once('value').then(snap => {
+    const p = snap.val();
+    if (!p) { showToast('Project not found.', 'error'); return; }
+    window._editProjectId = pid;
+    $('editProjName').value = p.name || '';
+    $('editProjLaborBudget').value = p.laborBudget || 0;
+    $('editProjMaterialBudget').value = p.materialBudget || 0;
+    $('editProjectModal').classList.remove('hidden');
+  });
+}
+
+function closeEditProjectModal() {
+  $('editProjectModal')?.classList.add('hidden');
+  window._editProjectId = null;
+}
+
+async function editProject() {
+  const pid = window._editProjectId;
+  if (!pid) return;
+  const name = $('editProjName')?.value.trim();
+  const laborBudget = parseFloat($('editProjLaborBudget')?.value) || 0;
+  const materialBudget = parseFloat($('editProjMaterialBudget')?.value) || 0;
+  if (!name) { showToast('Enter project name.', 'error'); return; }
+  if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
+
+  // Duplicate name check (exclude current project)
+  const dupCheck = await db.ref('projects').orderByChild('name').equalTo(name).once('value');
+  if (dupCheck.exists()) {
+    const keys = Object.keys(dupCheck.val());
+    if (keys.length > 1 || keys[0] !== pid) {
+      showToast('A project with that name already exists.', 'error'); return;
+    }
+  }
+
+  await safeDb(() =>
+    db.ref(`projects/${pid}`).update({ name, laborBudget, materialBudget }),
+    'Failed to update project'
+  );
+  closeEditProjectModal();
+  auditLog('edit', 'project', pid, { name, laborBudget, materialBudget });
+  showToast(`Project "${name}" updated!`);
+}
+
+// ════════════════════════════════════════════════════════════
+//  DASHBOARD ALERTS BAR
+// ════════════════════════════════════════════════════════════
+function renderDashboardAlerts(projects) {
+  const el = $('dashboardAlerts');
+  if (!el) return;
+
+  const critical = projects.filter(p => {
+    const eff = effectiveBudget(p);
+    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    return pct(spent, eff.total) >= 95;
+  }).length;
+
+  const warning = projects.filter(p => {
+    const eff = effectiveBudget(p);
+    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    const pUsed = pct(spent, eff.total);
+    return pUsed >= 80 && pUsed < 95;
+  }).length;
+
+  const active = projects.filter(p => p.status === 'active').length;
+  const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
+  const totalSpent = projects.reduce((s, p) =>
+    s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
+
+  if (critical > 0) {
+    el.className = 'dashboard-alerts warn-critical';
+    el.innerHTML = `&#x26A0;&#xFE0F; <strong>${critical} project${critical !== 1 ? 's' : ''}</strong> with CRITICAL budget usage &nbsp;|&nbsp; ${warning} warning &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+  } else if (warning > 0) {
+    el.className = 'dashboard-alerts warn-high';
+    el.innerHTML = `&#x26A0;&#xFE0F; <strong>${warning} project${warning !== 1 ? 's' : ''}</strong> approaching budget limit &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+  } else if (projects.length) {
+    el.className = 'dashboard-alerts warn-ok';
+    el.innerHTML = `&#x2713; All ${active} active project${active !== 1 ? 's' : ''} within budget &nbsp;|&nbsp; Total: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+  } else {
+    el.className = 'dashboard-alerts';
+    el.innerHTML = '';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  COMPLETED PROJECTS SUMMARY
+// ════════════════════════════════════════════════════════════
+function renderCompletedSummary(projects) {
+  const count = projects.length;
+  setText('dsCompCount', count);
+  const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
+  const totalSpent = projects.reduce((s, p) =>
+    s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
+  setText('dsCompBudget', peso(totalBudget));
+  setText('dsCompSpent', peso(totalSpent));
+  const remEl = $('dsCompRemaining');
+  if (remEl) {
+    const remaining = totalBudget - totalSpent;
+    remEl.textContent = peso(remaining);
+    remEl.className = `dash-stat-val ${remaining < 0 ? 'text-red' : 'text-green'}`;
+  }
+  const progEl = $('dsCompProgress');
+  if (progEl) {
+    const overallPct = pct(totalSpent, totalBudget);
+    progEl.textContent = overallPct + '%';
+    progEl.className = `dash-stat-val ${overallPct >= 95 ? 'text-red' : overallPct >= 80 ? 'text-amber' : 'text-green'}`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  HUB CSV EXPORT
+// ════════════════════════════════════════════════════════════
+async function exportHubCSV() {
+  const btn = event?.currentTarget;
+  await withBusy(btn, async () => {
+    const snap = await db.ref('projects').once('value');
+    const projects = [];
+    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+    projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    if (!projects.length) { showToast('No projects to export.', 'warn'); return; }
+
+    let csv = 'Project Name,Status,Created Date,Labor Budget,Material Budget,Total Budget,Labor Spent,Material Spent,Total Spent,Remaining,% Used\n';
+    projects.forEach(p => {
+      const eff = effectiveBudget(p);
+      const laborSpent = parseFloat(p.laborSpent) || 0;
+      const matSpent = parseFloat(p.materialSpent) || 0;
+      const totalSpent = laborSpent + matSpent;
+      const remaining = eff.total - totalSpent;
+      const pctUsed = pct(totalSpent, eff.total);
+      csv += `"${(p.name || '').replace(/"/g, '""')}",${p.status || 'active'},"${p.createdDate || ''}",${p.laborBudget || 0},${p.materialBudget || 0},${eff.total},${laborSpent},${matSpent},${totalSpent},${remaining},${pctUsed}%\n`;
+    });
+
+    downloadTextFile(
+      `ACPM_Hub_Export_${new Date().toISOString().slice(0, 10)}.csv`,
+      csv, 'text/csv'
+    );
+    showToast(`Exported ${projects.length} projects to CSV`);
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  MANUAL REFRESH
+// ════════════════════════════════════════════════════════════
+function refreshHub() {
+  const btn = $('refreshBtn');
+  if (btn) {
+    btn.classList.add('animate-spin');
+    setTimeout(() => btn.classList.remove('animate-spin'), 1000);
+  }
+  renderHub();
+  showToast('Dashboard refreshed', 'success');
+}
+
 // ── Expose to global scope ────────────────────────────────────
 window.createProject = createProject;
 window.markComplete = markComplete;
 window.reopenProject = reopenProject;
 window.deleteProject = deleteProject;
+window.editProject = editProject;
+window.openEditProjectModal = openEditProjectModal;
+window.closeEditProjectModal = closeEditProjectModal;
 window.enterProject = enterProject;
 window.exitHub = exitHub;
 window.switchTab = switchTab;
@@ -574,3 +753,5 @@ window.exportAllData = exportAllData;
 window.filterProjects = filterProjects;
 window.showHubTab = showHubTab;
 window.saveProjectNotes = saveProjectNotes;
+window.exportHubCSV = exportHubCSV;
+window.refreshHub = refreshHub;

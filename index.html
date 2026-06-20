@@ -76,6 +76,7 @@ window.addEventListener('appinstalled', () => {
   </div>
   <div class="hdr-right">
     <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#x1F313;</button>
+    <button class="btn-refresh" id="refreshBtn" onclick="refreshHub()" title="Refresh dashboard">&#x1F504;</button>
     <span class="badge badge-green" id="syncBadge">&#x2601;&#xFE0F; Synced</span>
     <button class="btn-hub" onclick="exitHub()">&#x1F4C2; Hub</button>
   </div>
@@ -115,6 +116,7 @@ window.addEventListener('appinstalled', () => {
   <div class="hub-search-wrap">
     <span class="hub-search-icon">&#x1F50D;</span>
     <input id="projectSearch" type="text" placeholder="Search projects..." oninput="filterProjects(this.value)">
+    <button class="btn-export-hub" onclick="exportHubCSV()">&#x1F4CA; Export CSV</button>
   </div>
 
   <!-- Hub tabs -->
@@ -123,6 +125,10 @@ window.addEventListener('appinstalled', () => {
     <button id="hubTab_active" class="hub-tab tab-active" onclick="showHubTab('active')">&#x1F3D7; Active Projects</button>
     <button id="hubTab_completed" class="hub-tab" onclick="showHubTab('completed')">&#x2713; Completed</button>
   </div>
+
+  <!-- Dashboard Alerts Bar -->
+  <div id="dashboardAlerts" class="dashboard-alerts"></div>
+
   <!-- Active pane -->
   <div id="activeProjectsPane" class="tab-pane pane-active">
     <div class="dash-summary" id="dashSummary">
@@ -167,6 +173,17 @@ window.addEventListener('appinstalled', () => {
   </div>
   <!-- Completed pane -->
   <div id="completedProjectsPane" class="tab-pane pane-completed hidden">
+    <div class="dash-summary" id="dashSummaryComp">
+      <div class="sec-label">Completed Projects Summary</div>
+      <div class="dash-summary-grid">
+        <div class="dash-stat"><div class="dash-stat-label">Completed</div><div class="dash-stat-val text-blue" id="dsCompCount">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Budget</div><div class="dash-stat-val text-purple" id="dsCompBudget">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Spent</div><div class="dash-stat-val text-red" id="dsCompSpent">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Remaining</div><div class="dash-stat-val text-green" id="dsCompRemaining">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Avg Progress</div><div class="dash-stat-val" id="dsCompProgress">—</div></div>
+      </div>
+    </div>
+
     <div id="completedGrid"><p class="hub-empty">No completed projects yet.</p></div>
   </div>
 
@@ -840,6 +857,31 @@ window.addEventListener('appinstalled', () => {
     <div class="modal-actions">
       <button class="btn-mc" onclick="closeEditSupplier()">Cancel</button>
       <button class="btn-pdf" onclick="saveEditSupplier()">&#x1F4BE; Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ EDIT PROJECT MODAL ════════════════════════════════ -->
+<div id="editProjectModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-title">&#x270E; Edit Project</div>
+    <div class="edit-project-form">
+      <div>
+        <label class="field-label">Project Name</label>
+        <input id="editProjName" type="text" placeholder="Project name" style="grid-column:1/-1">
+      </div>
+      <div>
+        <label class="field-label">Labor Budget (&#x20B1;)</label>
+        <input id="editProjLaborBudget" type="number" placeholder="Labor Budget" inputmode="decimal">
+      </div>
+      <div>
+        <label class="field-label">Materials Budget (&#x20B1;)</label>
+        <input id="editProjMaterialBudget" type="number" placeholder="Materials Budget" inputmode="decimal">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-mc" onclick="closeEditProjectModal()">Cancel</button>
+      <button class="btn-pdf" onclick="editProject()">&#x1F4BE; Save Changes</button>
     </div>
   </div>
 </div>

@@ -2018,3 +2018,96 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   .co-impact-row { flex-direction: column; gap: 10px; }
   .co-impact-label-wrap { width: 100%; }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ EDIT PROJECT BUTTON ═══════════════════════════════════
+══════════════════════════════════════════════════════════════ */
+
+.btn-edit-proj {
+  font-size: 12px; font-weight: 700; padding: 8px 12px; border-radius: var(--radius-xs);
+  background: var(--surface3); color: var(--muted2); border: 1px solid var(--border2);
+  min-height: var(--touch); transition: all var(--transition-fast);
+}
+.btn-edit-proj:hover { border-color: var(--purple); color: var(--purple-xl); background: var(--purple-soft); }
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ EDIT PROJECT MODAL ═══════════════════════════════════
+══════════════════════════════════════════════════════════════ */
+
+.edit-project-form {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+}
+@media(max-width:500px) { .edit-project-form { grid-template-columns: 1fr; } }
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ DASHBOARD ALERTS BAR ═════════════════════════════════
+══════════════════════════════════════════════════════════════ */
+
+.dashboard-alerts {
+  padding: 11px 16px; border-radius: var(--radius-sm);
+  font-size: 12px; font-weight: 700; margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  animation: slideDown 0.3s ease;
+}
+.dashboard-alerts:empty { display: none; }
+.dashboard-alerts.warn-critical {
+  background: var(--red-d); color: var(--red-t); border: 1px solid var(--red);
+}
+.dashboard-alerts.warn-high {
+  background: var(--amber-d); color: var(--amber-t); border: 1px solid var(--amber);
+}
+.dashboard-alerts.warn-ok {
+  background: var(--green-d); color: var(--green-t); border: 1px solid var(--green);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ REFRESH BUTTON ════════════════════════════════════════
+══════════════════════════════════════════════════════════════ */
+
+.btn-refresh {
+  background: var(--surface2); border: 1px solid var(--border2);
+  color: var(--muted2); font-size: 16px; padding: 8px 12px;
+  border-radius: var(--radius-xs); min-height: auto;
+  transition: all var(--transition-fast); cursor: pointer;
+}
+.btn-refresh:hover { border-color: var(--purple); color: var(--purple-xl); transform: rotate(180deg); }
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ EXPORT CSV BUTTON ══════════════════════════════════════
+══════════════════════════════════════════════════════════════ */
+
+.btn-export-hub {
+  background: var(--purple); color: #fff; font-size: 12px; font-weight: 700;
+  padding: 8px 14px; border-radius: var(--radius-xs);
+  white-space: nowrap; min-height: var(--touch);
+  transition: all var(--transition-fast);
+}
+.btn-export-hub:hover { background: var(--purple-l); transform: translateY(-1px); }
+
+.hub-search-wrap {
+  display: flex; align-items: center; gap: 8px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ PROGRESS RING (SVG Donut on Project Cards) ════════════
+══════════════════════════════════════════════════════════════ */
+
+.proj-ring {
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,.2));
+}
+.proj-ring text {
+  font-family: inherit;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ COMPLETED SUMMARY (extra styles) ═════════════════════
+══════════════════════════════════════════════════════════════ */
+
+#dashSummaryComp {
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: var(--radius); padding: 20px 24px; margin-bottom: 24px;
+}
+#dashSummaryComp .dash-stat-val.text-blue { color: var(--blue); }
