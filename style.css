@@ -448,7 +448,12 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 
 /* ═══ PROGRESS BARS ═════════════════════════════════════════ */
 .mini-bar  { height: 5px; background: var(--border2); border-radius: 3px; margin: 4px 0; overflow: hidden; }
-.mini-fill { height: 5px; border-radius: 3px; transition: width 0.5s ease; }
+.mini-fill { height: 5px; border-radius: 3px; transition: width 0.5s ease; 
+  height: 5px;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+  min-width: 2px;                 /* never disappear completely when > 0% */
+}
 .bar-ok     { background: linear-gradient(90deg, var(--green), #34d399); }
 .bar-warn   { background: linear-gradient(90deg, var(--amber), #fbbf24); }
 .bar-danger { background: linear-gradient(90deg, var(--red),   #f87171); }
@@ -1613,8 +1618,14 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 }
 .dash-stat-val   { font-size: 18px; font-weight: 900; }
 
-#projectGrid, #completedGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
-@media(max-width:600px) { #projectGrid, #completedGrid { grid-template-columns: 1fr; } }
+#projectGrid, #completedGrid, #allProjectsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: stretch;           /* cards stretch to tallest item in the row */
+  grid-auto-rows: minmax(min-content, auto);
+}
+@media(max-width:600px) { #projectGrid, #completedGrid, #allProjectsGrid { grid-template-columns: 1fr; } }
 
 .proj-card {
   background: var(--surface); border: 1px solid var(--border);
@@ -1622,6 +1633,10 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   display: flex; flex-direction: column;
   transition: border-color var(--transition-base), transform var(--transition-base), box-shadow var(--transition-base);
   box-shadow: var(--shadow-sm);
+  min-height: 300px;              /* prevent zero-height collapse */
+  height: 100%;                   /* fill the grid cell */
+  contain: layout style paint;    /* browser layout isolation — prevents bleed/overlap */
+
 }
 .proj-card:hover { border-color: var(--purple); transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 .proj-card-done { opacity: .75; border-style: dashed; }

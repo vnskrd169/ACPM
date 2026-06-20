@@ -95,20 +95,34 @@ function showHubTab(tab) {
   document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
   $(`${tab}ProjectsPane`)?.classList.remove('hidden');
   renderHub();
+
+  // Force grid reflow after revealing a previously-hidden pane.
+  // Browsers sometimes skip grid track sizing on display:none parents.
+  requestAnimationFrame(() => {
+    const visibleGrid = document.querySelector('.tab-pane:not(.hidden) [id$="Grid"]');
+    if (visibleGrid) {
+      visibleGrid.style.display = 'none';
+      void visibleGrid.offsetHeight; // force recalc
+      visibleGrid.style.display = '';
+    }
+  });
 }
 
 function renderHub() {
   detachHubListeners();
   const tab = document.querySelector('.hub-tab.tab-active')?.id?.replace('hubTab_', '') || 'active';
-  const isActive = tab === 'active';
+  const isAll = tab === 'all';
 
-  const grid = isActive ? $('projectGrid') : $('completedGrid');
+  const gridId = isAll ? 'allProjectsGrid' : (tab === 'active' ? 'projectGrid' : 'completedGrid');
+  const grid = $(gridId);
   if (grid) grid.innerHTML = '<p class="hub-empty">Loading...</p>';
 
-  const projectsRef = db.ref('projects').orderByChild('status').equalTo(isActive ? 'active' : 'completed');
+  const projectsRef = isAll
+    ? db.ref('projects')
+    : db.ref('projects').orderByChild('status').equalTo(tab);
 
   projectsRef.on('value', snap => {
-    const el = isActive ? $('projectGrid') : $('completedGrid');
+    const el = $(gridId);
     if (!el) return;
     el.innerHTML = '';
 
@@ -117,9 +131,14 @@ function renderHub() {
     projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     if (!projects.length) {
-      el.innerHTML = `<p class="hub-empty">No ${isActive ? 'active' : 'completed'} projects. Create one above!</p>`;
-      renderDashboardSummary([]);
-      renderComparison([]);
+      el.innerHTML = `<p class="hub-empty">No ${isAll ? '' : tab} projects.</p>`;
+      if (isAll) {
+        renderDashboardSummary([], 'All');
+        renderComparison([], 'comparisonViewAll');
+      } else if (tab === 'active') {
+        renderDashboardSummary([]);
+        renderComparison([]);
+      }
       return;
     }
 
@@ -127,107 +146,140 @@ function renderHub() {
     projects.forEach(p => fragment.appendChild(buildProjectCard(p)));
     el.appendChild(fragment);
 
-    renderDashboardSummary(projects);
-    renderComparison(projects);
+    if (isAll) {
+      renderDashboardSummary(projects, 'All');
+      renderComparison(projects, 'comparisonViewAll');
+    } else if (tab === 'active') {
+      renderDashboardSummary(projects);
+      renderComparison(projects);
+    }
   }, error => {
     console.error('Firebase error:', error);
     if (grid) grid.innerHTML = `<p class="hub-empty">Error loading projects. Check console.</p>`;
     showToast('Error loading projects: ' + error.message, 'error');
   });
-  // Firebase v8: push the REF (has .off()), not the callback (doesn't).
   _hubListeners.push(projectsRef);
 }
 
-function buildProjectCard(p) {
-  const div = document.createElement('div');
-  div.className = `proj-card ${p.status === 'completed' ? 'proj-card-done' : ''}`;
-  div.setAttribute('data-name', (p.name || '').toLowerCase());
-  div.setAttribute('data-pid', p.id);
+    const fragment = document.createDocumentFragment();
+    projects.forEach(p => fragment.appendChild(buildProjectCard(p)));
+    el.appendChild(fragment);
 
-  const eff = effectiveBudget(p);
-  const laborSpent = parseFloat(p.laborSpent) || 0;
-  const matSpent = parseFloat(p.materialSpent) || 0;
-  const totalSpent = laborSpent + matSpent;
-  const remaining = eff.total - totalSpent;
-  const pctUsed = pct(totalSpent, eff.total);
+    renderDashboardSummary(projects);
+    renderComparison(projects);
+  error => {
+    console.error('Firebase error:', error);
+    if (grid) grid.innerHTML = `<p class="hub-empty">Error loading projects. Check console.</p>`;
+    showToast('Error loading projects: ' + error.message, 'error');
+  };
+  // Firebase v8: push the REF (has .off()), not the callback (doesn't).
+  _hubListeners.push(projectsRef);
 
-  const isWarning = pctUsed >= 80 && pctUsed < 95;
-  const isCritical = pctUsed >= 95;
 
-  const statusClass = p.status === 'completed' ? 'completed-tag' : 'active-tag';
-  const statusText = p.status === 'completed' ? 'COMPLETED' : 'ACTIVE';
+  function buildProjectCard(p) {
+    const div = document.createElement('div');
+    div.className = `proj-card ${p.status === 'completed' ? 'proj-card-done' : ''}`;
+    div.setAttribute('data-name', (p.name || '').toLowerCase());
+    div.setAttribute('data-pid', p.id);
+  
+    const eff = effectiveBudget(p);
+    const laborSpent = parseFloat(p.laborSpent) || 0;
+    const matSpent = parseFloat(p.materialSpent) || 0;
+    const totalSpent = laborSpent + matSpent;
+    const remaining = eff.total - totalSpent;
+    const pctUsed = pct(totalSpent, eff.total);
+  
+    // ── NEW: compute percentages for each bar ──
+    const pUsedTotal = pctUsed;                       // total budget usage
+    const pUsedLabor = pct(laborSpent, eff.labor);    // labor usage
+    const pUsedMat   = pct(matSpent, eff.material);   // materials usage
+  
+    // ── NEW: clamp tiny percentages so the bar is always visible (>0%) ──
+    const wTotal = Math.min(pUsedTotal, 100);
+    const wLabor = Math.min(pUsedLabor, 100);
+    const wMat   = Math.min(pUsedMat, 100);
+    const dTotal = wTotal > 0 && wTotal < 2 ? 2 : wTotal;
+    const dLabor = wLabor > 0 && wLabor < 2 ? 2 : wLabor;
+    const dMat   = wMat   > 0 && wMat   < 2 ? 2 : wMat;
+  
+    const isWarning = pctUsed >= 80 && pctUsed < 95;
+    const isCritical = pctUsed >= 95;
+  
+    const statusClass = p.status === 'completed' ? 'completed-tag' : 'active-tag';
+    const statusText = p.status === 'completed' ? 'COMPLETED' : 'ACTIVE';
+  
+    const hasDelta = (parseFloat(p.laborBudgetDelta) || 0) || (parseFloat(p.materialBudgetDelta) || 0);
+    const coNote = hasDelta
+      ? `<div class="budget-sub" style="color:var(--purple-xl)">&#x21BB; includes approved change orders</div>` : '';
+  
+    div.innerHTML = `
+      <div class="proj-card-top">
+        <div>
+          <span class="proj-label">PROJECT</span>
+          <h3 class="proj-name">${escapeHtml(p.name || 'Untitled')}</h3>
+          <span class="proj-date">Created ${p.createdDate || '—'}</span>
+        </div>
+        <span class="${statusClass}">${statusText}</span>
+      </div>
+      <div class="budget-section">
+        <div class="budget-row">
+          <span class="budget-label">&#x1F4B0; Total Budget</span>
+          <span class="budget-val">${peso(eff.total)}</span>
+        </div>
+        <div class="mini-bar">
+          <div class="mini-fill ${budgetBarClass(pUsedTotal)}" style="width:${dTotal}%"></div>
+        </div>
+        <div class="budget-sub">
+          ${isCritical ? '<span class="warn-tag critical">&#x26A0; CRITICAL</span>' : isWarning ? '<span class="warn-tag">&#x26A0; WARNING</span>' : '<span style="color:var(--green)">&#x2713; Healthy</span>'}
+          <span>${peso(totalSpent)} spent · ${pctUsed}%</span>
+        </div>
+        ${coNote}
+        <div class="budget-row" style="margin-top:6px">
+          <span class="budget-label">&#x1F477; Labor</span>
+          <span class="budget-val">${peso(eff.labor)}</span>
+        </div>
+        <div class="mini-bar">
+          <div class="mini-fill ${budgetBarClass(pUsedLabor)}" style="width:${dLabor}%"></div>
+        </div>
+        <div class="budget-sub">${peso(laborSpent)} spent · ${pUsedLabor}%</div>
+        <div class="budget-row" style="margin-top:6px">
+          <span class="budget-label">&#x1F4E6; Materials</span>
+          <span class="budget-val">${peso(eff.material)}</span>
+        </div>
+        <div class="mini-bar">
+          <div class="mini-fill ${budgetBarClass(pUsedMat)}" style="width:${dMat}%"></div>
+        </div>
+        <div class="budget-sub">${peso(matSpent)} spent · ${pUsedMat}%</div>
+      </div>
+      <div class="proj-actions">
+        ${p.status === 'active'
+          ? `<button class="proj-open-btn" data-action="open">Open Workspace &#x2192;</button>
+             <button class="btn-complete" data-action="complete">&#x2713; Done</button>`
+          : `<button class="btn-reopen" data-action="reopen">&#x21BB; Reopen</button>`
+        }
+        <button class="btn-delete" data-action="delete">&#x1F5D1;</button>
+      </div>
+    `;
+  
+    div.addEventListener('click', e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      if (action === 'open') enterProject(p.id);
+      else if (action === 'complete') markComplete(p.id);
+      else if (action === 'reopen') reopenProject(p.id);
+      else if (action === 'delete') deleteProject(p.id);
+    });
+  
+    return div;
+  }
 
-  const hasDelta = (parseFloat(p.laborBudgetDelta) || 0) || (parseFloat(p.materialBudgetDelta) || 0);
-  const coNote = hasDelta
-    ? `<div class="budget-sub" style="color:var(--purple-xl)">&#x21BB; includes approved change orders</div>` : '';
-
-  div.innerHTML = `
-    <div class="proj-card-top">
-      <div>
-        <span class="proj-label">PROJECT</span>
-        <h3 class="proj-name">${escapeHtml(p.name || 'Untitled')}</h3>
-        <span class="proj-date">Created ${p.createdDate || '—'}</span>
-      </div>
-      <span class="${statusClass}">${statusText}</span>
-    </div>
-    <div class="budget-section">
-      <div class="budget-row">
-        <span class="budget-label">&#x1F4B0; Total Budget</span>
-        <span class="budget-val">${peso(eff.total)}</span>
-      </div>
-      <div class="mini-bar">
-        <div class="mini-fill ${budgetBarClass(pctUsed)}" style="width:${Math.min(pctUsed, 100)}%"></div>
-      </div>
-      <div class="budget-sub">
-        ${isCritical ? '<span class="warn-tag critical">&#x26A0; CRITICAL</span>' : isWarning ? '<span class="warn-tag">&#x26A0; WARNING</span>' : '<span style="color:var(--green)">&#x2713; Healthy</span>'}
-        <span>${peso(totalSpent)} spent · ${pctUsed}%</span>
-      </div>
-      ${coNote}
-      <div class="budget-row" style="margin-top:6px">
-        <span class="budget-label">&#x1F477; Labor</span>
-        <span class="budget-val">${peso(eff.labor)}</span>
-      </div>
-      <div class="mini-bar">
-        <div class="mini-fill ${budgetBarClass(pct(laborSpent, eff.labor))}" style="width:${Math.min(pct(laborSpent, eff.labor), 100)}%"></div>
-      </div>
-      <div class="budget-sub">${peso(laborSpent)} spent · ${pct(laborSpent, eff.labor)}%</div>
-      <div class="budget-row" style="margin-top:6px">
-        <span class="budget-label">&#x1F4E6; Materials</span>
-        <span class="budget-val">${peso(eff.material)}</span>
-      </div>
-      <div class="mini-bar">
-        <div class="mini-fill ${budgetBarClass(pct(matSpent, eff.material))}" style="width:${Math.min(pct(matSpent, eff.material), 100)}%"></div>
-      </div>
-      <div class="budget-sub">${peso(matSpent)} spent · ${pct(matSpent, eff.material)}%</div>
-    </div>
-    <div class="proj-actions">
-      ${p.status === 'active'
-        ? `<button class="proj-open-btn" data-action="open">Open Workspace &#x2192;</button>
-           <button class="btn-complete" data-action="complete">&#x2713; Done</button>`
-        : `<button class="btn-reopen" data-action="reopen">&#x21BB; Reopen</button>`
-      }
-      <button class="btn-delete" data-action="delete">&#x1F5D1;</button>
-    </div>
-  `;
-
-  div.addEventListener('click', e => {
-    const btn = e.target.closest('[data-action]');
-    if (!btn) return;
-    const action = btn.dataset.action;
-    if (action === 'open') enterProject(p.id);
-    else if (action === 'complete') markComplete(p.id);
-    else if (action === 'reopen') reopenProject(p.id);
-    else if (action === 'delete') deleteProject(p.id);
-  });
-
-  return div;
-}
-
-function renderDashboardSummary(projects) {
-  const el = $('dashSummary');
+function renderDashboardSummary(projects, context = '') {
+  const el = context === 'All' ? $('dashSummaryAll') : $('dashSummary');
   if (!el) return;
 
   const active = projects.filter(p => p.status === 'active').length;
+  const completed = projects.filter(p => p.status === 'completed').length;
   const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
   const totalSpent = projects.reduce((s, p) =>
     s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
@@ -247,21 +299,39 @@ function renderDashboardSummary(projects) {
     return pUsed >= 80 && pUsed < 95;
   }).length;
 
-  setText('dsSumActive', active);
-  setText('dsSumBudget', peso(totalBudget));
-  setText('dsSumSpent', peso(totalSpent));
-  const remEl = $('dsSumRemaining');
-  if (remEl) {
-    remEl.textContent = peso(remaining);
-    remEl.className = `dash-stat-val ${remaining < 0 ? 'text-red' : 'text-green'}`;
-  }
-  const progEl = $('dsSumProgress');
-  if (progEl) {
-    progEl.textContent = overallPct + '%';
-    progEl.className = `dash-stat-val ${overallPct >= 95 ? 'text-red' : overallPct >= 80 ? 'text-amber' : 'text-green'}`;
+  if (context === 'All') {
+    setText('dsAllSumTotal', projects.length);
+    setText('dsAllSumActive', active);
+    setText('dsAllSumCompleted', completed);
+    setText('dsAllSumBudget', peso(totalBudget));
+    setText('dsAllSumSpent', peso(totalSpent));
+    const remEl = $('dsAllSumRemaining');
+    if (remEl) {
+      remEl.textContent = peso(remaining);
+      remEl.className = `dash-stat-val ${remaining < 0 ? 'text-red' : 'text-green'}`;
+    }
+    const progEl = $('dsAllSumProgress');
+    if (progEl) {
+      progEl.textContent = overallPct + '%';
+      progEl.className = `dash-stat-val ${overallPct >= 95 ? 'text-red' : overallPct >= 80 ? 'text-amber' : 'text-green'}`;
+    }
+  } else {
+    setText('dsSumActive', active);
+    setText('dsSumBudget', peso(totalBudget));
+    setText('dsSumSpent', peso(totalSpent));
+    const remEl = $('dsSumRemaining');
+    if (remEl) {
+      remEl.textContent = peso(remaining);
+      remEl.className = `dash-stat-val ${remaining < 0 ? 'text-red' : 'text-green'}`;
+    }
+    const progEl = $('dsSumProgress');
+    if (progEl) {
+      progEl.textContent = overallPct + '%';
+      progEl.className = `dash-stat-val ${overallPct >= 95 ? 'text-red' : overallPct >= 80 ? 'text-amber' : 'text-green'}`;
+    }
   }
 
-  let warn = document.getElementById('dashWarnLine');
+  let warn = el.querySelector('#dashWarnLine');
   if (!warn) {
     warn = document.createElement('div');
     warn.id = 'dashWarnLine';
@@ -275,8 +345,8 @@ function renderDashboardSummary(projects) {
         : `<div style="font-size:12px;color:var(--green);padding:8px 0">&#x2713; All projects are within budget limits.</div>`;
 }
 
-function renderComparison(projects) {
-  const el = $('comparisonView');
+function renderComparison(projects, targetId = 'comparisonView') {
+  const el = $(targetId);
   if (!el) return;
 
   if (projects.length < 2) {

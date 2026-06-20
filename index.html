@@ -119,10 +119,10 @@ window.addEventListener('appinstalled', () => {
 
   <!-- Hub tabs -->
   <div class="hub-tab-row">
+    <button id="hubTab_all" class="hub-tab" onclick="showHubTab('all')">&#x1F4C1; All Projects</button>
     <button id="hubTab_active" class="hub-tab tab-active" onclick="showHubTab('active')">&#x1F3D7; Active Projects</button>
     <button id="hubTab_completed" class="hub-tab" onclick="showHubTab('completed')">&#x2713; Completed</button>
   </div>
-
   <!-- Active pane -->
   <div id="activeProjectsPane" class="tab-pane pane-active">
     <div class="dash-summary" id="dashSummary">
@@ -143,7 +143,28 @@ window.addEventListener('appinstalled', () => {
       <div id="comparisonView"><p class="empty-hint">Add 2+ projects to see comparison.</p></div>
     </div>
   </div>
+  <!-- All Projects pane -->
+  <div id="allProjectsPane" class="tab-pane pane-all hidden">
+    <div class="dash-summary" id="dashSummaryAll">
+      <div class="sec-label">Dashboard Summary — All Projects</div>
+      <div class="dash-summary-grid">
+        <div class="dash-stat"><div class="dash-stat-label">Total Projects</div><div class="dash-stat-val" id="dsAllSumTotal">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Active</div><div class="dash-stat-val text-green" id="dsAllSumActive">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Completed</div><div class="dash-stat-val text-blue" id="dsAllSumCompleted">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Budget</div><div class="dash-stat-val text-purple" id="dsAllSumBudget">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Spent</div><div class="dash-stat-val text-red" id="dsAllSumSpent">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Remaining</div><div class="dash-stat-val text-green" id="dsAllSumRemaining">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Overall Progress</div><div class="dash-stat-val" id="dsAllSumProgress">—</div></div>
+      </div>
+    </div>
 
+    <div id="allProjectsGrid"><p class="hub-empty">Loading projects...</p></div>
+
+    <div class="card gap">
+      <div class="sec-label">Budget Comparison — All Projects</div>
+      <div id="comparisonViewAll"><p class="empty-hint">Add 2+ projects to see comparison.</p></div>
+    </div>
+  </div>
   <!-- Completed pane -->
   <div id="completedProjectsPane" class="tab-pane pane-completed hidden">
     <div id="completedGrid"><p class="hub-empty">No completed projects yet.</p></div>
