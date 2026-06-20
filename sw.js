@@ -1,4 +1,4 @@
-const CACHE_NAME = 'acpm-v2'; // Bumped to v2 for updated deployment
+const CACHE_NAME = 'acpm-v3'; // Bumped to v3: forces purge of old main.js (dashboard fix)
 const ASSETS = [
   './',
   './index.html',
