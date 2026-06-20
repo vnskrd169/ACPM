@@ -107,7 +107,7 @@ function renderHub() {
 
   const projectsRef = db.ref('projects').orderByChild('status').equalTo(isActive ? 'active' : 'completed');
 
-  const unsubscribe = projectsRef.on('value', snap => {
+  projectsRef.on('value', snap => {
     const el = isActive ? $('projectGrid') : $('completedGrid');
     if (!el) return;
     el.innerHTML = '';
@@ -134,7 +134,8 @@ function renderHub() {
     if (grid) grid.innerHTML = `<p class="hub-empty">Error loading projects. Check console.</p>`;
     showToast('Error loading projects: ' + error.message, 'error');
   });
-  _hubListeners.push(unsubscribe);
+  // Firebase v8: push the REF (has .off()), not the callback (doesn't).
+  _hubListeners.push(projectsRef);
 }
 
 function buildProjectCard(p) {
@@ -370,7 +371,7 @@ async function deleteProject(pid) {
 }
 
 function detachHubListeners() {
-  _hubListeners.forEach(unsubscribe => unsubscribe.off());
+  _hubListeners.forEach(ref => ref.off());
   _hubListeners = [];
 }
 
