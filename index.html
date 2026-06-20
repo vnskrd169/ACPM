@@ -246,6 +246,27 @@ window.addEventListener('appinstalled', () => {
           </div>
         </div>
       </div>
+
+      <!-- RFP / Project Settings -->
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <div class="sec-label">RFP Settings (per project)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <label class="field-label">Leader / Foreman Name</label>
+            <input id="projectLeader" type="text" placeholder="e.g., Juan Dela Cruz" onchange="saveProjectSettings()">
+          </div>
+          <div>
+            <label class="field-label">Default Payment Method</label>
+            <select id="projectPayMethod" onchange="saveProjectSettings()">
+              <option value="Bank">Bank Transfer</option>
+              <option value="GCash">GCash</option>
+              <option value="Cash">Cash</option>
+              <option value="Check">Check</option>
+              <option value="Others">Others</option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="kpi-row">
@@ -284,6 +305,12 @@ window.addEventListener('appinstalled', () => {
           <button class="btn-add-worker" onclick="addWorker()">+ Deploy Worker to Roster</button>
           <div id="rosterList"></div>
         </div>
+
+        <!-- Cash Advance Transaction Log -->
+        <div class="card gap" id="advanceLogSection">
+          <div class="card-title"><span class="ct-icon" style="background:rgba(245,158,11,.1)">&#x1F4CB;</span> Cash Advance Transaction Log</div>
+          <div id="advanceLogContent"><p class="empty-hint">No advance records yet.</p></div>
+        </div>
       </div>
 
       <!-- Right: Timecard -->
@@ -307,6 +334,7 @@ window.addEventListener('appinstalled', () => {
           </div>
         </div>
         <div id="timecardGrid"><p class="empty-hint" style="padding:20px">Add workers to start tracking attendance.</p></div>
+        <div id="periodIndicator"></div>
         <div class="card gap">
           <div class="card-title"><span class="ct-icon" style="background:rgba(245,158,11,.1)">&#x1F4CA;</span> Attendance Summary — This Period</div>
           <div id="attendanceSummary"><p class="empty-hint">No attendance data yet.</p></div>
@@ -319,13 +347,7 @@ window.addEventListener('appinstalled', () => {
       <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.1)">&#x1F4CB;</span> Payroll Logs Archive</div>
       <div class="history-split">
         <div class="overflow-scroll">
-          <table class="hist-table">
-            <thead><tr>
-              <th>Date Saved</th><th>Period</th><th>Trade Breakdown</th>
-              <th style="text-align:right">Gross</th><th style="text-align:right">Net</th>
-            </tr></thead>
-            <tbody id="payrollLogsBody"><tr><td colspan="5" class="empty-cell">No payroll logs yet.</td></tr></tbody>
-          </table>
+          <div id="payrollLogsBody"><p class="empty-hint">No payroll logs yet. Compile a week to create the first record.</p></div>
         </div>
         <div>
           <div class="sec-label">Expenses by Trade</div>

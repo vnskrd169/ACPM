@@ -3,6 +3,8 @@ let _laborListeners = [];
 let _payrollConfig = { type: 'weekly', startDay: 1, overtimeThreshold: 8, nightDiffRate: 1.1, govDeductionsEnabled: false, sssEmployerPct: 8.5, philhealthPct: 3, pagibigEmployerAmt: 100 };
 let _pendingPayrollData = null;
 let _workersRegistered = false;
+let _projectName = '';
+let _projectSettings = { leader: '', payMethod: 'Bank' };
 
 const ATTENDANCE_STATUS = {
   present:  { label: 'Present',    multiplier: 1.0, hours: 8 },
@@ -15,13 +17,21 @@ const ATTENDANCE_STATUS = {
 
 function initLabor(pid) {
   _lpid = pid;
+  _projectName = '';
   _workersRegistered = false;
   detachLaborListeners();
   loadPayrollConfig(pid);
+  loadProjectSettings(pid);
   watchLaborBudget(pid);
   watchTrades(pid);
   watchPayrollLogs(pid);
   watchTimecardHistory(pid);
+  watchAdvances(pid);
+
+  // Fetch the human-readable project name (used in RFP, exports, etc.)
+  firebase.database().ref(`projects/${pid}/name`).once('value', snap => {
+    _projectName = snap.val() || pid;
+  });
 
   // Set default week range
   const today = new Date();
@@ -33,6 +43,32 @@ function initLabor(pid) {
   const we = $('weekEnd');
   if (ws && !ws.value) ws.value = monday.toISOString().slice(0, 10);
   if (we && !we.value) we.value = sunday.toISOString().slice(0, 10);
+  renderPeriodIndicator();
+}
+
+// ══════════════════════════════════════════════════════
+//  PROJECT SETTINGS (RFP leader / payment method)
+// ══════════════════════════════════════════════════════
+function loadProjectSettings(pid) {
+  firebase.database().ref(`projects/${pid}/settings`).once('value', snap => {
+    const data = snap.val() || {};
+    _projectSettings = { leader: data.leader || '', payMethod: data.payMethod || 'Bank' };
+    const leaderEl = $('projectLeader');
+    const payEl = $('projectPayMethod');
+    if (leaderEl && document.activeElement !== leaderEl) leaderEl.value = _projectSettings.leader;
+    if (payEl && document.activeElement !== payEl) payEl.value = _projectSettings.payMethod;
+  });
+}
+
+async function saveProjectSettings() {
+  if (!_lpid) return;
+  const leader = $('projectLeader')?.value.trim() || '';
+  const payMethod = $('projectPayMethod')?.value || 'Bank';
+  _projectSettings = { leader, payMethod };
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/settings`).update({
+    leader, payMethod, updatedAt: Date.now(), updatedBy: window._currentUser?.uid || null
+  }), 'Failed to save project settings');
+  showToast('RFP settings saved');
 }
 
 function detachLaborListeners() {
@@ -251,8 +287,10 @@ function renderRoster(wSnap, pid, allAdvSnap) {
     div.id = `roster_${wid}`;
     div.innerHTML = `<div class="roster-info">
       <span class="roster-name">${escapeHtml(w.name)}</span>
-      <span class="roster-trade-tag">${escapeHtml(w.trade || 'No Trade')}</span>
-      <span class="adv-badge-wrap">${pending > 0 ? `<span class="adv-badge">\u20B1${pending.toLocaleString()} advance</span>` : ''}</span>
+      <div class="roster-info-row">
+        <span class="roster-trade-tag">${escapeHtml(w.trade || 'No Trade')}</span>
+        <span class="adv-badge-wrap">${pending > 0 ? `<span class="adv-badge">\u20B1${pending.toLocaleString()} advance</span>` : ''}</span>
+      </div>
     </div>
     <span class="roster-rate">${peso(w.dailyRate)}/day</span>
     <button class="btn-advance" data-action="advance" data-wid="${wid}" data-name="${escapeHtml(w.name)}">\u20B1 Advance</button>
@@ -369,18 +407,115 @@ async function saveAdvance() {
   const today = new Date(); today.setHours(0,0,0,0);
   if (inputDate > today) { showToast('Date cannot be in the future.', 'error'); return; }
 
+  // Resolve worker name + trade so the transaction log is self-describing
+  const wSnap = await firebase.database().ref(`projects/${_lpid}/workers/${_advWid}`).once('value');
+  const w = wSnap.val() || {};
+  const workerName = w.name || _advName || _advWid;
+  const trade = w.trade || '';
+
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${_advWid}`).push({
-    date, amount, notes, deducted: false, deductedAmount: 0, addedAt: Date.now(), addedBy: window._currentUser.uid
+    date, amount, notes,
+    workerName, trade,
+    recordedBy: window._currentUser?.displayName || window._currentUser?.email || 'Staff',
+    recordedByUid: window._currentUser?.uid || null,
+    deducted: false, deductedAmount: 0,
+    addedAt: Date.now(), addedBy: window._currentUser.uid
   }), 'Failed to save advance');
 
   $('advanceDate').value = ''; $('advanceAmount').value = ''; $('advanceNotes').value = '';
   loadAdvanceHistory(_advWid);
   auditLog('create', 'advance', null, { workerId: _advWid, amount, projectId: _lpid });
-  showToast(`Advance of ${peso(amount)} saved for ${_advName}`);
+  showToast(`Advance of ${peso(amount)} saved for ${workerName}`);
+
+  firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap2 => {
+    firebase.database().ref(`projects/${_lpid}/advances`).once('value', allAdvSnap => {
+      renderRoster(wSnap2, _lpid, allAdvSnap);
+    });
+  });
+}
+
+// ── Centralized Cash Advance Transaction Log (all workers) ──────
+function watchAdvances(pid) {
+  const ref = firebase.database().ref(`projects/${pid}/advances`);
+  laborListen(ref, () => renderAdvanceLog());
+}
+
+function renderAdvanceLog() {
+  const el = $('advanceLogContent'); if (!el || !_lpid) return;
+  const ws = $('weekStart')?.value;
+  const we = $('weekEnd')?.value;
 
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
-    firebase.database().ref(`projects/${_lpid}/advances`).once('value', allAdvSnap => {
-      renderRoster(wSnap, _lpid, allAdvSnap);
+    firebase.database().ref(`projects/${_lpid}/advances`).once('value', advSnap => {
+      const workers = {};
+      wSnap.forEach(c => { workers[c.key] = c.val(); });
+
+      const rows = [];
+      advSnap.forEach(workerAdv => {
+        const wid = workerAdv.key;
+        const w = workers[wid] || {};
+        workerAdv.forEach(entrySnap => {
+          const a = entrySnap.val();
+          rows.push({
+            key: entrySnap.key, wid,
+            workerName: a.workerName || w.name || wid,
+            trade: a.trade || w.trade || '',
+            date: a.date,
+            amount: a.amount || 0,
+            notes: a.notes || '',
+            deducted: !!a.deducted,
+            deductedAmount: a.deductedAmount || 0,
+            recordedBy: a.recordedBy || '',
+            addedAt: a.addedAt || 0
+          });
+        });
+      });
+
+      // Period filter (only when a range is set)
+      const filtered = (ws && we)
+        ? rows.filter(r => r.date >= ws && r.date <= we)
+        : rows;
+
+      filtered.sort((a, b) => (b.addedAt || b.date || '').toString().localeCompare((a.addedAt || a.date || '').toString()));
+
+      if (!filtered.length) {
+        el.innerHTML = `<p class="empty-hint">${(ws && we) ? 'No advances in the selected period.' : 'No advance records yet.'}</p>`;
+        return;
+      }
+
+      const totalOut = filtered.reduce((s, r) => s + (r.amount - r.deductedAmount), 0);
+      const totalDeducted = filtered.reduce((s, r) => s + r.deductedAmount, 0);
+
+      el.innerHTML = `<div style="overflow-x:auto">
+        <table class="advance-log-table">
+          <thead><tr>
+            <th class="al-worker">Worker</th>
+            <th class="al-trade">Trade</th>
+            <th class="al-date">Date</th>
+            <th class="al-amount" style="text-align:right">Amount</th>
+            <th class="al-notes">Notes</th>
+            <th class="al-status">Status</th>
+            <th class="al-by">Recorded By</th>
+          </tr></thead>
+          <tbody>
+            ${filtered.map(r => `<tr>
+              <td class="al-worker">${escapeHtml(r.workerName)}</td>
+              <td class="al-trade">${escapeHtml(r.trade || '\u2014')}</td>
+              <td class="al-date">${r.date || '\u2014'}</td>
+              <td class="al-amount" style="text-align:right">${peso(r.amount)}</td>
+              <td class="al-notes">${escapeHtml(r.notes) || '\u2014'}</td>
+              <td class="al-status ${r.deducted ? 'adv-deducted' : 'adv-pending'}">${r.deducted ? 'Deducted' : 'Pending'}</td>
+              <td class="al-by">${escapeHtml(r.recordedBy) || '\u2014'}</td>
+            </tr>`).join('')}
+          </tbody>
+          <tfoot><tr>
+            <td colspan="3" style="font-weight:600">Period Totals</td>
+            <td class="al-amount" style="text-align:right;font-weight:600">${peso(filtered.reduce((s, r) => s + r.amount, 0))}</td>
+            <td colspan="2" style="font-size:11px;color:var(--muted)">Outstanding: ${peso(totalOut)} \u00B7 Deducted: ${peso(totalDeducted)}</td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>`;
     });
   });
 }
@@ -389,6 +524,7 @@ async function deleteAdvance(wid, key) {
   if (!confirm('Remove this advance record?')) return;
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${wid}/${key}`).remove(), 'Failed to delete advance');
   loadAdvanceHistory(wid);
+  renderAdvanceLog();
   auditLog('delete', 'advance', key, { workerId: wid, projectId: _lpid });
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
     firebase.database().ref(`projects/${_lpid}/advances`).once('value', allAdvSnap => {
@@ -581,11 +717,27 @@ function applyWeek() {
     showToast('Week start must be before week end.', 'error');
     return;
   }
+  renderPeriodIndicator();
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
     firebase.database().ref(`projects/${_lpid}/attendance`).once('value', attSnap => {
       buildGrid(_lpid, wSnap, attSnap);
+      renderAdvanceLog();
     });
   });
+}
+
+// ── Period indicator badge under the timecard grid ──────────────
+function renderPeriodIndicator() {
+  const el = $('periodIndicator'); if (!el) return;
+  const ws = $('weekStart')?.value;
+  const we = $('weekEnd')?.value;
+  if (!ws || !we) { el.innerHTML = ''; return; }
+  const fmt = iso => new Date(iso + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+  const dayCount = Math.round((new Date(we + 'T12:00:00') - new Date(ws + 'T12:00:00')) / 86400000) + 1;
+  el.innerHTML = `<div class="period-indicator">
+    <span class="period-indicator-badge">\u1F4C5 ${fmt(ws)} \u2014 ${fmt(we)}</span>
+    <span class="period-indicator-range">${dayCount} day${dayCount === 1 ? '' : 's'} selected</span>
+  </div>`;
 }
 
 function updateAttendanceSummary(data) {
@@ -1049,46 +1201,81 @@ function renderTimecardHistory(snap) {
   });
   entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
-  entries.forEach(e => {
-    const div = document.createElement('div');
-    div.className = 'tc-history-card';
-    div.innerHTML = `
-      <div class="tc-history-hdr" data-key="${e.key}">
-        <div class="tc-history-left">
-          <span class="tc-history-period">\u1F4C5 ${e.period || '\u2014'}</span>
-          <span class="tc-history-meta">${e.tcCount} entries \u00B7 ${new Date(e.savedAt).toLocaleDateString('en-PH')}</span>
-        </div>
-        <span class="tc-history-toggle" id="tcToggle_${e.key}">\u25BC</span>
-      </div>
-      <div class="tc-history-body hidden" id="tcBody_${e.key}">
-        <div class="tc-history-table-wrap">
-          <table class="summary-table">
-            <thead><tr>
-              <th>Worker</th><th>Trade</th><th>Date</th><th>Status</th><th style="text-align:center">OT</th><th style="text-align:right">Rate</th>
-            </tr></thead>
-            <tbody>${renderTimecardRows(e.entries)}</tbody>
-          </table>
-        </div>
-      </div>
-    `;
-    div.querySelector('.tc-history-hdr').addEventListener('click', () => toggleTCHistory(e.key));
-    el.appendChild(div);
+  // Gather every workerId referenced across all archives and resolve names/trades/rates
+  const workerIds = new Set();
+  entries.forEach(e => (e.entries || []).forEach(t => { if (t.workerId) workerIds.add(t.workerId); }));
+
+  if (!workerIds.size) {
+    entries.forEach(e => appendHistoryCard(el, e, {}));
+    return;
+  }
+
+  // Resolve all worker profiles in one read
+  firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
+    const workers = {};
+    wSnap.forEach(c => { workers[c.key] = c.val(); });
+
+    // Some archived workers may have been removed — fall back to any name stored on the entry itself
+    entries.forEach(e => appendHistoryCard(el, e, workers));
   });
 }
 
-function renderTimecardRows(entries) {
-  if (!entries || !entries.length) return '<tr><td colspan="6" class="empty-cell">No attendance data</td></tr>';
-  const rows = [...entries].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-  return rows.map(tc => `
-    <tr class="s-row">
-      <td class="s-cell">${escapeHtml(tc.workerId || '\u2014')}</td>
-      <td class="s-cell s-trade">${escapeHtml(tc.trade || '\u2014')}</td>
-      <td class="s-cell">${tc.date || '\u2014'}</td>
-      <td class="s-cell">${ATTENDANCE_STATUS[tc.status]?.label || tc.status}</td>
-      <td class="s-cell s-center">${tc.overtimeHours || 0}h</td>
-      <td class="s-cell s-right">${peso(tc.dailyRate)}</td>
-    </tr>
-  `).join('');
+function appendHistoryCard(el, e, workers) {
+  const div = document.createElement('div');
+  div.className = 'tc-history-card';
+  div.innerHTML = `
+    <div class="tc-history-hdr" data-key="${e.key}">
+      <div class="tc-history-left">
+        <span class="tc-history-period">\u1F4C5 ${escapeHtml(e.period || '\u2014')}</span>
+        <span class="tc-history-meta">${e.tcCount} entries \u00B7 ${e.savedAt ? new Date(e.savedAt).toLocaleDateString('en-PH') : '\u2014'}</span>
+      </div>
+      <span class="tc-history-toggle" id="tcToggle_${e.key}">\u25BC</span>
+    </div>
+    <div class="tc-history-body hidden" id="tcBody_${e.key}">
+      <div class="tc-history-table-wrap">
+        <table class="summary-table">
+          <thead><tr>
+            <th>Worker</th><th>Trade</th><th>Date</th><th>Status</th>
+            <th style="text-align:right">Daily Rate</th>
+            <th style="text-align:center">OT Hrs</th>
+            <th style="text-align:right">Subtotal</th>
+          </tr></thead>
+          <tbody>${renderTimecardRows(e.entries, workers)}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  div.querySelector('.tc-history-hdr').addEventListener('click', () => toggleTCHistory(e.key));
+  el.appendChild(div);
+}
+
+function renderTimecardRows(entries, workers) {
+  if (!entries || !entries.length) return '<tr><td colspan="7" class="empty-cell">No attendance data</td></tr>';
+  const rows = [...entries].sort((a, b) => {
+    const wName = (workers[a.workerId]?.name || a.workerName || a.workerId || '').localeCompare(workers[b.workerId]?.name || b.workerName || b.workerId || '');
+    if (wName !== 0) return wName;
+    return (a.date || '').localeCompare(b.date || '');
+  });
+  return rows.map(tc => {
+    // Resolve worker identity from the live workers snapshot, with fallbacks
+    const w = workers[tc.workerId] || {};
+    const name = w.name || tc.workerName || tc.workerId || '\u2014';
+    const trade = w.trade || tc.trade || '\u2014';
+    const rate = w.dailyRate || tc.dailyRate || 0;
+    const pay = (rate && tc.status) ? calculateGrossPay(rate, tc) : { total: 0 };
+    const fmtDate = tc.date ? new Date(tc.date + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '\u2014';
+    const statusLabel = ATTENDANCE_STATUS[tc.status]?.label || escapeHtml(tc.status || '\u2014');
+    return `
+      <tr class="s-row">
+        <td class="s-cell">${escapeHtml(name)}</td>
+        <td class="s-cell s-trade">${escapeHtml(trade)}</td>
+        <td class="s-cell">${fmtDate}</td>
+        <td class="s-cell">${statusLabel}</td>
+        <td class="s-cell s-right">${peso(rate)}</td>
+        <td class="s-cell s-center">${tc.overtimeHours ? (tc.overtimeHours + 'h') : '\u2014'}</td>
+        <td class="s-cell s-right s-bold">${peso(pay.total)}</td>
+      </tr>`;
+  }).join('');
 }
 
 function toggleTCHistory(key) {
@@ -1113,11 +1300,14 @@ async function generateRFP() {
     firebase.database().ref(`projects/${_lpid}/attendance`).once('value')
   ]);
 
+  const days = getWeekDays();
+  const weekSet = new Set(days.map(d => d.iso));
+
   const workers = {};
   wSnap.forEach(c => { workers[c.key] = c.val(); });
 
   const byTrade = {};
-  let grand = 0;
+  let grand = 0, filteredDays = 0;
 
   attSnap.forEach(workerAtt => {
     const wid = workerAtt.key;
@@ -1126,49 +1316,63 @@ async function generateRFP() {
 
     workerAtt.forEach(daySnap => {
       const tc = daySnap.val();
+      // ── Period filter: only count days inside the selected week ──
+      if (!weekSet.has(tc.date)) return;
       if (tc.status === 'absent' || tc.status === 'rest') return;
-      if (!byTrade[tc.trade || w.trade]) byTrade[tc.trade || w.trade] = [];
 
-      let entry = byTrade[tc.trade || w.trade].find(x => x.name === w.name);
+      const tradeKey = w.trade || 'Unassigned';
+      if (!byTrade[tradeKey]) byTrade[tradeKey] = [];
+
+      let entry = byTrade[tradeKey].find(x => x.name === w.name);
       if (!entry) {
         entry = { name: w.name, rate: w.dailyRate, days: 0, sub: 0, ot: 0 };
-        byTrade[tc.trade || w.trade].push(entry);
+        byTrade[tradeKey].push(entry);
       }
       const pay = calculateGrossPay(w.dailyRate, tc);
       entry.days += (tc.status === 'half' ? 0.5 : 1);
       entry.sub += pay.total;
       entry.ot += pay.otPay;
       grand += pay.total;
+      filteredDays++;
     });
   });
 
-  if (!grand) { showToast('No attendance data to generate RFP.', 'warn'); return; }
+  if (!grand) {
+    showToast('No attendance in the selected period to generate RFP.', 'warn');
+    return;
+  }
 
   const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+  const projectName = _projectName || _lpid;
+  const leader = _projectSettings.leader || '';
+  const payMethod = _projectSettings.payMethod || 'Bank';
+
   const lines = [
     'REQUEST FOR PAYMENT (RFP)',
-    `Project : ${_lpid}`,
-    `Period  : ${start} to ${end}`,
-    `Date    : ${today}`,
-    '\u2500'.repeat(52), ''
+    `Project        : ${projectName}`,
+    `Period         : ${start} to ${end}`,
+    `Date Prepared  : ${today}`,
+    `Payment Method : ${payMethod}`,
+    leader ? `Prepared by    : ${leader}` : 'Prepared by    : ___________________________',
+    '\u2500'.repeat(54), ''
   ];
 
-  Object.entries(byTrade).forEach(([trade, ws]) => {
+  Object.entries(byTrade).sort().forEach(([trade, ws]) => {
     lines.push(trade.toUpperCase());
-    ws.forEach(w => {
-      lines.push(`  ${w.name.padEnd(24)} ${String(w.days).padStart(4)} day/s x ${peso(w.rate).padStart(10)} = ${peso(w.sub).padStart(12)}`);
+    ws.sort((a, b) => a.name.localeCompare(b.name)).forEach(w => {
+      lines.push(`  ${w.name.padEnd(26)} ${String(w.days).padStart(4)} day/s x ${peso(w.rate).padStart(10)} = ${peso(w.sub).padStart(12)}`);
     });
     const sub = ws.reduce((s, w) => s + w.sub, 0);
-    lines.push(`  ${'Trade Subtotal'.padEnd(48)} ${peso(sub).padStart(12)}`, '');
+    lines.push(`  ${'Trade Subtotal'.padEnd(50)} ${peso(sub).padStart(12)}`, '');
   });
 
   lines.push(
-    '\u2500'.repeat(52),
-    `  ${'TOTAL LABOR PAYROLL'.padEnd(48)} ${peso(grand).padStart(12)}`,
-    '', 'Prepared by: ___________________________', 'Approved by: ___________________________'
+    '\u2500'.repeat(54),
+    `  ${'TOTAL LABOR PAYROLL'.padEnd(50)} ${peso(grand).padStart(12)}`,
+    '', 'Approved by: ___________________________'
   );
 
-  window._rfpData = { lines, start, end, grand, byTrade, pid: _lpid };
+  window._rfpData = { lines, start, end, grand, byTrade, projectName, leader, payMethod };
   $('rfpOutput').value = lines.join('\n');
   $('rfpModal').classList.remove('hidden');
 }
@@ -1197,28 +1401,35 @@ function downloadRFP() {
   const lm = 20, rm = 190;
   let y = 20;
 
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+  const projectName = _rfpData.projectName || _lpid;
+  const leader = _rfpData.leader || '';
+  const payMethod = _rfpData.payMethod || 'Bank';
+
   doc.setFontSize(14).setFont('helvetica', 'bold');
   doc.text('REQUEST FOR PAYMENT', lm, y); y += 7;
   doc.setFontSize(9).setFont('helvetica', 'normal');
-  doc.text(`Project : ${_rfpData.pid}`, lm, y); y += 5;
-  doc.text(`Period  : ${_rfpData.start} to ${_rfpData.end}`, lm, y); y += 5;
-  doc.text(`Date    : ${new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })}`, lm, y); y += 6;
+  doc.text(`Project        : ${projectName}`, lm, y); y += 5;
+  doc.text(`Period         : ${_rfpData.start} to ${_rfpData.end}`, lm, y); y += 5;
+  doc.text(`Date Prepared  : ${today}`, lm, y); y += 5;
+  doc.text(`Payment Method : ${payMethod}`, lm, y); y += 5;
+  doc.text(`Prepared by    : ${leader || '___________________________'}`, lm, y); y += 6;
   doc.setDrawColor(60, 80, 120).setLineWidth(0.4);
   doc.line(lm, y, rm, y); y += 6;
 
-  Object.entries(_rfpData.byTrade).forEach(([trade, ws]) => {
+  Object.entries(_rfpData.byTrade).sort().forEach(([trade, ws]) => {
     doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(40, 80, 180);
     doc.text(trade.toUpperCase(), lm, y); y += 5; doc.setTextColor(0);
-    ws.forEach(w => {
+    ws.sort((a, b) => a.name.localeCompare(b.name)).forEach(w => {
       doc.setFont('helvetica', 'normal').setFontSize(8);
       doc.text(w.name, lm + 3, y);
-      doc.text(`${w.days} day/s \u00D7 ${peso(w.rate)}`, lm + 55, y);
+      doc.text(`${w.days} day/s \u00D7 ${peso(w.rate)}`, lm + 70, y);
       doc.text(peso(w.sub), rm, y, { align: 'right' }); y += 5;
     });
     doc.setFont('helvetica', 'bold').setFontSize(8);
     doc.text('Trade Subtotal', lm + 3, y);
     doc.text(peso(ws.reduce((s, w) => s + w.sub, 0)), rm, y, { align: 'right' }); y += 7;
-    if (y > 260) { doc.addPage(); y = 20; }
+    if (y > 255) { doc.addPage(); y = 20; }
   });
 
   doc.setDrawColor(60, 80, 120).line(lm, y, rm, y); y += 6;
@@ -1226,9 +1437,9 @@ function downloadRFP() {
   doc.text('TOTAL LABOR PAYROLL', lm, y);
   doc.text(peso(_rfpData.grand), rm, y, { align: 'right' }); y += 14;
   doc.setFontSize(8).setFont('helvetica', 'normal');
-  doc.text('Prepared by: ___________________________', lm, y); y += 7;
   doc.text('Approved by: ___________________________', lm, y);
-  doc.save(`RFP_${_rfpData.pid}_${_rfpData.start}.pdf`);
+  const safeName = (projectName || _lpid).replace(/[^\w\-]+/g, '_');
+  doc.save(`RFP_${safeName}_${_rfpData.start}.pdf`);
 }
 
 // ══════════════════════════════════════════════════════
@@ -1237,61 +1448,98 @@ function downloadRFP() {
 function watchPayrollLogs(pid) {
   const ref = firebase.database().ref(`projects/${pid}/payrollLogs`);
   laborListen(ref, snap => {
-    const tbody = $('payrollLogsBody'); if (!tbody) return;
-    tbody.innerHTML = '';
+    const el = $('payrollLogsBody'); if (!el) return;
     const tradeTotals = {};
     let grandTotal = 0;
 
     if (!snap.exists()) {
-      tbody.innerHTML = `<tr><td colspan="5" class="empty-cell">No payroll logs yet. Compile a week to create the first record.</td></tr>`;
+      el.innerHTML = `<p class="empty-hint">No payroll logs yet. Compile a week to create the first record.</p>`;
       renderTradeTotals({}, 0);
       return;
     }
 
     const rows = [];
-    snap.forEach(c => rows.unshift({ id: c.key, ...c.val() }));
+    snap.forEach(c => rows.push({ id: c.key, ...c.val() }));
+    rows.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
-    const fragment = document.createDocumentFragment();
-
-    rows.forEach(e => {
+    let html = '';
+    rows.forEach((e, idx) => {
       grandTotal += e.net || e.gross || 0;
       if (e.byTrade) Object.entries(e.byTrade).forEach(([t, d]) => {
         tradeTotals[t] = (tradeTotals[t] || 0) + (d.total || 0);
       });
-      const breakdown = e.byTrade
-        ? Object.entries(e.byTrade).map(([t, d]) => `${escapeHtml(t)}: ${peso(d.total)}`).join(' \u00B7 ')
-        : '\u2014';
 
-      const govNote = e.govDeductions
-        ? `<br><span style="font-size:10px;color:var(--blue)">Gov: ${peso(e.govDeductions.employerTotalCost)} total cost</span>`
+      const trades = e.byTrade
+        ? Object.entries(e.byTrade).sort((a, b) => (b[1].total || 0) - (a[1].total || 0))
+        : [];
+
+      const workerCount = trades.reduce((n, [, d]) => n + (d.workers ? Object.keys(d.workers).length : 0), 0);
+      const govBadge = e.govDeductions
+        ? `<span class="paylog-gov-badge">Gov: ${peso(e.govDeductions.employerTotalCost)}</span>`
+        : '';
+      const deductBadge = e.deductions > 0
+        ? `<span class="paylog-deduct-badge">Advances -${peso(e.deductions)}</span>`
         : '';
 
-      const tr = document.createElement('tr');
-      tr.className = 'hist-row';
-      tr.innerHTML = `
-        <td class="h-cell">${e.savedDate || '\u2014'}</td>
-        <td class="h-cell">${e.period || '\u2014'}</td>
-        <td class="h-cell h-breakdown">${breakdown}${govNote}</td>
-        <td class="h-cell h-amount">
-          ${e.deductions > 0 ? `<span class="deduct-badge">-${peso(e.deductions)}</span> ` : ''}
-          ${peso(e.gross || 0)}
-        </td>
-        <td class="h-cell h-amount net-col">${peso(e.net || e.gross || 0)}</td>
-      `;
-      fragment.appendChild(tr);
+      const tradeCards = trades.map(([trade, d]) => {
+        const wRows = d.workers
+          ? Object.entries(d.workers).sort((a, b) => (b[1].gross || 0) - (a[1].gross || 0)).map(([wid, w]) => `
+              <tr class="paylog-worker-row">
+                <td class="paylog-w-name">${escapeHtml(w.name)}</td>
+                <td class="paylog-w-days">${w.days || 0} d</td>
+                <td class="paylog-w-rate">${peso(w.rate)}</td>
+                <td class="paylog-w-gross">${peso(w.gross || 0)}</td>
+              </tr>`).join('')
+          : `<tr><td colspan="4" class="empty-cell">No worker detail</td></tr>`;
+        return `<div class="payroll-trade-card">
+          <div class="payroll-trade-hdr">
+            <span class="payroll-trade-name">${escapeHtml(trade)}</span>
+            <span class="payroll-trade-total">${peso(d.total || 0)}</span>
+          </div>
+          <table class="paylog-worker-table">
+            <thead><tr><th>Worker</th><th>Days</th><th>Rate</th><th style="text-align:right">Gross</th></tr></thead>
+            <tbody>${wRows}</tbody>
+          </table>
+        </div>`;
+      }).join('');
+
+      html += `
+        <div class="payroll-log-entry">
+          <div class="payroll-log-hdr" onclick="togglePayrollLog('${e.id}')">
+            <div class="payroll-log-left">
+              <span class="payroll-log-period">\u1F4C5 ${escapeHtml(e.period || '\u2014')}</span>
+              <span class="payroll-log-meta">Saved ${escapeHtml(e.savedDate || '\u2014')} \u00B7 ${workerCount} workers \u00B7 ${trades.length} trades</span>
+            </div>
+            <div class="payroll-log-right">
+              ${deductBadge}${govBadge}
+              <span class="payroll-log-gross">${peso(e.gross || 0)}</span>
+              <span class="payroll-log-net">${peso(e.net || e.gross || 0)}</span>
+              <span class="payroll-log-toggle" id="plogToggle_${e.id}">\u25BC</span>
+            </div>
+          </div>
+          <div class="payroll-log-body hidden" id="plogBody_${e.id}">
+            ${tradeCards || '<p class="empty-hint">No trade breakdown saved.</p>'}
+          </div>
+        </div>`;
     });
 
-    const totalTr = document.createElement('tr');
-    totalTr.className = 'hist-total-row';
-    totalTr.innerHTML = `
-      <td class="h-cell" colspan="4">Total Labor Disbursed</td>
-      <td class="h-cell h-amount">${peso(grandTotal)}</td>
-    `;
-    fragment.appendChild(totalTr);
+    html += `<div class="payroll-log-grand">
+      <span>Total Labor Disbursed (all logs)</span>
+      <span class="payroll-log-grand-amt">${peso(grandTotal)}</span>
+    </div>`;
 
-    tbody.appendChild(fragment);
+    el.innerHTML = html;
     renderTradeTotals(tradeTotals, grandTotal);
   });
+}
+
+function togglePayrollLog(id) {
+  const body = $(`plogBody_${id}`);
+  const toggle = $(`plogToggle_${id}`);
+  if (!body || !toggle) return;
+  const isHidden = body.classList.contains('hidden');
+  body.classList.toggle('hidden', !isHidden);
+  toggle.textContent = isHidden ? '\u25B2' : '\u25BC';
 }
 
 function renderTradeTotals(totals, grand) {
@@ -1331,6 +1579,7 @@ async function exportPayrollCSV() {
 window.initLabor = initLabor;
 window.detachLaborListeners = detachLaborListeners;
 window.savePayrollConfig = savePayrollConfig;
+window.saveProjectSettings = saveProjectSettings;
 window.addTrade = addTrade;
 window.renameTrade = renameTrade;
 window.deleteTrade = deleteTrade;
@@ -1358,3 +1607,4 @@ window.copyRFP = copyRFP;
 window.downloadRFP = downloadRFP;
 window.exportPayrollCSV = exportPayrollCSV;
 window.toggleTCHistory = toggleTCHistory;
+window.togglePayrollLog = togglePayrollLog;
