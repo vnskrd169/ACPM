@@ -2111,3 +2111,120 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   border-radius: var(--radius); padding: 20px 24px; margin-bottom: 24px;
 }
 #dashSummaryComp .dash-stat-val.text-blue { color: var(--blue); }
+
+/* ════════════════════════════════════════════════════════════
+   ACPM — Tasks / Equipment / Compliance panels
+   (added: these had JS logic but no styling/markup previously)
+   ════════════════════════════════════════════════════════════ */
+
+.panel.hidden { display: none; }
+
+.panel-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.panel-title { font-size: 16px; font-weight: 700; color: #fff; }
+
+.task-stats-row {
+  display: flex; flex-wrap: wrap; gap: 14px;
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 10px; padding: 10px 14px; font-size: 13px; color: var(--blue-t);
+}
+.task-stats-row strong { color: #fff; }
+
+.task-form-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.task-form-row input, .task-form-row select {
+  background: var(--surface2); border: 1px solid var(--border2); color: #fff;
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; flex: 1; min-width: 120px;
+}
+
+.gantt-view { min-height: 4px; }
+
+/* ── Equipment cards ─────────────────────────────────────── */
+.equip-card {
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.equip-card.equip-overdue { border-color: var(--red-d); }
+.equip-hdr { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.equip-name { font-weight: 700; color: #fff; margin-right: 8px; }
+.equip-type { font-size: 12px; color: var(--blue-t); }
+.equip-status {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  border: 1px solid currentColor; border-radius: 20px; padding: 2px 10px;
+}
+.equip-details { display: grid; grid-template-columns: repeat(auto-fit,minmax(110px,1fr)); gap: 8px; }
+.equip-detail { display: flex; flex-direction: column; gap: 2px; }
+.equip-label { font-size: 11px; color: var(--border4); }
+.equip-val { font-size: 13px; font-weight: 600; color: #fff; }
+.equip-val.overdue { color: var(--red-t); }
+.equip-notes { font-size: 12px; color: var(--border4); }
+.equip-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-equip-action {
+  background: var(--surface3); border: 1px solid var(--border3); color: #fff;
+  border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+}
+.btn-equip-action:hover { background: var(--surface4); }
+.del-item-btn {
+  background: transparent; border: 1px solid var(--red-d); color: var(--red-t);
+  border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+}
+.del-item-btn:hover { background: var(--red-d); }
+
+/* ── Executive health cards (report.js) ──────────────────── */
+.health-card {
+  background: var(--surface2); border: 1px solid var(--border2); border-left: 4px solid var(--green);
+  border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.health-hdr { display: flex; justify-content: space-between; align-items: center; }
+.health-name { font-weight: 700; color: #fff; }
+.health-score { font-size: 20px; font-weight: 800; }
+.health-bars { display: flex; flex-direction: column; gap: 6px; }
+.health-bar-wrap { display: grid; grid-template-columns: 60px 1fr 40px; align-items: center; gap: 8px; font-size: 11px; color: var(--border4); }
+.health-bar { height: 6px; background: var(--surface3); border-radius: 4px; overflow: hidden; }
+.health-bar div { height: 100%; border-radius: 4px; }
+.health-warn { font-size: 12px; color: var(--amber-t); }
+.health-ok { font-size: 12px; color: var(--green-t); }
+
+/* ── Compliance cards ─────────────────────────────────────── */
+.comp-card {
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;
+}
+.comp-card.comp-warn { border-color: var(--amber-d); }
+.comp-card.comp-expired { border-color: var(--red-d); }
+.comp-hdr { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.comp-type { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--blue-t); }
+.comp-status-pill { font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 10px; border: 1px solid currentColor; }
+.comp-status-pill.comp-ok { color: var(--green-t); }
+.comp-status-pill.comp-warn { color: var(--amber-t); }
+.comp-status-pill.comp-expired { color: var(--red-t); }
+.comp-name { font-weight: 700; color: #fff; font-size: 14px; }
+.comp-meta { font-size: 12px; color: var(--border4); }
+.comp-link { font-size: 12px; color: var(--blue-t); text-decoration: none; }
+.comp-link:hover { text-decoration: underline; }
+.comp-notes { font-size: 12px; color: var(--border4); font-style: italic; }
+.comp-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+
+/* ── Punch List / Defect cards ───────────────────────────── */
+.defect-card {
+  background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px;
+}
+.defect-card.defect-closed { opacity: 0.6; }
+.defect-hdr { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.defect-severity { font-size: 11px; font-weight: 700; text-transform: uppercase; border: 1px solid currentColor; border-radius: 20px; padding: 2px 10px; }
+.defect-status-pill { font-size: 11px; font-weight: 700; border-radius: 20px; padding: 2px 10px; }
+.defect-status-pill.defect-status-open { color: var(--amber-t); border: 1px solid var(--amber-d); }
+.defect-status-pill.defect-status-closed { color: var(--green-t); border: 1px solid var(--green-d); }
+.defect-desc { font-weight: 600; color: #fff; font-size: 14px; }
+.defect-meta { font-size: 12px; color: var(--border4); }
+.defect-link { font-size: 12px; color: var(--blue-t); text-decoration: none; }
+.defect-link:hover { text-decoration: underline; }
+.defect-resolution { font-size: 12px; color: var(--green-t); font-style: italic; }
+.defect-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }

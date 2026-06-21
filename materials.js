@@ -283,12 +283,23 @@ async function submitPO() {
   const sel = $('poSupplierSelect'); if (sel) sel.value = '';
   renderDraft();
   auditLog('create', 'purchaseOrder', poRef.key, { seq, supplier, total, projectId: _mpid });
+  notifyProject(_mpid, {
+    type: 'billing',
+    message: `PO #${String(seq).padStart(3, '0')} (${peso(total)} to ${supplier}) needs your approval`
+  }).catch(() => {});
   showToast(`\u1F4CB PO #${String(seq).padStart(3, '0')} submitted for approval`);
 }
 
-// ── Approve PO ──────────────────────────────────────────────
+// ── Approve PO (boss-only — APMs submit, bosses approve) ────
 async function approvePO(poId) {
   if (!_mpid) return;
+  const user = window._currentUser;
+  const isBoss = user?.role === 'boss' || (user?.bossOf || []).includes(_mpid);
+  if (!isBoss) {
+    showToast('Only a boss can approve purchase orders.', 'error');
+    return;
+  }
+
   await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).update({
     status: 'approved',
     'approvalWorkflow.approvedBy': window._currentUser.uid,

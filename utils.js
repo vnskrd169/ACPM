@@ -92,8 +92,10 @@ async function safeDb(fn, errMsg) {
   }
 }
 
-// ── Audit log (currently console-only; TODO: Firestore `auditLogs`) ──
-// TODO: Replace _currentUser with real Firebase Auth identity.
+// ── Audit log ────────────────────────────────────────────────
+// Persisted to Firebase under /auditLogs (global, capped) so the 3 bosses
+// can see who-did-what across all 9 projects. Fire-and-forget: never
+// blocks or throws on the caller — logging must not break the app.
 function auditLog(action, entityType, entityId, details = {}) {
   const user = (typeof window !== 'undefined' && window._currentUser) ? window._currentUser : { uid: 'anonymous', role: 'admin', name: 'System' };
   const pid = (typeof window !== 'undefined' && window._currentPid) ? window._currentPid : null;
@@ -107,7 +109,30 @@ function auditLog(action, entityType, entityId, details = {}) {
     projectId: pid
   };
   console.log('\u1F4DD AUDIT:', logEntry);
+
+  try {
+    if (typeof firebase !== 'undefined' && firebase.database) {
+      firebase.database().ref('auditLogs').push(logEntry).catch(() => {});
+    }
+  } catch (e) { /* never let audit logging break the calling action */ }
 }
+
+// Trim old audit entries to stay inside the free-tier DB size limit.
+// Call occasionally (e.g. once per boss login) — not on every write.
+async function pruneAuditLog(keepLatest = 2000) {
+  try {
+    const snap = await firebase.database().ref('auditLogs').orderByChild('timestamp').once('value');
+    const keys = [];
+    snap.forEach(c => keys.push(c.key));
+    if (keys.length <= keepLatest) return;
+    const updates = {};
+    keys.slice(0, keys.length - keepLatest).forEach(k => updates[k] = null);
+    await firebase.database().ref('auditLogs').update(updates);
+  } catch (e) { console.error('pruneAuditLog failed', e); }
+}
+
+window.pruneAuditLog = pruneAuditLog;
+window.auditLog = auditLog;
 
 // ════════════════════════════════════════════════════════════
 //  withBusy — generic double-submit guard

@@ -17,6 +17,9 @@
 <!-- Utilities (DOM helpers, formatting, safeDb, etc.) -->
 <script src="utils.js"></script>
 
+<!-- Auth (must load before main.js — main.js calls canAccessProject/canEditProject) -->
+<script src="auth.js"></script>
+
 <!-- Core modules -->
 <script src="main.js"></script>
 <script src="labor.js"></script>
@@ -25,6 +28,12 @@
 <script src="suppliers.js"></script>
 <script src="billing.js"></script>
 <script src="changeorders.js"></script>
+<script src="equipment.js"></script>
+<script src="compliance.js"></script>
+<script src="defects.js"></script>
+<script src="tasks.js"></script>
+<script src="notifications.js"></script>
+<script src="report.js"></script>
 
 <!-- PDF generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -75,6 +84,19 @@ window.addEventListener('appinstalled', () => {
     </div>
   </div>
   <div class="hdr-right">
+    <div class="notif-bell-wrap" style="position:relative;">
+      <button class="btn-refresh" id="notifBellBtn" onclick="document.getElementById('notifDropdown').classList.toggle('hidden')" title="Notifications">
+        &#x1F514;
+        <span id="notifBadge" class="hidden" style="position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;border-radius:10px;padding:1px 5px;font-size:10px;font-weight:700;"></span>
+      </button>
+      <div id="notifDropdown" class="hidden" style="position:absolute;right:0;top:110%;width:320px;max-height:400px;overflow-y:auto;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:200;padding:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <span style="font-weight:700;font-size:13px;">Notifications</span>
+          <button class="btn-equip-action" onclick="markAllNotifRead()">Mark all read</button>
+        </div>
+        <div id="notificationFeed"><p class="empty-hint">No notifications yet.</p></div>
+      </div>
+    </div>
     <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#x1F313;</button>
     <button class="btn-refresh" id="refreshBtn" onclick="refreshHub()" title="Refresh dashboard">&#x1F504;</button>
     <span class="badge badge-green" id="syncBadge">&#x2601;&#xFE0F; Synced</span>
@@ -233,6 +255,11 @@ window.addEventListener('appinstalled', () => {
       <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')">&#x1F4CB; Change Orders</button>
       <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')">&#x1F4D2; Site Log</button>
       <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')">&#x1F3EA; Suppliers</button>
+      <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')">&#x2611; Tasks</button>
+      <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')">&#x1F6A7; Equipment</button>
+      <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
+      <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
+      <button id="tab_reports" class="tab-btn" onclick="switchTab('reports')" data-boss-only style="display:none;">&#x1F4CA; Reports</button>
     </div>
   </div>
 
@@ -689,6 +716,161 @@ window.addEventListener('appinstalled', () => {
         <button class="btn-ws-secondary" onclick="exportSuppliersCSV()">&#x1F4CA; Export</button>
       </div>
       <div id="supplierList"><p class="empty-hint">No suppliers yet.</p></div>
+    </div>
+  </div>
+
+  <!-- ═══ TASKS PANEL ═══════════════════════════════════════════ -->
+  <div id="tasksPanel" class="panel hidden">
+    <div class="panel-card">
+      <div class="panel-title">&#x2611; Tasks</div>
+      <div class="task-stats-row">
+        <span>Total: <strong id="taskTotal">0</strong></span>
+        <span>Done: <strong id="taskDone">0</strong></span>
+        <span>Overdue: <strong id="taskOverdue">0</strong></span>
+        <span>Critical: <strong id="taskCritical">0</strong></span>
+        <span>Completion: <strong id="taskCompletionPct">0%</strong></span>
+      </div>
+      <div class="task-form-row">
+        <input id="taskTitle" type="text" placeholder="Task title">
+        <input id="taskDesc" type="text" placeholder="Description (optional)">
+      </div>
+      <div class="task-form-row">
+        <input id="taskAssignee" type="text" placeholder="Assignee">
+        <input id="taskDueDate" type="date">
+        <select id="taskPriority">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+          <option value="critical">Critical</option>
+        </select>
+        <select id="taskCategory">
+          <option value="general">General</option>
+          <option value="labor">Labor</option>
+          <option value="materials">Materials</option>
+          <option value="permits">Permits</option>
+          <option value="design">Design</option>
+        </select>
+        <input id="taskBudgetImpact" type="number" placeholder="Budget impact (optional)">
+        <button class="btn-ws-secondary" onclick="addTask()">+ Add Task</button>
+      </div>
+      <div id="ganttView" class="gantt-view"></div>
+      <div id="taskList"><p class="empty-hint">No tasks yet.</p></div>
+    </div>
+  </div>
+
+  <!-- ═══ EQUIPMENT PANEL ═══════════════════════════════════════ -->
+  <div id="equipmentPanel" class="panel hidden">
+    <div class="panel-card">
+      <div class="panel-title">&#x1F6A7; Equipment</div>
+      <div class="task-stats-row">
+        <span>Total Cost: <strong id="equipTotalCost">&#x20B1;0.00</strong></span>
+        <span>Active: <strong id="equipActive">0</strong></span>
+        <span>Maintenance: <strong id="equipMaint">0</strong></span>
+        <span>Overdue Service: <strong id="equipOverdue">0</strong></span>
+      </div>
+      <div class="task-form-row">
+        <input id="equipName" type="text" placeholder="Equipment name">
+        <select id="equipType">
+          <option value="other">Other</option>
+          <option value="heavy">Heavy Machinery</option>
+          <option value="power">Power Tool</option>
+          <option value="vehicle">Vehicle</option>
+          <option value="scaffolding">Scaffolding</option>
+        </select>
+        <input id="equipRate" type="number" placeholder="Rental rate">
+        <select id="equipRateUnit">
+          <option value="day">per day</option>
+          <option value="hour">per hour</option>
+          <option value="month">per month</option>
+        </select>
+      </div>
+      <div class="task-form-row">
+        <input id="equipNotes" type="text" placeholder="Notes (optional)" style="flex:1">
+        <button class="btn-ws-secondary" onclick="addEquipment()">+ Add Equipment</button>
+      </div>
+      <div id="equipmentList"><p class="empty-hint">No equipment tracked yet.</p></div>
+    </div>
+  </div>
+
+  <!-- ═══ COMPLIANCE PANEL ═══════════════════════════════════════ -->
+  <div id="compliancePanel" class="panel hidden">
+    <div class="panel-card">
+      <div class="panel-title">&#x1F4C4; Documents &amp; Compliance</div>
+      <div class="task-stats-row">
+        <span>Tracked: <strong id="compTotal">0</strong></span>
+        <span>Expired: <strong id="compExpired">0</strong></span>
+        <span>Expiring Soon (30d): <strong id="compExpiringSoon">0</strong></span>
+      </div>
+      <div class="task-form-row">
+        <select id="compDocType"></select>
+        <input id="compName" type="text" placeholder="Document name (e.g. Mayor's Permit 2026)">
+        <input id="compRefNo" type="text" placeholder="Ref / Permit No. (optional)">
+      </div>
+      <div class="task-form-row">
+        <input id="compExpiryDate" type="date">
+        <input id="compLink" type="text" placeholder="Link (Google Drive URL, optional)" style="flex:1">
+      </div>
+      <div class="task-form-row">
+        <input id="compNotes" type="text" placeholder="Notes (optional)" style="flex:1">
+        <button class="btn-ws-secondary" onclick="addCompliance()">+ Add Document</button>
+      </div>
+      <div id="complianceList"><p class="empty-hint">No documents tracked yet.</p></div>
+    </div>
+  </div>
+
+  <!-- ═══ PUNCH LIST PANEL ═══════════════════════════════════════ -->
+  <div id="defectsPanel" class="panel hidden">
+    <div class="panel-card">
+      <div class="panel-title">&#x1F4CC; Punch List / Defects</div>
+      <div class="task-stats-row">
+        <span>Total: <strong id="defTotal">0</strong></span>
+        <span>Open: <strong id="defOpen">0</strong></span>
+        <span>Critical: <strong id="defCritical">0</strong></span>
+        <span>Closed: <strong id="defClosed">0</strong></span>
+      </div>
+      <div class="task-form-row">
+        <input id="defDesc" type="text" placeholder="Describe the defect" style="flex:2">
+        <input id="defLocation" type="text" placeholder="Location (e.g. 2F Unit B)">
+      </div>
+      <div class="task-form-row">
+        <select id="defSeverity">
+          <option value="minor" selected>Minor</option>
+          <option value="major">Major</option>
+          <option value="critical">Critical</option>
+        </select>
+        <input id="defAssignee" type="text" placeholder="Assignee">
+        <input id="defPhotoLink" type="text" placeholder="Photo link (optional)" style="flex:1">
+        <button class="btn-ws-secondary" onclick="addDefect()">+ Add Item</button>
+      </div>
+      <div class="task-form-row">
+        <button class="btn-ws-secondary" onclick="exportDefectsCSV()">&#x1F4CA; Export CSV</button>
+      </div>
+      <div id="defectList"><p class="empty-hint">No punch list items yet.</p></div>
+    </div>
+  </div>
+
+  <!-- ═══ REPORTS PANEL (boss only) ══════════════════════════════ -->
+  <div id="reportsPanel" class="panel hidden">
+    <div class="panel-card">
+      <div class="panel-title">&#x1F4CA; Executive Dashboard</div>
+      <div class="task-stats-row">
+        <span>Active Projects: <strong id="execActiveProjects">0</strong></span>
+        <span>Total Budget: <strong id="execTotalBudget">&#x20B1;0.00</strong></span>
+        <span>Total Spent: <strong id="execTotalSpent">&#x20B1;0.00</strong></span>
+        <span>Avg Health: <strong id="execAvgHealth">0%</strong></span>
+        <button class="btn-ws-secondary" onclick="generateWeeklyReport()">&#x1F4C4; Weekly Report</button>
+      </div>
+      <div id="executiveDashboard">
+        <div id="execProjectHealth" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;"></div>
+      </div>
+    </div>
+    <div class="panel-card">
+      <div class="panel-title">&#x1F477; Team Performance</div>
+      <div id="teamPerformance"><p class="empty-hint">Loading...</p></div>
+    </div>
+    <div class="panel-card">
+      <div class="panel-title">&#x1F4B0; Budget Variance</div>
+      <div id="budgetVariance"><p class="empty-hint">Loading...</p></div>
     </div>
   </div>
 

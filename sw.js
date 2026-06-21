@@ -7,13 +7,14 @@
 // ════════════════════════════════════════════════════════════
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v4';
+const CACHE_NAME = 'acpm-v6';
 
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './utils.js',
+  './auth.js',
   './main.js',
   './labor.js',
   './materials.js',
@@ -21,6 +22,12 @@ const ASSETS = [
   './changeorders.js',
   './sitelog.js',
   './suppliers.js',
+  './equipment.js',
+  './compliance.js',
+  './defects.js',
+  './tasks.js',
+  './notifications.js',
+  './report.js',
   './manifest.json'
   // CDN assets (Firebase, jsPDF, html2canvas) are not cached — let browser handle
 ];

@@ -1,5 +1,3 @@
-
-
 //  ACPM — main.js (Enhanced v3.0)
 //  Firebase v8 compat init, Hub, Workspace lifecycle,
 //  Offline cache, Data compression, Health scores
@@ -580,6 +578,8 @@ async function enterProject(pid) {
   initSuppliers();
   initTasks(pid);
   initEquipment(pid);
+  initCompliance(pid);
+  initDefects(pid);
   initNotifications();
 
   // Load project notes
@@ -598,6 +598,8 @@ function exitHub() {
   detachSupplierListeners();
   detachTaskListeners();
   detachEquipListeners();
+  detachComplianceListeners();
+  detachDefectListeners();
   detachNotifications();
 
   $('workspaceView').classList.add('hidden');
@@ -666,7 +668,7 @@ async function saveProjectNotes() {
 // Keyboard shortcuts
 window.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key >= '1' && e.key <= '8') {
-    const tabs = ['labor', 'materials', 'billing', 'changeorders', 'sitelog', 'suppliers', 'tasks', 'equipment'];
+    const tabs = ['labor', 'materials', 'billing', 'changeorders', 'sitelog', 'suppliers', 'tasks', 'equipment', 'compliance', 'defects', 'reports'];
     const idx = parseInt(e.key) - 1;
     if (tabs[idx] && !$('workspaceView').classList.contains('hidden')) {
       switchTab(tabs[idx]);
@@ -878,4 +880,3 @@ window.saveProjectNotes = saveProjectNotes;
 window.exportHubCSV = exportHubCSV;
 window.refreshHub = refreshHub;
 window.renderDashboardAlerts = renderDashboardAlerts;
-

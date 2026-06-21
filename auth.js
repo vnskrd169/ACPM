@@ -1,4 +1,3 @@
-
 //  ACPM — auth.js
 //  Lightweight auth system using Firebase Database (NOT Auth).
 //  Roles: boss | apm | viewer
@@ -194,6 +193,12 @@ function initAppForUser() {
 
   // Re-render hub with role-aware data
   renderHub();
+
+  // Boss-only background housekeeping (cheap, fire-and-forget)
+  if (role === 'boss') {
+    scanComplianceAcrossProjects().catch(() => {});
+    pruneAuditLog().catch(() => {});
+  }
 }
 
 function filterProjectsByRole() {
