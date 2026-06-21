@@ -1,7 +1,8 @@
-// ════════════════════════════════════════════════════════════
-//  ACPM — main.js
-//  Firebase v8 compat init, Hub (project dashboard), Workspace lifecycle.
-//  All modules use firebase.database() (v8 compat global).
+
+
+//  ACPM — main.js (Enhanced v3.0)
+//  Firebase v8 compat init, Hub, Workspace lifecycle,
+//  Offline cache, Data compression, Health scores
 // ════════════════════════════════════════════════════════════
 
 // ── Firebase Config (v8 compat) ─────────────────────────────
@@ -15,7 +16,6 @@ const firebaseConfig = {
   appId: "1:330800177544:web:8f29dcd81ca39976849a3d"
 };
 
-// Initialize Firebase v8 compat
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 window._db = db;
@@ -25,12 +25,60 @@ window._currentPid = null;
 let _hubListeners = [];
 window._isReadOnly = false;
 window._currentUser = { uid: 'anonymous', role: 'admin', name: 'System' };
+window._allowedProjects = null;
 
 // ════════════════════════════════════════════════════════════
-//  Effective-budget helper
-//  Baselines (laborBudget/materialBudget) are IMMUTABLE.
-//  Change orders contribute a derived delta stored on the project.
-//  Effective = baseline + delta.
+//  Offline Cache Layer (IndexedDB)
+//  Stores project data locally for instant load + offline work
+// ════════════════════════════════════════════════════════════
+const DB_NAME = 'acpm_offline';
+const DB_VERSION = 1;
+let _idb = null;
+
+function initOfflineDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => { _idb = req.result; resolve(_idb); };
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('projects')) {
+        db.createObjectStore('projects', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('syncQueue')) {
+        db.createObjectStore('syncQueue', { keyPath: 'id', autoIncrement: true });
+      }
+    };
+  });
+}
+
+async function cacheProject(id, data) {
+  if (!_idb) return;
+  const tx = _idb.transaction('projects', 'readwrite');
+  const store = tx.objectStore('projects');
+  await store.put({ id, data, cachedAt: Date.now() });
+}
+
+async function getCachedProject(id) {
+  if (!_idb) return null;
+  return new Promise((resolve) => {
+    const tx = _idb.transaction('projects', 'readonly');
+    const store = tx.objectStore('projects');
+    const req = store.get(id);
+    req.onsuccess = () => resolve(req.result?.data || null);
+    req.onerror = () => resolve(null);
+  });
+}
+
+async function queueOfflineWrite(path, data) {
+  if (!_idb) return;
+  const tx = _idb.transaction('syncQueue', 'readwrite');
+  const store = tx.objectStore('syncQueue');
+  await store.put({ path, data, timestamp: Date.now() });
+}
+
+// ════════════════════════════════════════════════════════════
+//  Effective-budget helper (unchanged)
 // ════════════════════════════════════════════════════════════
 function effectiveBudget(p) {
   const laborBase = parseFloat(p.laborBudget) || 0;
@@ -49,12 +97,20 @@ function effectiveBudget(p) {
 // ════════════════════════════════════════════════════════════
 
 window.addEventListener('DOMContentLoaded', () => {
+  initOfflineDB().then(() => {
+    initAuth(); // From auth.js
+  }).catch(() => {
+    // Fallback: run without offline cache
+    initAuth();
+  });
+
   try {
     const connectedRef = db.ref('.info/connected');
     connectedRef.on('value', snap => {
       const badge = $('syncBadge');
       if (snap.val() === true) {
         if (badge) { badge.textContent = '\u2601\uFE0F Synced'; badge.className = 'badge badge-green'; }
+        syncOfflineQueue();
       } else {
         if (badge) { badge.textContent = '\u26A0\uFE0F Offline'; badge.className = 'badge badge-amber'; }
         showToast('Working offline. Changes will sync when connected.', 'warn');
@@ -64,9 +120,29 @@ window.addEventListener('DOMContentLoaded', () => {
     console.error('Firebase connection check failed:', e);
   }
 
-  showHubTab('active');
   initPWA();
 });
+
+async function syncOfflineQueue() {
+  if (!_idb) return;
+  const tx = _idb.transaction('syncQueue', 'readonly');
+  const store = tx.objectStore('syncQueue');
+  const req = store.getAll();
+  req.onsuccess = async () => {
+    const items = req.result;
+    if (!items.length) return;
+    for (const item of items) {
+      try {
+        await db.ref(item.path).set(item.data);
+        const delTx = _idb.transaction('syncQueue', 'readwrite');
+        delTx.objectStore('syncQueue').delete(item.id);
+      } catch (e) {
+        console.error('Sync failed for', item.path, e);
+      }
+    }
+    if (items.length) showToast(`${items.length} offline changes synced`);
+  };
+}
 
 function initPWA() {
   if ('serviceWorker' in navigator) {
@@ -96,13 +172,11 @@ function showHubTab(tab) {
   $(`${tab}ProjectsPane`)?.classList.remove('hidden');
   renderHub();
 
-  // Force grid reflow after revealing a previously-hidden pane.
-  // Browsers sometimes skip grid track sizing on display:none parents.
   requestAnimationFrame(() => {
     const visibleGrid = document.querySelector('.tab-pane:not(.hidden) [id$="Grid"]');
     if (visibleGrid) {
       visibleGrid.style.display = 'none';
-      void visibleGrid.offsetHeight; // force recalc
+      void visibleGrid.offsetHeight;
       visibleGrid.style.display = '';
     }
   });
@@ -117,9 +191,14 @@ function renderHub() {
   const grid = $(gridId);
   if (grid) grid.innerHTML = '<p class="hub-empty">Loading...</p>';
 
-  const projectsRef = isAll
-    ? db.ref('projects')
-    : db.ref('projects').orderByChild('status').equalTo(tab);
+  // Role-based filtering
+  const user = window._currentUser;
+  let projectsRef;
+  if (isAll) {
+    projectsRef = db.ref('projects');
+  } else {
+    projectsRef = db.ref('projects').orderByChild('status').equalTo(tab);
+  }
 
   projectsRef.on('value', snap => {
     const el = $(gridId);
@@ -127,7 +206,12 @@ function renderHub() {
     el.innerHTML = '';
 
     const projects = [];
-    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      const pid = c.key;
+      // Filter by role
+      if (!canAccessProject(pid)) return;
+      projects.push({ id: pid, ...c.val() });
+    });
     projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     if (!projects.length) {
@@ -161,6 +245,9 @@ function renderHub() {
     } else {
       renderCompletedSummary(projects);
     }
+
+    // Cache for offline
+    projects.forEach(p => cacheProject(p.id, p));
   }, error => {
     console.error('Firebase error:', error);
     if (grid) grid.innerHTML = `<p class="hub-empty">Error loading projects. Check console.</p>`;
@@ -174,90 +261,96 @@ function buildProjectCard(p) {
     div.className = `proj-card ${p.status === 'completed' ? 'proj-card-done' : ''}`;
     div.setAttribute('data-name', (p.name || '').toLowerCase());
     div.setAttribute('data-pid', p.id);
-  
+
     const eff = effectiveBudget(p);
     const laborSpent = parseFloat(p.laborSpent) || 0;
     const matSpent = parseFloat(p.materialSpent) || 0;
     const totalSpent = laborSpent + matSpent;
     const remaining = eff.total - totalSpent;
     const pctUsed = pct(totalSpent, eff.total);
-  
-    // ── NEW: compute percentages for each bar ──
-    const pUsedTotal = pctUsed;                       // total budget usage
-    const pUsedLabor = pct(laborSpent, eff.labor);    // labor usage
-    const pUsedMat   = pct(matSpent, eff.material);   // materials usage
-  
-    // ── NEW: clamp tiny percentages so the bar is always visible (>0%) ──
+
+    const pUsedTotal = pctUsed;
+    const pUsedLabor = pct(laborSpent, eff.labor);
+    const pUsedMat   = pct(matSpent, eff.material);
+
     const wTotal = Math.min(pUsedTotal, 100);
     const wLabor = Math.min(pUsedLabor, 100);
     const wMat   = Math.min(pUsedMat, 100);
     const dTotal = wTotal > 0 && wTotal < 2 ? 2 : wTotal;
     const dLabor = wLabor > 0 && wLabor < 2 ? 2 : wLabor;
     const dMat   = wMat   > 0 && wMat   < 2 ? 2 : wMat;
-  
+
     const isWarning = pctUsed >= 80 && pctUsed < 95;
     const isCritical = pctUsed >= 95;
-  
+
     const statusClass = p.status === 'completed' ? 'completed-tag' : 'active-tag';
     const statusText = p.status === 'completed' ? 'COMPLETED' : 'ACTIVE';
-  
+
     const hasDelta = (parseFloat(p.laborBudgetDelta) || 0) || (parseFloat(p.materialBudgetDelta) || 0);
     const coNote = hasDelta
-      ? `<div class="budget-sub" style="color:var(--purple-xl)">&#x21BB; includes approved change orders</div>` : '';
-  
+      ? `<div class="budget-sub" style="color:var(--purple-xl)">\u21BB; includes approved change orders</div>` : '';
+
+    // Health score indicator
+    const health = typeof calculateProjectHealth === 'function' ? calculateProjectHealth(p) : { score: 100, warnings: [] };
+    const healthColor = health.score >= 80 ? 'var(--green)' : health.score >= 60 ? 'var(--amber)' : 'var(--red)';
+    const healthBadge = `<span class="health-mini" style="color:${healthColor}">\u2665 ${health.score}</span>`;
+
     div.innerHTML = `
       <div class="proj-card-top">
         <div>
           <span class="proj-label">PROJECT</span>
           <h3 class="proj-name">${escapeHtml(p.name || 'Untitled')}</h3>
-          <span class="proj-date">Created ${p.createdDate || '—'}</span>
+          <span class="proj-date">Created ${p.createdDate || '\u2014'}</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
+          ${healthBadge}
           ${buildProgressRing(pctUsed, isCritical, isWarning)}
           <span class="${statusClass}">${statusText}</span>
         </div>
       </div>
       <div class="budget-section">
         <div class="budget-row">
-          <span class="budget-label">&#x1F4B0; Total Budget</span>
+          <span class="budget-label">\u1F4B0; Total Budget</span>
           <span class="budget-val">${peso(eff.total)}</span>
         </div>
         <div class="mini-bar">
           <div class="mini-fill ${budgetBarClass(pUsedTotal)}" style="width:${dTotal}%"></div>
         </div>
         <div class="budget-sub">
-          ${isCritical ? '<span class="warn-tag critical">&#x26A0; CRITICAL</span>' : isWarning ? '<span class="warn-tag">&#x26A0; WARNING</span>' : '<span style="color:var(--green)">&#x2713; Healthy</span>'}
-          <span>${peso(totalSpent)} spent · ${pctUsed}%</span>
+          ${isCritical ? '<span class="warn-tag critical">\u26A0; CRITICAL</span>' : isWarning ? '<span class="warn-tag">\u26A0; WARNING</span>' : '<span style="color:var(--green)">\u2713; Healthy</span>'}
+          <span>${peso(totalSpent)} spent \u00B7; ${pctUsed}%</span>
         </div>
         ${coNote}
         <div class="budget-row" style="margin-top:6px">
-          <span class="budget-label">&#x1F477; Labor</span>
+          <span class="budget-label">\u1F477; Labor</span>
           <span class="budget-val">${peso(eff.labor)}</span>
         </div>
         <div class="mini-bar">
           <div class="mini-fill ${budgetBarClass(pUsedLabor)}" style="width:${dLabor}%"></div>
         </div>
-        <div class="budget-sub">${peso(laborSpent)} spent · ${pUsedLabor}%</div>
+        <div class="budget-sub">${peso(laborSpent)} spent \u00B7; ${pUsedLabor}%</div>
         <div class="budget-row" style="margin-top:6px">
-          <span class="budget-label">&#x1F4E6; Materials</span>
+          <span class="budget-label">\u1F4E6; Materials</span>
           <span class="budget-val">${peso(eff.material)}</span>
         </div>
         <div class="mini-bar">
           <div class="mini-fill ${budgetBarClass(pUsedMat)}" style="width:${dMat}%"></div>
         </div>
-        <div class="budget-sub">${peso(matSpent)} spent · ${pUsedMat}%</div>
+        <div class="budget-sub">${peso(matSpent)} spent \u00B7; ${pUsedMat}%</div>
       </div>
       <div class="proj-actions">
         ${p.status === 'active'
-          ? `<button class="proj-open-btn" data-action="open">Open Workspace &#x2192;</button>
-             <button class="btn-complete" data-action="complete">&#x2713; Done</button>`
-          : `<button class="btn-reopen" data-action="reopen">&#x21BB; Reopen</button>`
+          ? `<button class="proj-open-btn" data-action="open">Open Workspace \u2192;</button>
+             <button class="btn-complete" data-action="complete">\u2713; Done</button>`
+          : `<button class="btn-reopen" data-action="reopen">\u21BB; Reopen</button>`
         }
-        <button class="btn-edit-proj" data-action="edit">&#x270E; Edit</button>
-        <button class="btn-delete" data-action="delete">&#x1F5D1;</button>
+        ${canEditProject(p.id) ? `
+          <button class="btn-edit-proj" data-action="edit">\u270E; Edit</button>
+          <button class="btn-delete" data-action="delete">\u1F5D1;</button>
+        ` : ''}
       </div>
     `;
-  
+
     div.addEventListener('click', e => {
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
@@ -268,7 +361,7 @@ function buildProjectCard(p) {
       else if (action === 'edit') openEditProjectModal(p.id);
       else if (action === 'delete') deleteProject(p.id);
     });
-  
+
     return div;
   }
 
@@ -337,10 +430,10 @@ function renderDashboardSummary(projects, context = '') {
   }
   warn.innerHTML =
     critical > 0
-      ? `<div class="budget-warn-bar warn-critical">&#x26A0; ${critical} project${critical !== 1 ? 's' : ''} with CRITICAL budget usage!</div>`
+      ? `<div class="budget-warn-bar warn-critical">\u26A0; ${critical} project${critical !== 1 ? 's' : ''} with CRITICAL budget usage!</div>`
       : warning > 0
-        ? `<div class="budget-warn-bar warn-high">&#x26A0; ${warning} project${warning !== 1 ? 's' : ''} with HIGH budget usage.</div>`
-        : `<div style="font-size:12px;color:var(--green);padding:8px 0">&#x2713; All projects are within budget limits.</div>`;
+        ? `<div class="budget-warn-bar warn-high">\u26A0; ${warning} project${warning !== 1 ? 's' : ''} with HIGH budget usage.</div>`
+        : `<div style="font-size:12px;color:var(--green);padding:8px 0">\u2713; All projects are within budget limits.</div>`;
 }
 
 function renderComparison(projects, targetId = 'comparisonView') {
@@ -407,7 +500,19 @@ async function createProject() {
       payrollConfig: { type: 'weekly', overtimeThreshold: 8, nightDiffRate: 1.1 }
     };
 
-    await safeDb(() => db.ref('projects').push(projectData), 'Failed to create project');
+    const newRef = await safeDb(() => db.ref('projects').push(projectData), 'Failed to create project');
+    const newPid = newRef.key;
+
+    // Auto-assign to creator
+    const user = window._currentUser;
+    if (user && user.role === 'apm') {
+      const currentProjects = user.projects || [];
+      currentProjects.push(newPid);
+      await db.ref(`users/${user.uid}/projects`).set(currentProjects);
+      user.projects = currentProjects;
+      window._currentUser = user;
+    }
+
     $('newName').value = ''; $('newLaborBudget').value = ''; $('newMaterialBudget').value = '';
     auditLog('create', 'project', null, { name, laborBudget, materialBudget });
     showToast(`Project "${name}" created!`);
@@ -429,7 +534,7 @@ async function reopenProject(pid) {
 }
 
 async function deleteProject(pid) {
-  if (!confirm('\u26A0\uFE0F WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nType DELETE to confirm:')) return;
+  if (!confirm('\u26A0\uFE0F; WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nType DELETE to confirm:')) return;
   const confirmText = prompt('Type DELETE to confirm permanent deletion:');
   if (confirmText !== 'DELETE') { showToast('Deletion cancelled.', 'warn'); return; }
 
@@ -448,6 +553,11 @@ function detachHubListeners() {
 // ════════════════════════════════════════════════════════════
 
 async function enterProject(pid) {
+  if (!canAccessProject(pid)) {
+    showToast('You do not have access to this project.', 'error');
+    return;
+  }
+
   window._currentPid = pid;
   const snap = await db.ref(`projects/${pid}`).once('value');
   const p = snap.val();
@@ -468,6 +578,9 @@ async function enterProject(pid) {
   initChangeOrders(pid);
   initSiteLog(pid);
   initSuppliers();
+  initTasks(pid);
+  initEquipment(pid);
+  initNotifications();
 
   // Load project notes
   loadProjectNotes(pid);
@@ -483,6 +596,9 @@ function exitHub() {
   detachCOListeners();
   detachSiteLogListeners();
   detachSupplierListeners();
+  detachTaskListeners();
+  detachEquipListeners();
+  detachNotifications();
 
   $('workspaceView').classList.add('hidden');
   $('hubView').classList.remove('hidden');
@@ -495,6 +611,10 @@ function switchTab(tab) {
   $(`tab_${tab}`)?.classList.add('tab-active');
   document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
   $(`${tab}Panel`)?.classList.remove('hidden');
+
+  // Trigger view-specific renders
+  if (tab === 'tasks') renderGanttView();
+  if (tab === 'reports') initReports();
 }
 
 function unlockForEdit() {
@@ -545,8 +665,8 @@ async function saveProjectNotes() {
 
 // Keyboard shortcuts
 window.addEventListener('keydown', e => {
-  if (e.ctrlKey && e.key >= '1' && e.key <= '6') {
-    const tabs = ['labor', 'materials', 'billing', 'changeorders', 'sitelog', 'suppliers'];
+  if (e.ctrlKey && e.key >= '1' && e.key <= '8') {
+    const tabs = ['labor', 'materials', 'billing', 'changeorders', 'sitelog', 'suppliers', 'tasks', 'equipment'];
     const idx = parseInt(e.key) - 1;
     if (tabs[idx] && !$('workspaceView').classList.contains('hidden')) {
       switchTab(tabs[idx]);
@@ -555,7 +675,7 @@ window.addEventListener('keydown', e => {
   }
   if (e.ctrlKey && e.key === 's') {
     e.preventDefault();
-    showToast('Auto-saved to Firebase \u2601\uFE0F', 'success');
+    showToast('Auto-saved to Firebase \u2601\uFE0F;', 'success');
   }
 });
 
@@ -563,7 +683,7 @@ window.addEventListener('keydown', e => {
 //  PROGRESS RING (SVG Donut)
 // ════════════════════════════════════════════════════════════
 function buildProgressRing(pctUsed, isCritical, isWarning) {
-  const circumference = 2 * Math.PI * 18; // r=18, viewBox 40x40
+  const circumference = 2 * Math.PI * 18;
   const offset = circumference - (Math.min(pctUsed, 100) / 100) * circumference;
   const color = isCritical ? 'var(--red)' : isWarning ? 'var(--amber)' : 'var(--green)';
   const bgColor = isCritical ? 'var(--red-glow)' : isWarning ? 'var(--amber-glow)' : 'var(--green-glow)';
@@ -609,7 +729,6 @@ async function editProject() {
   if (!name) { showToast('Enter project name.', 'error'); return; }
   if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
 
-  // Duplicate name check (exclude current project)
   const dupCheck = await db.ref('projects').orderByChild('name').equalTo(name).once('value');
   if (dupCheck.exists()) {
     const keys = Object.keys(dupCheck.val());
@@ -654,13 +773,13 @@ function renderDashboardAlerts(projects) {
 
   if (critical > 0) {
     el.className = 'dashboard-alerts warn-critical';
-    el.innerHTML = `&#x26A0;&#xFE0F; <strong>${critical} project${critical !== 1 ? 's' : ''}</strong> with CRITICAL budget usage &nbsp;|&nbsp; ${warning} warning &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+    el.innerHTML = `\u26A0\uFE0F; <strong>${critical} project${critical !== 1 ? 's' : ''}</strong> with CRITICAL budget usage &nbsp;|&nbsp; ${warning} warning &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
   } else if (warning > 0) {
     el.className = 'dashboard-alerts warn-high';
-    el.innerHTML = `&#x26A0;&#xFE0F; <strong>${warning} project${warning !== 1 ? 's' : ''}</strong> approaching budget limit &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+    el.innerHTML = `\u26A0\uFE0F; <strong>${warning} project${warning !== 1 ? 's' : ''}</strong> approaching budget limit &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
   } else if (projects.length) {
     el.className = 'dashboard-alerts warn-ok';
-    el.innerHTML = `&#x2713; All ${active} active project${active !== 1 ? 's' : ''} within budget &nbsp;|&nbsp; Total: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+    el.innerHTML = `\u2713; All ${active} active project${active !== 1 ? 's' : ''} within budget &nbsp;|&nbsp; Total: ${peso(totalSpent)} / ${peso(totalBudget)}`;
   } else {
     el.className = 'dashboard-alerts';
     el.innerHTML = '';
@@ -700,12 +819,14 @@ async function exportHubCSV() {
   await withBusy(btn, async () => {
     const snap = await db.ref('projects').once('value');
     const projects = [];
-    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      if (canAccessProject(c.key)) projects.push({ id: c.key, ...c.val() });
+    });
     projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     if (!projects.length) { showToast('No projects to export.', 'warn'); return; }
 
-    let csv = 'Project Name,Status,Created Date,Labor Budget,Material Budget,Total Budget,Labor Spent,Material Spent,Total Spent,Remaining,% Used\n';
+    let csv = 'Project Name,Status,Created Date,Labor Budget,Material Budget,Total Budget,Labor Spent,Material Spent,Total Spent,Remaining,% Used,Health Score\\n';
     projects.forEach(p => {
       const eff = effectiveBudget(p);
       const laborSpent = parseFloat(p.laborSpent) || 0;
@@ -713,7 +834,8 @@ async function exportHubCSV() {
       const totalSpent = laborSpent + matSpent;
       const remaining = eff.total - totalSpent;
       const pctUsed = pct(totalSpent, eff.total);
-      csv += `"${(p.name || '').replace(/"/g, '""')}",${p.status || 'active'},"${p.createdDate || ''}",${p.laborBudget || 0},${p.materialBudget || 0},${eff.total},${laborSpent},${matSpent},${totalSpent},${remaining},${pctUsed}%\n`;
+      const health = typeof calculateProjectHealth === 'function' ? calculateProjectHealth(p).score : 100;
+      csv += `"${(p.name || '').replace(/"/g, '""')}",${p.status || 'active'},"${p.createdDate || ''}",${p.laborBudget || 0},${p.materialBudget || 0},${eff.total},${laborSpent},${matSpent},${totalSpent},${remaining},${pctUsed}%,${health}\\n`;
     });
 
     downloadTextFile(
@@ -737,7 +859,7 @@ function refreshHub() {
   showToast('Dashboard refreshed', 'success');
 }
 
-// ── Expose to global scope ────────────────────────────────────
+// ── Expose ──────────────────────────────────────────────────
 window.createProject = createProject;
 window.markComplete = markComplete;
 window.reopenProject = reopenProject;
@@ -755,3 +877,5 @@ window.showHubTab = showHubTab;
 window.saveProjectNotes = saveProjectNotes;
 window.exportHubCSV = exportHubCSV;
 window.refreshHub = refreshHub;
+window.renderDashboardAlerts = renderDashboardAlerts;
+

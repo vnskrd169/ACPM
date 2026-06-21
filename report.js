@@ -1,0 +1,339 @@
+
+//  ACPM — reports.js
+//  Executive dashboard, project health scores, variance analysis
+//  Cross-project visibility for bosses, team performance metrics
+// ════════════════════════════════════════════════════════════
+
+let _reportsListeners = [];
+
+function initReports() {
+  detachReportsListeners();
+  renderExecutiveDashboard();
+  renderTeamPerformance();
+  renderBudgetVariance();
+}
+
+function detachReportsListeners() {
+  _reportsListeners.forEach(ref => ref.off());
+  _reportsListeners = [];
+}
+
+function reportsListen(ref, cb) {
+  ref.on('value', cb);
+  _reportsListeners.push(ref);
+}
+
+// ══════════════════════════════════════════════════════
+//  EXECUTIVE DASHBOARD
+// ══════════════════════════════════════════════════════
+function renderExecutiveDashboard() {
+  const user = window._currentUser;
+  if (!user || user.role !== 'boss') {
+    const el = $('executiveDashboard');
+    if (el) el.innerHTML = '<p class="empty-hint">Executive dashboard available for bosses only.</p>';
+    return;
+  }
+
+  const ref = firebase.database().ref('projects');
+  reportsListen(ref, snap => {
+    const projects = [];
+    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+
+    // Health scores
+    const healthData = projects.map(p => ({
+      ...p,
+      health: calculateProjectHealth(p)
+    }));
+
+    healthData.sort((a, b) => b.health.score - a.health.score);
+
+    // Render health cards
+    const container = $('execProjectHealth');
+    if (container) {
+      container.innerHTML = healthData.map(p => {
+        const h = p.health;
+        const color = h.score >= 80 ? 'var(--green)' : h.score >= 60 ? 'var(--amber)' : 'var(--red)';
+        const glow = h.score >= 80 ? 'var(--green-glow)' : h.score >= 60 ? 'var(--amber-glow)' : 'var(--red-glow)';
+        return `
+          <div class="health-card" style="border-left-color:${color}">
+            <div class="health-hdr">
+              <span class="health-name">${escapeHtml(p.name || 'Untitled')}</span>
+              <span class="health-score" style="color:${color}">${h.score}</span>
+            </div>
+            <div class="health-bars">
+              <div class="health-bar-wrap">
+                <span>Budget</span>
+                <div class="health-bar"><div style="width:${h.budgetPct}%;background:${color}"></div></div>
+                <span>${h.budgetPct}%</span>
+              </div>
+              <div class="health-bar-wrap">
+                <span>Schedule</span>
+                <div class="health-bar"><div style="width:${h.schedulePct}%;background:${color}"></div></div>
+                <span>${h.schedulePct}%</span>
+              </div>
+              <div class="health-bar-wrap">
+                <span>Labor</span>
+                <div class="health-bar"><div style="width:${h.laborPct}%;background:${color}"></div></div>
+                <span>${h.laborPct}%</span>
+              </div>
+            </div>
+            ${h.warnings.length ? `<div class="health-warn">${h.warnings.map(w => `\u26A0 ${w}`).join('<br>')}</div>` : '<div class="health-ok">\u2713 All clear</div>'}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Summary stats
+    const active = projects.filter(p => p.status === 'active').length;
+    const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
+    const totalSpent = projects.reduce((s, p) =>
+      s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
+    const avgHealth = healthData.length ? Math.round(healthData.reduce((s, p) => s + p.health.score, 0) / healthData.length) : 0;
+
+    setText('execActiveProjects', active);
+    setText('execTotalBudget', peso(totalBudget));
+    setText('execTotalSpent', peso(totalSpent));
+    setText('execAvgHealth', avgHealth + '%');
+
+    const healthEl = $('execAvgHealth');
+    if (healthEl) {
+      healthEl.style.color = avgHealth >= 80 ? 'var(--green)' : avgHealth >= 60 ? 'var(--amber)' : 'var(--red)';
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  PROJECT HEALTH ALGORITHM
+// ══════════════════════════════════════════════════════
+function calculateProjectHealth(p) {
+  const eff = effectiveBudget(p);
+  const laborSpent = parseFloat(p.laborSpent) || 0;
+  const matSpent = parseFloat(p.materialSpent) || 0;
+  const totalSpent = laborSpent + matSpent;
+  const budgetPct = eff.total ? Math.round((totalSpent / eff.total) * 100) : 0;
+
+  // Budget health (lower is better, but 0% is also bad = no activity)
+  let budgetScore = 100;
+  if (budgetPct > 95) budgetScore = 30;
+  else if (budgetPct > 85) budgetScore = 60;
+  else if (budgetPct > 70) budgetScore = 80;
+  else if (budgetPct < 5) budgetScore = 50; // No activity yet
+
+  // Schedule health (based on contract dates)
+  let scheduleScore = 100;
+  const warnings = [];
+  if (p.contract?.endDate) {
+    const end = new Date(p.contract.endDate);
+    const now = new Date();
+    const daysLeft = Math.ceil((end - now) / 86400000);
+    const start = p.contract.startDate ? new Date(p.contract.startDate) : now;
+    const totalDays = Math.max(1, (end - start) / 86400000);
+    const elapsedPct = Math.min(100, ((now - start) / (end - start)) * 100);
+
+    if (daysLeft < 0) {
+      scheduleScore = 20;
+      warnings.push(`Overdue by ${Math.abs(daysLeft)} days`);
+    } else if (daysLeft < 14) {
+      scheduleScore = 50;
+      warnings.push(`${daysLeft} days remaining`);
+    } else if (elapsedPct > 80 && budgetPct < 60) {
+      scheduleScore = 60;
+      warnings.push('Behind schedule');
+    }
+  }
+
+  // Labor health
+  let laborScore = 100;
+  const laborBudget = eff.labor;
+  if (laborBudget) {
+    const laborPct = Math.round((laborSpent / laborBudget) * 100);
+    if (laborPct > 95) { laborScore = 40; warnings.push('Labor budget critical'); }
+    else if (laborPct > 85) { laborScore = 65; warnings.push('Labor budget warning'); }
+  }
+
+  // Overall score (weighted)
+  const score = Math.round((budgetScore * 0.4) + (scheduleScore * 0.35) + (laborScore * 0.25));
+
+  return {
+    score,
+    budgetPct,
+    schedulePct: scheduleScore,
+    laborPct: laborScore,
+    warnings: warnings.slice(0, 3)
+  };
+}
+
+// ══════════════════════════════════════════════════════
+//  TEAM PERFORMANCE
+// ══════════════════════════════════════════════════════
+function renderTeamPerformance() {
+  const ref = firebase.database().ref('projects');
+  reportsListen(ref, snap => {
+    const el = $('teamPerformance');
+    if (!el) return;
+
+    // Aggregate worker data across projects
+    const workerStats = {};
+    snap.forEach(proj => {
+      const pid = proj.key;
+      const p = proj.val();
+      if (p.workers) {
+        Object.entries(p.workers).forEach(([wid, w]) => {
+          if (!workerStats[w.name]) {
+            workerStats[w.name] = { name: w.name, trade: w.trade, projects: [], totalDays: 0, totalPay: 0 };
+          }
+          workerStats[w.name].projects.push(p.name || pid);
+        });
+      }
+      // Count attendance
+      if (p.attendance) {
+        Object.entries(p.attendance).forEach(([wid, days]) => {
+          // Find worker name
+          let wname = wid;
+          if (p.workers && p.workers[wid]) wname = p.workers[wid].name;
+          if (!workerStats[wname]) {
+            workerStats[wname] = { name: wname, trade: 'Unknown', projects: [], totalDays: 0, totalPay: 0 };
+          }
+          Object.values(days).forEach(d => {
+            if (d.status !== 'absent' && d.status !== 'rest') {
+              workerStats[wname].totalDays += (d.status === 'half' ? 0.5 : 1);
+            }
+          });
+        });
+      }
+    });
+
+    const workers = Object.values(workerStats).sort((a, b) => b.totalDays - a.totalDays);
+
+    if (!workers.length) {
+      el.innerHTML = '<p class="empty-hint">No worker data yet.</p>';
+      return;
+    }
+
+    el.innerHTML = `<div style="overflow-x:auto">
+      <table class="summary-table">
+        <thead><tr>
+          <th>Worker</th><th>Trade</th><th style="text-align:center">Projects</th>
+          <th style="text-align:center">Days Worked</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+          ${workers.map(w => `
+            <tr class="s-row">
+              <td class="s-cell s-bold">${escapeHtml(w.name)}</td>
+              <td class="s-cell s-trade">${escapeHtml(w.trade)}</td>
+              <td class="s-cell s-center">${w.projects.length}</td>
+              <td class="s-cell s-center">${w.totalDays}</td>
+              <td class="s-cell">${w.totalDays > 20 ? '<span class="badge badge-green">Active</span>' : '<span class="badge badge-amber">Light</span>'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  BUDGET VARIANCE ANALYSIS
+// ══════════════════════════════════════════════════════
+function renderBudgetVariance() {
+  const ref = firebase.database().ref('projects');
+  reportsListen(ref, snap => {
+    const el = $('budgetVariance');
+    if (!el) return;
+
+    const rows = [];
+    snap.forEach(c => {
+      const p = c.val();
+      const eff = effectiveBudget(p);
+      const laborSpent = parseFloat(p.laborSpent) || 0;
+      const matSpent = parseFloat(p.materialSpent) || 0;
+      const totalSpent = laborSpent + matSpent;
+      const laborVar = eff.labor - laborSpent;
+      const matVar = eff.material - matSpent;
+      const totalVar = eff.total - totalSpent;
+
+      rows.push({
+        name: p.name || 'Untitled',
+        laborBudget: eff.labor, laborSpent, laborVar,
+        matBudget: eff.material, matSpent, matVar,
+        totalBudget: eff.total, totalSpent, totalVar
+      });
+    });
+
+    if (!rows.length) {
+      el.innerHTML = '<p class="empty-hint">No project data.</p>';
+      return;
+    }
+
+    el.innerHTML = `<div style="overflow-x:auto">
+      <table class="summary-table">
+        <thead><tr>
+          <th>Project</th>
+          <th style="text-align:right">Labor Budget</th><th style="text-align:right">Spent</th><th style="text-align:right">Variance</th>
+          <th style="text-align:right">Mat Budget</th><th style="text-align:right">Spent</th><th style="text-align:right">Variance</th>
+          <th style="text-align:right">Total Var</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr class="s-row">
+              <td class="s-cell s-bold">${escapeHtml(r.name)}</td>
+              <td class="s-cell s-right">${peso(r.laborBudget)}</td>
+              <td class="s-cell s-right">${peso(r.laborSpent)}</td>
+              <td class="s-cell s-right ${r.laborVar < 0 ? 'text-red' : 'text-green'}">${peso(r.laborVar)}</td>
+              <td class="s-cell s-right">${peso(r.matBudget)}</td>
+              <td class="s-cell s-right">${peso(r.matSpent)}</td>
+              <td class="s-cell s-right ${r.matVar < 0 ? 'text-red' : 'text-green'}">${peso(r.matVar)}</td>
+              <td class="s-cell s-right s-bold ${r.totalVar < 0 ? 'text-red' : 'text-green'}">${peso(r.totalVar)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  WEEKLY REPORT GENERATOR
+// ══════════════════════════════════════════════════════
+async function generateWeeklyReport() {
+  const user = window._currentUser;
+  if (!user) return;
+
+  const snap = await firebase.database().ref('projects').once('value');
+  const projects = [];
+  snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+
+  // Filter for APM's projects
+  const myProjects = user.role === 'boss'
+    ? projects
+    : projects.filter(p => user.projects?.includes(p.id));
+
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - 7);
+  const weekStr = weekStart.toLocaleDateString('en-PH');
+
+  let report = `WEEKLY PROJECT REPORT\\nGenerated: ${new Date().toLocaleDateString('en-PH')}\\nReporter: ${user.name} (${user.role})\\n${'='.repeat(60)}\\n\\n`;
+
+  myProjects.forEach(p => {
+    const eff = effectiveBudget(p);
+    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    const health = calculateProjectHealth(p);
+
+    report += `PROJECT: ${p.name || 'Untitled'}\\n`;
+    report += `Status: ${p.status || 'active'} | Health: ${health.score}/100\\n`;
+    report += `Budget: ${peso(spent)} / ${peso(eff.total)} (${pct(spent, eff.total)}%)\\n`;
+    if (health.warnings.length) {
+      report += `Alerts: ${health.warnings.join(', ')}\\n`;
+    }
+    report += `\\n`;
+  });
+
+  downloadTextFile(`WeeklyReport_${todayISO()}.txt`, report, 'text/plain');
+  showToast('Weekly report generated!');
+}
+
+// ── Expose ──────────────────────────────────────────────────
+window.initReports = initReports;
+window.detachReportsListeners = detachReportsListeners;
+window.calculateProjectHealth = calculateProjectHealth;
+window.generateWeeklyReport = generateWeeklyReport;
