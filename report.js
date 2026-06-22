@@ -5,12 +5,120 @@
 // ════════════════════════════════════════════════════════════
 
 let _reportsListeners = [];
+let _teamAdminListener = null;
+let _teamUsersCache = [];
 
 function initReports() {
   detachReportsListeners();
   renderExecutiveDashboard();
   renderTeamPerformance();
   renderBudgetVariance();
+}
+
+function initTeamAdmin() {
+  if (window._currentUser?.role !== 'boss') {
+    const el = $('teamAdminList');
+    if (el) el.innerHTML = '<p class="empty-hint">Team admin is available for bosses only.</p>';
+    return;
+  }
+  if (_teamAdminListener) {
+    _teamAdminListener.off();
+    _teamAdminListener = null;
+  }
+  const ref = firebase.database().ref('users');
+  _teamAdminListener = ref;
+  ref.on('value', snap => {
+    const users = [];
+    snap.forEach(c => users.push({ uid: c.key, ...c.val() }));
+    users.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    _teamUsersCache = users;
+    renderTeamAdmin(users);
+  });
+}
+
+function refreshTeamAdmin() {
+  initTeamAdmin();
+}
+
+function normalizeTeamRole(role) {
+  const r = String(role || 'viewer').trim().toLowerCase();
+  return ['boss', 'apm', 'viewer'].includes(r) ? r : 'viewer';
+}
+
+async function updateUserRole(uid, role) {
+  if (window._currentUser?.role !== 'boss') {
+    showToast('You do not have permission to manage users.', 'error');
+    return;
+  }
+  const nextRole = normalizeTeamRole(role);
+  const target = _teamUsersCache.find(u => u.uid === uid);
+  if (!target) return;
+  if (uid === window._currentUser?.uid && nextRole !== 'boss') {
+    showToast('You cannot remove your own boss role from this screen.', 'error');
+    return;
+  }
+  if (!confirm(`Set ${target.name || uid} role to ${nextRole}?`)) return;
+  await safeDb(() => firebase.database().ref(`users/${uid}`).update({
+    role: nextRole,
+    updatedAt: Date.now(),
+    updatedBy: window._currentUser?.uid || null
+  }), 'Failed to update user role');
+  auditLog('update', 'user', uid, { role: nextRole });
+  showToast(`${target.name || uid} set to ${nextRole}`);
+}
+
+function filterTeamUsers(term) {
+  const needle = String(term || '').trim().toLowerCase();
+  document.querySelectorAll('[data-team-user-row]').forEach(row => {
+    const hay = row.getAttribute('data-search') || '';
+    row.style.display = !needle || hay.includes(needle) ? '' : 'none';
+  });
+}
+
+function renderTeamAdmin(users) {
+  const el = $('teamAdminList');
+  if (!el) return;
+  const counts = {
+    boss: users.filter(u => normalizeTeamRole(u.role) === 'boss').length,
+    apm: users.filter(u => normalizeTeamRole(u.role) === 'apm').length,
+    viewer: users.filter(u => normalizeTeamRole(u.role) === 'viewer').length
+  };
+  setText('teamUserCount', users.length);
+  setText('teamBossCount', counts.boss);
+  setText('teamApmCount', counts.apm);
+  setText('teamViewerCount', counts.viewer);
+
+  if (!users.length) {
+    el.innerHTML = '<p class="empty-hint">No users found.</p>';
+    return;
+  }
+
+  el.innerHTML = `<div style="overflow-x:auto"><table class="summary-table">
+    <thead><tr>
+      <th>Name</th><th>UID</th><th>Email</th><th>Role</th><th>Projects</th><th>Boss Of</th>
+    </tr></thead>
+    <tbody>
+      ${users.map(user => {
+        const role = normalizeTeamRole(user.role);
+        const search = [user.name, user.email, user.uid, role, ...(user.projects || []), ...(user.bossOf || [])].join(' ').toLowerCase();
+        return `<tr data-team-user-row data-search="${escapeHtml(search)}">
+          <td>${escapeHtml(user.name || '—')}</td>
+          <td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid)}</td>
+          <td>${escapeHtml(user.email || '—')}</td>
+          <td>
+            <select onchange="updateUserRole('${user.uid}', this.value)" ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
+              <option value="viewer" ${role === 'viewer' ? 'selected' : ''}>viewer</option>
+              <option value="apm" ${role === 'apm' ? 'selected' : ''}>apm</option>
+              <option value="boss" ${role === 'boss' ? 'selected' : ''}>boss</option>
+            </select>
+          </td>
+          <td>${escapeHtml((user.projects || []).join(', ') || '—')}</td>
+          <td>${escapeHtml((user.bossOf || []).join(', ') || '—')}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table></div>`;
+  filterTeamUsers($('userSearch')?.value || '');
 }
 
 function detachReportsListeners() {
@@ -334,6 +442,10 @@ async function generateWeeklyReport() {
 
 // ── Expose ──────────────────────────────────────────────────
 window.initReports = initReports;
+window.initTeamAdmin = initTeamAdmin;
+window.refreshTeamAdmin = refreshTeamAdmin;
+window.filterTeamUsers = filterTeamUsers;
+window.updateUserRole = updateUserRole;
 window.detachReportsListeners = detachReportsListeners;
 window.calculateProjectHealth = calculateProjectHealth;
 window.generateWeeklyReport = generateWeeklyReport;

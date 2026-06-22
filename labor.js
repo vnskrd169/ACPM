@@ -6,6 +6,10 @@ let _workersRegistered = false;
 let _projectName = '';
 let _projectSettings = { leader: '', payMethod: 'Bank' };
 
+function canTouchLaborProject() {
+  return !!_lpid && typeof canEditProject === 'function' && canEditProject(_lpid);
+}
+
 const ATTENDANCE_STATUS = {
   present:  { label: 'Present',    multiplier: 1.0, hours: 8 },
   half:     { label: 'Half Day',   multiplier: 0.5, hours: 4 },
@@ -62,6 +66,10 @@ function loadProjectSettings(pid) {
 
 async function saveProjectSettings() {
   if (!_lpid) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const leader = $('projectLeader')?.value.trim() || '';
   const payMethod = $('projectPayMethod')?.value || 'Bank';
   _projectSettings = { leader, payMethod };
@@ -112,6 +120,10 @@ function loadPayrollConfig(pid) {
 
 async function savePayrollConfig() {
   if (!_lpid) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const govEnabled = $('govDeductionsEnabled')?.checked || false;
   const config = {
     type: $('payrollCycle')?.value || 'weekly',
@@ -203,6 +215,10 @@ async function addTrade() {
   const inp = $('newTradeName');
   const name = inp?.value.trim();
   if (!name || !_lpid) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   if (name.length > 30) { showToast('Trade name too long (max 30).', 'error'); return; }
 
   // Check for duplicate trade name
@@ -218,6 +234,10 @@ async function addTrade() {
 async function renameTrade(key, old) {
   const n = prompt(`Rename "${old}":`, old);
   if (!n || !n.trim() || n === old || !_lpid) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   if (n.trim().length > 30) { showToast('Name too long.', 'error'); return; }
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades/${key}`).update({ name: n.trim() }), 'Failed to rename');
   auditLog('update', 'trade', key, { oldName: old, newName: n.trim() });
@@ -226,6 +246,10 @@ async function renameTrade(key, old) {
 
 async function deleteTrade(key, name) {
   if (!_lpid || !confirm(`Delete trade "${name}"?\n\nWorkers with this trade will keep it.`)) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades/${key}`).remove(), 'Failed to delete trade');
   auditLog('delete', 'trade', key, { name });
   showToast(`Trade "${name}" deleted`, 'warn');
@@ -309,6 +333,10 @@ function renderRoster(wSnap, pid, allAdvSnap) {
 
 async function addWorker() {
   if (!_lpid) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const name = $('workerName')?.value.trim();
   const trade = $('workerTradeSelect')?.value;
   const rate = parseFloat($('workerRate')?.value) || 0;
@@ -335,6 +363,10 @@ async function addWorker() {
 
 async function removeWorker(wid) {
   if (!_lpid || !confirm('Remove this worker and ALL their attendance records?\n\nThis cannot be undone.')) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
 
   // Atomic multi-path delete
   const attSnap = await firebase.database().ref(`projects/${_lpid}/attendance/${wid}`).once('value');
@@ -395,6 +427,10 @@ function loadAdvanceHistory(wid) {
 
 async function saveAdvance() {
   if (!_lpid || !_advWid) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const date = $('advanceDate')?.value;
   const amount = parseFloat($('advanceAmount')?.value) || 0;
   const notes = $('advanceNotes')?.value.trim() || '';
@@ -522,6 +558,10 @@ function renderAdvanceLog() {
 
 async function deleteAdvance(wid, key) {
   if (!confirm('Remove this advance record?')) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${wid}/${key}`).remove(), 'Failed to delete advance');
   loadAdvanceHistory(wid);
   renderAdvanceLog();
@@ -659,6 +699,10 @@ function calculateGrossPay(rate, att) {
 
 async function markAttendance(wid, iso, status, overtimeHours = 0, nightDiffHours = 0, notes = '') {
   if (!_lpid) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
 
   // Validate date is not in the future
   const inputDate = new Date(iso + 'T00:00:00');
@@ -682,6 +726,10 @@ async function markAttendance(wid, iso, status, overtimeHours = 0, nightDiffHour
 
 async function updateAttendanceOT(wid, iso, otHours) {
   if (!_lpid) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/attendance/${wid}/${iso}`).update({
     overtimeHours: parseFloat(otHours) || 0
   }), 'Failed to update OT');
@@ -961,6 +1009,10 @@ function closePayrollModal() { $('payrollModal').classList.add('hidden'); }
 
 async function confirmSavePayroll() {
   const d = _pendingPayrollData; if (!d) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const manualDeduct = parseFloat($('manualDeductInput')?.value) || 0;
   const net = d.grandGross - d.totalPending - manualDeduct;
 

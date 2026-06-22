@@ -1,6 +1,10 @@
 let _copid = null;
 let _coListeners = [];
 
+function canTouchChangeOrdersProject() {
+  return !!_copid && typeof canEditProject === 'function' && canEditProject(_copid);
+}
+
 function initChangeOrders(pid) {
   _copid = pid;
   detachCOListeners();
@@ -112,6 +116,10 @@ function renderCOSummary(orders, totals) {
 // ══════════════════════════════════════════════════════
 async function addChangeOrder() {
   if (!_copid) return;
+  if (!canTouchChangeOrdersProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const desc = $('coDesc').value.trim();
   const reqBy = $('coReqBy').value.trim();
   const date = $('coDate').value;
@@ -160,6 +168,10 @@ async function addChangeOrder() {
 // ══════════════════════════════════════════════════════
 async function approveRejectCO(key, newStatus) {
   if (!_copid) return;
+  if (!canTouchChangeOrdersProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
 
   const [coSnap, projSnap] = await Promise.all([
     firebase.database().ref(`projects/${_copid}/changeOrders/${key}`).once('value'),
@@ -206,6 +218,10 @@ async function approveRejectCO(key, newStatus) {
 
 async function deleteCO(key, status) {
   if (!_copid) return;
+  if (!canTouchChangeOrdersProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   if (status === 'approved') {
     if (!confirm('\u26A0\uFE0F This CO is APPROVED. Deleting it will NOT revert the budget change.\n\nTo revert the budget, first revert the CO to pending, then delete it.\n\nContinue anyway?')) return;
   } else {

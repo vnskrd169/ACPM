@@ -6,6 +6,10 @@
 let _epid = null;
 let _equipListeners = [];
 
+function canTouchEquipmentProject() {
+  return !!_epid && typeof canEditProject === 'function' && canEditProject(_epid);
+}
+
 function initEquipment(pid) {
   _epid = pid;
   detachEquipListeners();
@@ -117,6 +121,10 @@ function watchEquipSummary(pid) {
 // ══════════════════════════════════════════════════════
 async function addEquipment() {
   if (!_epid) return;
+  if (!canTouchEquipmentProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const name = $('equipName')?.value.trim();
   const type = $('equipType')?.value || 'other';
   const rentalRate = parseFloat($('equipRate')?.value) || 0;
@@ -142,6 +150,10 @@ async function addEquipment() {
 
 async function logEquipHours(equipId) {
   if (!_epid) return;
+  if (!canTouchEquipmentProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const hours = prompt('Hours used:');
   if (hours === null) return;
   const h = parseFloat(hours);
@@ -166,6 +178,10 @@ async function logEquipHours(equipId) {
 
 async function logEquipExpense(equipId) {
   if (!_epid) return;
+  if (!canTouchEquipmentProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const amount = prompt('Expense amount (₱):');
   if (amount === null) return;
   const amt = parseFloat(amount);
@@ -197,6 +213,10 @@ async function logEquipExpense(equipId) {
 
 async function scheduleEquipService(equipId) {
   if (!_epid) return;
+  if (!canTouchEquipmentProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const nextService = prompt('Next service date (YYYY-MM-DD):');
   if (!nextService) return;
 
@@ -211,6 +231,10 @@ async function scheduleEquipService(equipId) {
 
 async function deleteEquipment(equipId) {
   if (!_epid || !confirm('Delete this equipment record?')) return;
+  if (!canTouchEquipmentProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_epid}/equipment/${equipId}`).remove(), 'Failed to delete');
   auditLog('delete', 'equipment', equipId, { projectId: _epid });
   showToast('Equipment deleted', 'warn');

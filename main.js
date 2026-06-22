@@ -635,6 +635,7 @@ function switchTab(tab) {
 
   // Trigger view-specific renders
   if (tab === 'tasks') renderGanttView();
+  if (tab === 'admin' && typeof initTeamAdmin === 'function') initTeamAdmin();
   if (tab === 'reports') initReports();
 }
 

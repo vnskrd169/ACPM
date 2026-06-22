@@ -32,6 +32,10 @@ function populateCompDocTypeSelect() {
   });
 }
 
+function canTouchComplianceProject() {
+  return !!_compPid && typeof canEditProject === 'function' && canEditProject(_compPid);
+}
+
 function detachComplianceListeners() {
   _compListeners.forEach(ref => ref.off());
   _compListeners = [];
@@ -131,6 +135,10 @@ function daysUntil(dateStr) {
 // ══════════════════════════════════════════════════════
 async function addCompliance() {
   if (!_compPid) return;
+  if (!canTouchComplianceProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const docType = $('compDocType')?.value || COMPLIANCE_TYPES[0];
   const name = $('compName')?.value.trim();
   const refNo = $('compRefNo')?.value.trim() || '';
@@ -155,6 +163,10 @@ async function addCompliance() {
 
 async function renewCompliance(docId) {
   if (!_compPid) return;
+  if (!canTouchComplianceProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const newExpiry = prompt('New expiry date (YYYY-MM-DD):');
   if (!newExpiry) return;
 
@@ -175,6 +187,10 @@ async function renewCompliance(docId) {
 
 async function deleteCompliance(docId) {
   if (!_compPid || !confirm('Delete this compliance record?')) return;
+  if (!canTouchComplianceProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_compPid}/compliance/${docId}`).remove(), 'Failed to delete');
   auditLog('delete', 'compliance', docId, { projectId: _compPid });
   showToast('Document deleted', 'warn');

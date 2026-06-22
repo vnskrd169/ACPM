@@ -11,6 +11,10 @@ let _defListeners = [];
 
 const DEFECT_SEVERITY = ['minor', 'major', 'critical'];
 
+function canTouchDefectsProject() {
+  return !!_defPid && typeof canEditProject === 'function' && canEditProject(_defPid);
+}
+
 function initDefects(pid) {
   _defPid = pid;
   detachDefectListeners();
@@ -102,6 +106,10 @@ function updateDefectSummary(items) {
 // ══════════════════════════════════════════════════════
 async function addDefect() {
   if (!_defPid) return;
+  if (!canTouchDefectsProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const description = $('defDesc')?.value.trim();
   const location = $('defLocation')?.value.trim() || '';
   const severity = $('defSeverity')?.value || 'minor';
@@ -131,6 +139,10 @@ async function addDefect() {
 
 async function closeDefect(defId) {
   if (!_defPid) return;
+  if (!canTouchDefectsProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const notes = prompt('Resolution notes (optional):') || '';
 
   await safeDb(() => firebase.database().ref(`projects/${_defPid}/punchList/${defId}`).update({
@@ -146,6 +158,10 @@ async function closeDefect(defId) {
 
 async function reopenDefect(defId) {
   if (!_defPid) return;
+  if (!canTouchDefectsProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_defPid}/punchList/${defId}`).update({
     status: 'open', reopenedAt: Date.now(), reopenedBy: window._currentUser?.uid || 'system'
   }), 'Failed to reopen item');
@@ -155,6 +171,10 @@ async function reopenDefect(defId) {
 
 async function deleteDefect(defId) {
   if (!_defPid || !confirm('Delete this punch list item?')) return;
+  if (!canTouchDefectsProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_defPid}/punchList/${defId}`).remove(), 'Failed to delete item');
   auditLog('delete', 'defect', defId, { projectId: _defPid });
   showToast('Item deleted', 'warn');

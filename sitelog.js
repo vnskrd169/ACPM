@@ -2,6 +2,10 @@ let _slpid = null;
 let _slListener = null;
 let _logFilterDebounce = null;
 
+function canTouchSiteLogProject() {
+  return !!_slpid && typeof canEditProject === 'function' && canEditProject(_slpid);
+}
+
 function initSiteLog(pid) {
   _slpid = pid;
   if (_slListener) { _slListener.off(); _slListener = null; }
@@ -149,6 +153,10 @@ function renderSiteLogSummary(entries) {
 
 async function saveLog() {
   if (!_slpid) { showToast('No active project.', 'error'); return; }
+  if (!canTouchSiteLogProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const dateInp = $('logDate');
   const notesInp = $('logNotes');
   const weatherInp = $('logWeather');
@@ -203,6 +211,10 @@ async function saveLog() {
 
 async function deleteLog(key) {
   if (!_slpid || !confirm('Delete this log entry?')) return;
+  if (!canTouchSiteLogProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_slpid}/siteLogs/${key}`).remove(), 'Failed to delete log');
   auditLog('delete', 'siteLog', key, { projectId: _slpid });
   showToast('Entry deleted', 'warn');

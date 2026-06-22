@@ -6,6 +6,10 @@
 let _tpid = null;
 let _taskListeners = [];
 
+function canTouchTasksProject() {
+  return !!_tpid && typeof canEditProject === 'function' && canEditProject(_tpid);
+}
+
 function initTasks(pid) {
   _tpid = pid;
   detachTaskListeners();
@@ -189,6 +193,10 @@ function watchTaskSummary(pid) {
 // ══════════════════════════════════════════════════════
 async function addTask() {
   if (!_tpid) return;
+  if (!canTouchTasksProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const title = $('taskTitle')?.value.trim();
   const desc = $('taskDesc')?.value.trim() || '';
   const priority = $('taskPriority')?.value || 'normal';
@@ -229,6 +237,10 @@ async function addTask() {
 
 async function updateTaskStatus(taskId, newStatus) {
   if (!_tpid) return;
+  if (!canTouchTasksProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const updates = {
     status: newStatus,
     updatedAt: Date.now(),
@@ -244,6 +256,10 @@ async function updateTaskStatus(taskId, newStatus) {
 
 async function updateTaskProgress(taskId, progress) {
   if (!_tpid) return;
+  if (!canTouchTasksProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   progress = Math.max(0, Math.min(100, parseInt(progress) || 0));
   const status = progress >= 100 ? 'done' : progress > 0 ? 'in_progress' : 'todo';
   await safeDb(() => firebase.database().ref(`projects/${_tpid}/tasks/${taskId}`).update({
@@ -254,6 +270,10 @@ async function updateTaskProgress(taskId, progress) {
 
 async function deleteTask(taskId) {
   if (!_tpid || !confirm('Delete this task?')) return;
+  if (!canTouchTasksProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_tpid}/tasks/${taskId}`).remove(), 'Failed to delete task');
   auditLog('delete', 'task', taskId, { projectId: _tpid });
   showToast('Task deleted', 'warn');
@@ -318,6 +338,10 @@ function closeEditTaskModal() {
 async function saveEditTask() {
   const taskId = $('editTaskId')?.value;
   if (!taskId || !_tpid) return;
+  if (!canTouchTasksProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
 
   const updates = {
     title: $('editTaskTitle')?.value.trim(),

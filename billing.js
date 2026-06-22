@@ -3,6 +3,10 @@ let _contractListener = null;
 let _billingsListener = null;
 let _collectionsListener = null;
 
+function canTouchBillingProject() {
+  return !!_bpid && typeof canEditProject === 'function' && canEditProject(_bpid);
+}
+
 function initBilling(pid) {
   _bpid = pid;
   detachBillingListeners();
@@ -37,6 +41,10 @@ function watchContract(pid) {
 
 async function saveContract() {
   if (!_bpid) return;
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const amount = parseFloat($('contractAmount').value) || 0;
   const downpct = parseFloat($('contractDownPct').value) || 0;
   const retention = parseFloat($('contractRetention').value) || 0;
@@ -78,6 +86,10 @@ async function saveContract() {
 }
 
 function openEditContractModal() {
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   firebase.database().ref(`projects/${_bpid}/contract`).once('value', snap => {
     const c = snap.val() || {};
     $('editContractClient').value = c.client || '';
@@ -96,6 +108,10 @@ function closeEditContractModal() {
 
 async function saveEditContract() {
   if (!_bpid) return;
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const amount = parseFloat($('editContractAmount').value) || 0;
   const downpct = parseFloat($('editContractDownPct').value) || 0;
   const retention = parseFloat($('editContractRetention').value) || 0;
@@ -215,6 +231,10 @@ function watchBillings(pid) {
 
 async function addBillingRequest() {
   if (!_bpid) return;
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const date = $('billDate').value;
   const desc = $('billDesc').value.trim();
   const amount = parseFloat($('billAmount').value) || 0;
@@ -251,6 +271,10 @@ async function addBillingRequest() {
 
 async function updateBillingStatus(key, status) {
   if (!_bpid) return;
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings/${key}`).update({
     status, updatedAt: Date.now(), updatedBy: window._currentUser.uid
   }), 'Failed to update status');
@@ -260,6 +284,10 @@ async function updateBillingStatus(key, status) {
 
 async function deleteBilling(key) {
   if (!_bpid || !confirm('Delete this billing request?')) return;
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings/${key}`).remove(), 'Failed to delete billing');
   auditLog('delete', 'billing', key, { projectId: _bpid });
   showToast('Billing request deleted', 'warn');
@@ -329,6 +357,10 @@ function watchCollections(pid) {
 
 async function addCollection() {
   if (!_bpid) return;
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const date = $('colDate').value;
   const desc = $('colDesc').value.trim();
   const amount = parseFloat($('colAmount').value) || 0;
@@ -353,6 +385,10 @@ async function addCollection() {
 
 async function deleteCollection(key) {
   if (!_bpid || !confirm('Remove this collection record?')) return;
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/collections/${key}`).remove(), 'Failed to remove collection');
   auditLog('delete', 'collection', key, { projectId: _bpid });
   showToast('Collection removed', 'warn');

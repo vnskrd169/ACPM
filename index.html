@@ -264,6 +264,7 @@ window.addEventListener('appinstalled', () => {
       <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')">&#x1F6A7; Equipment</button>
       <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
       <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
+      <button id="tab_admin" class="tab-btn" onclick="switchTab('admin')" data-boss-only style="display:none;">&#x1F465; Team Admin</button>
       <button id="tab_reports" class="tab-btn" onclick="switchTab('reports')" data-boss-only style="display:none;">&#x1F4CA; Reports</button>
     </div>
   </div>
@@ -855,6 +856,24 @@ window.addEventListener('appinstalled', () => {
   </div>
 
   <!-- ═══ REPORTS PANEL (boss only) ══════════════════════════════ -->
+  <!-- Team Admin Panel (boss only) -->
+  <div id="adminPanel" class="panel hidden">
+    <div class="panel-card">
+      <div class="panel-title">&#x1F465; Team Admin</div>
+      <div class="task-stats-row">
+        <span>Total Users: <strong id="teamUserCount">0</strong></span>
+        <span>Bosses: <strong id="teamBossCount">0</strong></span>
+        <span>APMs: <strong id="teamApmCount">0</strong></span>
+        <span>Viewers: <strong id="teamViewerCount">0</strong></span>
+      </div>
+      <div class="task-form-row">
+        <input id="userSearch" type="text" placeholder="Search users by name, email, or UID..." oninput="filterTeamUsers(this.value)" style="flex:1">
+        <button class="btn-ws-secondary" onclick="refreshTeamAdmin()">&#x1F504; Refresh</button>
+      </div>
+      <div id="teamAdminList"><p class="empty-hint">Loading users...</p></div>
+    </div>
+  </div>
+
   <div id="reportsPanel" class="panel hidden">
     <div class="panel-card">
       <div class="panel-title">&#x1F4CA; Executive Dashboard</div>

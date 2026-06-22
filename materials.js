@@ -156,6 +156,10 @@ function addDraftItem() {
 
 function removeDraftItem(i) { _draftItems.splice(i, 1); renderDraft(); }
 
+function canTouchMaterialsProject() {
+  return !!_mpid && typeof canEditProject === 'function' && canEditProject(_mpid);
+}
+
 function renderDraft() {
   const el = $('draftList'); if (!el) return;
   if (!_draftItems.length) {
@@ -185,6 +189,10 @@ function renderDraft() {
 // ── Submit PO with Approval Workflow ────────────────────────
 async function submitPO() {
   if (!_mpid) return;
+  if (!canTouchMaterialsProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   if (!_draftItems.length) { showToast('Add at least one item first.', 'error'); return; }
 
   const supplier = $('poSupplier')?.value.trim();
@@ -359,6 +367,10 @@ function closeDeliveryModal() {
 
 async function confirmDelivery() {
   if (!_mpid || !_currentDeliveryPO) return;
+  if (!canTouchMaterialsProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
 
   const [poSnap, invSnap] = await Promise.all([
     firebase.database().ref(`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}`).once('value'),
@@ -470,6 +482,10 @@ function closeInvoiceModal() {
 
 async function confirmInvoice() {
   if (!_mpid || !_currentInvoicePO) return;
+  if (!canTouchMaterialsProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
 
   const invoiceNo = $('invoiceNo')?.value.trim();
   const invoiceDate = $('invoiceDate')?.value;
@@ -594,6 +610,10 @@ function watchLedger(pid) {
 
 async function updateLedgerStatus(key, status) {
   if (!_mpid) return;
+  if (!canTouchMaterialsProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger/${key}`).update({ status }), 'Failed to update status');
   auditLog('update', 'ledger', key, { status, projectId: _mpid });
   showToast(`Status updated to ${status}`);
@@ -601,6 +621,10 @@ async function updateLedgerStatus(key, status) {
 
 async function deleteLedgerItem(key, desc) {
   if (!_mpid || !confirm(`Delete "${desc}"?`)) return;
+  if (!canTouchMaterialsProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger/${key}`).remove(), 'Failed to delete item');
   auditLog('delete', 'ledger', key, { desc, projectId: _mpid });
   showToast('Item deleted', 'warn');
