@@ -1,39 +1,139 @@
-//  ACPM — auth.js
-//  Lightweight auth system using Firebase Database (NOT Auth).
-//  Roles: boss | apm | viewer
-//  No Firebase Auth costs — uses simple username/password hash
-//  stored in Firebase DB under /users/{uid}
+//  ACPM — auth.js  (Stage 1: Firebase Authentication)
+//  Replaces the old simpleHash + /sessions system with
+//  firebase.auth().signInWithEmailAndPassword + onAuthStateChanged.
+//
+//  Public API (unchanged contract):
+//    initAuth()              — called by main.js on DOMContentLoaded
+//    doLogin()               — login handler (onclick from auth UI)
+//    doResetPassword()       — sends password-reset email
+//    logout()                — signs out and reloads
+//    canAccessProject(pid)   — role/assignment gate
+//    canEditProject(pid)     — role/assignment gate
+//    getCurrentUser()        — returns the internal _currentAuthUser
+//
+//  Global side-effects (consumed by every other module):
+//    window._currentUser     — { uid, name, role, projects, bossOf }
+//    document.body classes   — role-boss, role-apm, role-viewer
 // ════════════════════════════════════════════════════════════
 
-const AUTH_VERSION = '1';
+const AUTH_VERSION = '2';
+const EMAIL_DOMAIN = '@acpm.local';
 let _currentAuthUser = null;
+let _profileListener = null;
 
-// ── Simple hash (not cryptographically secure but sufficient for internal tool)
-function simpleHash(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h) + str.charCodeAt(i);
-    h |= 0;
+// ── Helpers ──────────────────────────────────────────────────
+
+/** Normalise the login input to an email.
+ *  Users can type "boss" or "boss@acpm.local" — both work. */
+function normaliseEmail(input) {
+  const s = input.trim().toLowerCase();
+  return s.includes('@') ? s : s + EMAIL_DOMAIN;
+}
+
+/** Build a human-friendly display name from the email prefix. */
+function displayNameFromEmail(email) {
+  const local = email.split('@')[0];
+  // Capitalise first letter of each word-segment
+  return local.replace(/[_\-\.]/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ── Load user profile from /users/{uid} ─────────────────────
+//  After Firebase Auth confirms identity, we fetch the role,
+//  project assignments, and bossOf list from the Realtime DB.
+
+async function loadUserProfile(uid) {
+  try {
+    const snap = await firebase.database()
+      .ref(`users/${uid}`)
+      .once('value');
+    const data = snap.val();
+
+    if (data) {
+      return {
+        uid,
+        name:       data.name || displayNameFromEmail(firebase.auth().currentUser?.email || uid),
+        role:       data.role || 'viewer',
+        projects:   data.projects || [],
+        bossOf:     data.bossOf || [],
+        loginAt:    Date.now(),
+        email:      firebase.auth().currentUser?.email || null
+      };
+    }
+  } catch (e) {
+    console.error('loadUserProfile error:', e);
   }
-  return Math.abs(h).toString(36);
+
+  // Profile node missing (e.g. first-login before Step 4 migration).
+  // Bootstrap a minimal profile so the user isn't locked out.
+  const email = firebase.auth().currentUser?.email;
+  const fallback = {
+    uid,
+    name: displayNameFromEmail(email || uid),
+    role: 'viewer',
+    projects: [],
+    bossOf: [],
+    loginAt: Date.now(),
+    email: email || null
+  };
+
+  // Write it into DB so it exists for next login
+  firebase.database().ref(`users/${uid}`).set({
+    name: fallback.name,
+    role: fallback.role,
+    projects: [],
+    bossOf: [],
+    createdAt: Date.now()
+  }).catch(() => {});
+
+  return fallback;
+}
+
+/** Apply the profile to window globals and kick off the UI. */
+function applyProfile(profile) {
+  _currentAuthUser = profile;
+  window._currentUser = profile;
+  initAppForUser();
+}
+
+// ── Auth State Observer ───────────────────────────────────────
+//  Firebase Auth SDK persists the session across refreshes and
+//  tabs automatically — no more localStorage acpm_auth tokens.
+
+function startAuthObserver() {
+  firebase.auth().onAuthStateChanged(async (user) => {
+    if (user) {
+      // Authenticated — load the profile from RTDB
+      const profile = await loadUserProfile(user.uid);
+      applyProfile(profile);
+
+      // Also remove the old auth overlay if it's still visible
+      const overlay = document.getElementById('authOverlay');
+      if (overlay) overlay.remove();
+    } else {
+      // Signed out — show login screen
+      _currentAuthUser = null;
+      window._currentUser = { uid: 'anonymous', role: 'admin', name: 'System' };
+      showAuthScreen();
+    }
+  });
 }
 
 // ── Initialize Auth UI ──────────────────────────────────────
+
 function initAuth() {
-  const saved = localStorage.getItem('acpm_auth');
-  if (saved) {
-    try {
-      const parsed = JSON.parse(saved);
-      if (parsed && parsed.uid && parsed.token) {
-        validateSession(parsed.uid, parsed.token);
-        return;
-      }
-    } catch(e) {}
-  }
-  showAuthScreen();
+  // Firebase Auth persistence is LOCAL by default (survives refresh,
+  // cleared only by explicit signOut or password change).
+  firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+  startAuthObserver();
 }
 
+// ── Login Screen ────────────────────────────────────────────
+
 function showAuthScreen() {
+  // Don't double-render
+  if (document.getElementById('authOverlay')) return;
+
   const overlay = document.createElement('div');
   overlay.id = 'authOverlay';
   overlay.className = 'auth-overlay';
@@ -43,7 +143,7 @@ function showAuthScreen() {
         <div class="auth-logo">LB</div>
         <div>
           <div class="auth-name">ACPM</div>
-          <div class="auth-sub">LeBuild Design & Construction</div>
+          <div class="auth-sub">LeBuild Design &amp; Construction</div>
         </div>
       </div>
       <div class="auth-form">
@@ -53,128 +153,112 @@ function showAuthScreen() {
       </div>
       <div class="auth-hint">Contact admin for access credentials</div>
       <div id="authError" class="auth-error hidden"></div>
+      <div class="auth-reset-row">
+        <button class="auth-reset-btn" onclick="doResetPassword()">Forgot password?</button>
+      </div>
     </div>
   `;
   document.body.appendChild(overlay);
   document.getElementById('authUser').focus();
+
+  // Enter key submits login
   document.getElementById('authPass').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
   });
+  document.getElementById('authUser').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('authPass').focus();
+  });
 }
 
+// ── Login ────────────────────────────────────────────────────
+
 async function doLogin() {
-  const userIn = document.getElementById('authUser');
-  const passIn = document.getElementById('authPass');
-  const errEl = document.getElementById('authError');
-  const btn = document.querySelector('.auth-btn');
+  const userIn  = document.getElementById('authUser');
+  const passIn  = document.getElementById('authPass');
+  const errEl   = document.getElementById('authError');
+  const btn     = document.querySelector('.auth-btn');
 
-  const username = userIn?.value.trim().toLowerCase();
-  const password = passIn?.value;
+  const email    = normaliseEmail(userIn?.value || '');
+  const password = passIn?.value || '';
 
-  if (!username || !password) {
+  if (!email || !password) {
     errEl.textContent = 'Enter username and password';
     errEl.classList.remove('hidden');
     return;
   }
 
   btn.disabled = true;
-  btn.textContent = 'Signing in...';
+  btn.textContent = 'Signing in…';
 
   try {
-    const snap = await firebase.database().ref(`users/${username}`).once('value');
-    const userData = snap.val();
-
-    if (!userData || userData.passHash !== simpleHash(password)) {
-      errEl.textContent = 'Invalid credentials';
-      errEl.classList.remove('hidden');
-      btn.disabled = false;
-      btn.textContent = 'Sign In';
-      return;
-    }
-
-    // Generate session token
-    const token = simpleHash(username + Date.now() + Math.random());
-    const session = {
-      uid: username,
-      name: userData.name || username,
-      role: userData.role || 'viewer',
-      token: token,
-      projects: userData.projects || [],
-      bossOf: userData.bossOf || [],
-      loginAt: Date.now()
-    };
-
-    // Store session in Firebase for server-side validation
-    await firebase.database().ref(`sessions/${username}`).set({
-      token, loginAt: Date.now(), ip: 'client'
-    });
-
-    localStorage.setItem('acpm_auth', JSON.stringify(session));
-    _currentAuthUser = session;
-    window._currentUser = session;
-
-    // Remove overlay and init app
-    const overlay = document.getElementById('authOverlay');
-    if (overlay) overlay.remove();
-
-    showToast(`Welcome, ${session.name} (${session.role})`);
-    initAppForUser();
-
+    await firebase.auth().signInWithEmailAndPassword(email, password);
+    // onAuthStateChanged will fire and call applyProfile — nothing else
+    // to do here. If sign-in throws, we catch it below.
   } catch (e) {
-    console.error(e);
-    errEl.textContent = 'Connection error. Check internet.';
+    console.error('Login error:', e);
+    let msg = 'Connection error. Check internet.';
+    switch (e.code) {
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+      case 'auth/invalid-credential':
+        msg = 'Invalid username or password';
+        break;
+      case 'auth/too-many-requests':
+        msg = 'Too many attempts. Try again later.';
+        break;
+      case 'auth/invalid-email':
+        msg = 'Invalid username format';
+        break;
+    }
+    errEl.textContent = msg;
     errEl.classList.remove('hidden');
     btn.disabled = false;
     btn.textContent = 'Sign In';
   }
 }
 
-async function validateSession(uid, token) {
+// ── Password Reset ──────────────────────────────────────────
+
+async function doResetPassword() {
+  const userIn = document.getElementById('authUser');
+  const email  = normaliseEmail(userIn?.value || '');
+  const errEl  = document.getElementById('authError');
+
+  if (!email) {
+    errEl.textContent = 'Enter your username above first';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
   try {
-    const snap = await firebase.database().ref(`sessions/${uid}`).once('value');
-    const sessionData = snap.val();
-    if (!sessionData || sessionData.token !== token) {
-      logout();
-      return;
-    }
-
-    const userSnap = await firebase.database().ref(`users/${uid}`).once('value');
-    const userData = userSnap.val();
-    if (!userData) { logout(); return; }
-
-    _currentAuthUser = {
-      uid, name: userData.name || uid,
-      role: userData.role || 'viewer',
-      token, projects: userData.projects || [],
-      bossOf: userData.bossOf || [],
-      loginAt: sessionData.loginAt
-    };
-    window._currentUser = _currentAuthUser;
-    initAppForUser();
-
+    await firebase.auth().sendPasswordResetEmail(email);
+    errEl.textContent = 'Password reset email sent. Check your inbox.';
+    errEl.classList.remove('hidden');
   } catch (e) {
-    console.error(e);
-    // Offline mode - use cached session
-    _currentAuthUser = JSON.parse(localStorage.getItem('acpm_auth'));
-    window._currentUser = _currentAuthUser;
-    initAppForUser();
+    let msg = 'Could not send reset email.';
+    if (e.code === 'auth/user-not-found') {
+      msg = 'No account found for that username.';
+    }
+    errEl.textContent = msg;
+    errEl.classList.remove('hidden');
   }
 }
 
+// ── Logout ──────────────────────────────────────────────────
+
 function logout() {
-  const uid = _currentAuthUser?.uid;
-  if (uid) firebase.database().ref(`sessions/${uid}`).remove().catch(()=>{});
-  localStorage.removeItem('acpm_auth');
-  _currentAuthUser = null;
-  window._currentUser = null;
-  location.reload();
+  firebase.auth().signOut().catch(() => {});
+  // onAuthStateChanged (sign-out path) will clear _currentAuthUser
+  // and reload via showAuthScreen. No explicit reload needed.
 }
 
+// ── App Bootstrap ───────────────────────────────────────────
+
 function initAppForUser() {
-  // Update UI based on role
   const role = _currentAuthUser?.role || 'viewer';
 
-  // Boss sees everything, APM sees assigned projects
+  // Role-based CSS classes
+  document.body.classList.remove('role-boss', 'role-apm', 'role-viewer');
   if (role === 'boss') {
     document.body.classList.add('role-boss');
   } else if (role === 'apm') {
@@ -194,17 +278,18 @@ function initAppForUser() {
   // Re-render hub with role-aware data
   renderHub();
 
-  // Boss-only background housekeeping (cheap, fire-and-forget)
+  // Boss-only background housekeeping
   if (role === 'boss') {
     scanComplianceAcrossProjects().catch(() => {});
     pruneAuditLog().catch(() => {});
   }
 }
 
+// ── Role / Access Helpers ───────────────────────────────────
+
 function filterProjectsByRole() {
   const user = _currentAuthUser;
-  if (!user || user.role === 'boss') return; // Boss sees all
-
+  if (!user || user.role === 'boss') return;
   const allowed = user.projects || [];
   window._allowedProjects = new Set(allowed);
 }
@@ -226,9 +311,10 @@ function canEditProject(pid) {
 }
 
 // ── Expose ──────────────────────────────────────────────────
-window.initAuth = initAuth;
-window.doLogin = doLogin;
-window.logout = logout;
-window.canAccessProject = canAccessProject;
-window.canEditProject = canEditProject;
-window.getCurrentUser = () => _currentAuthUser;
+window.initAuth          = initAuth;
+window.doLogin           = doLogin;
+window.doResetPassword   = doResetPassword;
+window.logout            = logout;
+window.canAccessProject  = canAccessProject;
+window.canEditProject    = canEditProject;
+window.getCurrentUser   = () => _currentAuthUser;

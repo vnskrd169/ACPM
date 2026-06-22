@@ -22,7 +22,9 @@ window._db = db;
 window._currentPid = null;
 let _hubListeners = [];
 window._isReadOnly = false;
-window._currentUser = { uid: 'anonymous', role: 'admin', name: 'System' };
+// Overwritten by auth.js once Firebase Auth resolves — this is only
+// a pre-auth fallback so other modules don't crash on null access.
+window._currentUser = { uid: 'anonymous', role: 'viewer', name: 'System', projects: [], bossOf: [] };
 window._allowedProjects = null;
 
 // ════════════════════════════════════════════════════════════

@@ -2362,3 +2362,125 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   border-radius: 20px; min-width: 10px;
   box-shadow: var(--shadow-sm);
 }
+
+/* ══════════════════════════════════════════════════════════════
+   ═══ AUTH SCREEN (Firebase Auth overlay) ═════════════════════
+══════════════════════════════════════════════════════════════ */
+
+.auth-overlay {
+  position: fixed; inset: 0;
+  background: var(--surface);
+  z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.3s ease;
+}
+
+.auth-box {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 32px 28px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.4);
+  display: flex; flex-direction: column; gap: 18px;
+}
+
+.auth-brand {
+  display: flex; align-items: center; gap: 14px;
+}
+
+.auth-logo {
+  width: 48px; height: 48px;
+  background: var(--purple);
+  color: #fff;
+  font-size: 18px; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.auth-name {
+  font-size: 22px; font-weight: 900;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.auth-sub {
+  font-size: 12px; color: var(--muted2);
+  font-weight: 500;
+}
+
+.auth-form {
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+.auth-form input {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-xs);
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--text);
+  transition: border-color var(--transition-fast);
+  min-height: var(--touch);
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: var(--purple);
+  box-shadow: 0 0 0 3px rgba(124,58,237,.15);
+}
+
+.auth-form input::placeholder {
+  color: var(--muted2);
+}
+
+.auth-btn {
+  background: var(--purple);
+  color: #fff;
+  font-size: 14px; font-weight: 700;
+  padding: 12px;
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  min-height: var(--touch);
+  transition: background var(--transition-fast);
+}
+
+.auth-btn:hover { background: var(--purple-l); }
+.auth-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+.auth-hint {
+  font-size: 11px; color: var(--muted2);
+  text-align: center;
+}
+
+.auth-error {
+  font-size: 13px;
+  color: var(--red);
+  background: rgba(239,68,68,.08);
+  border: 1px solid rgba(239,68,68,.2);
+  border-radius: var(--radius-xs);
+  padding: 10px 12px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.auth-error.hidden { display: none; }
+
+.auth-reset-row {
+  display: flex; justify-content: center;
+}
+
+.auth-reset-btn {
+  background: none; border: none;
+  color: var(--muted2);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: color var(--transition-fast);
+}
+
+.auth-reset-btn:hover { color: var(--purple-xl); }

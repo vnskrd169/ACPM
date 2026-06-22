@@ -1,0 +1,86 @@
+{
+  "rules": {
+    // ── Default lockdown ──────────────────────────────────────────
+    // Anything not explicitly allowed below is denied. This is the
+    // single most important file for the "runs 10 years unattended"
+    // mandate — the public web API key in main.js is *designed* to be
+    // public; security lives here, not in the client.
+    ".read":  false,
+    ".write": false,
+
+    // ── User profiles ─────────────────────────────────────────────
+    // Keyed by Firebase Auth UID after the Stage 1 migration.
+    // A user can read & write their own profile (name, etc).
+    // A boss can read anyone's profile (for the team directory).
+    "users": {
+      ".read": "auth != null",
+      "$uid": {
+        ".read":  "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss'",
+        ".write": "auth.uid === $uid"
+      }
+    },
+
+    // ── Projects (the core of the app) ────────────────────────────
+    // Any authenticated user can read projects; the client enforces
+    // per-project visibility via canAccessProject(). Write access is
+    // authenticated-only — role/project-assignment enforcement is a
+    // Stage 2 concern (would require mirroring the access map into
+    // rules via root.child('users/'+auth.uid+'/projects')).
+    "projects": {
+      ".read":  "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["status", "name", "createdAt"],
+      "$pid": {
+        "billings":      { ".indexOn": ["seq", "status"] },
+        "changeOrders":  { ".indexOn": ["seq", "status"] },
+        "purchaseOrders":{ ".indexOn": ["seq", "status"] },
+        "ledger":        { ".indexOn": ["poId", "status"] },
+        "attendanceHistory": { ".indexOn": "savedAt" },
+        "payrollLogs":   { ".indexOn": "savedAt" },
+        "siteLogs":      { ".indexOn": "savedAt" }
+      }
+    },
+
+    // ── Global supplier directory ─────────────────────────────────
+    "suppliers": {
+      ".read":  "auth != null",
+      ".write": "auth != null",
+      ".indexOn": "name"
+    },
+
+    // ── Audit log (global, append-only in practice) ───────────────
+    "auditLogs": {
+      ".read":  "auth != null",
+      ".write": "auth != null",
+      ".indexOn": "timestamp"
+    },
+
+    // ── Per-user notifications ────────────────────────────────────
+    // Any authenticated user can write a notification to another user
+    // (system + @mentions). A user can only read their own inbox.
+    "notifications": {
+      "$uid": {
+        ".read":  "auth.uid === $uid",
+        ".write": "auth != null",
+        ".indexOn": ["read", "createdAt"]
+      }
+    },
+
+    // ── Compliance cross-project scan de-dupe flag ────────────────
+    "complianceAlertsSent": {
+      ".read":  "auth != null",
+      ".write": "auth != null"
+    },
+
+    // ── Legacy session tokens (post-migration, read-only) ─────────
+    // Kept readable for one release so any old tabs can detect the
+    // session change and reload. Writes disabled — new auth uses
+    // Firebase Auth, not this node.
+    "sessions": {
+      "$uid": {
+        ".read":  "auth.uid === $uid",
+        ".write": false
+      }
+    }
+  }
+}
