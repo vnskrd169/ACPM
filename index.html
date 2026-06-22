@@ -104,7 +104,6 @@ window.addEventListener('appinstalled', () => {
     <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#x1F313;</button>
     <button class="btn-refresh" id="refreshBtn" onclick="refreshHub()" title="Refresh dashboard">&#x1F504;</button>
     <span class="badge badge-green" id="syncBadge">&#x2601;&#xFE0F; Synced</span>
-    <button class="btn-ws-secondary" id="teamAdminBtn" onclick="openTeamAdmin()" data-boss-only style="display:none;">&#x1F465; Team Admin</button>
     <button class="btn-refresh" id="signOutBtn" onclick="logout()" title="Sign out">&#x1F6AA;</button>
     <button class="btn-hub" onclick="exitHub()">&#x1F4C2; Hub</button>
   </div>
@@ -857,7 +856,23 @@ window.addEventListener('appinstalled', () => {
   </div>
 
   <!-- ═══ REPORTS PANEL (boss only) ══════════════════════════════ -->
-
+  <!-- Team Admin Panel (boss only) -->
+  <div id="adminPanel" class="panel hidden">
+    <div class="panel-card">
+      <div class="panel-title">&#x1F465; Team Admin</div>
+      <div class="task-stats-row">
+        <span>Total Users: <strong id="teamUserCount">0</strong></span>
+        <span>Bosses: <strong id="teamBossCount">0</strong></span>
+        <span>APMs: <strong id="teamApmCount">0</strong></span>
+        <span>Viewers: <strong id="teamViewerCount">0</strong></span>
+      </div>
+      <div class="task-form-row">
+        <input id="userSearch" type="text" placeholder="Search users by name, email, or UID..." oninput="filterTeamUsers(this.value)" style="flex:1">
+        <button class="btn-ws-secondary" onclick="refreshTeamAdmin()">&#x1F504; Refresh</button>
+      </div>
+      <div id="teamAdminList"><p class="empty-hint">Loading users...</p></div>
+    </div>
+  </div>
 
   <div id="reportsPanel" class="panel hidden">
     <div class="panel-card">
