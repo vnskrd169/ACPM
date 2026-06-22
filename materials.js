@@ -300,19 +300,27 @@ async function approvePO(poId) {
     return;
   }
 
-  await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).update({
-    status: 'approved',
-    'approvalWorkflow.approvedBy': window._currentUser.uid,
-    'approvalWorkflow.approvedAt': Date.now()
-  }), 'Failed to approve PO');
+  try {
+    await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).update({
+      status: 'approved',
+      'approvalWorkflow.approvedBy': window._currentUser.uid,
+      'approvalWorkflow.approvedAt': Date.now()
+    }), 'Failed to approve PO');
 
-  const ledgerSnap = await firebase.database().ref(`projects/${_mpid}/ledger`).orderByChild('poId').equalTo(poId).once('value');
-  const updates = {};
-  ledgerSnap.forEach(c => { updates[`${c.key}/status`] = 'ordered'; });
-  await firebase.database().ref(`projects/${_mpid}/ledger`).update(updates);
+    const ledgerSnap = await firebase.database().ref(`projects/${_mpid}/ledger`).orderByChild('poId').equalTo(poId).once('value');
+    const updates = {};
+    ledgerSnap.forEach(c => { updates[`${c.key}/status`] = 'ordered'; });
 
-  auditLog('approve', 'purchaseOrder', poId, { projectId: _mpid });
-  showToast('PO approved and ready to order');
+    if (Object.keys(updates).length) {
+      await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger`).update(updates), 'Failed to update ledger items');
+    }
+
+    auditLog('approve', 'purchaseOrder', poId, { projectId: _mpid, ledgerItems: Object.keys(updates).length });
+    showToast('PO approved and ready to order');
+  } catch (e) {
+    console.error('approvePO failed:', e);
+    showToast(`Failed to approve PO: ${e?.message || 'unknown error'}`, 'error');
+  }
 }
 
 // ══════════════════════════════════════════════════════

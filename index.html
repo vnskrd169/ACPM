@@ -87,6 +87,7 @@ window.addEventListener('appinstalled', () => {
     </div>
   </div>
   <div class="hdr-right">
+    <span id="currentUserBadge" class="badge badge-purple" title="Signed-in user">System</span>
     <div class="notif-bell-wrap" style="position:relative;">
       <button class="btn-refresh" id="notifBellBtn" onclick="document.getElementById('notifDropdown').classList.toggle('hidden')" title="Notifications">
         &#x1F514;
@@ -103,6 +104,7 @@ window.addEventListener('appinstalled', () => {
     <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#x1F313;</button>
     <button class="btn-refresh" id="refreshBtn" onclick="refreshHub()" title="Refresh dashboard">&#x1F504;</button>
     <span class="badge badge-green" id="syncBadge">&#x2601;&#xFE0F; Synced</span>
+    <button class="btn-refresh" id="signOutBtn" onclick="logout()" title="Sign out">&#x1F6AA;</button>
     <button class="btn-hub" onclick="exitHub()">&#x1F4C2; Hub</button>
   </div>
 </header>
@@ -122,7 +124,7 @@ window.addEventListener('appinstalled', () => {
 <section id="hubView" class="view-hub">
 
   <!-- Create project -->
-  <div class="card hub-create-card">
+  <div class="card hub-create-card" data-boss-only style="display:none;">
     <div class="card-title">
       <span class="ct-icon" style="background:rgba(124,58,237,.15)">&#x1F3D7;</span>
       New Project Site
@@ -133,7 +135,7 @@ window.addEventListener('appinstalled', () => {
       <input id="newMaterialBudget" type="number" placeholder="Materials Budget (&#x20B1;)" inputmode="decimal">
     </div>
     <div class="form-actions">
-      <button class="btn-create" onclick="createProject()">+ Create Project</button>
+      <button class="btn-create" onclick="createProject(event)">+ Create Project</button>
     </div>
   </div>
 

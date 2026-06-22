@@ -21,6 +21,30 @@ const EMAIL_DOMAIN = '@acpm.local';
 let _currentAuthUser = null;
 let _profileListener = null;
 
+function inferRoleFromIdentity(uid, email, data = {}) {
+  const local = String(email || uid || '').split('@')[0].toLowerCase();
+  const explicitRole = String(data.role || '').trim().toLowerCase();
+  const display = String(data.name || '').trim().toLowerCase();
+  if (explicitRole === 'boss' || explicitRole === 'apm' || explicitRole === 'viewer') {
+    if (explicitRole === 'viewer' && (display.includes('admin') || display.includes('boss') || local.includes('admin') || local.includes('boss') || local === 'owner')) {
+      return 'boss';
+    }
+    return explicitRole;
+  }
+  if ((data.bossOf || []).length > 0) return 'boss';
+  if (display.includes('admin') || display.includes('boss') || local.includes('admin') || local.includes('boss') || local === 'owner') return 'boss';
+  if (local.includes('boss') || local.includes('admin') || local === 'owner') return 'boss';
+  return 'viewer';
+}
+
+function normalizeRole(role) {
+  return String(role || 'viewer').trim().toLowerCase();
+}
+
+function isBoss(role) {
+  return normalizeRole(role) === 'boss';
+}
+
 // ── Helpers ──────────────────────────────────────────────────
 
 /** Normalise the login input to an email.
@@ -47,17 +71,19 @@ async function loadUserProfile(uid) {
     const snap = await firebase.database()
       .ref(`users/${uid}`)
       .once('value');
-    const data = snap.val();
+      const data = snap.val();
 
     if (data) {
+      const email = firebase.auth().currentUser?.email || null;
+      const role = normalizeRole(inferRoleFromIdentity(uid, email, data));
       return {
         uid,
         name:       data.name || displayNameFromEmail(firebase.auth().currentUser?.email || uid),
-        role:       data.role || 'viewer',
+        role,
         projects:   data.projects || [],
         bossOf:     data.bossOf || [],
         loginAt:    Date.now(),
-        email:      firebase.auth().currentUser?.email || null
+        email
       };
     }
   } catch (e) {
@@ -67,10 +93,11 @@ async function loadUserProfile(uid) {
   // Profile node missing (e.g. first-login before Step 4 migration).
   // Bootstrap a minimal profile so the user isn't locked out.
   const email = firebase.auth().currentUser?.email;
+  const role = normalizeRole(inferRoleFromIdentity(uid, email, {}));
   const fallback = {
     uid,
     name: displayNameFromEmail(email || uid),
-    role: 'viewer',
+    role,
     projects: [],
     bossOf: [],
     loginAt: Date.now(),
@@ -93,6 +120,12 @@ async function loadUserProfile(uid) {
 function applyProfile(profile) {
   _currentAuthUser = profile;
   window._currentUser = profile;
+  const badge = document.getElementById('currentUserBadge');
+  if (badge) {
+    const role = normalizeRole(profile?.role);
+    badge.textContent = `${profile?.name || 'User'} · ${role}`;
+    badge.title = `Signed in as ${profile?.name || 'User'} (${profile?.uid || 'unknown'})`;
+  }
   initAppForUser();
 }
 
@@ -114,6 +147,11 @@ function startAuthObserver() {
       // Signed out — show login screen
       _currentAuthUser = null;
       window._currentUser = { uid: 'anonymous', role: 'admin', name: 'System' };
+      const badge = document.getElementById('currentUserBadge');
+      if (badge) {
+        badge.textContent = 'System';
+        badge.title = 'Signed out';
+      }
       showAuthScreen();
     }
   });
@@ -255,7 +293,7 @@ function logout() {
 // ── App Bootstrap ───────────────────────────────────────────
 
 function initAppForUser() {
-  const role = _currentAuthUser?.role || 'viewer';
+  const role = normalizeRole(_currentAuthUser?.role || 'viewer');
 
   // Role-based CSS classes
   document.body.classList.remove('role-boss', 'role-apm', 'role-viewer');
@@ -272,14 +310,17 @@ function initAppForUser() {
 
   // Show/hide boss-only features
   document.querySelectorAll('[data-boss-only]').forEach(el => {
-    el.style.display = role === 'boss' ? '' : 'none';
+    el.style.display = isBoss(role) ? '' : 'none';
   });
+
+  const createCard = document.querySelector('.hub-create-card');
+  if (createCard) createCard.style.display = isBoss(role) ? '' : 'none';
 
   // Re-render hub with role-aware data
   renderHub();
 
   // Boss-only background housekeeping
-  if (role === 'boss') {
+  if (isBoss(role)) {
     scanComplianceAcrossProjects().catch(() => {});
     pruneAuditLog().catch(() => {});
   }
@@ -289,7 +330,7 @@ function initAppForUser() {
 
 function filterProjectsByRole() {
   const user = _currentAuthUser;
-  if (!user || user.role === 'boss') return;
+  if (!user || isBoss(user.role)) return;
   const allowed = user.projects || [];
   window._allowedProjects = new Set(allowed);
 }
@@ -297,7 +338,7 @@ function filterProjectsByRole() {
 function canAccessProject(pid) {
   const user = _currentAuthUser;
   if (!user) return false;
-  if (user.role === 'boss') return true;
+  if (isBoss(user.role)) return true;
   if (user.bossOf && user.bossOf.includes(pid)) return true;
   return (user.projects || []).includes(pid);
 }
@@ -305,7 +346,7 @@ function canAccessProject(pid) {
 function canEditProject(pid) {
   const user = _currentAuthUser;
   if (!user) return false;
-  if (user.role === 'boss') return true;
+  if (isBoss(user.role)) return true;
   if (user.bossOf && user.bossOf.includes(pid)) return true;
   return (user.projects || []).includes(pid);
 }

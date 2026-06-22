@@ -477,9 +477,15 @@ function filterProjects(query) {
   }, 150);
 }
 
-async function createProject() {
-  const btn = event?.currentTarget;
+async function createProject(evt) {
+  const btn = evt?.currentTarget || document.querySelector('.btn-create');
   await withBusy(btn, async () => {
+    const user = window._currentUser || {};
+    if (user.role !== 'boss') {
+      showToast('Boss access required to create projects.', 'error');
+      return;
+    }
+
     const name = $('newName')?.value.trim();
     const laborBudget = parseFloat($('newLaborBudget')?.value) || 0;
     const materialBudget = parseFloat($('newMaterialBudget')?.value) || 0;
@@ -504,7 +510,6 @@ async function createProject() {
     const newPid = newRef.key;
 
     // Auto-assign to creator
-    const user = window._currentUser;
     if (user && user.role === 'apm') {
       const currentProjects = user.projects || [];
       currentProjects.push(newPid);
@@ -520,6 +525,10 @@ async function createProject() {
 }
 
 async function markComplete(pid) {
+  if (!canEditProject(pid)) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   if (!confirm('Mark this project as completed?\n\nThis will lock the project for editing.')) return;
   await safeDb(() => db.ref(`projects/${pid}`).update({ status: 'completed', completedAt: Date.now() }), 'Failed to update');
   auditLog('complete', 'project', pid, {});
@@ -527,6 +536,10 @@ async function markComplete(pid) {
 }
 
 async function reopenProject(pid) {
+  if (!canEditProject(pid)) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   if (!confirm('Reopen this project?')) return;
   await safeDb(() => db.ref(`projects/${pid}`).update({ status: 'active', reopenedAt: Date.now() }), 'Failed to update');
   auditLog('reopen', 'project', pid, {});
@@ -534,6 +547,10 @@ async function reopenProject(pid) {
 }
 
 async function deleteProject(pid) {
+  if (!canEditProject(pid)) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   if (!confirm('\u26A0\uFE0F; WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nType DELETE to confirm:')) return;
   const confirmText = prompt('Type DELETE to confirm permanent deletion:');
   if (confirmText !== 'DELETE') { showToast('Deletion cancelled.', 'warn'); return; }
@@ -660,6 +677,10 @@ function loadProjectNotes(pid) {
 async function saveProjectNotes() {
   const pid = window._currentPid;
   if (!pid) return;
+  if (!canEditProject(pid)) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const text = $('projectNotesInput')?.value?.trim() || '';
   await safeDb(() => db.ref(`projects/${pid}/notes`).set({
     text, updatedAt: Date.now(), updatedBy: window._currentUser.uid
@@ -708,6 +729,10 @@ function buildProgressRing(pctUsed, isCritical, isWarning) {
 window._editProjectId = null;
 
 function openEditProjectModal(pid) {
+  if (!canEditProject(pid)) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const snap = db.ref(`projects/${pid}`).once('value').then(snap => {
     const p = snap.val();
     if (!p) { showToast('Project not found.', 'error'); return; }
@@ -727,6 +752,10 @@ function closeEditProjectModal() {
 async function editProject() {
   const pid = window._editProjectId;
   if (!pid) return;
+  if (!canEditProject(pid)) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
   const name = $('editProjName')?.value.trim();
   const laborBudget = parseFloat($('editProjLaborBudget')?.value) || 0;
   const materialBudget = parseFloat($('editProjMaterialBudget')?.value) || 0;

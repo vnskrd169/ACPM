@@ -90,17 +90,34 @@ async function markAllNotifRead() {
 //  SEND NOTIFICATION (called from other modules)
 // ══════════════════════════════════════════════════════
 async function sendNotification({ to, type, message, projectId, projectName, link }) {
+  const sender = window._currentUser || {};
+  if (!sender.uid) return;
+
+  if (to !== sender.uid && sender.role !== 'boss' && projectId) {
+    if (!canAccessProject(projectId)) {
+      showToast('You do not have permission to notify that project.', 'error');
+      return;
+    }
+  }
+
   const notif = {
     type, message, projectId, projectName, link,
     read: false, createdAt: Date.now(),
-    from: window._currentUser?.uid || 'system',
-    fromName: window._currentUser?.name || 'System'
+    from: sender.uid || 'system',
+    fromName: sender.name || 'System'
   };
   await firebase.database().ref(`notifications/${to}`).push(notif);
 }
 
 // Send to all project members
 async function notifyProject(projectId, { type, message }) {
+  const sender = window._currentUser || {};
+  if (!sender.uid) return;
+  if (sender.role !== 'boss' && !canAccessProject(projectId)) {
+    showToast('You do not have permission to notify that project.', 'error');
+    return;
+  }
+
   const projSnap = await firebase.database().ref(`projects/${projectId}`).once('value');
   const proj = projSnap.val();
   if (!proj) return;
