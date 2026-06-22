@@ -739,7 +739,7 @@ window.addEventListener('appinstalled', () => {
         <input id="taskDueDate" type="date">
         <select id="taskPriority">
           <option value="low">Low</option>
-          <option value="medium" selected>Medium</option>
+          <option value="normal" selected>Normal</option>
           <option value="high">High</option>
           <option value="critical">Critical</option>
         </select>
@@ -1039,6 +1039,38 @@ window.addEventListener('appinstalled', () => {
     <div class="modal-actions">
       <button class="btn-mc" onclick="closeEditSupplier()">Cancel</button>
       <button class="btn-pdf" onclick="saveEditSupplier()">&#x1F4BE; Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ EDIT TASK MODAL ═══════════════════════════════════ -->
+<div id="editTaskModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-title">&#x270E; Edit Task</div>
+    <input type="hidden" id="editTaskId">
+    <div class="contract-form-grid">
+      <input id="editTaskTitle" type="text" placeholder="Task title" style="grid-column:1/-1">
+      <input id="editTaskDesc" type="text" placeholder="Description (optional)" style="grid-column:1/-1">
+      <input id="editTaskAssignee" type="text" placeholder="Assignee">
+      <input id="editTaskDueDate" type="date">
+      <select id="editTaskPriority">
+        <option value="low">Low</option>
+        <option value="normal">Normal</option>
+        <option value="high">High</option>
+        <option value="critical">Critical</option>
+      </select>
+      <select id="editTaskCategory">
+        <option value="general">General</option>
+        <option value="labor">Labor</option>
+        <option value="materials">Materials</option>
+        <option value="permits">Permits</option>
+        <option value="design">Design</option>
+      </select>
+      <input id="editTaskBudgetImpact" type="number" placeholder="Budget impact (optional)" inputmode="decimal">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-mc" onclick="closeEditTaskModal()">Cancel</button>
+      <button class="btn-pdf" onclick="saveEditTask()">&#x1F4BE; Save Changes</button>
     </div>
   </div>
 </div>
