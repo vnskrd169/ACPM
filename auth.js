@@ -76,6 +76,9 @@ async function loadUserProfile(uid) {
     if (data) {
       const email = firebase.auth().currentUser?.email || null;
       const role = normalizeRole(inferRoleFromIdentity(uid, email, data));
+      if (role === 'boss' && normalizeRole(data.role) !== 'boss') {
+        firebase.database().ref(`users/${uid}/role`).set('boss').catch(() => {});
+      }
       return {
         uid,
         name:       data.name || displayNameFromEmail(firebase.auth().currentUser?.email || uid),

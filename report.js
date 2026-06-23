@@ -177,14 +177,12 @@ async function updateUserRole(uid, role) {
     return;
   }
   if (!confirm(`Set ${target.name || uid} role to ${nextRole}?`)) return;
-  const nextProfile = {
-    ...target,
-    role: nextRole,
-    updatedAt: Date.now(),
-    updatedBy: window._currentUser?.uid || null
-  };
   try {
-    await firebase.database().ref(`users/${uid}`).set(nextProfile);
+    await firebase.database().ref(`users/${uid}`).update({
+      role: nextRole,
+      updatedAt: Date.now(),
+      updatedBy: window._currentUser?.uid || null
+    });
     auditLog('update', 'user', uid, { role: nextRole });
     showToast(`${target.name || uid} set to ${nextRole}`);
     initTeamAdmin();

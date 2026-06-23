@@ -8,7 +8,7 @@
       "$uid": {
         ".read": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss'",
         ".write": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss'",
-        ".validate": "newData.hasChildren(['name', 'role']) && newData.child('role').isString()"
+        ".validate": "newData.child('role').isString() && (!newData.child('name').exists() || newData.child('name').isString())"
       }
     },
 
