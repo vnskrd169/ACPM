@@ -73,17 +73,19 @@ function renderNotificationFeed(snap) {
 
 async function markNotifRead(nid) {
   const user = window._currentUser;
-  if (!user) return;
-  await firebase.database().ref(`notifications/${user.uid}/${nid}`).update({ read: true, readAt: Date.now() });
+  if (!user || !user.uid) return;
+  await safeDb(() => firebase.database().ref(`notifications/${user.uid}/${nid}`).update({ read: true, readAt: Date.now() }), 'Failed to mark notification read');
 }
 
 async function markAllNotifRead() {
   const user = window._currentUser;
-  if (!user) return;
+  if (!user || !user.uid) return;
   const snap = await firebase.database().ref(`notifications/${user.uid}`).orderByChild('read').equalTo(false).once('value');
   const updates = {};
   snap.forEach(c => { updates[`${c.key}/read`] = true; updates[`${c.key}/readAt`] = Date.now(); });
-  await firebase.database().ref(`notifications/${user.uid}`).update(updates);
+  if (Object.keys(updates).length) {
+    await safeDb(() => firebase.database().ref(`notifications/${user.uid}`).update(updates), 'Failed to mark notifications read');
+  }
 }
 
 // ══════════════════════════════════════════════════════

@@ -62,6 +62,11 @@ function watchGlobalSuppliers() {
 }
 
 async function addSupplier() {
+  const user = window._currentUser;
+  if (!user || user.role !== 'boss') {
+    showToast('Boss access required to manage suppliers.', 'error');
+    return;
+  }
   const name = $('supName')?.value.trim();
   const contact = $('supContact')?.value.trim() || '';
   const spec = $('supSpecialty')?.value.trim() || '';
@@ -105,6 +110,11 @@ function closeEditSupplier() {
 }
 
 async function saveEditSupplier() {
+  const user = window._currentUser;
+  if (!user || user.role !== 'boss') {
+    showToast('Boss access required to manage suppliers.', 'error');
+    return;
+  }
   const key = $('editSupKey').value;
   const name = $('editSupName').value.trim();
   const contact = $('editSupContact').value.trim() || '';
@@ -125,6 +135,11 @@ async function saveEditSupplier() {
 }
 
 async function deleteSupplier(key, name) {
+  const user = window._currentUser;
+  if (!user || user.role !== 'boss') {
+    showToast('Boss access required to manage suppliers.', 'error');
+    return;
+  }
   if (!confirm(`Delete supplier "${name}" from the entire system?`)) return;
   await safeDb(() => firebase.database().ref(`suppliers/${key}`).remove(), 'Failed to delete supplier');
   auditLog('delete', 'supplier', key, { name });

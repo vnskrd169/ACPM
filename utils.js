@@ -190,6 +190,43 @@ function normalizeInvKey(desc, size = '') {
   return `${String(desc || '').trim().toLowerCase()}||${String(size || '').trim().toLowerCase()}`;
 }
 
+// ── Access Guard ──────────────────────────────────────────
+// Centralized gate for write actions. Returns true if the
+// current user can edit the given project. Shows a toast
+// and returns false otherwise — call at the top of every
+// write function.
+// Usage:  if (!requireEdit(pid)) return;
+function requireEdit(pid) {
+  const user = (typeof window !== 'undefined' && window._currentUser) || {};
+  if (!pid) {
+    showToast('No active project.', 'error');
+    return false;
+  }
+  if (!user.uid || user.uid === 'anonymous') {
+    showToast('You must be signed in.', 'error');
+    return false;
+  }
+  if (typeof canEditProject === 'function' && canEditProject(pid)) return true;
+  showToast('You do not have edit access to this project.', 'error');
+  return false;
+}
+
+// Boss-only guard. Returns true if current user is boss.
+function requireBoss(action) {
+  const user = (typeof window !== 'undefined' && window._currentUser) || {};
+  if (!user.uid || user.uid === 'anonymous') {
+    showToast('You must be signed in.', 'error');
+    return false;
+  }
+  const role = (typeof normalizeRole === 'function') ? normalizeRole(user.role) : String(user.role || '').toLowerCase();
+  if (role === 'boss') return true;
+  showToast(`Boss access required to ${action || 'perform this action'}.`, 'error');
+  return false;
+}
+
+window.requireEdit = requireEdit;
+window.requireBoss = requireBoss;
+
 // ════════════════════════════════════════════════════════════
 //  Supplier dropdown (shared by materials + suppliers modules)
 //  Now keyed by supplierId with name display.
