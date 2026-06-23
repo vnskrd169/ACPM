@@ -653,6 +653,20 @@ function openTeamAdmin() {
   if (typeof switchAdminSection === 'function') switchAdminSection('summary');
 }
 
+function switchAdminSection(section) {
+  const sections = ['summary', 'team', 'audit', 'system'];
+  sections.forEach(name => {
+    const panel = $(`adminSection_${name}`);
+    const tab = $(`adminTab_${name}`);
+    if (panel) panel.classList.toggle('hidden', name !== section);
+    if (tab) tab.classList.toggle('tab-active', name === section);
+  });
+  if (section === 'team' && typeof initTeamAdmin === 'function') initTeamAdmin();
+  if (section === 'audit' && typeof initAuditLog === 'function') initAuditLog();
+  if (section === 'summary' && typeof initAdminSummary === 'function') initAdminSummary();
+  if (section === 'system' && typeof initSystemStatus === 'function') initSystemStatus();
+}
+
 function unlockForEdit() {
   window._isReadOnly = false;
   $('lockedBanner')?.classList.add('hidden');
@@ -917,6 +931,7 @@ window.openEditProjectModal = openEditProjectModal;
 window.closeEditProjectModal = closeEditProjectModal;
 window.enterProject = enterProject;
 window.openTeamAdmin = openTeamAdmin;
+window.switchAdminSection = switchAdminSection;
 window.exitHub = exitHub;
 window.switchTab = switchTab;
 window.unlockForEdit = unlockForEdit;
