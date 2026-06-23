@@ -8,6 +8,7 @@ let _reportsListeners = [];
 let _teamAdminListener = null;
 let _teamUsersCache = [];
 let _auditListener = null;
+let _projectCache = [];
 
 function initReports() {
   detachReportsListeners();
@@ -139,6 +140,68 @@ function initTeamAdmin() {
     _teamUsersCache = users;
     renderTeamAdmin(users);
   });
+  loadProjectsForAssignments();
+}
+
+function loadProjectsForAssignments() {
+  firebase.database().ref('projects').once('value', snap => {
+    const projects = [];
+    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+    projects.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+    _projectCache = projects;
+    const sel = $('assignProjectList');
+    if (sel) {
+      sel.innerHTML = projects.map(p => `
+        <label class="assign-proj-row">
+          <input type="checkbox" value="${escapeHtml(p.id)}">
+          <span>${escapeHtml(p.name || p.id)}</span>
+        </label>
+      `).join('') || '<p class="empty-hint">No projects yet.</p>';
+    }
+  });
+}
+
+function openProjectAssignModal(uid) {
+  const user = _teamUsersCache.find(u => u.uid === uid);
+  if (!user) return;
+  const title = $('assignUserName');
+  const holder = $('assignUserUid');
+  const status = $('assignProjectStatus');
+  if (title) title.textContent = user.name || 'User';
+  if (holder) holder.textContent = uid;
+  if (status) status.textContent = normalizeTeamRole(user.role);
+  const modal = $('projectAssignModal');
+  modal?.classList.remove('hidden');
+
+  loadProjectsForAssignments();
+  setTimeout(() => {
+    const picked = new Set(user.projects || []);
+    document.querySelectorAll('#assignProjectList input[type="checkbox"]').forEach(cb => {
+      cb.checked = picked.has(cb.value);
+    });
+  }, 0);
+}
+
+function closeProjectAssignModal() {
+  $('projectAssignModal')?.classList.add('hidden');
+}
+
+async function saveProjectAssignments() {
+  const uid = $('assignUserUid')?.textContent;
+  if (!uid) return;
+  const user = _teamUsersCache.find(u => u.uid === uid);
+  if (!user) return;
+  const projects = Array.from(document.querySelectorAll('#assignProjectList input[type="checkbox"]:checked')).map(cb => cb.value);
+  try {
+    await firebase.database().ref(`users/${uid}/projects`).set(projects);
+    auditLog('update', 'user', uid, { projects });
+    showToast(`${user.name || uid} project access updated`);
+    closeProjectAssignModal();
+    initTeamAdmin();
+  } catch (e) {
+    console.error('saveProjectAssignments failed:', e);
+    showToast(`Failed to update project access: ${e?.message || e?.code || 'permission denied'}`, 'error');
+  }
 }
 
 function switchAdminSection(section) {
@@ -220,7 +283,7 @@ function renderTeamAdmin(users) {
 
   el.innerHTML = `<div style="overflow-x:auto"><table class="summary-table">
     <thead><tr>
-      <th>Name</th><th>UID</th><th>Email</th><th>Role</th><th>Projects</th><th>Boss Of</th>
+      <th>Name</th><th>UID</th><th>Email</th><th>Role</th><th>Projects</th><th>Boss Of</th><th>Access</th>
     </tr></thead>
     <tbody>
       ${users.map(user => {
@@ -239,6 +302,7 @@ function renderTeamAdmin(users) {
           </td>
           <td>${escapeHtml((user.projects || []).join(', ') || '—')}</td>
           <td>${escapeHtml((user.bossOf || []).join(', ') || '—')}</td>
+          <td><button class="btn-ws-secondary" onclick="openProjectAssignModal('${user.uid}')">Assign</button></td>
         </tr>`;
       }).join('')}
     </tbody>
@@ -573,6 +637,9 @@ window.initAdminSummary = initAdminSummary;
 window.initAuditLog = initAuditLog;
 window.renderAuditLog = renderAuditLog;
 window.initSystemStatus = initSystemStatus;
+window.openProjectAssignModal = openProjectAssignModal;
+window.closeProjectAssignModal = closeProjectAssignModal;
+window.saveProjectAssignments = saveProjectAssignments;
 window.refreshTeamAdmin = refreshTeamAdmin;
 window.filterTeamUsers = filterTeamUsers;
 window.updateUserRole = updateUserRole;

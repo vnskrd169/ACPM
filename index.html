@@ -936,6 +936,24 @@ window.addEventListener('appinstalled', () => {
     </div>
   </div>
 
+  <div id="projectAssignModal" class="modal-overlay hidden">
+    <div class="modal-box modal-wide">
+      <div class="modal-title">Project Access</div>
+      <div class="task-stats-row" style="margin-bottom:10px;">
+        <span>User: <strong id="assignUserName">—</strong></span>
+        <span>UID: <strong id="assignUserUid" style="font-family:monospace;font-size:11px">—</strong></span>
+        <span>Role: <strong id="assignProjectStatus">—</strong></span>
+      </div>
+      <div id="assignProjectList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;max-height:320px;overflow:auto;padding:6px 2px;">
+        <p class="empty-hint">Loading projects...</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-mc" onclick="closeProjectAssignModal()">Cancel</button>
+        <button class="btn-save-payroll" onclick="saveProjectAssignments()">Save Access</button>
+      </div>
+    </div>
+  </div>
+
 </section>
 
 </div>
