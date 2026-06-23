@@ -12,107 +12,22 @@
       }
     },
 
-    "auditLogs": {
-      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
-      ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp'])",
-      ".indexOn": "timestamp"
-    },
-
     "projects": {
       ".read": "auth != null",
-      ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
+      ".write": "auth != null",
       ".indexOn": ["status", "name", "createdAt"],
       "$pid": {
         ".read": "auth != null",
         ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))",
         ".validate": "newData.hasChildren(['name', 'status', 'createdAt']) || !data.exists()",
 
-        "billings": {
-          ".indexOn": ["seq", "status"],
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "collections": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "contract": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "changeOrders": {
-          ".indexOn": ["seq", "status"],
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "purchaseOrders": {
-          ".indexOn": ["seq", "status"],
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "ledger": {
-          ".indexOn": ["poId", "status"],
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "deliveries": {
-          ".indexOn": ["poId"],
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "inventory": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "expenses": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "attendanceHistory": {
-          ".indexOn": "savedAt",
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "payrollLogs": {
-          ".indexOn": "savedAt",
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "siteLogs": {
-          ".indexOn": "savedAt",
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "compliance": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "punchList": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "tasks": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "equipment": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "workers": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "attendance": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "advances": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "trades": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "settings": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "payrollConfig": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "notes": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "poCounter": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "billingCounter": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        },
-        "coCounter": {
-          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
-        }
+        "billings": { ".indexOn": ["seq", "status"] },
+        "changeOrders": { ".indexOn": ["seq", "status"] },
+        "purchaseOrders": { ".indexOn": ["seq", "status"] },
+        "ledger": { ".indexOn": ["poId", "status"] },
+        "attendanceHistory": { ".indexOn": "savedAt" },
+        "payrollLogs": { ".indexOn": "savedAt" },
+        "siteLogs": { ".indexOn": "savedAt" }
       }
     },
 
@@ -122,17 +37,23 @@
       ".indexOn": "name"
     },
 
+    "auditLogs": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
+      ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp'])",
+      ".indexOn": "timestamp"
+    },
+
     "notifications": {
       "$uid": {
         ".read": "auth.uid === $uid",
-        ".write": "auth != null && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss')",
+        ".write": "auth != null",
         ".indexOn": ["read", "createdAt"]
       }
     },
 
     "complianceAlertsSent": {
-      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
-      ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'"
+      ".read": "auth != null",
+      ".write": "auth != null"
     },
 
     "sessions": {
