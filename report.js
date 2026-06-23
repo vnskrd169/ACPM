@@ -17,6 +17,11 @@ function initReports() {
   renderBudgetVariance();
 }
 
+function formatProjectLabel(projectId) {
+  const project = _projectCache.find(p => p.id === projectId);
+  return project?.name || project?.id || projectId || '-';
+}
+
 function initAdminSummary() {
   const el = $('accountSummary');
   const user = window._currentUser || {};
@@ -26,10 +31,10 @@ function initAdminSummary() {
       <table class="summary-table">
         <tbody>
           <tr><td>Name</td><td>${escapeHtml(user.name || 'User')}</td></tr>
-          <tr><td>UID</td><td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid || '—')}</td></tr>
+          <tr><td>UID</td><td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid || '-')}</td></tr>
           <tr><td>Role</td><td>${escapeHtml(user.role || 'viewer')}</td></tr>
-          <tr><td>Projects</td><td>${escapeHtml((user.projects || []).join(', ') || '—')}</td></tr>
-          <tr><td>Boss Of</td><td>${escapeHtml((user.bossOf || []).join(', ') || '—')}</td></tr>
+          <tr><td>Projects</td><td>${escapeHtml((user.projects || []).map(formatProjectLabel).join(', ') || '-')}</td></tr>
+          <tr><td>Boss Of</td><td>${escapeHtml((user.bossOf || []).map(formatProjectLabel).join(', ') || '-')}</td></tr>
         </tbody>
       </table>
     </div>`;
@@ -172,7 +177,7 @@ function openProjectAssignModal(uid) {
   const holder = $('assignUserUid');
   const status = $('assignProjectStatus');
   if (title) title.textContent = user.name || 'User';
-  if (holder) holder.textContent = uid;
+  if (holder) { holder.dataset.uid = uid; holder.textContent = uid; }
   if (status) status.textContent = normalizeTeamRole(user.role);
   const modal = $('projectAssignModal');
   modal?.classList.remove('hidden');
@@ -185,12 +190,13 @@ function openProjectAssignModal(uid) {
     });
   });
 
+}
 function closeProjectAssignModal() {
   $('projectAssignModal')?.classList.add('hidden');
 }
 
 async function saveProjectAssignments() {
-  const uid = $('assignUserUid')?.textContent;
+  const uid = $('assignUserUid')?.dataset.uid || $('assignUserUid')?.textContent;
   if (!uid) return;
   const user = _teamUsersCache.find(u => u.uid === uid);
   if (!user) return;
@@ -291,7 +297,7 @@ function renderTeamAdmin(users) {
     <tbody>
       ${users.map(user => {
         const role = normalizeTeamRole(user.role);
-        const search = [user.name, user.email, user.uid, role, ...(user.projects || []), ...(user.bossOf || [])].join(' ').toLowerCase();
+        const search = [user.name, user.email, user.uid, role, ...(user.projects || []).map(formatProjectLabel), ...(user.bossOf || []).map(formatProjectLabel)].join(' ').toLowerCase();
         return `<tr data-team-user-row data-search="${escapeHtml(search)}">
           <td>${escapeHtml(user.name || '�')}</td>
           <td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid)}</td>
@@ -304,7 +310,7 @@ function renderTeamAdmin(users) {
                 <option value="boss" ${role === 'boss' ? 'selected' : ''}>boss</option>
               </select>
               <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-                <span style="color:var(--muted);font-size:11px">${escapeHtml((user.projects || []).join(', ') || 'No project ticked yet')}</span>
+                <span style="color:var(--muted);font-size:11px">${escapeHtml((user.projects || []).map(formatProjectLabel).join(', ') || 'No project ticked yet')}</span>
                 <button class="btn-ws-secondary" style="padding:8px 12px" onclick="openProjectAssignModal('${user.uid}')">Tick Projects</button>
               </div>
             </div>
