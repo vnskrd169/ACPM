@@ -283,26 +283,30 @@ function renderTeamAdmin(users) {
 
   el.innerHTML = `<div style="overflow-x:auto"><table class="summary-table">
     <thead><tr>
-      <th>Name</th><th>UID</th><th>Email</th><th>Role</th><th>Projects</th><th>Boss Of</th><th>Access</th>
+      <th>Name</th><th>UID</th><th>Email</th><th>Role / Projects</th><th>Boss Of</th>
     </tr></thead>
     <tbody>
       ${users.map(user => {
         const role = normalizeTeamRole(user.role);
         const search = [user.name, user.email, user.uid, role, ...(user.projects || []), ...(user.bossOf || [])].join(' ').toLowerCase();
         return `<tr data-team-user-row data-search="${escapeHtml(search)}">
-          <td>${escapeHtml(user.name || '—')}</td>
+          <td>${escapeHtml(user.name || '�')}</td>
           <td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid)}</td>
-          <td>${escapeHtml(user.email || '—')}</td>
+          <td>${escapeHtml(user.email || '�')}</td>
           <td>
-            <select onchange="updateUserRole('${user.uid}', this.value)" ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
-              <option value="viewer" ${role === 'viewer' ? 'selected' : ''}>viewer</option>
-              <option value="apm" ${role === 'apm' ? 'selected' : ''}>apm</option>
-              <option value="boss" ${role === 'boss' ? 'selected' : ''}>boss</option>
-            </select>
+            <div style="display:flex;flex-direction:column;gap:8px;min-width:180px">
+              <select onchange="updateUserRole('${user.uid}', this.value)" ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
+                <option value="viewer" ${role === 'viewer' ? 'selected' : ''}>viewer</option>
+                <option value="apm" ${role === 'apm' ? 'selected' : ''}>apm</option>
+                <option value="boss" ${role === 'boss' ? 'selected' : ''}>boss</option>
+              </select>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+                <span style="color:var(--muted);font-size:11px">${escapeHtml((user.projects || []).join(', ') || 'No project ticked yet')}</span>
+                <button class="btn-ws-secondary" style="padding:8px 12px" onclick="openProjectAssignModal('${user.uid}')">Tick Projects</button>
+              </div>
+            </div>
           </td>
-          <td>${escapeHtml((user.projects || []).join(', ') || '—')}</td>
-          <td>${escapeHtml((user.bossOf || []).join(', ') || '—')}</td>
-          <td><button class="btn-ws-secondary" onclick="openProjectAssignModal('${user.uid}')">Assign</button></td>
+          <td>${escapeHtml((user.bossOf || []).join(', ') || '�')}</td>
         </tr>`;
       }).join('')}
     </tbody>
@@ -314,14 +318,6 @@ function detachReportsListeners() {
   _reportsListeners.forEach(ref => ref.off());
   _reportsListeners = [];
 }
-
-function reportsListen(ref, cb) {
-  ref.on('value', cb);
-  _reportsListeners.push(ref);
-}
-
-// ══════════════════════════════════════════════════════
-//  EXECUTIVE DASHBOARD
 // ══════════════════════════════════════════════════════
 function renderExecutiveDashboard() {
   const user = window._currentUser;
