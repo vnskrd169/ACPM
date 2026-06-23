@@ -177,13 +177,21 @@ async function updateUserRole(uid, role) {
     return;
   }
   if (!confirm(`Set ${target.name || uid} role to ${nextRole}?`)) return;
-  await safeDb(() => firebase.database().ref(`users/${uid}`).update({
+  const nextProfile = {
+    ...target,
     role: nextRole,
     updatedAt: Date.now(),
     updatedBy: window._currentUser?.uid || null
-  }), 'Failed to update user role');
-  auditLog('update', 'user', uid, { role: nextRole });
-  showToast(`${target.name || uid} set to ${nextRole}`);
+  };
+  try {
+    await firebase.database().ref(`users/${uid}`).set(nextProfile);
+    auditLog('update', 'user', uid, { role: nextRole });
+    showToast(`${target.name || uid} set to ${nextRole}`);
+    initTeamAdmin();
+  } catch (e) {
+    console.error('updateUserRole failed:', e);
+    showToast(`Failed to update user role: ${e?.message || e?.code || 'permission denied'}`, 'error');
+  }
 }
 
 function filterTeamUsers(term) {
