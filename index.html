@@ -264,7 +264,7 @@ window.addEventListener('appinstalled', () => {
       <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')">&#x1F6A7; Equipment</button>
       <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
       <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
-      <button id="tab_admin" class="tab-btn" onclick="switchTab('admin')" data-boss-only style="display:none;">&#x1F465; Team Admin</button>
+      <button id="tab_admin" class="tab-btn" onclick="switchTab('admin')">&#x1F465; Admin</button>
       <button id="tab_reports" class="tab-btn" onclick="switchTab('reports')" data-boss-only style="display:none;">&#x1F4CA; Reports</button>
     </div>
   </div>
@@ -855,10 +855,27 @@ window.addEventListener('appinstalled', () => {
     </div>
   </div>
 
-  <!-- ═══ REPORTS PANEL (boss only) ══════════════════════════════ -->
-  <!-- Team Admin Panel (boss only) -->
+  <!-- ═══ ADMIN PANEL ═══════════════════════════════════════════ -->
+  <!-- Account Summary: all roles. Team Admin / Audit Log / System: boss only -->
   <div id="adminPanel" class="panel hidden">
-    <div class="panel-card">
+    <!-- Sub-tab navigation -->
+    <div class="tab-scroll" style="margin-bottom:14px;">
+      <div class="tab-group">
+        <button id="adminTab_summary" class="tab-btn tab-active" onclick="switchAdminSection('summary')">&#x1F464; Summary</button>
+        <button id="adminTab_team" class="tab-btn" onclick="switchAdminSection('team')" data-boss-only>&#x1F465; Team</button>
+        <button id="adminTab_audit" class="tab-btn" onclick="switchAdminSection('audit')" data-boss-only>&#x1F4DC; Audit Log</button>
+        <button id="adminTab_system" class="tab-btn" onclick="switchAdminSection('system')" data-boss-only>&#x2699;&#xFE0F; System</button>
+      </div>
+    </div>
+
+    <!-- Section 1: ACCOUNT SUMMARY (all roles) -->
+    <div id="adminSection_summary" class="panel-card">
+      <div class="panel-title">&#x1F464; Account Summary</div>
+      <div id="accountSummary"><p class="empty-hint">Loading...</p></div>
+    </div>
+
+    <!-- Section 2: TEAM ADMIN (boss only) -->
+    <div id="adminSection_team" class="panel-card hidden">
       <div class="panel-title">&#x1F465; Team Admin</div>
       <div class="task-stats-row">
         <span>Total Users: <strong id="teamUserCount">0</strong></span>
@@ -871,6 +888,26 @@ window.addEventListener('appinstalled', () => {
         <button class="btn-ws-secondary" onclick="refreshTeamAdmin()">&#x1F504; Refresh</button>
       </div>
       <div id="teamAdminList"><p class="empty-hint">Loading users...</p></div>
+    </div>
+
+    <!-- Section 3: AUDIT LOG (boss only) -->
+    <div id="adminSection_audit" class="panel-card hidden">
+      <div class="panel-title">&#x1F4DC; Audit Log <span id="auditCountBadge" class="badge badge-purple" style="font-size:11px;margin-left:6px;">0</span></div>
+      <div class="task-form-row">
+        <input id="auditFilterAction" type="text" placeholder="Filter by action (create, update, delete...)..." oninput="renderAuditLog()" style="flex:1;min-width:160px">
+        <input id="auditFilterUser" type="text" placeholder="Filter by user..." oninput="renderAuditLog()" style="flex:1;min-width:140px">
+        <select id="auditFilterProject" onchange="renderAuditLog()" style="background:var(--surface2);border:1px solid var(--border2);color:#fff;border-radius:8px;padding:8px 10px;font-size:13px;">
+          <option value="">All projects</option>
+        </select>
+        <button class="btn-ws-secondary" onclick="initAuditLog()">&#x1F504; Refresh</button>
+      </div>
+      <div id="auditLogFeed" style="max-height:560px;overflow-y:auto;"><p class="empty-hint">Loading audit log...</p></div>
+    </div>
+
+    <!-- Section 4: SYSTEM STATUS (boss only) -->
+    <div id="adminSection_system" class="panel-card hidden">
+      <div class="panel-title">&#x2699;&#xFE0F; System Status</div>
+      <div id="systemStatus"><p class="empty-hint">Loading...</p></div>
     </div>
   </div>
 
