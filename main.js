@@ -639,6 +639,20 @@ function switchTab(tab) {
   if (tab === 'reports') initReports();
 }
 
+function openTeamAdmin() {
+  $('hubView')?.classList.add('hidden');
+  $('workspaceView')?.classList.remove('hidden');
+  window._currentPid = window._currentPid || null;
+  const wsName = $('wsName');
+  if (wsName) wsName.textContent = 'Team Admin';
+  document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
+  $('adminPanel')?.classList.remove('hidden');
+  document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('tab-active'));
+  $('tab_admin')?.classList.add('tab-active');
+  if (typeof initTeamAdmin === 'function') initTeamAdmin();
+  if (typeof switchAdminSection === 'function') switchAdminSection('summary');
+}
+
 function unlockForEdit() {
   window._isReadOnly = false;
   $('lockedBanner')?.classList.add('hidden');
@@ -902,6 +916,7 @@ window.editProject = editProject;
 window.openEditProjectModal = openEditProjectModal;
 window.closeEditProjectModal = closeEditProjectModal;
 window.enterProject = enterProject;
+window.openTeamAdmin = openTeamAdmin;
 window.exitHub = exitHub;
 window.switchTab = switchTab;
 window.unlockForEdit = unlockForEdit;

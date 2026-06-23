@@ -8,8 +8,14 @@
       "$uid": {
         ".read": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss'",
         ".write": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss'",
-        ".validate": "newData.hasChildren(['name', 'role'])"
+        ".validate": "newData.hasChildren(['name', 'role']) && newData.child('role').isString()"
       }
+    },
+
+    "auditLogs": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
+      ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp'])",
+      ".indexOn": "timestamp"
     },
 
     "projects": {
@@ -114,12 +120,6 @@
       ".read": "auth != null",
       ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
       ".indexOn": "name"
-    },
-
-    "auditLogs": {
-      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
-      ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp'])",
-      ".indexOn": "timestamp"
     },
 
     "notifications": {

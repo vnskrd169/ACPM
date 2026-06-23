@@ -7,12 +7,117 @@
 let _reportsListeners = [];
 let _teamAdminListener = null;
 let _teamUsersCache = [];
+let _auditListener = null;
 
 function initReports() {
   detachReportsListeners();
   renderExecutiveDashboard();
   renderTeamPerformance();
   renderBudgetVariance();
+}
+
+function initAdminSummary() {
+  const el = $('accountSummary');
+  const user = window._currentUser || {};
+  if (!el) return;
+  el.innerHTML = `
+    <div class="summary-table-wrap">
+      <table class="summary-table">
+        <tbody>
+          <tr><td>Name</td><td>${escapeHtml(user.name || 'User')}</td></tr>
+          <tr><td>UID</td><td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid || '—')}</td></tr>
+          <tr><td>Role</td><td>${escapeHtml(user.role || 'viewer')}</td></tr>
+          <tr><td>Projects</td><td>${escapeHtml((user.projects || []).join(', ') || '—')}</td></tr>
+          <tr><td>Boss Of</td><td>${escapeHtml((user.bossOf || []).join(', ') || '—')}</td></tr>
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function initAuditLog() {
+  const user = window._currentUser;
+  if (!user || user.role !== 'boss') {
+    const el = $('auditLogFeed');
+    if (el) el.innerHTML = '<p class="empty-hint">Audit log is available for bosses only.</p>';
+    return;
+  }
+  if (_auditListener) {
+    _auditListener.off();
+    _auditListener = null;
+  }
+  const ref = firebase.database().ref('auditLogs');
+  _auditListener = ref;
+  ref.on('value', snap => {
+    const el = $('auditLogFeed');
+    if (!el) return;
+    const rows = [];
+    snap.forEach(c => rows.push({ id: c.key, ...c.val() }));
+    rows.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    const projectSel = $('auditFilterProject');
+    if (projectSel && !projectSel.dataset.loaded) {
+      const projects = [...new Set(rows.map(r => r.projectId).filter(Boolean))].sort();
+      projectSel.innerHTML = '<option value="">All projects</option>' + projects.map(pid => `<option value="${escapeHtml(pid)}">${escapeHtml(pid)}</option>`).join('');
+      projectSel.dataset.loaded = '1';
+    }
+    renderAuditLog(rows);
+  });
+}
+
+function renderAuditLog(rows = []) {
+  const el = $('auditLogFeed');
+  if (!el) return;
+  const actionNeedle = String($('auditFilterAction')?.value || '').trim().toLowerCase();
+  const userNeedle = String($('auditFilterUser')?.value || '').trim().toLowerCase();
+  const projectNeedle = String($('auditFilterProject')?.value || '').trim().toLowerCase();
+
+  const filtered = rows.filter(r => {
+    const action = String(r.action || '').toLowerCase();
+    const actor = String(r.userName || r.userId || '').toLowerCase();
+    const pid = String(r.projectId || '').toLowerCase();
+    return (!actionNeedle || action.includes(actionNeedle)) &&
+      (!userNeedle || actor.includes(userNeedle)) &&
+      (!projectNeedle || !pid || pid === projectNeedle);
+  });
+
+  setText('auditCountBadge', filtered.length);
+  if (!filtered.length) {
+    el.innerHTML = '<p class="empty-hint">No audit entries found.</p>';
+    return;
+  }
+
+  el.innerHTML = `<div style="display:grid;gap:8px">
+    ${filtered.map(r => `
+      <div class="health-card" style="border-left-color:var(--border2)">
+        <div class="health-hdr">
+          <span class="health-name">${escapeHtml(r.action || 'action')}</span>
+          <span class="health-score" style="font-size:12px">${escapeHtml(new Date(r.timestamp || Date.now()).toLocaleString('en-PH'))}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted2);line-height:1.5">
+          <div><strong>User:</strong> ${escapeHtml(r.userName || r.userId || '—')}</div>
+          <div><strong>Entity:</strong> ${escapeHtml(r.entityType || '—')} ${r.entityId ? `· ${escapeHtml(r.entityId)}` : ''}</div>
+          <div><strong>Project:</strong> ${escapeHtml(r.projectId || '—')}</div>
+          ${r.details ? `<div><strong>Details:</strong> ${escapeHtml(JSON.stringify(r.details))}</div>` : ''}
+        </div>
+      </div>`).join('')}
+  </div>`;
+}
+
+function initSystemStatus() {
+  const el = $('systemStatus');
+  if (!el) return;
+  const user = window._currentUser || {};
+  el.innerHTML = `
+    <div class="summary-table-wrap">
+      <table class="summary-table">
+        <tbody>
+          <tr><td>App</td><td>ACPM</td></tr>
+          <tr><td>Current Role</td><td>${escapeHtml(user.role || 'viewer')}</td></tr>
+          <tr><td>Current User</td><td>${escapeHtml(user.name || 'User')}</td></tr>
+          <tr><td>Project Context</td><td>${escapeHtml(window._currentPid || 'Hub')}</td></tr>
+          <tr><td>Offline Cache</td><td>${navigator.onLine ? 'Online' : 'Offline'}</td></tr>
+        </tbody>
+      </table>
+    </div>`;
 }
 
 function initTeamAdmin() {
@@ -34,6 +139,20 @@ function initTeamAdmin() {
     _teamUsersCache = users;
     renderTeamAdmin(users);
   });
+}
+
+function switchAdminSection(section) {
+  const sections = ['summary', 'team', 'audit', 'system'];
+  sections.forEach(name => {
+    const panel = $(`adminSection_${name}`);
+    const tab = $(`adminTab_${name}`);
+    if (panel) panel.classList.toggle('hidden', name !== section);
+    if (tab) tab.classList.toggle('tab-active', name === section);
+  });
+  if (section === 'team') initTeamAdmin();
+  if (section === 'audit' && typeof initAuditLog === 'function') initAuditLog();
+  if (section === 'summary' && typeof initAdminSummary === 'function') initAdminSummary();
+  if (section === 'system' && typeof initSystemStatus === 'function') initSystemStatus();
 }
 
 function refreshTeamAdmin() {
@@ -443,6 +562,11 @@ async function generateWeeklyReport() {
 // ── Expose ──────────────────────────────────────────────────
 window.initReports = initReports;
 window.initTeamAdmin = initTeamAdmin;
+window.switchAdminSection = switchAdminSection;
+window.initAdminSummary = initAdminSummary;
+window.initAuditLog = initAuditLog;
+window.renderAuditLog = renderAuditLog;
+window.initSystemStatus = initSystemStatus;
 window.refreshTeamAdmin = refreshTeamAdmin;
 window.filterTeamUsers = filterTeamUsers;
 window.updateUserRole = updateUserRole;
