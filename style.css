@@ -1493,6 +1493,54 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   .modal-box { border-radius: var(--radius); max-width: 640px; max-height: 88vh; }
 }
 
+.assign-projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 4px 2px;
+}
+
+.assign-proj-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-xs);
+  min-height: 52px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.assign-proj-row:hover {
+  border-color: var(--border3);
+  background: var(--surface3);
+}
+
+.assign-proj-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.assign-proj-name {
+  display: block;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.assign-proj-sub {
+  display: block;
+  color: var(--muted2);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
 .modal-title { font-size: 16px; font-weight: 900; display: flex; align-items: center; gap: 8px; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap;
   margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);

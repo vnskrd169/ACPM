@@ -150,11 +150,15 @@ function loadProjectsForAssignments() {
     projects.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
     _projectCache = projects;
     const sel = $('assignProjectList');
+    setText('assignProjectCount', projects.length ? `${projects.length} project${projects.length === 1 ? '' : 's'}` : 'No projects');
     if (sel) {
       sel.innerHTML = projects.map(p => `
         <label class="assign-proj-row">
           <input type="checkbox" value="${escapeHtml(p.id)}">
-          <span>${escapeHtml(p.name || p.id)}</span>
+          <span>
+            <span class="assign-proj-name">${escapeHtml(p.name || p.id)}</span>
+            <span class="assign-proj-sub">${escapeHtml(p.status || 'active')}</span>
+          </span>
         </label>
       `).join('') || '<p class="empty-hint">No projects yet.</p>';
     }
@@ -174,13 +178,12 @@ function openProjectAssignModal(uid) {
   modal?.classList.remove('hidden');
 
   loadProjectsForAssignments();
-  setTimeout(() => {
+  requestAnimationFrame(() => {
     const picked = new Set(user.projects || []);
     document.querySelectorAll('#assignProjectList input[type="checkbox"]').forEach(cb => {
       cb.checked = picked.has(cb.value);
     });
-  }, 0);
-}
+  });
 
 function closeProjectAssignModal() {
   $('projectAssignModal')?.classList.add('hidden');

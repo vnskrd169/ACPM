@@ -944,7 +944,11 @@ window.addEventListener('appinstalled', () => {
         <span>UID: <strong id="assignUserUid" style="font-family:monospace;font-size:11px">—</strong></span>
         <span>Role: <strong id="assignProjectStatus">—</strong></span>
       </div>
-      <div id="assignProjectList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;max-height:320px;overflow:auto;padding:6px 2px;">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;color:var(--muted2);font-size:12px;">
+        <span>Tick the projects this user can access.</span>
+        <span id="assignProjectCount"></span>
+      </div>
+      <div id="assignProjectList" class="assign-projects-grid">
         <p class="empty-hint">Loading projects...</p>
       </div>
       <div class="modal-actions">
