@@ -1495,7 +1495,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 
 .assign-projects-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
   max-height: 320px;
   overflow: auto;
@@ -1539,6 +1539,70 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   color: var(--muted2);
   font-size: 11px;
   margin-top: 2px;
+}
+
+.assign-meta,
+.assign-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  color: var(--muted2);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.assign-meta {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface2);
+}
+
+.assign-toolbar {
+  margin-bottom: 10px;
+}
+
+.team-project-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-project-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.team-project-preview {
+  color: var(--muted2);
+  font-size: 11px;
+  line-height: 1.4;
+  max-width: 240px;
+}
+
+.team-project-btn {
+  padding: 8px 12px;
+}
+
+.stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border2);
+  background: var(--surface2);
 }
 
 .modal-title { font-size: 16px; font-weight: 900; display: flex; align-items: center; gap: 8px; }

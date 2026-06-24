@@ -265,3 +265,6 @@ Still worth doing next:
 - Finish wrapping any remaining direct Firebase writes that still bypass `safeDb()`.
 - Keep tightening the audit and permission surfaces so the browser has less room to drift.
 - Do a live browser pass on Team Admin and the main hub after the current cleanup settles.
+
+Current pass note:
+- The main write-heavy modules were swept again and the obvious mutation paths are already guarded; the remaining `ref()` calls in the codebase are mostly reads, listeners, or small state markers.

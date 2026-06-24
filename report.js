@@ -155,7 +155,7 @@ function loadProjectsForAssignments() {
     projects.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
     _projectCache = projects;
     const sel = $('assignProjectList');
-    setText('assignProjectCount', projects.length ? `${projects.length} project${projects.length === 1 ? '' : 's'}` : 'No projects');
+    setText('assignProjectCount', projects.length ? `${projects.length} available` : 'No projects');
     if (sel) {
       sel.innerHTML = projects.map(p => `
         <label class="assign-proj-row">
@@ -299,20 +299,24 @@ function renderTeamAdmin(users) {
     <tbody>
       ${users.map(user => {
         const role = normalizeTeamRole(user.role);
+        const projectNames = (user.projects || []).map(formatProjectLabel);
+        const projectCount = projectNames.length;
+        const projectPreview = projectNames.slice(0, 2).join(', ');
         const search = [user.name, user.email, user.uid, role, ...(user.projects || []).map(formatProjectLabel), ...(user.bossOf || []).map(formatProjectLabel)].join(' ').toLowerCase();
         return `<tr data-team-user-row data-search="${escapeHtml(search)}">
           <td>${escapeHtml(user.name || '-')}</td>
           <td>${escapeHtml(user.email || '-')}</td>
           <td>
-            <div style="display:flex;flex-direction:column;gap:8px;min-width:180px">
+            <div style="display:flex;flex-direction:column;gap:10px;min-width:220px">
               <select onchange="updateUserRole('${user.uid}', this.value)" ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
                 <option value="viewer" ${role === 'viewer' ? 'selected' : ''}>viewer</option>
                 <option value="apm" ${role === 'apm' ? 'selected' : ''}>apm</option>
                 <option value="boss" ${role === 'boss' ? 'selected' : ''}>boss</option>
               </select>
-              <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-                <span style="color:var(--muted);font-size:11px">${escapeHtml((user.projects || []).map(formatProjectLabel).join(', ') || 'No project ticked yet')}</span>
-                <button class="btn-ws-secondary" style="padding:8px 12px" onclick="openProjectAssignModal('${user.uid}')">Tick Projects</button>
+              <div class="team-project-line">
+                <span class="team-project-pill">${projectCount ? `${projectCount} project${projectCount === 1 ? '' : 's'}` : 'No projects'}</span>
+                <span class="team-project-preview">${escapeHtml(projectPreview || 'Nothing assigned yet')}</span>
+                <button class="btn-ws-secondary team-project-btn" onclick="openProjectAssignModal('${user.uid}')">Edit projects</button>
               </div>
             </div>
           </td>
