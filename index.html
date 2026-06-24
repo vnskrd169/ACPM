@@ -255,18 +255,18 @@ window.addEventListener('appinstalled', () => {
   <!-- Tab navigation -->
   <div class="tab-scroll">
     <div class="tab-group">
-      <button id="tab_labor" class="tab-btn tab-active" onclick="switchTab('labor')">&#x1F477; Labor</button>
-      <button id="tab_materials" class="tab-btn" onclick="switchTab('materials')">&#x1F4E6; Orders</button>
-      <button id="tab_billing" class="tab-btn" onclick="switchTab('billing')">&#x1F4B0; Billing</button>
-      <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')">&#x1F4CB; Change Orders</button>
-      <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')">&#x1F4D2; Site Log</button>
-      <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')">&#x1F3EA; Suppliers</button>
-      <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')">&#x2611; Tasks</button>
-      <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')">&#x1F6A7; Equipment</button>
-      <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
-      <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
-      <button id="tab_admin" class="tab-btn" onclick="switchTab('admin')">&#x1F465; Admin</button>
-      <button id="tab_reports" class="tab-btn" onclick="switchTab('reports')" data-boss-only style="display:none;">&#x1F4CA; Reports</button>
+      <button id="tab_labor" class="tab-btn tab-active" onclick="switchTab('labor')" data-role-visible="apm,viewer">&#x1F477; Labor</button>
+      <button id="tab_materials" class="tab-btn" onclick="switchTab('materials')" data-role-visible="apm,viewer">&#x1F4E6; Orders</button>
+      <button id="tab_billing" class="tab-btn" onclick="switchTab('billing')" data-role-visible="apm,viewer">&#x1F4B0; Billing</button>
+      <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')" data-role-visible="apm,viewer">&#x1F4CB; Change Orders</button>
+      <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')" data-role-visible="apm,viewer">&#x1F4D2; Site Log</button>
+      <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')" data-role-visible="apm,viewer">&#x1F3EA; Suppliers</button>
+      <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')" data-role-visible="apm,viewer">&#x2611; Tasks</button>
+      <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')" data-role-visible="apm,viewer">&#x1F6A7; Equipment</button>
+      <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')" data-role-visible="apm,viewer">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
+      <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')" data-role-visible="apm,viewer">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
+      <button id="tab_admin" class="tab-btn hidden" onclick="switchTab('admin')" data-role-visible="none">&#x1F465; Admin</button>
+      <button id="tab_reports" class="tab-btn" onclick="switchTab('reports')" data-role-visible="boss">&#x1F4CA; Reports</button>
     </div>
   </div>
 
@@ -915,15 +915,35 @@ window.addEventListener('appinstalled', () => {
   <div id="reportsPanel" class="panel hidden">
     <div class="panel-card">
       <div class="panel-title">&#x1F4CA; Executive Dashboard</div>
-      <div class="task-stats-row">
-        <span>Active Projects: <strong id="execActiveProjects">0</strong></span>
-        <span>Total Budget: <strong id="execTotalBudget">&#x20B1;0.00</strong></span>
-        <span>Total Spent: <strong id="execTotalSpent">&#x20B1;0.00</strong></span>
-        <span>Avg Health: <strong id="execAvgHealth">0%</strong></span>
+      <div class="exec-summary-grid">
+        <div class="exec-stat">
+          <div class="exec-stat-label">Active Projects</div>
+          <div class="exec-stat-val" id="execActiveProjects">0</div>
+        </div>
+        <div class="exec-stat">
+          <div class="exec-stat-label">Total Budget</div>
+          <div class="exec-stat-val" id="execTotalBudget">&#x20B1;0.00</div>
+        </div>
+        <div class="exec-stat">
+          <div class="exec-stat-label">Total Spent</div>
+          <div class="exec-stat-val" id="execTotalSpent">&#x20B1;0.00</div>
+        </div>
+        <div class="exec-stat">
+          <div class="exec-stat-label">Avg Health</div>
+          <div class="exec-stat-val" id="execAvgHealth">0%</div>
+        </div>
         <button class="btn-ws-secondary" onclick="generateWeeklyReport()">&#x1F4C4; Weekly Report</button>
       </div>
-      <div id="executiveDashboard">
-        <div id="execProjectHealth" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;"></div>
+      <div class="exec-overview">
+        <div class="exec-chart-card">
+          <div class="panel-subtitle">Budget Mix</div>
+          <div id="execBudgetChart" class="exec-budget-chart"></div>
+          <div id="execBudgetLegend" class="exec-budget-legend"></div>
+        </div>
+        <div class="exec-health-card">
+          <div class="panel-subtitle">Project Health</div>
+          <div id="execProjectHealth" class="exec-health-grid"></div>
+        </div>
       </div>
     </div>
     <div class="panel-card">

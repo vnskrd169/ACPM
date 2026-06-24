@@ -316,6 +316,28 @@ function initAppForUser() {
     el.style.display = isBoss(role) ? '' : 'none';
   });
 
+  document.querySelectorAll('[data-role-visible]').forEach(el => {
+    const visible = String(el.dataset.roleVisible || '').trim().toLowerCase();
+    if (!visible || visible === 'all') {
+      el.style.display = '';
+      return;
+    }
+    if (visible === 'none') {
+      el.style.display = 'none';
+      return;
+    }
+    const allowed = visible.split(',').map(v => v.trim()).filter(Boolean);
+    el.style.display = allowed.includes(role) || (allowed.includes('boss') && isBoss(role)) ? '' : 'none';
+  });
+
+  const visibleTabs = Array.from(document.querySelectorAll('.hub-tab, .tab-btn'))
+    .filter(el => el.offsetParent !== null && !el.classList.contains('hidden'));
+  const activeWorkspaceTab = document.querySelector('.tab-btn.tab-active:not(#tab_admin):not(#tab_reports)');
+  if (!activeWorkspaceTab || activeWorkspaceTab.style.display === 'none') {
+    const fallback = document.querySelector(isBoss(role) ? '#tab_reports' : '#tab_labor');
+    if (fallback && fallback.style.display !== 'none') fallback.click();
+  }
+
   const createCard = document.querySelector('.hub-create-card');
   if (createCard) createCard.style.display = isBoss(role) ? '' : 'none';
 

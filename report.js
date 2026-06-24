@@ -149,7 +149,7 @@ function initTeamAdmin() {
 }
 
 function loadProjectsForAssignments() {
-  firebase.database().ref('projects').once('value', snap => {
+  return firebase.database().ref('projects').once('value', snap => {
     const projects = [];
     snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
     projects.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
@@ -184,10 +184,9 @@ function openProjectAssignModal(uid) {
   const modal = $('projectAssignModal');
   modal?.classList.remove('hidden');
 
-  loadProjectsForAssignments();
-  requestAnimationFrame(() => {
+  Promise.resolve(loadProjectsForAssignments()).then(() => {
     const picked = new Set(user.projects || []);
-    document.querySelectorAll('#assignProjectList input[type="checkbox"]').forEach(cb => {
+    document.querySelectorAll('#assignProjectList input[type=\"checkbox\"]').forEach(cb => {
       cb.checked = picked.has(cb.value);
     });
   });
@@ -206,6 +205,11 @@ async function saveProjectAssignments() {
   try {
     await firebase.database().ref(`users/${uid}/projects`).set(projects);
     auditLog('update', 'user', uid, { projects });
+    if (window._currentUser && window._currentUser.uid === uid) {
+      window._currentUser = { ...window._currentUser, projects };
+      if (typeof filterProjectsByRole === 'function') filterProjectsByRole();
+      if (typeof renderHub === 'function') renderHub();
+    }
     showToast(`${user.name || uid} project access updated`);
     closeProjectAssignModal();
     initTeamAdmin();
@@ -395,8 +399,11 @@ function renderExecutiveDashboard() {
     const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
     const totalSpent = projects.reduce((s, p) =>
       s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
+    const laborBudgetTotal = projects.reduce((s, p) => s + (parseFloat(p.laborBudget) || 0), 0);
+    const materialBudgetTotal = projects.reduce((s, p) => s + (parseFloat(p.materialBudget) || 0), 0);
+    const remaining = Math.max(0, totalBudget - totalSpent);
+    const spentPct = totalBudget ? Math.min(100, (totalSpent / totalBudget) * 100) : 0;
     const avgHealth = healthData.length ? Math.round(healthData.reduce((s, p) => s + p.health.score, 0) / healthData.length) : 0;
-
     setText('execActiveProjects', active);
     setText('execTotalBudget', peso(totalBudget));
     setText('execTotalSpent', peso(totalSpent));
@@ -405,6 +412,19 @@ function renderExecutiveDashboard() {
     const healthEl = $('execAvgHealth');
     if (healthEl) {
       healthEl.style.color = avgHealth >= 80 ? 'var(--green)' : avgHealth >= 60 ? 'var(--amber)' : 'var(--red)';
+    }
+
+
+    const chart = $('execBudgetChart');
+    const legend = $('execBudgetLegend');
+    if (chart) {
+      chart.style.background = 'conic-gradient(var(--purple) 0 ' + (spentPct * 0.6) + '%, var(--blue) ' + (spentPct * 0.6) + '% ' + Math.min(100, spentPct * 0.85) + '%, var(--green) ' + Math.min(100, spentPct * 0.85) + '% ' + spentPct + '%, var(--amber) ' + spentPct + '% 100%)';
+    }
+    if (legend) {
+      legend.innerHTML = '<div class="exec-legend-row"><span><i class="exec-legend-swatch" style="background:var(--purple)"></i>Spent</span><strong>' + peso(totalSpent) + '</strong></div>' +
+        '<div class="exec-legend-row"><span><i class="exec-legend-swatch" style="background:var(--blue)"></i>Labor Budget</span><strong>' + peso(laborBudgetTotal) + '</strong></div>' +
+        '<div class="exec-legend-row"><span><i class="exec-legend-swatch" style="background:var(--green)"></i>Material Budget</span><strong>' + peso(materialBudgetTotal) + '</strong></div>' +
+        '<div class="exec-legend-row"><span><i class="exec-legend-swatch" style="background:var(--amber)"></i>Remaining</span><strong>' + peso(remaining) + '</strong></div>';
     }
   });
 }

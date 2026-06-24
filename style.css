@@ -1816,6 +1816,116 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 .cmp-total{ font-size: 11px; color: var(--muted2); min-width: 160px; text-align: right; }
 @media(max-width:500px) { .cmp-total { display: none; } }
 
+.exec-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: stretch;
+  margin: 14px 0 16px;
+}
+
+@media(max-width:980px) {
+  .exec-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.exec-stat {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-xs);
+  padding: 12px 14px;
+}
+
+.exec-stat-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  margin-bottom: 5px;
+}
+
+.exec-stat-val {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.exec-overview {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+@media(max-width:900px) {
+  .exec-overview { grid-template-columns: 1fr; }
+}
+
+.exec-chart-card,
+.exec-health-card {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.panel-subtitle {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.exec-budget-chart {
+  width: 180px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  margin: 6px auto 12px;
+  background: conic-gradient(var(--purple) 0 0, var(--blue) 0 0, var(--green) 0 0, var(--amber) 0 0);
+  box-shadow: inset 0 0 0 10px var(--surface);
+}
+
+.exec-budget-chart::after {
+  content: "";
+  display: block;
+  width: 72px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--surface);
+  margin: 54px auto 0;
+  box-shadow: 0 0 0 1px var(--border2);
+}
+
+.exec-budget-legend {
+  display: grid;
+  gap: 8px;
+}
+
+.exec-legend-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted2);
+}
+
+.exec-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.exec-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
 /* ══════════════════════════════════════════════════════════════
    ═══ WORKSPACE ════════════════════════════════════════════
 ══════════════════════════════════════════════════════════════ */
