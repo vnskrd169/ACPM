@@ -68,6 +68,7 @@ function isoDateStr() {
 function showToast(msg, type = 'success') {
   const existing = document.querySelector('.toast-msg');
   if (existing) existing.remove();
+  if (!document.body) return;
   const toast = document.createElement('div');
   toast.className = `toast-msg toast-${type}`;
   toast.textContent = msg;

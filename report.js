@@ -346,7 +346,8 @@ function renderExecutiveDashboard() {
   }
 
   const ref = firebase.database().ref('projects');
-  reportsListen(ref, snap => {
+  _reportsListeners.push(ref);
+  ref.on('value', snap => {
     const projects = [];
     snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
 
@@ -495,7 +496,8 @@ function calculateProjectHealth(p) {
 // ══════════════════════════════════════════════════════
 function renderTeamPerformance() {
   const ref = firebase.database().ref('projects');
-  reportsListen(ref, snap => {
+  _reportsListeners.push(ref);
+  ref.on('value', snap => {
     const el = $('teamPerformance');
     if (!el) return;
 
@@ -564,7 +566,8 @@ function renderTeamPerformance() {
 // ══════════════════════════════════════════════════════
 function renderBudgetVariance() {
   const ref = firebase.database().ref('projects');
-  reportsListen(ref, snap => {
+  _reportsListeners.push(ref);
+  ref.on('value', snap => {
     const el = $('budgetVariance');
     if (!el) return;
 
