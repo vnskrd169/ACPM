@@ -941,8 +941,9 @@ window.addEventListener('appinstalled', () => {
       <div class="modal-title">Project Access</div>
       <div class="task-stats-row" style="margin-bottom:10px;">
         <span>User: <strong id="assignUserName">—</strong></span>
-        <span>UID: <strong id="assignUserUid" style="font-family:monospace;font-size:11px">—</strong></span>
+        <span>Projects: <strong id="assignProjectNames">—</strong></span>
         <span>Role: <strong id="assignProjectStatus">—</strong></span>
+        <strong id="assignUserUid" hidden></strong>
       </div>
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;color:var(--muted2);font-size:12px;">
         <span>Tick the projects this user can access.</span>

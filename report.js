@@ -62,7 +62,7 @@ function initAuditLog() {
     const projectSel = $('auditFilterProject');
     if (projectSel && !projectSel.dataset.loaded) {
       const projects = [...new Set(rows.map(r => r.projectId).filter(Boolean))].sort();
-      projectSel.innerHTML = '<option value="">All projects</option>' + projects.map(pid => `<option value="${escapeHtml(pid)}">${escapeHtml(pid)}</option>`).join('');
+      projectSel.innerHTML = '<option value="">All projects</option>' + projects.map(pid => `<option value="${escapeHtml(pid)}">${escapeHtml(formatProjectLabel(pid))}</option>`).join('');
       projectSel.dataset.loaded = '1';
     }
     renderAuditLog(rows);
@@ -99,9 +99,9 @@ function renderAuditLog(rows = []) {
           <span class="health-score" style="font-size:12px">${escapeHtml(new Date(r.timestamp || Date.now()).toLocaleString('en-PH'))}</span>
         </div>
         <div style="font-size:12px;color:var(--muted2);line-height:1.5">
-          <div><strong>User:</strong> ${escapeHtml(r.userName || r.userId || '—')}</div>
-          <div><strong>Entity:</strong> ${escapeHtml(r.entityType || '—')} ${r.entityId ? `· ${escapeHtml(r.entityId)}` : ''}</div>
-          <div><strong>Project:</strong> ${escapeHtml(r.projectId || '—')}</div>
+          <div><strong>User:</strong> ${escapeHtml(r.userName || r.userId || '-')}</div>
+          <div><strong>Entity:</strong> ${escapeHtml(r.entityType || '-')} ${r.entityId ? `� ${escapeHtml(r.entityId)}` : ''}</div>
+          <div><strong>Project:</strong> ${escapeHtml(formatProjectLabel(r.projectId || '-'))}</div>
           ${r.details ? `<div><strong>Details:</strong> ${escapeHtml(JSON.stringify(r.details))}</div>` : ''}
         </div>
       </div>`).join('')}
@@ -175,9 +175,11 @@ function openProjectAssignModal(uid) {
   if (!user) return;
   const title = $('assignUserName');
   const holder = $('assignUserUid');
+  const names = $('assignProjectNames');
   const status = $('assignProjectStatus');
   if (title) title.textContent = user.name || 'User';
   if (holder) { holder.dataset.uid = uid; holder.textContent = uid; }
+  if (names) names.textContent = (user.projects || []).map(formatProjectLabel).join(', ') || 'None yet';
   if (status) status.textContent = normalizeTeamRole(user.role);
   const modal = $('projectAssignModal');
   modal?.classList.remove('hidden');
