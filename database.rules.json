@@ -8,26 +8,52 @@
       "$uid": {
         ".read": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss'",
         ".write": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss'",
-        ".validate": "newData.child('role').isString() && (!newData.child('name').exists() || newData.child('name').isString())"
+        ".validate": "!newData.exists() || (( !newData.child('name').exists() || newData.child('name').isString() ) && ( !newData.child('role').exists() || (newData.child('role').isString() && newData.child('role').val().matches(/^(boss|apm|viewer)$/)) ))"
       }
     },
 
     "projects": {
       ".read": "auth != null",
-      ".write": "auth != null",
       ".indexOn": ["status", "name", "createdAt"],
       "$pid": {
         ".read": "auth != null",
         ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))",
         ".validate": "newData.hasChildren(['name', 'status', 'createdAt']) || !data.exists()",
-
-        "billings": { ".indexOn": ["seq", "status"] },
-        "changeOrders": { ".indexOn": ["seq", "status"] },
-        "purchaseOrders": { ".indexOn": ["seq", "status"] },
-        "ledger": { ".indexOn": ["poId", "status"] },
-        "attendanceHistory": { ".indexOn": "savedAt" },
-        "payrollLogs": { ".indexOn": "savedAt" },
-        "siteLogs": { ".indexOn": "savedAt" }
+        "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" 
+        },
+        "status": { 
+          ".validate": "newData.isString() && newData.val().matches(/^(active|completed)$/)", 
+          ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
+        },
+        "laborBudget": { ".validate": "newData.isNumber() && newData.val() >= 0" 
+        },
+        "materialBudget": { ".validate": "newData.isNumber() && newData.val() >= 0" 
+        },
+        "laborSpent": { ".validate": "newData.isNumber() && newData.val() >= 0" 
+        },
+        "materialSpent": { ".validate": "newData.isNumber() && newData.val() >= 0" 
+        },
+        "laborBudgetDelta": { ".validate": "newData.isNumber()" 
+        },
+        "materialBudgetDelta": { ".validate": "newData.isNumber()" 
+        },
+        "createdAt": { 
+          ".validate": "newData.isNumber()" 
+        },
+        "billings": { ".indexOn": ["seq", "status"] 
+        },
+        "changeOrders": { ".indexOn": ["seq", "status"] 
+        },
+        "purchaseOrders": { ".indexOn": ["seq", "status"] 
+        },
+        "ledger": { ".indexOn": ["poId", "status"] 
+        },
+        "attendanceHistory": { ".indexOn": "savedAt" 
+        },
+        "payrollLogs": { ".indexOn": "savedAt" 
+        },
+        "siteLogs": { ".indexOn": "savedAt" 
+        }
       }
     },
 
@@ -39,7 +65,7 @@
 
     "auditLogs": {
       ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
-      ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp'])",
+      ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp']) && newData.child('action').isString() && newData.child('entityType').isString() && newData.child('userId').isString() && newData.child('userName').isString() && newData.child('timestamp').isNumber()",
       ".indexOn": "timestamp"
     },
 

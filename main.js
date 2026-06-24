@@ -481,17 +481,22 @@ async function createProject(evt) {
   const btn = evt?.currentTarget || document.querySelector('.btn-create');
   await withBusy(btn, async () => {
     const user = window._currentUser || {};
-    if (user.role !== 'boss') {
+    if (normalizeRole(user.role) !== 'boss') {
       showToast('Boss access required to create projects.', 'error');
       return;
     }
 
-    const name = $('newName')?.value.trim();
-    const laborBudget = parseFloat($('newLaborBudget')?.value) || 0;
-    const materialBudget = parseFloat($('newMaterialBudget')?.value) || 0;
+    const vName = validateProjectName($('newName')?.value);
+    if (!vName.ok) { showToast(vName.msg, 'error'); return; }
+    const name = vName.value;
 
-    if (!name) { showToast('Enter project name.', 'error'); return; }
-    if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
+    const vLabor = validateBudget($('newLaborBudget')?.value);
+    if (!vLabor.ok) { showToast(vLabor.msg, 'error'); return; }
+    const laborBudget = vLabor.value;
+
+    const vMaterial = validateBudget($('newMaterialBudget')?.value);
+    if (!vMaterial.ok) { showToast(vMaterial.msg, 'error'); return; }
+    const materialBudget = vMaterial.value;
 
     const dupCheck = await db.ref('projects').orderByChild('name').equalTo(name).once('value');
     if (dupCheck.exists()) { showToast('A project with that name already exists.', 'error'); return; }
@@ -551,7 +556,7 @@ async function deleteProject(pid) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  if (!confirm('\u26A0\uFE0F; WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nType DELETE to confirm:')) return;
+  if (!confirm('\u26A0\uFE0F; WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nClick OK to proceed to typed confirmation.')) return;
   const confirmText = prompt('Type DELETE to confirm permanent deletion:');
   if (confirmText !== 'DELETE') { showToast('Deletion cancelled.', 'warn'); return; }
 
@@ -734,6 +739,21 @@ window.addEventListener('keydown', e => {
 });
 
 // ════════════════════════════════════════════════════════════
+//  GLOBAL ERROR HANDLER
+//  Catches unhandled errors and shows a user-friendly message.
+//  Prevents the app from silently breaking.
+// ════════════════════════════════════════════════════════════
+window.addEventListener('error', e => {
+  console.error('Global error:', e.error);
+  showToast('Something went wrong. Please refresh the page if problems persist.', 'error');
+});
+
+window.addEventListener('unhandledrejection', e => {
+  console.error('Unhandled promise rejection:', e.reason);
+  showToast('A background task failed. Please try again.', 'error');
+});
+
+// ════════════════════════════════════════════════════════════
 //  PROGRESS RING (SVG Donut)
 // ════════════════════════════════════════════════════════════
 function buildProgressRing(pctUsed, isCritical, isWarning) {
@@ -785,11 +805,17 @@ async function editProject() {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  const name = $('editProjName')?.value.trim();
-  const laborBudget = parseFloat($('editProjLaborBudget')?.value) || 0;
-  const materialBudget = parseFloat($('editProjMaterialBudget')?.value) || 0;
-  if (!name) { showToast('Enter project name.', 'error'); return; }
-  if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
+  const vName = validateProjectName($('editProjName')?.value);
+  if (!vName.ok) { showToast(vName.msg, 'error'); return; }
+  const name = vName.value;
+
+  const vLabor = validateBudget($('editProjLaborBudget')?.value);
+  if (!vLabor.ok) { showToast(vLabor.msg, 'error'); return; }
+  const laborBudget = vLabor.value;
+
+  const vMaterial = validateBudget($('editProjMaterialBudget')?.value);
+  if (!vMaterial.ok) { showToast(vMaterial.msg, 'error'); return; }
+  const materialBudget = vMaterial.value;
 
   const dupCheck = await db.ref('projects').orderByChild('name').equalTo(name).once('value');
   if (dupCheck.exists()) {

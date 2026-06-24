@@ -268,3 +268,7 @@ Still worth doing next:
 
 Current pass note:
 - The main write-heavy modules were swept again and the obvious mutation paths are already guarded; the remaining `ref()` calls in the codebase are mostly reads, listeners, or small state markers.
+
+Fresh fix note:
+- User profile writes under `/users/$uid` now allow partial updates again, which restores team role edits and self-project assignment saves.
+- The old boss-name fallback in auth detection is back, so legacy seeded admin accounts still resolve as bosses.

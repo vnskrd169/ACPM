@@ -97,7 +97,7 @@ async function safeDb(fn, errMsg) {
 // can see who-did-what across all 9 projects. Fire-and-forget: never
 // blocks or throws on the caller — logging must not break the app.
 function auditLog(action, entityType, entityId, details = {}) {
-  const user = (typeof window !== 'undefined' && window._currentUser) ? window._currentUser : { uid: 'anonymous', role: 'admin', name: 'System' };
+  const user = (typeof window !== 'undefined' && window._currentUser) ? window._currentUser : { uid: 'anonymous', role: 'viewer', name: 'System' };
   const pid = (typeof window !== 'undefined' && window._currentPid) ? window._currentPid : null;
   const logEntry = {
     action, entityType, entityId, details,
@@ -189,6 +189,46 @@ function getKey(ds, attr = 'key') {
 function normalizeInvKey(desc, size = '') {
   return `${String(desc || '').trim().toLowerCase()}||${String(size || '').trim().toLowerCase()}`;
 }
+
+// ════════════════════════════════════════════════════════════
+//  Shared Validators — enforce data quality before Firebase writes
+//  These run client-side; Firebase Rules provide the final guard.
+// ════════════════════════════════════════════════════════════
+function validateString(value, maxLen = 100) {
+  const s = String(value || '').trim();
+  if (!s) return { ok: false, msg: 'Required field is empty.' };
+  if (s.length > maxLen) return { ok: false, msg: `Too long (max ${maxLen} characters).` };
+  return { ok: true, value: s };
+}
+
+function validateNumber(value, min = 0, max = 999999999) {
+  const n = parseFloat(value);
+  if (Number.isNaN(n)) return { ok: false, msg: 'Must be a valid number.' };
+  if (n < min) return { ok: false, msg: `Must be at least ${min}.` };
+  if (n > max) return { ok: false, msg: `Must be at most ${max}.` };
+  return { ok: true, value: n };
+}
+
+function validateProjectName(name) {
+  return validateString(name, 50);
+}
+
+function validateBudget(amount) {
+  return validateNumber(amount, 0, 999999999);
+}
+
+function validateEmail(input) {
+  const s = String(input || '').trim().toLowerCase();
+  if (!s) return { ok: false, msg: 'Email is required.' };
+  if (!s.includes('@')) return { ok: false, msg: 'Invalid email format.' };
+  return { ok: true, value: s };
+}
+
+window.validateString = validateString;
+window.validateNumber = validateNumber;
+window.validateProjectName = validateProjectName;
+window.validateBudget = validateBudget;
+window.validateEmail = validateEmail;
 
 // ── Access Guard ──────────────────────────────────────────
 // Centralized gate for write actions. Returns true if the

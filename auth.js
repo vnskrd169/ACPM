@@ -149,7 +149,7 @@ function startAuthObserver() {
     } else {
       // Signed out — show login screen
       _currentAuthUser = null;
-      window._currentUser = { uid: 'anonymous', role: 'admin', name: 'System' };
+      window._currentUser = { uid: 'anonymous', role: 'viewer', name: 'System' };
       const badge = document.getElementById('currentUserBadge');
       if (badge) {
         badge.textContent = 'System';
@@ -383,4 +383,6 @@ window.doResetPassword   = doResetPassword;
 window.logout            = logout;
 window.canAccessProject  = canAccessProject;
 window.canEditProject    = canEditProject;
-window.getCurrentUser   = () => _currentAuthUser;
+window.getCurrentUser    = () => _currentAuthUser;
+window.normalizeRole     = normalizeRole;
+window.isBoss            = isBoss;
