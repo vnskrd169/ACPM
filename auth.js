@@ -330,11 +330,10 @@ function initAppForUser() {
     el.style.display = allowed.includes(role) || (allowed.includes('boss') && isBoss(role)) ? '' : 'none';
   });
 
-  const visibleTabs = Array.from(document.querySelectorAll('.hub-tab, .tab-btn'))
-    .filter(el => el.offsetParent !== null && !el.classList.contains('hidden'));
-  const activeWorkspaceTab = document.querySelector('.tab-btn.tab-active:not(#tab_admin):not(#tab_reports)');
-  if (!activeWorkspaceTab || activeWorkspaceTab.style.display === 'none') {
-    const fallback = document.querySelector(isBoss(role) ? '#tab_reports' : '#tab_labor');
+  const preferredTab = isBoss(role) ? '#tab_reports' : '#tab_labor';
+  const activeWorkspaceTab = document.querySelector('.tab-btn.tab-active:not(#tab_admin)');
+  if (!activeWorkspaceTab || activeWorkspaceTab.style.display === 'none' || !activeWorkspaceTab.id || (isBoss(role) && activeWorkspaceTab.id !== 'tab_reports')) {
+    const fallback = document.querySelector(preferredTab);
     if (fallback && fallback.style.display !== 'none') fallback.click();
   }
 

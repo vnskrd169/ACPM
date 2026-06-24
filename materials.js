@@ -601,8 +601,9 @@ function watchLedger(pid) {
     setText('ledgerTotal', peso(paidTotal));
     setText('ledgerCount', `${orderCount} item${orderCount !== 1 ? 's' : ''}`);
     if (paidTotal !== _prevMatSpent) {
-      await safeDb(() => firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal }), 'Failed to sync material spend');
-      _prevMatSpent = paidTotal;
+      safeDb(() => firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal }), 'Failed to sync material spend')
+        .then(() => { _prevMatSpent = paidTotal; })
+        .catch(() => {});
     }
     updateMaterialsSummary(snap);
   });
