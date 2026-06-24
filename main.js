@@ -510,11 +510,11 @@ async function createProject(evt) {
     const newPid = newRef.key;
 
     // Auto-assign to creator
-    if (user && user.role === 'apm') {
-      const currentProjects = user.projects || [];
-      currentProjects.push(newPid);
-      await db.ref(`users/${user.uid}/projects`).set(currentProjects);
-      user.projects = currentProjects;
+    if (user && user.role === "apm") {
+      const currentProjects = Array.from(new Set(user.projects || [])).sort((a, b) => String(a).localeCompare(String(b)));
+      const uniqueProjects = Array.from(new Set([...currentProjects, newPid])).sort((a, b) => String(a).localeCompare(String(b)));
+      await db.ref(`users/${user.uid}/projects`).set(uniqueProjects);
+      user.projects = uniqueProjects;
       window._currentUser = user;
     }
 

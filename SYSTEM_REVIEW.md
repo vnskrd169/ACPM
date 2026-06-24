@@ -251,3 +251,17 @@ The database rules are stricter than before, but several collections still rely 
 
 The system is structurally solid for a small team, but it still behaves like a client-heavy Firebase app rather than a fully self-defending system. The recent work moved it in the right direction. The next step is to harden the rest of the module actions using the same pattern we used for project and PO flows.
 
+
+## Progress Update
+
+Completed in the latest pass:
+- Team Admin now shows readable project names instead of raw IDs.
+- Project access assignment is visible in the Team row and saved with deduped, sorted project lists.
+- Sign out is now a clear labeled control in the header.
+- Team roster no longer shows the raw UID column to normal users.
+- Materials PO/inventory updates now use the shared safe write wrapper.
+
+Still worth doing next:
+- Finish wrapping any remaining direct Firebase writes that still bypass `safeDb()`.
+- Keep tightening the audit and permission surfaces so the browser has less room to drift.
+- Do a live browser pass on Team Admin and the main hub after the current cleanup settles.

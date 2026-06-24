@@ -1073,7 +1073,7 @@ async function confirmSavePayroll() {
   }
 
   try {
-    await firebase.database().ref().update(updates);
+    await safeDb(() => firebase.database().ref().update(updates), 'Failed to save payroll');
   } catch (e) {
     showToast('Failed to save payroll. No data was lost.', 'error');
     console.error(e);

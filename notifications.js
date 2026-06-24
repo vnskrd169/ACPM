@@ -108,7 +108,7 @@ async function sendNotification({ to, type, message, projectId, projectName, lin
     from: sender.uid || 'system',
     fromName: sender.name || 'System'
   };
-  await firebase.database().ref(`notifications/${to}`).push(notif);
+  await safeDb(() => firebase.database().ref(`notifications/${to}`).push(notif), 'Failed to send notification');
 }
 
 // Send to all project members

@@ -202,7 +202,7 @@ async function saveProjectAssignments() {
   if (!uid) return;
   const user = _teamUsersCache.find(u => u.uid === uid);
   if (!user) return;
-  const projects = Array.from(document.querySelectorAll('#assignProjectList input[type="checkbox"]:checked')).map(cb => cb.value);
+  const projects = Array.from(new Set(document.querySelectorAll('#assignProjectList input[type="checkbox"]:checked')).map(cb => cb.value)).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b)));
   try {
     await firebase.database().ref(`users/${uid}/projects`).set(projects);
     auditLog('update', 'user', uid, { projects });
@@ -294,16 +294,15 @@ function renderTeamAdmin(users) {
 
   el.innerHTML = `<div style="overflow-x:auto"><table class="summary-table">
     <thead><tr>
-      <th>Name</th><th>UID</th><th>Email</th><th>Role / Projects</th><th>Boss Of</th>
+      <th>Name</th><th>Email</th><th>Role / Projects</th><th>Boss Of</th>
     </tr></thead>
     <tbody>
       ${users.map(user => {
         const role = normalizeTeamRole(user.role);
         const search = [user.name, user.email, user.uid, role, ...(user.projects || []).map(formatProjectLabel), ...(user.bossOf || []).map(formatProjectLabel)].join(' ').toLowerCase();
         return `<tr data-team-user-row data-search="${escapeHtml(search)}">
-          <td>${escapeHtml(user.name || '—')}</td>
-          <td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid)}</td>
-          <td>${escapeHtml(user.email || '—')}</td>
+          <td>${escapeHtml(user.name || '-')}</td>
+          <td>${escapeHtml(user.email || '-')}</td>
           <td>
             <div style="display:flex;flex-direction:column;gap:8px;min-width:180px">
               <select onchange="updateUserRole('${user.uid}', this.value)" ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
@@ -317,7 +316,7 @@ function renderTeamAdmin(users) {
               </div>
             </div>
           </td>
-          <td>${escapeHtml((user.bossOf || []).join(', ') || '—')}</td>
+          <td>${escapeHtml((user.bossOf || []).map(formatProjectLabel).join(', ') || '-')}</td>
         </tr>`;
       }).join('')}
     </tbody>

@@ -283,7 +283,7 @@ async function submitPO() {
     }
   });
   if (Object.keys(invUpdates).length) {
-    await firebase.database().ref(`projects/${_mpid}/inventory`).update(invUpdates);
+    await safeDb(() => firebase.database().ref(`projects/${_mpid}/inventory`).update(invUpdates), 'Failed to update inventory');
   }
 
   _draftItems = [];
@@ -601,7 +601,7 @@ function watchLedger(pid) {
     setText('ledgerTotal', peso(paidTotal));
     setText('ledgerCount', `${orderCount} item${orderCount !== 1 ? 's' : ''}`);
     if (paidTotal !== _prevMatSpent) {
-      firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal });
+      await safeDb(() => firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal }), 'Failed to sync material spend');
       _prevMatSpent = paidTotal;
     }
     updateMaterialsSummary(snap);
