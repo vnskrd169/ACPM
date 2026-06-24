@@ -10,6 +10,26 @@ const $ = id => document.getElementById(id);
 const setText = (id, text) => { const el = $(id); if (el) el.textContent = text; };
 const setHTML = (id, html) => { const el = $(id); if (el) el.innerHTML = html; };
 
+const FEATURE_STORAGE_KEYS = {
+  extras: 'acpm_showExtras'
+};
+
+function getFeatureFlag(name, fallback = false) {
+  try {
+    const raw = localStorage.getItem(FEATURE_STORAGE_KEYS[name] || `acpm_${name}`);
+    if (raw === null) return fallback;
+    return raw === '1' || raw === 'true';
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function setFeatureFlag(name, enabled) {
+  try {
+    localStorage.setItem(FEATURE_STORAGE_KEYS[name] || `acpm_${name}`, enabled ? '1' : '0');
+  } catch (e) { /* ignore storage failures */ }
+}
+
 // ── Formatting ──────────────────────────────────────────────
 function peso(n) {
   if (n === undefined || n === null) return '₱0.00';
@@ -230,6 +250,8 @@ window.validateNumber = validateNumber;
 window.validateProjectName = validateProjectName;
 window.validateBudget = validateBudget;
 window.validateEmail = validateEmail;
+window.getFeatureFlag = getFeatureFlag;
+window.setFeatureFlag = setFeatureFlag;
 
 // ── Access Guard ──────────────────────────────────────────
 // Centralized gate for write actions. Returns true if the

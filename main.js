@@ -644,6 +644,35 @@ function switchTab(tab) {
   if (tab === 'reports') initReports();
 }
 
+function toggleExtraTabs(forceValue) {
+  const next = typeof forceValue === 'boolean'
+    ? forceValue
+    : !(typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false);
+  if (typeof setFeatureFlag === 'function') setFeatureFlag('extras', next);
+
+  document.querySelectorAll('[data-feature-visible="extras"]').forEach(el => {
+    el.style.display = next ? '' : 'none';
+  });
+
+  const extrasToggle = document.getElementById('extrasToggleBtn');
+  if (extrasToggle) {
+    extrasToggle.classList.toggle('is-enabled', next);
+    extrasToggle.textContent = next ? 'Extras On' : 'Extras';
+    extrasToggle.title = next ? 'Hide optional tabs' : 'Show optional tabs';
+  }
+
+  const activeTab = document.querySelector('.tab-btn.tab-active');
+  if (!next && activeTab && activeTab.dataset.featureVisible === 'extras') {
+    if (typeof isBoss === 'function' && isBoss(window._currentUser?.role)) {
+      const fallback = document.getElementById('tab_reports');
+      fallback?.click();
+    } else {
+      const fallback = document.getElementById('tab_labor');
+      fallback?.click();
+    }
+  }
+}
+
 function openTeamAdmin() {
   $('hubView')?.classList.add('hidden');
   $('workspaceView')?.classList.remove('hidden');

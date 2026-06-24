@@ -297,6 +297,7 @@ function logout() {
 
 function initAppForUser() {
   const role = normalizeRole(_currentAuthUser?.role || 'viewer');
+  const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false;
 
   // Role-based CSS classes
   document.body.classList.remove('role-boss', 'role-apm', 'role-viewer');
@@ -329,6 +330,17 @@ function initAppForUser() {
     const allowed = visible.split(',').map(v => v.trim()).filter(Boolean);
     el.style.display = allowed.includes(role) || (allowed.includes('boss') && isBoss(role)) ? '' : 'none';
   });
+
+  document.querySelectorAll('[data-feature-visible="extras"]').forEach(el => {
+    el.style.display = extrasEnabled ? '' : 'none';
+  });
+
+  const extrasToggle = document.getElementById('extrasToggleBtn');
+  if (extrasToggle) {
+    extrasToggle.classList.toggle('is-enabled', extrasEnabled);
+    extrasToggle.textContent = extrasEnabled ? 'Extras On' : 'Extras';
+    extrasToggle.title = extrasEnabled ? 'Hide optional tabs' : 'Show optional tabs';
+  }
 
   const preferredTab = isBoss(role) ? '#tab_reports' : '#tab_labor';
   const activeWorkspaceTab = document.querySelector('.tab-btn.tab-active:not(#tab_admin)');

@@ -242,13 +242,19 @@ window.addEventListener('appinstalled', () => {
   </div>
 
   <!-- Project Notes Bar -->
-  <div class="card" style="padding:12px 16px;margin-bottom:12px;">
-    <div style="display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
+  <div class="card compact-card" style="padding:12px 16px;margin-bottom:12px;">
+    <div class="compact-head">
+      <div>
+        <div class="sec-label" style="margin-bottom:2px;">&#x1F4DD; Project Notes</div>
+        <div class="compact-sub">Shared with the team, collapsed by default.</div>
+      </div>
+      <button class="btn-ws-secondary" type="button" onclick="document.getElementById('projectNotesBody').classList.toggle('hidden')">Show / Hide</button>
+    </div>
+    <div id="projectNotesBody" class="hidden" style="margin-top:10px;display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
       <div style="flex:1;min-width:200px;">
-        <label class="field-label" style="margin-bottom:3px;">&#x1F4DD; Project Notes (shared with team)</label>
         <textarea id="projectNotesInput" rows="2" placeholder="Key contacts, site access info, special instructions..." style="min-height:50px;font-size:12px;"></textarea>
       </div>
-      <button class="btn-ws-secondary" onclick="saveProjectNotes()" style="margin-top:18px;">&#x1F4BE; Save Notes</button>
+      <button class="btn-ws-secondary" onclick="saveProjectNotes()" style="margin-top:2px;">&#x1F4BE; Save Notes</button>
     </div>
   </div>
 
@@ -259,6 +265,13 @@ window.addEventListener('appinstalled', () => {
       <button id="tab_materials" class="tab-btn" onclick="switchTab('materials')" data-role-visible="apm,viewer">&#x1F4E6; Materials</button>
       <button id="tab_billing" class="tab-btn" onclick="switchTab('billing')" data-role-visible="apm,viewer">&#x1F4B0; Billing</button>
       <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')" data-role-visible="apm,viewer">&#x1F4D2; Site Log</button>
+      <button id="extrasToggleBtn" class="tab-btn" onclick="toggleExtraTabs()" data-role-visible="apm,viewer,boss">&#x1F527; Extras</button>
+      <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x1F4CB; Change Orders</button>
+      <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x1F3EA; Suppliers</button>
+      <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x2611; Tasks</button>
+      <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x1F6A7; Equipment</button>
+      <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
+      <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
       <button id="tab_admin" class="tab-btn hidden" onclick="switchTab('admin')" data-role-visible="none">&#x1F465; Admin</button>
       <button id="tab_reports" class="tab-btn" onclick="switchTab('reports')" data-role-visible="boss">&#x1F4CA; Reports</button>
     </div>
@@ -270,70 +283,76 @@ window.addEventListener('appinstalled', () => {
     <div id="laborBudgetWarn" class="hidden budget-warn-bar"></div>
     
     <!-- Payroll Config -->
-    <div class="card" style="margin-bottom:16px;">
-      <div class="card-title"><span class="ct-icon" style="background:rgba(245,158,11,.1)">&#x2699;&#xFE0F;</span> Payroll Settings</div>
-      <div class="payroll-config-grid">
+    <details class="card compact-details" style="margin-bottom:16px;" open>
+      <summary class="compact-head" style="list-style:none;cursor:pointer;">
         <div>
-          <label class="field-label">Payroll Cycle</label>
-          <select id="payrollCycle" onchange="savePayrollConfig()">
-            <option value="weekly">Weekly</option>
-            <option value="biweekly">Bi-Weekly</option>
-            <option value="semimonthly">Semi-Monthly</option>
-          </select>
+          <div class="sec-label" style="margin-bottom:2px;">&#x2699;&#xFE0F; Payroll Settings</div>
+          <div class="compact-sub">Payroll, deductions, and project config.</div>
         </div>
-        <div>
-          <label class="field-label">OT Threshold (hrs)</label>
-          <input id="otThreshold" type="number" value="8" onchange="savePayrollConfig()" placeholder="8">
-        </div>
-        <div>
-          <label class="field-label">Night Diff Rate</label>
-          <input id="nightDiffRate" type="number" value="1.1" step="0.01" onchange="savePayrollConfig()" placeholder="1.1">
-        </div>
-      </div>
-
-      <!-- Government Deductions Toggle -->
-      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;">
-          <input type="checkbox" id="govDeductionsEnabled" onchange="savePayrollConfig()" style="width:auto;min-height:auto;">
-          <span>&#x1F3DB;&#xFE0F; Enable Government Deductions (SSS / PhilHealth / Pag-IBIG)</span>
-        </label>
-        <div id="govDeductionsConfig" class="hidden" style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+        <span class="badge badge-purple">Core</span>
+      </summary>
+      <div style="margin-top:12px;">
+        <div class="payroll-config-grid">
           <div>
-            <label class="field-label">SSS Employer Share (%)</label>
-            <input id="sssEmployerPct" type="number" value="8.5" step="0.1" onchange="savePayrollConfig()" placeholder="8.5">
-          </div>
-          <div>
-            <label class="field-label">PhilHealth (%)</label>
-            <input id="philhealthPct" type="number" value="3" step="0.1" onchange="savePayrollConfig()" placeholder="3">
-          </div>
-          <div>
-            <label class="field-label">Pag-IBIG Employer (&#x20B1;)</label>
-            <input id="pagibigEmployerAmt" type="number" value="100" onchange="savePayrollConfig()" placeholder="100">
-          </div>
-        </div>
-      </div>
-
-      <!-- RFP / Project Settings -->
-      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
-        <div class="sec-label">RFP Settings (per project)</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <div>
-            <label class="field-label">Leader / Foreman Name</label>
-            <input id="projectLeader" type="text" placeholder="e.g., Juan Dela Cruz" onchange="saveProjectSettings()">
-          </div>
-          <div>
-            <label class="field-label">Default Payment Method</label>
-            <select id="projectPayMethod" onchange="saveProjectSettings()">
-              <option value="Bank">Bank Transfer</option>
-              <option value="GCash">GCash</option>
-              <option value="Cash">Cash</option>
-              <option value="Check">Check</option>
-              <option value="Others">Others</option>
+            <label class="field-label">Payroll Cycle</label>
+            <select id="payrollCycle" onchange="savePayrollConfig()">
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Bi-Weekly</option>
+              <option value="semimonthly">Semi-Monthly</option>
             </select>
           </div>
+          <div>
+            <label class="field-label">OT Threshold (hrs)</label>
+            <input id="otThreshold" type="number" value="8" onchange="savePayrollConfig()" placeholder="8">
+          </div>
+          <div>
+            <label class="field-label">Night Diff Rate</label>
+            <input id="nightDiffRate" type="number" value="1.1" step="0.01" onchange="savePayrollConfig()" placeholder="1.1">
+          </div>
+        </div>
+
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;">
+            <input type="checkbox" id="govDeductionsEnabled" onchange="savePayrollConfig()" style="width:auto;min-height:auto;">
+            <span>&#x1F3DB;&#xFE0F; Enable Government Deductions (SSS / PhilHealth / Pag-IBIG)</span>
+          </label>
+          <div id="govDeductionsConfig" class="hidden" style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+            <div>
+              <label class="field-label">SSS Employer Share (%)</label>
+              <input id="sssEmployerPct" type="number" value="8.5" step="0.1" onchange="savePayrollConfig()" placeholder="8.5">
+            </div>
+            <div>
+              <label class="field-label">PhilHealth (%)</label>
+              <input id="philhealthPct" type="number" value="3" step="0.1" onchange="savePayrollConfig()" placeholder="3">
+            </div>
+            <div>
+              <label class="field-label">Pag-IBIG Employer (&#x20B1;)</label>
+              <input id="pagibigEmployerAmt" type="number" value="100" onchange="savePayrollConfig()" placeholder="100">
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+          <div class="sec-label">RFP Settings (per project)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div>
+              <label class="field-label">Leader / Foreman Name</label>
+              <input id="projectLeader" type="text" placeholder="e.g., Juan Dela Cruz" onchange="saveProjectSettings()">
+            </div>
+            <div>
+              <label class="field-label">Default Payment Method</label>
+              <select id="projectPayMethod" onchange="saveProjectSettings()">
+                <option value="Bank">Bank Transfer</option>
+                <option value="GCash">GCash</option>
+                <option value="Cash">Cash</option>
+                <option value="Check">Check</option>
+                <option value="Others">Others</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </details>
 
     <div class="kpi-row">
       <div class="kpi-card kpi-purple">
@@ -373,10 +392,15 @@ window.addEventListener('appinstalled', () => {
         </div>
 
         <!-- Cash Advance Transaction Log -->
-        <div class="card gap" id="advanceLogSection">
-          <div class="card-title"><span class="ct-icon" style="background:rgba(245,158,11,.1)">&#x1F4CB;</span> Cash Advance Transaction Log</div>
-          <div id="advanceLogContent"><p class="empty-hint">No advance records yet.</p></div>
-        </div>
+        <details class="card gap compact-details" id="advanceLogSection">
+          <summary class="compact-head" style="list-style:none;cursor:pointer;">
+            <div>
+              <div class="sec-label" style="margin-bottom:2px;">&#x1F4CB; Cash Advance Log</div>
+              <div class="compact-sub">Optional history, collapsed by default.</div>
+            </div>
+          </summary>
+          <div id="advanceLogContent" style="margin-top:10px;"><p class="empty-hint">No advance records yet.</p></div>
+        </details>
       </div>
 
       <!-- Right: Timecard -->
@@ -409,24 +433,34 @@ window.addEventListener('appinstalled', () => {
     </div>
 
     <!-- Payroll Archive -->
-    <div class="card gap">
-      <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.1)">&#x1F4CB;</span> Payroll Logs Archive</div>
-      <div class="history-split">
-        <div class="overflow-scroll">
-          <div id="payrollLogsBody"><p class="empty-hint">No payroll logs yet. Compile a week to create the first record.</p></div>
-        </div>
-        <div>
-          <div class="sec-label">Expenses by Trade</div>
-          <div id="tradeTotals"><p class="empty-hint">No data yet.</p></div>
-        </div>
-      </div>
-    </div>
+        <details class="card gap compact-details">
+          <summary class="compact-head" style="list-style:none;cursor:pointer;">
+            <div>
+              <div class="sec-label" style="margin-bottom:2px;">&#x1F4CB; Payroll Logs Archive</div>
+              <div class="compact-sub">Older runs and trade totals.</div>
+            </div>
+          </summary>
+          <div class="history-split" style="margin-top:10px;">
+            <div class="overflow-scroll">
+              <div id="payrollLogsBody"><p class="empty-hint">No payroll logs yet. Compile a week to create the first record.</p></div>
+            </div>
+            <div>
+              <div class="sec-label">Expenses by Trade</div>
+              <div id="tradeTotals"><p class="empty-hint">No data yet.</p></div>
+            </div>
+          </div>
+        </details>
 
     <!-- Attendance History -->
-    <div class="card gap">
-      <div class="card-title"><span class="ct-icon" style="background:rgba(59,130,246,.1)">&#x1F4C5;</span> Archived Attendance Records</div>
-      <div id="timecardHistoryList"><p class="empty-hint">No archived attendance yet. Compile payroll to save records.</p></div>
-    </div>
+    <details class="card gap compact-details">
+      <summary class="compact-head" style="list-style:none;cursor:pointer;">
+        <div>
+          <div class="sec-label" style="margin-bottom:2px;">&#x1F4C5; Archived Attendance Records</div>
+          <div class="compact-sub">Saved attendance from compiled weeks.</div>
+        </div>
+      </summary>
+      <div id="timecardHistoryList" style="margin-top:10px;"><p class="empty-hint">No archived attendance yet. Compile payroll to save records.</p></div>
+    </details>
   </div>
 
 

@@ -167,6 +167,18 @@ The codebase has been hardened in the most visible paths, but there are still ma
 
 The database rules are stricter than before, but several collections still rely on broad authenticated writes or client-managed permissions.
 
+## Phase 1 Simplification
+
+To keep the app aligned with daily operations, the primary navigation has been narrowed to the core flow:
+
+- Dashboard / hub for monitoring
+- Labor for payroll
+- Materials for orders
+- Billing for billing
+- Site Log for logs
+
+Optional tools are being grouped behind an Extras toggle instead of staying permanently visible. That keeps the default workspace calmer while still leaving the supporting tools available when needed.
+
 ## Button/Action Coverage Snapshot
 
 ### Header
