@@ -118,7 +118,7 @@ async function safeDb(fn, errMsg) {
 // can see who-did-what across all 9 projects. Fire-and-forget: never
 // blocks or throws on the caller — logging must not break the app.
 function auditLog(action, entityType, entityId, details = {}) {
-  const user = (typeof window !== 'undefined' && window._currentUser) ? window._currentUser : { uid: 'anonymous', role: 'viewer', name: 'System' };
+  const user = (typeof window !== 'undefined' && window._currentUser) ? window._currentUser : { uid: 'anonymous', role: 'apm', name: 'System' };
   const pid = (typeof window !== 'undefined' && window._currentPid) ? window._currentPid : null;
   const logEntry = {
     action, entityType, entityId, details,

@@ -261,17 +261,17 @@ window.addEventListener('appinstalled', () => {
   <!-- Tab navigation -->
   <div class="tab-scroll">
     <div class="tab-group">
-      <button id="tab_labor" class="tab-btn tab-active" onclick="switchTab('labor')" data-role-visible="apm,viewer">&#x1F477; Labor</button>
-      <button id="tab_materials" class="tab-btn" onclick="switchTab('materials')" data-role-visible="apm,viewer">&#x1F4E6; Materials</button>
-      <button id="tab_billing" class="tab-btn" onclick="switchTab('billing')" data-role-visible="apm,viewer">&#x1F4B0; Billing</button>
-      <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')" data-role-visible="apm,viewer">&#x1F4D2; Site Log</button>
-      <button id="extrasToggleBtn" class="tab-btn" onclick="toggleExtraTabs()" data-role-visible="apm,viewer,boss">&#x1F527; Extras</button>
-      <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x1F4CB; Change Orders</button>
-      <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x1F3EA; Suppliers</button>
-      <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x2611; Tasks</button>
-      <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x1F6A7; Equipment</button>
-      <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
-      <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')" data-role-visible="apm,viewer,boss" data-feature-visible="extras">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
+      <button id="tab_labor" class="tab-btn tab-active" onclick="switchTab('labor')" data-role-visible="apm,boss">&#x1F477; Labor</button>
+      <button id="tab_materials" class="tab-btn" onclick="switchTab('materials')" data-role-visible="apm,boss">&#x1F4E6; Materials</button>
+      <button id="tab_billing" class="tab-btn" onclick="switchTab('billing')" data-role-visible="apm,boss">&#x1F4B0; Billing</button>
+      <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')" data-role-visible="apm,boss">&#x1F4D2; Site Log</button>
+      <button id="extrasToggleBtn" class="tab-btn" onclick="toggleExtraTabs()" data-role-visible="apm,boss">&#x1F527; Extras</button>
+      <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F4CB; Change Orders</button>
+      <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F3EA; Suppliers</button>
+      <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')" data-role-visible="apm,boss" data-feature-visible="extras">&#x2611; Tasks</button>
+      <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F6A7; Equipment</button>
+      <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
+      <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
       <button id="tab_admin" class="tab-btn hidden" onclick="switchTab('admin')" data-role-visible="none">&#x1F465; Admin</button>
       <button id="tab_reports" class="tab-btn" onclick="switchTab('reports')" data-role-visible="boss">&#x1F4CA; Reports</button>
     </div>
@@ -601,7 +601,10 @@ window.addEventListener('appinstalled', () => {
             <div class="contract-dash-small">Down Payment &nbsp;<strong id="cdDownPay">—</strong></div>
             <div class="contract-dash-small">Retention &nbsp;<strong id="cdRetention">—</strong></div>
           </div>
-          <button class="btn-ws-secondary" onclick="openEditContractModal()">&#x270E; Edit Contract</button>
+          <div class="contract-actions">
+            <button class="btn-ws-secondary" onclick="openEditContractModal()">&#x270E; Edit Contract</button>
+            <button class="btn-ws-secondary" onclick="exportBillingSummary()">&#x1F4CA; Export Summary</button>
+          </div>
         </div>
         <div class="billing-progress-wrap">
           <div id="cdProgressBar" class="billing-fill bar-purple" style="width:0%"></div>
@@ -678,6 +681,10 @@ window.addEventListener('appinstalled', () => {
         <span class="kpi-label">Labor Impact</span>
         <span class="kpi-num" id="coLaborImpactKpi">&#x20B1;0.00</span>
       </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Materials Impact</span>
+        <span class="kpi-num" id="coMaterialsImpactKpi">&#x20B1;0.00</span>
+      </div>
     </div>
 
     <div class="card gap">
@@ -701,6 +708,16 @@ window.addEventListener('appinstalled', () => {
       <div class="form-actions">
         <button class="btn-add-sm" onclick="addChangeOrder()">+ Submit Change Order</button>
       </div>
+    </div>
+
+    <div class="co-toolbar">
+      <div class="filter-group" aria-label="Filter change orders">
+        <button class="filter-btn active" data-co-filter="all" onclick="filterCOs('all')">All</button>
+        <button class="filter-btn" data-co-filter="pending" onclick="filterCOs('pending')">Pending</button>
+        <button class="filter-btn" data-co-filter="approved" onclick="filterCOs('approved')">Approved</button>
+        <button class="filter-btn" data-co-filter="rejected" onclick="filterCOs('rejected')">Rejected</button>
+      </div>
+      <button class="btn-ws-secondary" onclick="exportCOsCSV()">&#x1F4CA; Export CSV</button>
     </div>
 
     <div id="coList"><p class="empty-hint">No change orders yet. Create one above.</p></div>
@@ -908,9 +925,8 @@ window.addEventListener('appinstalled', () => {
       <div class="panel-title">&#x1F465; Team Admin</div>
       <div class="task-stats-row">
         <span class="stat-chip">Total Users: <strong id="teamUserCount">0</strong></span>
-        <span class="stat-chip">Bosses: <strong id="teamBossCount">0</strong></span>
-        <span class="stat-chip">APMs: <strong id="teamApmCount">0</strong></span>
-        <span class="stat-chip">Viewers: <strong id="teamViewerCount">0</strong></span>
+        <span class="stat-chip">Admin / PM: <strong id="teamBossCount">0</strong></span>
+        <span class="stat-chip">Assoc. PM: <strong id="teamApmCount">0</strong></span>
       </div>
       <div class="task-form-row">
         <input id="userSearch" type="text" placeholder="Search users by name, email, or project..." oninput="filterTeamUsers(this.value)" style="flex:1">

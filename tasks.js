@@ -269,9 +269,15 @@ async function updateTaskProgress(taskId, progress) {
 }
 
 async function deleteTask(taskId) {
-  if (!_tpid || !confirm('Delete this task?')) return;
+  if (!_tpid) return;
   if (!canTouchTasksProject()) {
     showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  if (!confirm('Delete this task?\n\nThis cannot be undone.')) return;
+  const confirmText = prompt('Type DELETE TASK to confirm permanent deletion:');
+  if (confirmText !== 'DELETE TASK') {
+    showToast('Deletion cancelled.', 'warn');
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_tpid}/tasks/${taskId}`).remove(), 'Failed to delete task');

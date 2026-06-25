@@ -186,9 +186,15 @@ async function renewCompliance(docId) {
 }
 
 async function deleteCompliance(docId) {
-  if (!_compPid || !confirm('Delete this compliance record?')) return;
+  if (!_compPid) return;
   if (!canTouchComplianceProject()) {
     showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  if (!confirm('Delete this compliance record?\n\nThis cannot be undone.')) return;
+  const confirmText = prompt('Type DELETE COMPLIANCE to confirm permanent deletion:');
+  if (confirmText !== 'DELETE COMPLIANCE') {
+    showToast('Deletion cancelled.', 'warn');
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_compPid}/compliance/${docId}`).remove(), 'Failed to delete');

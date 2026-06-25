@@ -34,7 +34,9 @@ function watchGlobalSuppliers() {
 
       const card = document.createElement('div');
       card.className = 'supplier-card';
-      card.setAttribute('data-name', escapeHtml((s.name || '').toLowerCase()));
+      card.setAttribute('data-name', escapeHtml([
+        s.name, s.contact, s.specialty, s.bankName, s.accNum, s.accName
+      ].filter(Boolean).join(' ').toLowerCase()));
       card.innerHTML = `
         <div class="supplier-info">
           <span class="supplier-name">${escapeHtml(s.name)}</span>
@@ -141,6 +143,11 @@ async function deleteSupplier(key, name) {
     return;
   }
   if (!confirm(`Delete supplier "${name}" from the entire system?`)) return;
+  const confirmText = prompt('Type DELETE SUPPLIER to confirm permanent deletion:');
+  if (confirmText !== 'DELETE SUPPLIER') {
+    showToast('Deletion cancelled.', 'warn');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`suppliers/${key}`).remove(), 'Failed to delete supplier');
   auditLog('delete', 'supplier', key, { name });
   showToast(`${name} removed`, 'warn');

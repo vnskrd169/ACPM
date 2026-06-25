@@ -170,9 +170,15 @@ async function reopenDefect(defId) {
 }
 
 async function deleteDefect(defId) {
-  if (!_defPid || !confirm('Delete this punch list item?')) return;
+  if (!_defPid) return;
   if (!canTouchDefectsProject()) {
     showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  if (!confirm('Delete this punch list item?\n\nThis cannot be undone.')) return;
+  const confirmText = prompt('Type DELETE PUNCH ITEM to confirm permanent deletion:');
+  if (confirmText !== 'DELETE PUNCH ITEM') {
+    showToast('Deletion cancelled.', 'warn');
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_defPid}/punchList/${defId}`).remove(), 'Failed to delete item');

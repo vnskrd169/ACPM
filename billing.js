@@ -283,9 +283,15 @@ async function updateBillingStatus(key, status) {
 }
 
 async function deleteBilling(key) {
-  if (!_bpid || !confirm('Delete this billing request?')) return;
+  if (!_bpid) return;
   if (!canTouchBillingProject()) {
     showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  if (!confirm('Delete this billing request?\n\nThis cannot be undone.')) return;
+  const confirmText = prompt('Type DELETE BILLING to confirm permanent deletion:');
+  if (confirmText !== 'DELETE BILLING') {
+    showToast('Deletion cancelled.', 'warn');
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/billings/${key}`).remove(), 'Failed to delete billing');
@@ -384,9 +390,15 @@ async function addCollection() {
 }
 
 async function deleteCollection(key) {
-  if (!_bpid || !confirm('Remove this collection record?')) return;
+  if (!_bpid) return;
   if (!canTouchBillingProject()) {
     showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  if (!confirm('Remove this collection record?\n\nThis cannot be undone.')) return;
+  const confirmText = prompt('Type DELETE COLLECTION to confirm permanent deletion:');
+  if (confirmText !== 'DELETE COLLECTION') {
+    showToast('Deletion cancelled.', 'warn');
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_bpid}/collections/${key}`).remove(), 'Failed to remove collection');

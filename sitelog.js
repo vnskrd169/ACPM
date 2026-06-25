@@ -210,9 +210,15 @@ async function saveLog() {
 }
 
 async function deleteLog(key) {
-  if (!_slpid || !confirm('Delete this log entry?')) return;
+  if (!_slpid) return;
   if (!canTouchSiteLogProject()) {
     showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  if (!confirm('Delete this log entry?\n\nThis cannot be undone.')) return;
+  const confirmText = prompt('Type DELETE LOG to confirm permanent deletion:');
+  if (confirmText !== 'DELETE LOG') {
+    showToast('Deletion cancelled.', 'warn');
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_slpid}/siteLogs/${key}`).remove(), 'Failed to delete log');

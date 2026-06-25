@@ -106,8 +106,8 @@ function watchChangeOrders(pid) {
 function renderCOSummary(orders, totals) {
   setText('coTotalApproved', peso(totals.totalApproved || 0));
   setText('coTotalPending', peso(totals.totalPending || 0));
-  setText('coLaborImpact', peso(totals.totalLabor || 0));
-  setText('coMaterialsImpact', peso(totals.totalMaterials || 0));
+  setText('coLaborImpactKpi', peso(totals.totalLabor || 0));
+  setText('coMaterialsImpactKpi', peso(totals.totalMaterials || 0));
   setText('coCount', `${orders.length} change order${orders.length !== 1 ? 's' : ''}`);
 }
 
@@ -227,6 +227,11 @@ async function deleteCO(key, status) {
   } else {
     if (!confirm('Delete this change order?')) return;
   }
+  const confirmText = prompt('Type DELETE CO to confirm permanent deletion:');
+  if (confirmText !== 'DELETE CO') {
+    showToast('Deletion cancelled.', 'warn');
+    return;
+  }
   await safeDb(() => firebase.database().ref(`projects/${_copid}/changeOrders/${key}`).remove(), 'Failed to delete CO');
   auditLog('delete', 'changeOrder', key, { status, projectId: _copid });
   showToast('Change order deleted', 'warn');
@@ -235,6 +240,9 @@ async function deleteCO(key, status) {
 function filterCOs(status) {
   document.querySelectorAll('#coList .co-card').forEach(card => {
     card.style.display = (status === 'all' || card.getAttribute('data-status') === status) ? '' : 'none';
+  });
+  document.querySelectorAll('[data-co-filter]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-co-filter') === status);
   });
 }
 

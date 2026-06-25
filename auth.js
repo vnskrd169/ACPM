@@ -22,27 +22,26 @@ let _currentAuthUser = null;
 let _profileListener = null;
 
 function inferRoleFromIdentity(uid, email, data = {}) {
-  const local = String(email || uid || '').split('@')[0].toLowerCase();
   const explicitRole = String(data.role || '').trim().toLowerCase();
-  const display = String(data.name || '').trim().toLowerCase();
-  if (explicitRole === 'boss' || explicitRole === 'apm' || explicitRole === 'viewer') {
-    if (explicitRole === 'viewer' && (display.includes('admin') || display.includes('boss') || local.includes('admin') || local.includes('boss') || local === 'owner')) {
-      return 'boss';
-    }
+  if (explicitRole === 'boss' || explicitRole === 'apm') {
     return explicitRole;
   }
+  if (explicitRole === 'viewer') return 'apm';
   if ((data.bossOf || []).length > 0) return 'boss';
-  if (display.includes('admin') || display.includes('boss') || local.includes('admin') || local.includes('boss') || local === 'owner') return 'boss';
-  if (local.includes('boss') || local.includes('admin') || local === 'owner') return 'boss';
-  return 'viewer';
+  return 'apm';
 }
 
 function normalizeRole(role) {
-  return String(role || 'viewer').trim().toLowerCase();
+  const normalized = String(role || 'apm').trim().toLowerCase();
+  return normalized === 'boss' ? 'boss' : 'apm';
 }
 
 function isBoss(role) {
   return normalizeRole(role) === 'boss';
+}
+
+function roleLabel(role) {
+  return isBoss(role) ? 'Admin / Boss / Project Manager' : 'Assoc. Project Manager';
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -51,7 +50,12 @@ function isBoss(role) {
  *  Users can type "boss" or "boss@acpm.local" — both work. */
 function normaliseEmail(input) {
   const s = input.trim().toLowerCase();
+  if (!s) return '';
   return s.includes('@') ? s : s + EMAIL_DOMAIN;
+}
+
+function isRealEmail(input) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input || '').trim());
 }
 
 /** Build a human-friendly display name from the email prefix. */
@@ -76,9 +80,6 @@ async function loadUserProfile(uid) {
     if (data) {
       const email = firebase.auth().currentUser?.email || null;
       const role = normalizeRole(inferRoleFromIdentity(uid, email, data));
-      if (role === 'boss' && normalizeRole(data.role) !== 'boss') {
-        firebase.database().ref(`users/${uid}/role`).set('boss').catch(() => {});
-      }
       return {
         uid,
         name:       data.name || displayNameFromEmail(firebase.auth().currentUser?.email || uid),
@@ -96,7 +97,7 @@ async function loadUserProfile(uid) {
   // Profile node missing (e.g. first-login before Step 4 migration).
   // Bootstrap a minimal profile so the user isn't locked out.
   const email = firebase.auth().currentUser?.email;
-  const role = normalizeRole(inferRoleFromIdentity(uid, email, {}));
+  const role = 'apm';
   const fallback = {
     uid,
     name: displayNameFromEmail(email || uid),
@@ -126,7 +127,7 @@ function applyProfile(profile) {
   const badge = document.getElementById('currentUserBadge');
   if (badge) {
     const role = normalizeRole(profile?.role);
-    badge.textContent = `${profile?.name || 'User'} · ${role}`;
+    badge.textContent = `${profile?.name || 'User'} - ${roleLabel(role)}`;
     badge.title = `Signed in as ${profile?.name || 'User'} (${profile?.uid || 'unknown'})`;
   }
   initAppForUser();
@@ -149,7 +150,7 @@ function startAuthObserver() {
     } else {
       // Signed out — show login screen
       _currentAuthUser = null;
-      window._currentUser = { uid: 'anonymous', role: 'viewer', name: 'System' };
+      window._currentUser = { uid: 'anonymous', role: 'apm', name: 'System' };
       const badge = document.getElementById('currentUserBadge');
       if (badge) {
         badge.textContent = 'System';
@@ -188,11 +189,12 @@ function showAuthScreen() {
         </div>
       </div>
       <div class="auth-form">
-        <input type="text" id="authUser" placeholder="Username" autocomplete="username">
+        <input type="email" id="authUser" placeholder="Email address" autocomplete="email">
         <input type="password" id="authPass" placeholder="Password" autocomplete="current-password">
         <button class="auth-btn" onclick="doLogin()">Sign In</button>
+        <button class="auth-btn auth-btn-secondary" onclick="doRegister()">Register as APM</button>
       </div>
-      <div class="auth-hint">Contact admin for access credentials</div>
+      <div class="auth-hint">Use a real email for registration and password reset. Admin assigns projects.</div>
       <div id="authError" class="auth-error hidden"></div>
       <div class="auth-reset-row">
         <button class="auth-reset-btn" onclick="doResetPassword()">Forgot password?</button>
@@ -223,7 +225,7 @@ async function doLogin() {
   const password = passIn?.value || '';
 
   if (!email || !password) {
-    errEl.textContent = 'Enter username and password';
+    errEl.textContent = 'Enter email and password';
     errEl.classList.remove('hidden');
     return;
   }
@@ -248,7 +250,7 @@ async function doLogin() {
         msg = 'Too many attempts. Try again later.';
         break;
       case 'auth/invalid-email':
-        msg = 'Invalid username format';
+        msg = 'Invalid email format';
         break;
     }
     errEl.textContent = msg;
@@ -260,13 +262,82 @@ async function doLogin() {
 
 // ── Password Reset ──────────────────────────────────────────
 
+async function doRegister() {
+  const userIn  = document.getElementById('authUser');
+  const passIn  = document.getElementById('authPass');
+  const errEl   = document.getElementById('authError');
+  const buttons = document.querySelectorAll('.auth-btn');
+
+  const rawEmail = userIn?.value || '';
+  const email    = normaliseEmail(rawEmail);
+  const password = passIn?.value || '';
+
+  if (!email || !password) {
+    errEl.textContent = 'Enter email and password to register';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (!isRealEmail(rawEmail)) {
+    errEl.textContent = 'Use a real email address for registration';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (password.length < 6) {
+    errEl.textContent = 'Password must be at least 6 characters';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  buttons.forEach(btn => { btn.disabled = true; });
+  errEl.textContent = 'Creating APM account...';
+  errEl.classList.remove('hidden');
+
+  try {
+    const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+    const uid = cred.user.uid;
+    await firebase.database().ref(`users/${uid}`).set({
+      name: displayNameFromEmail(email),
+      email,
+      role: 'apm',
+      projects: [],
+      bossOf: [],
+      createdAt: Date.now()
+    });
+    errEl.textContent = 'Account created as APM. Ask an admin to assign your projects.';
+  } catch (e) {
+    console.error('Registration error:', e);
+    let msg = 'Could not create account.';
+    switch (e.code) {
+      case 'auth/email-already-in-use':
+        msg = 'Account already exists. Sign in instead.';
+        break;
+      case 'auth/invalid-email':
+        msg = 'Invalid email format.';
+        break;
+      case 'auth/weak-password':
+        msg = 'Password is too weak.';
+        break;
+      case 'PERMISSION_DENIED':
+        msg = 'Account created, but profile setup was blocked. Ask an admin to add your profile.';
+        break;
+    }
+    errEl.textContent = msg;
+    buttons.forEach(btn => { btn.disabled = false; });
+  }
+}
 async function doResetPassword() {
   const userIn = document.getElementById('authUser');
-  const email  = normaliseEmail(userIn?.value || '');
+  const rawEmail = userIn?.value || '';
+  const email  = normaliseEmail(rawEmail);
   const errEl  = document.getElementById('authError');
 
   if (!email) {
-    errEl.textContent = 'Enter your username above first';
+    errEl.textContent = 'Enter your email above first';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (!isRealEmail(rawEmail)) {
+    errEl.textContent = 'Password reset needs the real email address';
     errEl.classList.remove('hidden');
     return;
   }
@@ -278,7 +349,7 @@ async function doResetPassword() {
   } catch (e) {
     let msg = 'Could not send reset email.';
     if (e.code === 'auth/user-not-found') {
-      msg = 'No account found for that username.';
+      msg = 'No account found for that email.';
     }
     errEl.textContent = msg;
     errEl.classList.remove('hidden');
@@ -296,17 +367,15 @@ function logout() {
 // ── App Bootstrap ───────────────────────────────────────────
 
 function initAppForUser() {
-  const role = normalizeRole(_currentAuthUser?.role || 'viewer');
+  const role = normalizeRole(_currentAuthUser?.role || 'apm');
   const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false;
 
   // Role-based CSS classes
   document.body.classList.remove('role-boss', 'role-apm', 'role-viewer');
   if (role === 'boss') {
     document.body.classList.add('role-boss');
-  } else if (role === 'apm') {
-    document.body.classList.add('role-apm');
   } else {
-    document.body.classList.add('role-viewer');
+    document.body.classList.add('role-apm');
   }
 
   // Filter projects based on assignment
@@ -390,6 +459,7 @@ function canEditProject(pid) {
 // ── Expose ──────────────────────────────────────────────────
 window.initAuth          = initAuth;
 window.doLogin           = doLogin;
+window.doRegister        = doRegister;
 window.doResetPassword   = doResetPassword;
 window.logout            = logout;
 window.canAccessProject  = canAccessProject;
@@ -397,3 +467,4 @@ window.canEditProject    = canEditProject;
 window.getCurrentUser    = () => _currentAuthUser;
 window.normalizeRole     = normalizeRole;
 window.isBoss            = isBoss;
+window.roleLabel         = roleLabel;

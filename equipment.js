@@ -230,9 +230,15 @@ async function scheduleEquipService(equipId) {
 }
 
 async function deleteEquipment(equipId) {
-  if (!_epid || !confirm('Delete this equipment record?')) return;
+  if (!_epid) return;
   if (!canTouchEquipmentProject()) {
     showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  if (!confirm('Delete this equipment record?\n\nThis cannot be undone.')) return;
+  const confirmText = prompt('Type DELETE EQUIPMENT to confirm permanent deletion:');
+  if (confirmText !== 'DELETE EQUIPMENT') {
+    showToast('Deletion cancelled.', 'warn');
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_epid}/equipment/${equipId}`).remove(), 'Failed to delete');

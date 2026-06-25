@@ -24,7 +24,7 @@ let _hubListeners = [];
 window._isReadOnly = false;
 // Overwritten by auth.js once Firebase Auth resolves — this is only
 // a pre-auth fallback so other modules don't crash on null access.
-window._currentUser = { uid: 'anonymous', role: 'viewer', name: 'System', projects: [], bossOf: [] };
+window._currentUser = { uid: 'anonymous', role: 'apm', name: 'System', projects: [], bossOf: [] };
 window._allowedProjects = null;
 
 // ════════════════════════════════════════════════════════════
@@ -557,8 +557,8 @@ async function deleteProject(pid) {
     return;
   }
   if (!confirm('\u26A0\uFE0F; WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nClick OK to proceed to typed confirmation.')) return;
-  const confirmText = prompt('Type DELETE to confirm permanent deletion:');
-  if (confirmText !== 'DELETE') { showToast('Deletion cancelled.', 'warn'); return; }
+  const confirmText = prompt('Type DELETE PROJECT to confirm permanent deletion:');
+  if (confirmText !== 'DELETE PROJECT') { showToast('Deletion cancelled.', 'warn'); return; }
 
   await safeDb(() => db.ref(`projects/${pid}`).remove(), 'Failed to delete');
   auditLog('delete', 'project', pid, {});

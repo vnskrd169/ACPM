@@ -245,11 +245,12 @@ async function renameTrade(key, old) {
 }
 
 async function deleteTrade(key, name) {
-  if (!_lpid || !confirm(`Delete trade "${name}"?\n\nWorkers with this trade will keep it.`)) return;
+  if (!_lpid) return;
   if (!canTouchLaborProject()) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
+  if (!confirm(`Delete trade "${name}"?\n\nWorkers with this trade will keep it.`)) return;
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades/${key}`).remove(), 'Failed to delete trade');
   auditLog('delete', 'trade', key, { name });
   showToast(`Trade "${name}" deleted`, 'warn');
@@ -362,9 +363,15 @@ async function addWorker() {
 }
 
 async function removeWorker(wid) {
-  if (!_lpid || !confirm('Remove this worker and ALL their attendance records?\n\nThis cannot be undone.')) return;
+  if (!_lpid) return;
   if (!canTouchLaborProject()) {
     showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  if (!confirm('Remove this worker and ALL their attendance and advance records?\n\nThis cannot be undone.')) return;
+  const confirmText = prompt('Type REMOVE WORKER to confirm permanent removal:');
+  if (confirmText !== 'REMOVE WORKER') {
+    showToast('Removal cancelled.', 'warn');
     return;
   }
 
@@ -557,9 +564,15 @@ function renderAdvanceLog() {
 }
 
 async function deleteAdvance(wid, key) {
-  if (!confirm('Remove this advance record?')) return;
+  if (!_lpid) return;
   if (!canTouchLaborProject()) {
     showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  if (!confirm('Remove this advance record?\n\nThis affects payroll deductions.')) return;
+  const confirmText = prompt('Type DELETE ADVANCE to confirm permanent deletion:');
+  if (confirmText !== 'DELETE ADVANCE') {
+    showToast('Deletion cancelled.', 'warn');
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${wid}/${key}`).remove(), 'Failed to delete advance');

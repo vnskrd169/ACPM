@@ -32,7 +32,7 @@ function initAdminSummary() {
         <tbody>
           <tr><td>Name</td><td>${escapeHtml(user.name || 'User')}</td></tr>
           <tr><td>UID</td><td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid || '-')}</td></tr>
-          <tr><td>Role</td><td>${escapeHtml(user.role || 'viewer')}</td></tr>
+          <tr><td>Role</td><td>${escapeHtml(teamRoleLabel(user.role))}</td></tr>
           <tr><td>Projects</td><td>${escapeHtml((user.projects || []).map(formatProjectLabel).join(', ') || '-')}</td></tr>
           <tr><td>Boss Of</td><td>${escapeHtml((user.bossOf || []).map(formatProjectLabel).join(', ') || '-')}</td></tr>
         </tbody>
@@ -44,7 +44,7 @@ function initAuditLog() {
   const user = window._currentUser;
   if (!user || user.role !== 'boss') {
     const el = $('auditLogFeed');
-    if (el) el.innerHTML = '<p class="empty-hint">Audit log is available for bosses only.</p>';
+    if (el) el.innerHTML = '<p class="empty-hint">Audit log is available for admins only.</p>';
     return;
   }
   if (_auditListener) {
@@ -117,7 +117,7 @@ function initSystemStatus() {
       <table class="summary-table">
         <tbody>
           <tr><td>App</td><td>ACPM</td></tr>
-          <tr><td>Current Role</td><td>${escapeHtml(user.role || 'viewer')}</td></tr>
+          <tr><td>Current Role</td><td>${escapeHtml(teamRoleLabel(user.role))}</td></tr>
           <tr><td>Current User</td><td>${escapeHtml(user.name || 'User')}</td></tr>
           <tr><td>Project Context</td><td>${escapeHtml(window._currentPid || 'Hub')}</td></tr>
           <tr><td>Offline Cache</td><td>${navigator.onLine ? 'Online' : 'Offline'}</td></tr>
@@ -129,7 +129,7 @@ function initSystemStatus() {
 function initTeamAdmin() {
   if (window._currentUser?.role !== 'boss') {
     const el = $('teamAdminList');
-    if (el) el.innerHTML = '<p class="empty-hint">Team admin is available for bosses only.</p>';
+    if (el) el.innerHTML = '<p class="empty-hint">Team admin is available for admins only.</p>';
     return;
   }
   if (_teamAdminListener) {
@@ -180,7 +180,7 @@ function openProjectAssignModal(uid) {
   if (title) title.textContent = user.name || 'User';
   if (holder) { holder.dataset.uid = uid; holder.textContent = uid; }
   if (names) names.textContent = (user.projects || []).map(formatProjectLabel).join(', ') || 'None yet';
-  if (status) status.textContent = normalizeTeamRole(user.role);
+  if (status) status.textContent = teamRoleLabel(user.role);
   const modal = $('projectAssignModal');
   modal?.classList.remove('hidden');
 
@@ -197,11 +197,18 @@ function closeProjectAssignModal() {
 }
 
 async function saveProjectAssignments() {
+  if (window._currentUser?.role !== 'boss') {
+    showToast('You do not have permission to manage users.', 'error');
+    return;
+  }
   const uid = $('assignUserUid')?.dataset.uid || $('assignUserUid')?.textContent;
   if (!uid) return;
   const user = _teamUsersCache.find(u => u.uid === uid);
   if (!user) return;
-  const projects = Array.from(new Set(document.querySelectorAll('#assignProjectList input[type="checkbox"]:checked')).map(cb => cb.value)).filter(Boolean).sort((a, b) => String(a).localeCompare(String(b)));
+  const knownProjects = new Set(_projectCache.map(p => p.id));
+  const projects = Array.from(new Set(document.querySelectorAll('#assignProjectList input[type="checkbox"]:checked')).map(cb => cb.value))
+    .filter(pid => pid && knownProjects.has(pid))
+    .sort((a, b) => String(a).localeCompare(String(b)));
   try {
     await firebase.database().ref(`users/${uid}/projects`).set(projects);
     auditLog('update', 'user', uid, { projects });
@@ -238,8 +245,8 @@ function refreshTeamAdmin() {
 }
 
 function normalizeTeamRole(role) {
-  const r = String(role || 'viewer').trim().toLowerCase();
-  return ['boss', 'apm', 'viewer'].includes(r) ? r : 'viewer';
+  const r = String(role || 'apm').trim().toLowerCase();
+  return r === 'boss' ? 'boss' : 'apm';
 }
 
 async function updateUserRole(uid, role) {
@@ -251,10 +258,10 @@ async function updateUserRole(uid, role) {
   const target = _teamUsersCache.find(u => u.uid === uid);
   if (!target) return;
   if (uid === window._currentUser?.uid && nextRole !== 'boss') {
-    showToast('You cannot remove your own boss role from this screen.', 'error');
+    showToast('You cannot remove your own admin role from this screen.', 'error');
     return;
   }
-  if (!confirm(`Set ${target.name || uid} role to ${nextRole}?`)) return;
+  if (!confirm(`Set ${target.name || uid} role to ${teamRoleLabel(nextRole)}?`)) return;
   try {
     await firebase.database().ref(`users/${uid}`).update({
       role: nextRole,
@@ -262,7 +269,7 @@ async function updateUserRole(uid, role) {
       updatedBy: window._currentUser?.uid || null
     });
     auditLog('update', 'user', uid, { role: nextRole });
-    showToast(`${target.name || uid} set to ${nextRole}`);
+    showToast(`${target.name || uid} set to ${teamRoleLabel(nextRole)}`);
     initTeamAdmin();
   } catch (e) {
     console.error('updateUserRole failed:', e);
@@ -284,12 +291,10 @@ function renderTeamAdmin(users) {
   const counts = {
     boss: users.filter(u => normalizeTeamRole(u.role) === 'boss').length,
     apm: users.filter(u => normalizeTeamRole(u.role) === 'apm').length,
-    viewer: users.filter(u => normalizeTeamRole(u.role) === 'viewer').length
   };
   setText('teamUserCount', users.length);
   setText('teamBossCount', counts.boss);
   setText('teamApmCount', counts.apm);
-  setText('teamViewerCount', counts.viewer);
 
   if (!users.length) {
     el.innerHTML = '<p class="empty-hint">No users found.</p>';
@@ -313,9 +318,8 @@ function renderTeamAdmin(users) {
           <td>
             <div style="display:flex;flex-direction:column;gap:10px;min-width:220px">
               <select onchange="updateUserRole('${user.uid}', this.value)" ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
-                <option value="viewer" ${role === 'viewer' ? 'selected' : ''}>viewer</option>
-                <option value="apm" ${role === 'apm' ? 'selected' : ''}>apm</option>
-                <option value="boss" ${role === 'boss' ? 'selected' : ''}>boss</option>
+                <option value="apm" ${role === 'apm' ? 'selected' : ''}>Assoc. Project Manager</option>
+                <option value="boss" ${role === 'boss' ? 'selected' : ''}>Admin / Boss / Project Manager</option>
               </select>
               <div class="team-project-line">
                 <span class="team-project-pill">${projectCount ? `${projectCount} project${projectCount === 1 ? '' : 's'}` : 'No projects'}</span>
@@ -341,7 +345,7 @@ function renderExecutiveDashboard() {
   const user = window._currentUser;
   if (!user || user.role !== 'boss') {
     const el = $('executiveDashboard');
-    if (el) el.innerHTML = '<p class="empty-hint">Executive dashboard available for bosses only.</p>';
+    if (el) el.innerHTML = '<p class="empty-hint">Executive dashboard available for admins only.</p>';
     return;
   }
 
@@ -642,7 +646,7 @@ async function generateWeeklyReport() {
   weekStart.setDate(weekStart.getDate() - 7);
   const weekStr = weekStart.toLocaleDateString('en-PH');
 
-  let report = `WEEKLY PROJECT REPORT\\nGenerated: ${new Date().toLocaleDateString('en-PH')}\\nReporter: ${user.name} (${user.role})\\n${'='.repeat(60)}\\n\\n`;
+  let report = `WEEKLY PROJECT REPORT\\nGenerated: ${new Date().toLocaleDateString('en-PH')}\\nReporter: ${user.name} (${teamRoleLabel(user.role)})\\n${'='.repeat(60)}\\n\\n`;
 
   myProjects.forEach(p => {
     const eff = effectiveBudget(p);

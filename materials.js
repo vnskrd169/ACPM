@@ -621,9 +621,15 @@ async function updateLedgerStatus(key, status) {
 }
 
 async function deleteLedgerItem(key, desc) {
-  if (!_mpid || !confirm(`Delete "${desc}"?`)) return;
+  if (!_mpid) return;
   if (!canTouchMaterialsProject()) {
     showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  if (!confirm(`Delete "${desc}"?\n\nThis cannot be undone.`)) return;
+  const confirmText = prompt('Type DELETE LEDGER ITEM to confirm permanent deletion:');
+  if (confirmText !== 'DELETE LEDGER ITEM') {
+    showToast('Deletion cancelled.', 'warn');
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger/${key}`).remove(), 'Failed to delete item');

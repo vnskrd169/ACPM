@@ -94,16 +94,31 @@ async function markAllNotifRead() {
 async function sendNotification({ to, type, message, projectId, projectName, link }) {
   const sender = window._currentUser || {};
   if (!sender.uid) return;
+  if (!to || !message) return;
 
-  if (to !== sender.uid && sender.role !== 'boss' && projectId) {
-    if (!canAccessProject(projectId)) {
+  const cleanMessage = String(message).trim();
+  if (!cleanMessage) return;
+  if (cleanMessage.length > 500) {
+    showToast('Notification message is too long.', 'error');
+    return;
+  }
+
+  if (to !== sender.uid && sender.role !== 'boss') {
+    if (!projectId || !canAccessProject(projectId)) {
       showToast('You do not have permission to notify that project.', 'error');
+      return;
+    }
+    const recipientSnap = await firebase.database().ref(`users/${to}`).once('value');
+    const recipient = recipientSnap.val() || {};
+    const recipientProjects = Array.isArray(recipient.projects) ? recipient.projects : [];
+    if (recipient.role !== 'boss' && !recipientProjects.includes(projectId)) {
+      showToast('You can only notify members of that project.', 'error');
       return;
     }
   }
 
   const notif = {
-    type, message, projectId, projectName, link,
+    type, message: cleanMessage, projectId, projectName, link,
     read: false, createdAt: Date.now(),
     from: sender.uid || 'system',
     fromName: sender.name || 'System'

@@ -7,8 +7,8 @@
       ".read": "auth != null",
       "$uid": {
         ".read": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss'",
-        ".write": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss'",
-        ".validate": "!newData.exists() || (( !newData.child('name').exists() || newData.child('name').isString() ) && ( !newData.child('role').exists() || (newData.child('role').isString() && newData.child('role').val().matches(/^(boss|apm|viewer)$/)) ))"
+        ".write": "root.child('users/' + auth.uid + '/role').val() === 'boss' || (auth.uid === $uid && !data.exists() && newData.child('role').val() === 'apm' && newData.child('projects').numChildren() === 0 && newData.child('bossOf').numChildren() === 0)",
+        ".validate": "!newData.exists() || (( !newData.child('name').exists() || newData.child('name').isString() ) && ( !newData.child('role').exists() || (newData.child('role').isString() && newData.child('role').val().matches(/^(boss|apm)$/)) ))"
       }
     },
 
@@ -65,21 +65,24 @@
 
     "auditLogs": {
       ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
-      ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp']) && newData.child('action').isString() && newData.child('entityType').isString() && newData.child('userId').isString() && newData.child('userName').isString() && newData.child('timestamp').isNumber()",
+      ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp']) && newData.child('action').isString() && newData.child('entityType').isString() && newData.child('userId').val() === auth.uid && newData.child('userName').isString() && newData.child('timestamp').isNumber()",
       ".indexOn": "timestamp"
     },
 
     "notifications": {
       "$uid": {
         ".read": "auth.uid === $uid",
-        ".write": "auth != null",
-        ".indexOn": ["read", "createdAt"]
+        ".indexOn": ["read", "createdAt"],
+        "$nid": {
+          ".write": "auth != null && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss' || (newData.exists() && newData.child('from').val() === auth.uid && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val())) && (root.child('users/' + $uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + $uid + '/role').val() === 'boss')))",
+          ".validate": "!newData.exists() || (newData.hasChildren(['type', 'message', 'read', 'createdAt', 'from']) && newData.child('type').isString() && newData.child('message').isString() && newData.child('message').val().length <= 500 && newData.child('read').isBoolean() && newData.child('createdAt').isNumber() && newData.child('from').isString())"
+        }
       }
     },
 
     "complianceAlertsSent": {
       ".read": "auth != null",
-      ".write": "auth != null"
+      ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'"
     },
 
     "sessions": {
