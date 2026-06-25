@@ -44,6 +44,10 @@ function roleLabel(role) {
   return isBoss(role) ? 'Admin / Boss / Project Manager' : 'Assoc. Project Manager';
 }
 
+function teamRoleLabel(role) {
+  return roleLabel(role);
+}
+
 // ── Helpers ──────────────────────────────────────────────────
 
 /** Normalise the login input to an email.
@@ -111,6 +115,7 @@ async function loadUserProfile(uid) {
   // Write it into DB so it exists for next login
   firebase.database().ref(`users/${uid}`).set({
     name: fallback.name,
+    email: email || null,
     role: fallback.role,
     projects: [],
     bossOf: [],
@@ -468,3 +473,4 @@ window.getCurrentUser    = () => _currentAuthUser;
 window.normalizeRole     = normalizeRole;
 window.isBoss            = isBoss;
 window.roleLabel         = roleLabel;
+window.teamRoleLabel     = teamRoleLabel;

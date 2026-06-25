@@ -782,6 +782,9 @@ window.addEventListener('appinstalled', () => {
         <span>Critical: <strong id="taskCritical">0</strong></span>
         <span>Completion: <strong id="taskCompletionPct">0%</strong></span>
       </div>
+      <div class="task-overall-progress" aria-hidden="true">
+        <div id="taskProgressBar" class="mini-fill"></div>
+      </div>
       <div class="task-form-row">
         <input id="taskTitle" type="text" placeholder="Task title">
         <input id="taskDesc" type="text" placeholder="Description (optional)">

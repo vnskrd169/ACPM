@@ -124,6 +124,7 @@ function auditLog(action, entityType, entityId, details = {}) {
     action, entityType, entityId, details,
     userId: user.uid,
     userName: user.name,
+    userEmail: user.email || null,
     userRole: user.role,
     timestamp: Date.now(),
     date: new Date().toLocaleDateString('en-PH'),

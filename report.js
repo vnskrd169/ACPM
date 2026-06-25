@@ -8,6 +8,8 @@ let _reportsListeners = [];
 let _teamAdminListener = null;
 let _teamUsersCache = [];
 let _auditListener = null;
+let _auditRowsCache = [];
+let _auditUsersCache = {};
 let _projectCache = [];
 
 function initReports() {
@@ -40,6 +42,26 @@ function initAdminSummary() {
     </div>`;
 }
 
+function auditActorProfile(row) {
+  const uid = row?.userId || row?.uid || '';
+  const user = uid ? _auditUsersCache[uid] : null;
+  const name = row?.userName || user?.name || user?.email || uid || '-';
+  const email = row?.userEmail || user?.email || '';
+  return { uid, name, email };
+}
+
+function auditActorSearchText(row) {
+  const actor = auditActorProfile(row);
+  return [actor.name, actor.email, actor.uid].filter(Boolean).join(' ').toLowerCase();
+}
+
+function auditActorHtml(row) {
+  const actor = auditActorProfile(row);
+  const secondary = [actor.email, actor.uid && actor.uid !== actor.name ? actor.uid : '']
+    .filter(Boolean)
+    .join(' | ');
+  return `<div class="audit-actor-name">${escapeHtml(actor.name)}</div>${secondary ? `<div class="audit-actor-sub">${escapeHtml(secondary)}</div>` : ''}`;
+}
 function initAuditLog() {
   const user = window._currentUser;
   if (!user || user.role !== 'boss') {
@@ -51,6 +73,15 @@ function initAuditLog() {
     _auditListener.off();
     _auditListener = null;
   }
+  firebase.database().ref('users').once('value')
+    .then(snap => {
+      const users = {};
+      snap.forEach(c => { users[c.key] = { uid: c.key, ...c.val() }; });
+      _auditUsersCache = users;
+    })
+    .catch(e => console.error('audit user lookup failed:', e))
+    .finally(() => renderAuditLog(_auditRowsCache));
+
   const ref = firebase.database().ref('auditLogs');
   _auditListener = ref;
   ref.on('value', snap => {
@@ -59,6 +90,7 @@ function initAuditLog() {
     const rows = [];
     snap.forEach(c => rows.push({ id: c.key, ...c.val() }));
     rows.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    _auditRowsCache = rows;
     const projectSel = $('auditFilterProject');
     if (projectSel && !projectSel.dataset.loaded) {
       const projects = [...new Set(rows.map(r => r.projectId).filter(Boolean))].sort();
@@ -69,7 +101,7 @@ function initAuditLog() {
   });
 }
 
-function renderAuditLog(rows = []) {
+function renderAuditLog(rows = _auditRowsCache) {
   const el = $('auditLogFeed');
   if (!el) return;
   const actionNeedle = String($('auditFilterAction')?.value || '').trim().toLowerCase();
@@ -78,7 +110,7 @@ function renderAuditLog(rows = []) {
 
   const filtered = rows.filter(r => {
     const action = String(r.action || '').toLowerCase();
-    const actor = String(r.userName || r.userId || '').toLowerCase();
+    const actor = auditActorSearchText(r);
     const pid = String(r.projectId || '').toLowerCase();
     return (!actionNeedle || action.includes(actionNeedle)) &&
       (!userNeedle || actor.includes(userNeedle)) &&
@@ -99,7 +131,7 @@ function renderAuditLog(rows = []) {
           <span class="health-score" style="font-size:12px">${escapeHtml(new Date(r.timestamp || Date.now()).toLocaleString('en-PH'))}</span>
         </div>
         <div style="font-size:12px;color:var(--muted2);line-height:1.5">
-          <div><strong>User:</strong> ${escapeHtml(r.userName || r.userId || '-')}</div>
+          <div><strong>User:</strong> ${auditActorHtml(r)}</div>
           <div><strong>Entity:</strong> ${escapeHtml(r.entityType || '-')} ${r.entityId ? `· ${escapeHtml(r.entityId)}` : ''}</div>
           <div><strong>Project:</strong> ${escapeHtml(formatProjectLabel(r.projectId || '-'))}</div>
           ${r.details ? `<div><strong>Details:</strong> ${escapeHtml(JSON.stringify(r.details))}</div>` : ''}
@@ -148,26 +180,77 @@ function initTeamAdmin() {
   loadProjectsForAssignments();
 }
 
-function loadProjectsForAssignments() {
-  return firebase.database().ref('projects').once('value', snap => {
-    const projects = [];
-    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
-    projects.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
-    _projectCache = projects;
-    const sel = $('assignProjectList');
-    setText('assignProjectCount', projects.length ? `${projects.length} available` : 'No projects');
-    if (sel) {
-      sel.innerHTML = projects.map(p => `
-        <label class="assign-proj-row">
-          <input type="checkbox" value="${escapeHtml(p.id)}">
-          <span>
-            <span class="assign-proj-name">${escapeHtml(p.name || p.id)}</span>
-            <span class="assign-proj-sub">${escapeHtml(p.status || 'active')}</span>
-          </span>
-        </label>
-      `).join('') || '<p class="empty-hint">No projects yet.</p>';
-    }
+function projectAssignmentRows(projects) {
+  return projects.map(p => `
+    <label class="assign-proj-row">
+      <input type="checkbox" value="${escapeHtml(p.id)}">
+      <span>
+        <span class="assign-proj-name">${escapeHtml(p.name || p.id)}</span>
+        <span class="assign-proj-sub">${escapeHtml(p.status || 'active')}</span>
+      </span>
+    </label>
+  `).join('');
+}
+
+function collectProjectAssignmentFallbacks() {
+  const map = new Map((_projectCache || []).filter(p => p?.id).map(p => [p.id, p]));
+  document.querySelectorAll('.proj-card[data-pid]').forEach(card => {
+    const id = card.getAttribute('data-pid');
+    if (!id || map.has(id)) return;
+    const name = card.querySelector('.proj-name')?.textContent?.trim() || id;
+    const statusText = card.querySelector('.active-tag, .completed-tag')?.textContent?.trim().toLowerCase() || 'active';
+    map.set(id, {
+      id,
+      name,
+      status: statusText.includes('completed') ? 'completed' : 'active'
+    });
   });
+  (window._currentUser?.projects || []).forEach(pid => {
+    if (pid && !map.has(pid)) map.set(pid, { id: pid, name: formatProjectLabel(pid), status: 'assigned' });
+  });
+  return Array.from(map.values())
+    .filter(p => p?.id)
+    .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+}
+
+function renderProjectAssignmentList(projects, note = '') {
+  _projectCache = projects;
+  const sel = $('assignProjectList');
+  setText('assignProjectCount', projects.length ? `${projects.length} available` : 'No projects');
+  if (!sel) return projects;
+  if (projects.length) {
+    sel.innerHTML = `${note ? `<p class="empty-hint">${escapeHtml(note)}</p>` : ''}${projectAssignmentRows(projects)}`;
+  } else {
+    sel.innerHTML = '<p class="empty-hint">No projects loaded. Go back to Hub, refresh projects, then open Project Access again.</p>';
+  }
+  return projects;
+}
+
+function loadProjectsForAssignments() {
+  const sel = $('assignProjectList');
+  if (sel) sel.innerHTML = '<p class="empty-hint">Loading projects...</p>';
+  setText('assignProjectCount', 'Loading...');
+
+  return firebase.database().ref('projects').once('value')
+    .then(snap => {
+      const projects = [];
+      snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+      projects.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+      if (projects.length) return renderProjectAssignmentList(projects);
+      const fallbackProjects = collectProjectAssignmentFallbacks();
+      return renderProjectAssignmentList(fallbackProjects);
+    })
+    .catch(e => {
+      console.error('loadProjectsForAssignments failed:', e);
+      const fallbackProjects = collectProjectAssignmentFallbacks();
+      if (fallbackProjects.length) {
+        return renderProjectAssignmentList(fallbackProjects, 'Using projects already loaded in Hub.');
+      }
+      const message = e?.message || e?.code || 'permission denied';
+      setText('assignProjectCount', 'Load failed');
+      if (sel) sel.innerHTML = `<p class="empty-hint">Could not load projects: ${escapeHtml(message)}</p>`;
+      return [];
+    });
 }
 
 function openProjectAssignModal(uid) {
@@ -206,7 +289,8 @@ async function saveProjectAssignments() {
   const user = _teamUsersCache.find(u => u.uid === uid);
   if (!user) return;
   const knownProjects = new Set(_projectCache.map(p => p.id));
-  const projects = Array.from(new Set(document.querySelectorAll('#assignProjectList input[type="checkbox"]:checked')).map(cb => cb.value))
+  const checkedProjectIds = Array.from(document.querySelectorAll('#assignProjectList input[type="checkbox"]:checked'), cb => cb.value);
+  const projects = Array.from(new Set(checkedProjectIds))
     .filter(pid => pid && knownProjects.has(pid))
     .sort((a, b) => String(a).localeCompare(String(b)));
   try {
@@ -241,6 +325,8 @@ function switchAdminSection(section) {
 }
 
 function refreshTeamAdmin() {
+  const search = $('userSearch');
+  if (search) search.value = '';
   initTeamAdmin();
 }
 
