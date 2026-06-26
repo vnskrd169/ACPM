@@ -136,6 +136,7 @@ function loadGlobalSuppliersForPO() {
 //  PO DRAFT BUILDER
 // ══════════════════════════════════════════════════════
 function addDraftItem() {
+  if (!canTouchMaterialsProject()) return;
   const desc = $('poItemDesc')?.value.trim();
   const size = $('poItemSize')?.value.trim() || '';
   const qty = parseFloat($('poItemQty')?.value) || 0;

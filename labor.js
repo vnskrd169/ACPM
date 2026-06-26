@@ -5,6 +5,27 @@ let _pendingPayrollData = null;
 let _workersRegistered = false;
 let _projectName = '';
 let _projectSettings = { leader: '', payMethod: 'Bank' };
+let _tradeMetaByName = {};
+let _activeWeekKey = '';
+let _compiledWeekKeys = new Set();
+
+function getWeekKey(start = $('weekStart')?.value, end = $('weekEnd')?.value) {
+  return start && end ? `${start}_${end}` : '';
+}
+
+function normalizeTradeName(name) {
+  return String(name || 'Unassigned').trim() || 'Unassigned';
+}
+
+function getTradeMeta(trade) {
+  const key = normalizeTradeName(trade).toLowerCase();
+  const meta = _tradeMetaByName[key] || {};
+  return {
+    foremanName: meta.foremanName || _projectSettings.leader || '',
+    paymentMethod: meta.paymentMethod || _projectSettings.payMethod || 'Bank',
+    notes: meta.notes || ''
+  };
+}
 
 function canTouchLaborProject() {
   return typeof requireEdit === 'function'
@@ -49,6 +70,7 @@ function initLabor(pid) {
   const we = $('weekEnd');
   if (ws && !ws.value) ws.value = monday.toISOString().slice(0, 10);
   if (we && !we.value) we.value = sunday.toISOString().slice(0, 10);
+  _activeWeekKey = getWeekKey();
   renderPeriodIndicator();
 }
 
@@ -59,26 +81,26 @@ function loadProjectSettings(pid) {
   firebase.database().ref(`projects/${pid}/settings`).once('value', snap => {
     const data = snap.val() || {};
     _projectSettings = { leader: data.leader || '', payMethod: data.payMethod || 'Bank' };
-    const leaderEl = $('projectLeader');
-    const payEl = $('projectPayMethod');
-    if (leaderEl && document.activeElement !== leaderEl) leaderEl.value = _projectSettings.leader;
-    if (payEl && document.activeElement !== payEl) payEl.value = _projectSettings.payMethod;
   });
 }
 
-async function saveProjectSettings() {
+async function saveTradeSettings(tradeKey) {
   if (!_lpid) return;
   if (!canTouchLaborProject()) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  const leader = $('projectLeader')?.value.trim() || '';
-  const payMethod = $('projectPayMethod')?.value || 'Bank';
-  _projectSettings = { leader, payMethod };
-  await safeDb(() => firebase.database().ref(`projects/${_lpid}/settings`).update({
-    leader, payMethod, updatedAt: Date.now(), updatedBy: window._currentUser?.uid || null
-  }), 'Failed to save project settings');
-  showToast('RFP settings saved');
+  const foremanName = $(`tradeForeman_${tradeKey}`)?.value.trim() || '';
+  const paymentMethod = $(`tradePayment_${tradeKey}`)?.value || 'Bank';
+  const notes = $(`tradeNotes_${tradeKey}`)?.value.trim() || '';
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades/${tradeKey}`).update({
+    foremanName,
+    paymentMethod,
+    notes,
+    settingsUpdatedAt: Date.now(),
+    settingsUpdatedBy: window._currentUser?.uid || null
+  }), 'Failed to save trade settings');
+  showToast('Trade RFP settings saved');
 }
 
 function detachLaborListeners() {
@@ -192,14 +214,36 @@ function watchTrades(pid) {
 function renderTradeChips(snap) {
   const el = $('tradeList'); if (!el) return;
   el.innerHTML = '';
+  _tradeMetaByName = {};
   if (!snap.exists()) { el.innerHTML = '<p class="empty-hint">No trades yet.</p>'; return; }
   snap.forEach(c => {
     const t = c.val();
+    const tradeName = normalizeTradeName(t.name);
+    _tradeMetaByName[tradeName.toLowerCase()] = {
+      id: c.key,
+      name: tradeName,
+      foremanName: t.foremanName || _projectSettings.leader || '',
+      paymentMethod: t.paymentMethod || _projectSettings.payMethod || 'Bank',
+      notes: t.notes || ''
+    };
     const chip = document.createElement('div');
-    chip.className = 'trade-chip';
-    chip.innerHTML = `<span class="trade-chip-name">${escapeHtml(t.name)}</span>
-      <button class="chip-edit" aria-label="Rename trade" data-action="rename" data-key="${c.key}" data-name="${escapeHtml(t.name)}">\u270E</button>
-      <button class="chip-del" aria-label="Delete trade" data-action="delete" data-key="${c.key}" data-name="${escapeHtml(t.name)}">\u2715</button>`;
+    chip.className = 'trade-chip trade-scope-card';
+    chip.innerHTML = `
+      <div class="trade-scope-top">
+        <span class="trade-chip-name">${escapeHtml(tradeName)}</span>
+        <span class="trade-scope-actions">
+          <button class="chip-edit" aria-label="Rename trade" data-action="rename" data-key="${c.key}" data-name="${escapeHtml(tradeName)}">\u270E</button>
+          <button class="chip-del" aria-label="Delete trade" data-action="delete" data-key="${c.key}" data-name="${escapeHtml(tradeName)}">\u2715</button>
+        </span>
+      </div>
+      <div class="trade-scope-grid">
+        <input id="tradeForeman_${c.key}" type="text" placeholder="Foreman / leader" value="${escapeHtml(t.foremanName || _projectSettings.leader || '')}">
+        <select id="tradePayment_${c.key}">
+          ${['Bank', 'GCash', 'Cash', 'Check', 'Others'].map(pm => `<option value="${pm}" ${(t.paymentMethod || _projectSettings.payMethod || 'Bank') === pm ? 'selected' : ''}>${pm === 'Bank' ? 'Bank Transfer' : pm}</option>`).join('')}
+        </select>
+        <input id="tradeNotes_${c.key}" type="text" placeholder="Notes optional" value="${escapeHtml(t.notes || '')}">
+        <button class="btn-scope-save" data-action="settings" data-key="${c.key}">Save</button>
+      </div>`;
 
     // Delegated events instead of inline onclick
     chip.querySelector('[data-action="rename"]').addEventListener('click', (e) => {
@@ -207,6 +251,9 @@ function renderTradeChips(snap) {
     });
     chip.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
       deleteTrade(e.target.dataset.key, e.target.dataset.name);
+    });
+    chip.querySelector('[data-action="settings"]').addEventListener('click', (e) => {
+      saveTradeSettings(e.target.dataset.key);
     });
 
     el.appendChild(chip);
@@ -227,7 +274,13 @@ async function addTrade() {
   const snap = await firebase.database().ref(`projects/${_lpid}/trades`).orderByChild('name').equalTo(name).once('value');
   if (snap.exists()) { showToast(`Trade "${name}" already exists.`, 'error'); return; }
 
-  await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades`).push({ name }), 'Failed to add trade');
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades`).push({
+    name,
+    foremanName: '',
+    paymentMethod: _projectSettings.payMethod || 'Bank',
+    notes: '',
+    createdAt: Date.now()
+  }), 'Failed to add trade');
   inp.value = '';
   auditLog('create', 'trade', null, { name, projectId: _lpid });
   showToast(`Trade "${name}" added`);
@@ -460,6 +513,7 @@ async function saveAdvance() {
 
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${_advWid}`).push({
     date, amount, notes,
+    weekKey: getWeekKey(),
     workerName, trade,
     recordedBy: window._currentUser?.displayName || window._currentUser?.email || 'Staff',
     recordedByUid: window._currentUser?.uid || null,
@@ -723,11 +777,14 @@ async function markAttendance(wid, iso, status, overtimeHours = 0, nightDiffHour
   const inputDate = new Date(iso + 'T00:00:00');
   const today = new Date(); today.setHours(0, 0, 0, 0);
   if (inputDate > today) { showToast('Cannot mark attendance for future dates.', 'error'); return; }
+  const weekKey = getWeekKey();
+  if (_compiledWeekKeys.has(weekKey) && !confirm('This week is already compiled. Edit archived attendance anyway?')) return;
 
   const config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.present;
 
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/attendance/${wid}/${iso}`).set({
     workerId: wid, date: iso, status,
+    weekKey,
     regularHours: config.hours,
     overtimeHours: parseFloat(overtimeHours) || 0,
     nightDiffHours: parseFloat(nightDiffHours) || 0,
@@ -745,8 +802,12 @@ async function updateAttendanceOT(wid, iso, otHours) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
+  const weekKey = getWeekKey();
+  if (_compiledWeekKeys.has(weekKey) && !confirm('This week is already compiled. Edit archived OT anyway?')) return;
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/attendance/${wid}/${iso}`).update({
-    overtimeHours: parseFloat(otHours) || 0
+    overtimeHours: parseFloat(otHours) || 0,
+    weekKey,
+    updatedAt: Date.now()
   }), 'Failed to update OT');
 }
 
@@ -772,7 +833,25 @@ function getWeekDays() {
   return days;
 }
 
-function applyWeek() {
+function setWeekInputsFromKey(weekKey) {
+  if (!weekKey || !weekKey.includes('_')) return;
+  const [start, end] = weekKey.split('_');
+  if ($('weekStart')) $('weekStart').value = start;
+  if ($('weekEnd')) $('weekEnd').value = end;
+}
+
+function handleWeekRangeChange() {
+  const nextKey = getWeekKey();
+  if (!_activeWeekKey || nextKey === _activeWeekKey) return;
+  const ok = confirm('Changing week will reset unsaved attendance for this period. Continue?');
+  if (!ok) {
+    setWeekInputsFromKey(_activeWeekKey);
+    return;
+  }
+  applyWeek({ weekChanged: true });
+}
+
+function applyWeek(options = {}) {
   if (!_lpid) return;
   const ws = $('weekStart')?.value;
   const we = $('weekEnd')?.value;
@@ -780,13 +859,43 @@ function applyWeek() {
     showToast('Week start must be before week end.', 'error');
     return;
   }
+  _activeWeekKey = getWeekKey(ws, we);
   renderPeriodIndicator();
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
     firebase.database().ref(`projects/${_lpid}/attendance`).once('value', attSnap => {
       buildGrid(_lpid, wSnap, attSnap);
       renderAdvanceLog();
+      if (options.weekChanged) loadCompiledWeekNotice(_activeWeekKey);
     });
   });
+}
+
+async function loadCompiledWeekNotice(weekKey) {
+  if (!_lpid || !weekKey) return;
+  const snap = await firebase.database().ref(`projects/${_lpid}/payrollLogs`).orderByChild('weekKey').equalTo(weekKey).once('value');
+  if (snap.exists()) {
+    showToast('This week already has a compiled payroll archive. Review Payroll Logs before editing.', 'warn');
+  }
+}
+
+async function resetCurrentAttendance() {
+  if (!_lpid) return;
+  if (!canTouchLaborProject()) return;
+  const days = getWeekDays();
+  if (!days.length) return;
+  if (_compiledWeekKeys.has(getWeekKey()) && !confirm('This week is already compiled. Reset archived attendance anyway?')) return;
+  if (!confirm('Reset attendance for the selected week only? This will clear the current sheet dates, not other weeks.')) return;
+  const wSnap = await firebase.database().ref(`projects/${_lpid}/workers`).once('value');
+  const updates = {};
+  wSnap.forEach(c => {
+    days.forEach(d => {
+      updates[`projects/${_lpid}/attendance/${c.key}/${d.iso}`] = null;
+    });
+  });
+  await safeDb(() => firebase.database().ref().update(updates), 'Failed to reset attendance');
+  auditLog('reset', 'attendance', getWeekKey(), { projectId: _lpid });
+  showToast('Attendance reset for selected week.');
+  applyWeek();
 }
 
 // ── Period indicator badge under the timecard grid ──────────────
@@ -851,6 +960,7 @@ async function compilePayroll() {
   const workers = {};
   wSnap.forEach(c => { workers[c.key] = c.val(); });
 
+  const weekKey = getWeekKey(start, end);
   const byTrade = {};
   let grandRegular = 0, grandOT = 0, grandNight = 0, grandGross = 0;
   const attendanceToArchive = [];
@@ -871,9 +981,18 @@ async function compilePayroll() {
       workerRegular += pay.regularPay;
       workerOT += pay.otPay;
       workerNight += pay.nightDiffPay;
-      if (att.status !== 'absent' && att.status !== 'rest') workerDays++;
+      if (att.status === 'half') workerDays += 0.5;
+      else if (att.status !== 'absent' && att.status !== 'rest') workerDays++;
 
-      attendanceToArchive.push({ ...att, compiledAt: Date.now() });
+      attendanceToArchive.push({
+        ...att,
+        weekKey,
+        workerName: w.name,
+        trade: w.trade || 'Unassigned',
+        dailyRate: w.dailyRate || 0,
+        foremanName: getTradeMeta(w.trade).foremanName,
+        compiledAt: Date.now()
+      });
     });
 
     const workerGross = workerRegular + workerOT + workerNight;
@@ -882,18 +1001,34 @@ async function compilePayroll() {
     grandNight += workerNight;
     grandGross += workerGross;
 
-    if (!byTrade[w.trade]) byTrade[w.trade] = { workers: {}, total: 0, regular: 0, ot: 0, night: 0 };
+    const tradeName = normalizeTradeName(w.trade);
+    if (!byTrade[tradeName]) {
+      const tradeMeta = getTradeMeta(tradeName);
+      byTrade[tradeName] = {
+        trade: tradeName,
+        foremanName: tradeMeta.foremanName,
+        paymentMethod: tradeMeta.paymentMethod,
+        notes: tradeMeta.notes,
+        workers: {},
+        total: 0,
+        regular: 0,
+        ot: 0,
+        night: 0,
+        cashAdvanceDeductions: 0,
+        net: 0
+      };
+    }
 
-    byTrade[w.trade].workers[wid] = {
-      name: w.name, rate: w.dailyRate, days: workerDays,
+    byTrade[tradeName].workers[wid] = {
+      name: w.name, trade: tradeName, foremanName: byTrade[tradeName].foremanName, rate: w.dailyRate, days: workerDays,
       regular: workerRegular, ot: workerOT, night: workerNight, gross: workerGross
     };
-    byTrade[w.trade].total += workerGross;
-    byTrade[w.trade].regular += workerRegular;
-    byTrade[w.trade].ot += workerOT;
-    byTrade[w.trade].night += workerNight;
+    byTrade[tradeName].total += workerGross;
+    byTrade[tradeName].regular += workerRegular;
+    byTrade[tradeName].ot += workerOT;
+    byTrade[tradeName].night += workerNight;
 
-    workerPayroll[wid] = { gross: workerGross, regular: workerRegular, ot: workerOT, night: workerNight, name: w.name };
+    workerPayroll[wid] = { gross: workerGross, regular: workerRegular, ot: workerOT, night: workerNight, name: w.name, trade: tradeName, foremanName: byTrade[tradeName].foremanName, rate: w.dailyRate, days: workerDays };
   });
 
   if (!grandGross) { showToast('No attendance marked for this week.', 'warn'); return; }
@@ -909,12 +1044,20 @@ async function compilePayroll() {
     workerAdv.forEach(advEntry => {
       const a = advEntry.val();
       if (a.deducted) return;
+      if (a.date && end !== '\u2014' && a.date > end) return;
 
       const remaining = a.amount - (a.deductedAmount || 0);
       const maxDeduct = Math.min(workerGross * 0.2, remaining);
       const deductThisPayroll = maxDeduct > 0 ? maxDeduct : 0;
+      if (deductThisPayroll <= 0) return;
 
-      if (!pendingAdvances[wid]) pendingAdvances[wid] = { name: wname, advances: [], totalDeduct: 0 };
+      if (!pendingAdvances[wid]) pendingAdvances[wid] = {
+        name: wname,
+        trade: workers[wid]?.trade || '',
+        foremanName: getTradeMeta(workers[wid]?.trade).foremanName,
+        advances: [],
+        totalDeduct: 0
+      };
       pendingAdvances[wid].advances.push({
         key: advEntry.key,
         ...a,
@@ -923,7 +1066,15 @@ async function compilePayroll() {
       });
       pendingAdvances[wid].totalDeduct += deductThisPayroll;
       totalPending += deductThisPayroll;
+      const tradeName = normalizeTradeName(workers[wid]?.trade);
+      if (byTrade[tradeName]) {
+        byTrade[tradeName].cashAdvanceDeductions += deductThisPayroll;
+      }
     });
+  });
+
+  Object.values(byTrade).forEach(group => {
+    group.net = group.total - group.cashAdvanceDeductions;
   });
 
   // Government deductions calculation
@@ -945,7 +1096,7 @@ async function compilePayroll() {
   }
 
   _pendingPayrollData = {
-    start, end,
+    start, end, weekKey,
     grandRegular, grandOT, grandNight, grandGross,
     byTrade, pendingAdvances, totalPending,
     prevSpent: parseFloat(projSnap.val()?.laborSpent) || 0,
@@ -972,6 +1123,18 @@ function showPayrollModal() {
   const periodEl = $('payrollPeriod');
   if (periodEl) periodEl.textContent = `${d.start} \u2013 ${d.end}`;
   setText('totalAdvances', peso(d.totalPending));
+  const tradeSummary = $('payrollTradeSummary');
+  if (tradeSummary) {
+    tradeSummary.innerHTML = Object.entries(d.byTrade).sort().map(([trade, group]) => `
+      <div class="payroll-trade-summary-row">
+        <span>
+          <strong>${escapeHtml(trade)}</strong>
+          ${group.foremanName ? `<small>${escapeHtml(group.foremanName)}</small>` : ''}
+        </span>
+        <span>${peso(group.net || group.total || 0)}</span>
+      </div>
+    `).join('');
+  }
 
   // Government deductions display
   const govDisplay = $('govDeductionsDisplay');
@@ -993,16 +1156,22 @@ function showPayrollModal() {
 
   const advList = $('advanceDeductList');
   if (advList) {
-    advList.innerHTML = Object.keys(d.pendingAdvances).length === 0
+    advList.innerHTML = d.totalPending <= 0
       ? '<p class="empty-hint" style="padding:4px 0">No pending advances.</p>'
-      : Object.values(d.pendingAdvances).map(w =>
-          `<div class="adv-deduct-row">
-            <span class="adv-deduct-name">${escapeHtml(w.name)}</span>
-            <span class="adv-deduct-detail">
-              ${w.advances.map(a => `\u20B1${a.deductThisPayroll.toLocaleString('en-PH', {minimumFractionDigits:2})} of \u20B1${a.remainingAfter.toLocaleString('en-PH', {minimumFractionDigits:2})} remaining`).join(' \u00B7 ')}
-            </span>
-          </div>`
-        ).join('');
+      : Object.entries(d.byTrade).filter(([, group]) => group.cashAdvanceDeductions > 0).map(([trade, group]) => {
+          const workerRows = Object.entries(d.pendingAdvances)
+            .filter(([, w]) => normalizeTradeName(w.trade) === trade)
+            .map(([, w]) => `<div class="adv-deduct-row">
+              <span class="adv-deduct-name">${escapeHtml(w.name)}</span>
+              <span class="adv-deduct-detail">
+                ${w.advances.map(a => `${peso(a.deductThisPayroll)} now · ${peso(a.remainingAfter)} remaining`).join(' · ')}
+              </span>
+            </div>`).join('');
+          return `<div class="adv-deduct-group">
+            <div class="adv-deduct-group-title">${escapeHtml(trade)}${group.foremanName ? ` · ${escapeHtml(group.foremanName)}` : ''}<span>${peso(group.cashAdvanceDeductions)}</span></div>
+            ${workerRows}
+          </div>`;
+        }).join('');
   }
 
   $('manualDeductInput').value = '';
@@ -1036,10 +1205,16 @@ async function confirmSavePayroll() {
 
   const logKey = firebase.database().ref().push().key;
   const updates = {};
+  const existingWeek = await firebase.database().ref(`projects/${_lpid}/payrollLogs`).orderByChild('weekKey').equalTo(d.weekKey).once('value');
+  if (existingWeek.exists() && !confirm('This week already has a payroll log. Save another compiled record for the same week?')) return;
 
   // Archive attendance
   updates[`projects/${_lpid}/attendanceHistory/${logKey}`] = {
     period: `${d.start}\u2013${d.end}`,
+    projectId: _lpid,
+    weekStart: d.start,
+    weekEnd: d.end,
+    weekKey: d.weekKey,
     savedAt: Date.now(),
     entries: d.attendanceToArchive,
     compiledBy: window._currentUser.uid
@@ -1047,15 +1222,23 @@ async function confirmSavePayroll() {
 
   // Save payroll log with gov deductions
   const logData = {
+    projectId: _lpid,
+    weekStart: d.start,
+    weekEnd: d.end,
+    weekKey: d.weekKey,
     period: `${d.start}\u2013${d.end}`,
     gross: d.grandGross,
     regular: d.grandRegular,
     ot: d.grandOT,
     nightDiff: d.grandNight,
+    cashAdvanceDeductions: d.totalPending,
+    otherDeductions: manualDeduct,
     deductions: d.totalPending + manualDeduct,
     net,
     byTrade: d.byTrade,
     workerDetails: d.workerPayroll,
+    attendance: d.attendanceToArchive,
+    cashAdvancesDeducted: d.pendingAdvances,
     savedAt: Date.now(),
     savedDate: new Date().toLocaleDateString('en-PH'),
     savedBy: window._currentUser.uid,
@@ -1412,35 +1595,39 @@ async function generateRFP() {
 
   const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
   const projectName = _projectName || _lpid;
-  const leader = _projectSettings.leader || '';
-  const payMethod = _projectSettings.payMethod || 'Bank';
-
-  const lines = [
-    'REQUEST FOR PAYMENT (RFP)',
-    `Project        : ${projectName}`,
-    `Period         : ${start} to ${end}`,
-    `Date Prepared  : ${today}`,
-    `Payment Method : ${payMethod}`,
-    leader ? `Prepared by    : ${leader}` : 'Prepared by    : ___________________________',
-    '\u2500'.repeat(54), ''
-  ];
-
-  Object.entries(byTrade).sort().forEach(([trade, ws]) => {
-    lines.push(trade.toUpperCase());
-    ws.sort((a, b) => a.name.localeCompare(b.name)).forEach(w => {
-      lines.push(`  ${w.name.padEnd(26)} ${String(w.days).padStart(4)} day/s x ${peso(w.rate).padStart(10)} = ${peso(w.sub).padStart(12)}`);
-    });
-    const sub = ws.reduce((s, w) => s + w.sub, 0);
-    lines.push(`  ${'Trade Subtotal'.padEnd(50)} ${peso(sub).padStart(12)}`, '');
+  const groups = Object.entries(byTrade).sort().map(([trade, ws]) => {
+    const meta = getTradeMeta(trade);
+    const workers = ws.sort((a, b) => a.name.localeCompare(b.name));
+    const total = workers.reduce((s, w) => s + w.sub, 0);
+    return { trade, workers, total, ...meta };
   });
 
-  lines.push(
-    '\u2500'.repeat(54),
-    `  ${'TOTAL LABOR PAYROLL'.padEnd(50)} ${peso(grand).padStart(12)}`,
-    '', 'Approved by: ___________________________'
-  );
+  const lines = [];
+  groups.forEach((group, index) => {
+    if (index) lines.push('', '='.repeat(54), '');
+    lines.push(
+      `REQUEST FOR PAYMENT (RFP) - ${group.trade.toUpperCase()}`,
+      `Project        : ${projectName}`,
+      `Scope / Trade  : ${group.trade}`,
+      `Foreman        : ${group.foremanName || '___________________________'}`,
+      `Period         : ${start} to ${end}`,
+      `Date Prepared  : ${today}`,
+      `Payment Method : ${group.paymentMethod || 'Bank'}`,
+      group.notes ? `Notes          : ${group.notes}` : '',
+      '\u2500'.repeat(54)
+    );
+    group.workers.forEach(w => {
+      lines.push(`  ${w.name.padEnd(26)} ${String(w.days).padStart(4)} day/s x ${peso(w.rate).padStart(10)} = ${peso(w.sub).padStart(12)}`);
+    });
+    lines.push(
+      `  ${'Scope Subtotal'.padEnd(50)} ${peso(group.total).padStart(12)}`,
+      '',
+      'Approved by: ___________________________'
+    );
+  });
+  lines.push('', '\u2500'.repeat(54), `ALL SCOPES TOTAL: ${peso(grand)}`);
 
-  window._rfpData = { lines, start, end, grand, byTrade, projectName, leader, payMethod };
+  window._rfpData = { lines, start, end, grand, byTrade, groups, projectName };
   $('rfpOutput').value = lines.join('\n');
   $('rfpModal').classList.remove('hidden');
 }
@@ -1471,41 +1658,38 @@ function downloadRFP() {
 
   const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
   const projectName = _rfpData.projectName || _lpid;
-  const leader = _rfpData.leader || '';
-  const payMethod = _rfpData.payMethod || 'Bank';
+  (_rfpData.groups || []).forEach((group, index) => {
+    if (index) {
+      doc.addPage();
+      y = 20;
+    }
+    doc.setFontSize(14).setFont('helvetica', 'bold');
+    doc.text(`REQUEST FOR PAYMENT - ${group.trade.toUpperCase()}`, lm, y); y += 7;
+    doc.setFontSize(9).setFont('helvetica', 'normal');
+    doc.text(`Project        : ${projectName}`, lm, y); y += 5;
+    doc.text(`Scope / Trade  : ${group.trade}`, lm, y); y += 5;
+    doc.text(`Foreman        : ${group.foremanName || '___________________________'}`, lm, y); y += 5;
+    doc.text(`Period         : ${_rfpData.start} to ${_rfpData.end}`, lm, y); y += 5;
+    doc.text(`Date Prepared  : ${today}`, lm, y); y += 5;
+    doc.text(`Payment Method : ${group.paymentMethod || 'Bank'}`, lm, y); y += 5;
+    if (group.notes) { doc.text(`Notes          : ${group.notes}`, lm, y); y += 5; }
+    doc.setDrawColor(60, 80, 120).setLineWidth(0.4);
+    doc.line(lm, y, rm, y); y += 6;
 
-  doc.setFontSize(14).setFont('helvetica', 'bold');
-  doc.text('REQUEST FOR PAYMENT', lm, y); y += 7;
-  doc.setFontSize(9).setFont('helvetica', 'normal');
-  doc.text(`Project        : ${projectName}`, lm, y); y += 5;
-  doc.text(`Period         : ${_rfpData.start} to ${_rfpData.end}`, lm, y); y += 5;
-  doc.text(`Date Prepared  : ${today}`, lm, y); y += 5;
-  doc.text(`Payment Method : ${payMethod}`, lm, y); y += 5;
-  doc.text(`Prepared by    : ${leader || '___________________________'}`, lm, y); y += 6;
-  doc.setDrawColor(60, 80, 120).setLineWidth(0.4);
-  doc.line(lm, y, rm, y); y += 6;
-
-  Object.entries(_rfpData.byTrade).sort().forEach(([trade, ws]) => {
     doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(40, 80, 180);
-    doc.text(trade.toUpperCase(), lm, y); y += 5; doc.setTextColor(0);
-    ws.sort((a, b) => a.name.localeCompare(b.name)).forEach(w => {
+    doc.text(group.trade.toUpperCase(), lm, y); y += 5; doc.setTextColor(0);
+    group.workers.forEach(w => {
       doc.setFont('helvetica', 'normal').setFontSize(8);
       doc.text(w.name, lm + 3, y);
       doc.text(`${w.days} day/s \u00D7 ${peso(w.rate)}`, lm + 70, y);
       doc.text(peso(w.sub), rm, y, { align: 'right' }); y += 5;
     });
     doc.setFont('helvetica', 'bold').setFontSize(8);
-    doc.text('Trade Subtotal', lm + 3, y);
-    doc.text(peso(ws.reduce((s, w) => s + w.sub, 0)), rm, y, { align: 'right' }); y += 7;
-    if (y > 255) { doc.addPage(); y = 20; }
+    doc.text('Scope Subtotal', lm + 3, y);
+    doc.text(peso(group.total), rm, y, { align: 'right' }); y += 9;
+    doc.setFontSize(8).setFont('helvetica', 'normal');
+    doc.text('Approved by: ___________________________', lm, y);
   });
-
-  doc.setDrawColor(60, 80, 120).line(lm, y, rm, y); y += 6;
-  doc.setFontSize(10).setFont('helvetica', 'bold');
-  doc.text('TOTAL LABOR PAYROLL', lm, y);
-  doc.text(peso(_rfpData.grand), rm, y, { align: 'right' }); y += 14;
-  doc.setFontSize(8).setFont('helvetica', 'normal');
-  doc.text('Approved by: ___________________________', lm, y);
   const safeName = (projectName || _lpid).replace(/[^\w\-]+/g, '_');
   doc.save(`RFP_${safeName}_${_rfpData.start}.pdf`);
 }
@@ -1519,6 +1703,7 @@ function watchPayrollLogs(pid) {
     const el = $('payrollLogsBody'); if (!el) return;
     const tradeTotals = {};
     let grandTotal = 0;
+    _compiledWeekKeys = new Set();
 
     if (!snap.exists()) {
       el.innerHTML = `<p class="empty-hint">No payroll logs yet. Compile a week to create the first record.</p>`;
@@ -1527,14 +1712,18 @@ function watchPayrollLogs(pid) {
     }
 
     const rows = [];
-    snap.forEach(c => rows.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      const row = { id: c.key, ...c.val() };
+      if (row.weekKey) _compiledWeekKeys.add(row.weekKey);
+      rows.push(row);
+    });
     rows.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
     let html = '';
     rows.forEach((e, idx) => {
       grandTotal += e.net || e.gross || 0;
       if (e.byTrade) Object.entries(e.byTrade).forEach(([t, d]) => {
-        tradeTotals[t] = (tradeTotals[t] || 0) + (d.total || 0);
+        tradeTotals[t] = (tradeTotals[t] || 0) + (d.net || d.total || 0);
       });
 
       const trades = e.byTrade
@@ -1561,8 +1750,11 @@ function watchPayrollLogs(pid) {
           : `<tr><td colspan="4" class="empty-cell">No worker detail</td></tr>`;
         return `<div class="payroll-trade-card">
           <div class="payroll-trade-hdr">
-            <span class="payroll-trade-name">${escapeHtml(trade)}</span>
-            <span class="payroll-trade-total">${peso(d.total || 0)}</span>
+            <span class="payroll-trade-name">${escapeHtml(trade)}${d.foremanName ? ` · ${escapeHtml(d.foremanName)}` : ''}</span>
+            <span class="payroll-trade-total">${peso(d.net || d.total || 0)}</span>
+          </div>
+          <div class="payroll-trade-meta">
+            Gross ${peso(d.total || 0)} · Advances -${peso(d.cashAdvanceDeductions || 0)} · Payment ${escapeHtml(d.paymentMethod || 'Bank')}
           </div>
           <table class="paylog-worker-table">
             <thead><tr><th>Worker</th><th>Days</th><th>Rate</th><th style="text-align:right">Gross</th></tr></thead>
@@ -1647,7 +1839,8 @@ async function exportPayrollCSV() {
 window.initLabor = initLabor;
 window.detachLaborListeners = detachLaborListeners;
 window.savePayrollConfig = savePayrollConfig;
-window.saveProjectSettings = saveProjectSettings;
+window.saveProjectSettings = () => showToast('RFP settings are now saved per trade/scope.', 'warn');
+window.saveTradeSettings = saveTradeSettings;
 window.addTrade = addTrade;
 window.renameTrade = renameTrade;
 window.deleteTrade = deleteTrade;
@@ -1660,7 +1853,9 @@ window.deleteAdvance = deleteAdvance;
 window.handleAttendanceChange = handleAttendanceChange;
 window.markAttendance = markAttendance;
 window.updateAttendanceOT = updateAttendanceOT;
+window.handleWeekRangeChange = handleWeekRangeChange;
 window.applyWeek = applyWeek;
+window.resetCurrentAttendance = resetCurrentAttendance;
 window.compilePayroll = compilePayroll;
 window.closePayrollModal = closePayrollModal;
 window.updatePayrollNet = updatePayrollNet;

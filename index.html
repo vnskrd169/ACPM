@@ -332,24 +332,8 @@ window.addEventListener('appinstalled', () => {
           </div>
         </div>
 
-        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
-          <div class="sec-label">RFP Settings (per project)</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div>
-              <label class="field-label">Leader / Foreman Name</label>
-              <input id="projectLeader" type="text" placeholder="e.g., Juan Dela Cruz" onchange="saveProjectSettings()">
-            </div>
-            <div>
-              <label class="field-label">Default Payment Method</label>
-              <select id="projectPayMethod" onchange="saveProjectSettings()">
-                <option value="Bank">Bank Transfer</option>
-                <option value="GCash">GCash</option>
-                <option value="Cash">Cash</option>
-                <option value="Check">Check</option>
-                <option value="Others">Others</option>
-              </select>
-            </div>
-          </div>
+        <div class="labor-settings-note">
+          RFP foreman and payment method are now configured per trade/scope in the Trades card.
         </div>
       </div>
     </details>
@@ -409,13 +393,14 @@ window.addEventListener('appinstalled', () => {
           <div class="tc-date-row">
             <div class="tc-date-grp">
               <label>Week Start</label>
-              <input id="weekStart" type="date">
+              <input id="weekStart" type="date" onchange="handleWeekRangeChange()">
             </div>
             <div class="tc-date-grp">
               <label>Week End</label>
-              <input id="weekEnd" type="date">
+              <input id="weekEnd" type="date" onchange="handleWeekRangeChange()">
             </div>
             <button class="btn-apply" onclick="applyWeek()">Apply</button>
+            <button class="btn-reset-attendance" onclick="resetCurrentAttendance()">Reset Attendance</button>
           </div>
           <div class="tc-action-row">
             <button class="btn-rfp" onclick="generateRFP()">&#x1F4C4; RFP</button>
@@ -1074,6 +1059,7 @@ window.addEventListener('appinstalled', () => {
         <div class="pay-row"><span class="pay-label">Overtime Pay (25% premium)</span><span class="pay-val text-amber" id="payrollOT">&#x20B1;0.00</span></div>
         <div class="pay-row"><span class="pay-label">Night Differential (10%)</span><span class="pay-val text-purple" id="payrollNight">&#x20B1;0.00</span></div>
         <div class="pay-row pay-total-row"><span class="pay-label">Gross Payroll</span><span class="pay-val" id="payrollGross">&#x20B1;0.00</span></div>
+        <div id="payrollTradeSummary" class="payroll-trade-summary"></div>
       </div>
       <div class="pay-deductions">
         <div class="pay-row"><span class="pay-label">Cash Advance Deductions</span><span class="pay-val text-red" id="totalAdvances">&#x20B1;0.00</span></div>

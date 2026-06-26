@@ -51,9 +51,9 @@
         },
         "ledger": { ".indexOn": ["poId", "status"] 
         },
-        "attendanceHistory": { ".indexOn": "savedAt" 
+        "attendanceHistory": { ".indexOn": ["savedAt", "weekKey"]
         },
-        "payrollLogs": { ".indexOn": "savedAt" 
+        "payrollLogs": { ".indexOn": ["savedAt", "weekKey"]
         },
         "siteLogs": { ".indexOn": "savedAt" 
         }
