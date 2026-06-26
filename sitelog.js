@@ -3,7 +3,9 @@ let _slListener = null;
 let _logFilterDebounce = null;
 
 function canTouchSiteLogProject() {
-  return !!_slpid && typeof canEditProject === 'function' && canEditProject(_slpid);
+  return typeof requireEdit === 'function'
+    ? requireEdit(_slpid)
+    : !!_slpid && typeof canEditProject === 'function' && canEditProject(_slpid);
 }
 
 function initSiteLog(pid) {

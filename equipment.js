@@ -7,7 +7,9 @@ let _epid = null;
 let _equipListeners = [];
 
 function canTouchEquipmentProject() {
-  return !!_epid && typeof canEditProject === 'function' && canEditProject(_epid);
+  return typeof requireEdit === 'function'
+    ? requireEdit(_epid)
+    : !!_epid && typeof canEditProject === 'function' && canEditProject(_epid);
 }
 
 function initEquipment(pid) {

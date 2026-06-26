@@ -118,11 +118,14 @@ async function sendNotification({ to, type, message, projectId, projectName, lin
   }
 
   const notif = {
-    type, message: cleanMessage, projectId, projectName, link,
+    type, message: cleanMessage,
     read: false, createdAt: Date.now(),
     from: sender.uid || 'system',
     fromName: sender.name || 'System'
   };
+  if (projectId) notif.projectId = projectId;
+  if (projectName) notif.projectName = projectName;
+  if (link) notif.link = link;
   await safeDb(() => firebase.database().ref(`notifications/${to}`).push(notif), 'Failed to send notification');
 }
 

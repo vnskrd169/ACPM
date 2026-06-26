@@ -1827,6 +1827,11 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   background: var(--blue-d); color: var(--blue-t);
   border: 1px solid var(--blue); border-radius: 20px; white-space: nowrap;
 }
+.archived-tag {
+  font-size: 10px; font-weight: 700; padding: 3px 10px;
+  background: var(--surface3); color: var(--muted2);
+  border: 1px solid var(--border2); border-radius: 20px; white-space: nowrap;
+}
 
 .budget-section { padding: 16px 20px 14px; }
 .budget-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
@@ -2681,7 +2686,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   border-radius: var(--radius);
   padding: 34px 28px 30px;
   width: 100%;
-  max-width: 400px;
+  max-width: 460px;
   box-shadow: 0 24px 70px rgba(0,0,0,.42);
   display: flex; flex-direction: column; gap: 18px;
   position: relative;
@@ -2774,6 +2779,37 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 
 .auth-btn-secondary:hover { background: var(--surface4); box-shadow: none; }
 
+.auth-btn-google {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  box-shadow: none;
+}
+
+.auth-btn-google:hover {
+  background: var(--surface4);
+  box-shadow: none;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted2);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin: 2px 0;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: var(--border2);
+}
+
 .auth-hint {
   font-size: 11px; color: var(--muted2);
   text-align: center;
@@ -2806,6 +2842,101 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 }
 
 .auth-reset-btn:hover { color: var(--purple-xl); }
+
+.auth-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-xs);
+  padding: 14px;
+}
+
+.auth-pending-title {
+  color: var(--text);
+  font-weight: 900;
+}
+
+.auth-pending-text {
+  color: var(--muted2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.auth-pending-meta {
+  display: grid;
+  gap: 8px;
+}
+
+.auth-pending-meta div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  min-width: 0;
+}
+
+.auth-pending-meta span {
+  color: var(--muted2);
+  font-size: 12px;
+}
+
+.auth-pending-meta strong {
+  color: var(--text);
+  font-size: 12px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-request-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lifecycle-request-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-xs);
+  padding: 12px 14px;
+}
+
+.lifecycle-request-main {
+  min-width: 0;
+}
+
+.lifecycle-request-title {
+  color: var(--text);
+  font-weight: 900;
+  font-size: 14px;
+}
+
+.lifecycle-request-meta,
+.lifecycle-request-sub {
+  color: var(--muted2);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.lifecycle-request-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.lifecycle-request-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 /* Module polish: Labor / Payroll */
 #laborPanel {
@@ -5471,6 +5602,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 .health-mini,
 .active-tag,
 .completed-tag,
+.archived-tag,
 .warn-tag {
   display: inline-flex;
   align-items: center;

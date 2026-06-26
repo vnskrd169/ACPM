@@ -70,6 +70,27 @@ function displayNameFromEmail(email) {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 
+function authErrorMessage(e, fallback = 'Could not complete request.') {
+  switch (e?.code) {
+    case 'auth/email-already-in-use':
+      return 'Account already exists. Sign in instead.';
+    case 'auth/invalid-email':
+      return 'Invalid email format.';
+    case 'auth/weak-password':
+      return 'Password is too weak.';
+    case 'auth/popup-closed-by-user':
+      return 'Google sign-in was cancelled.';
+    case 'auth/operation-not-allowed':
+      return 'Google sign-in is not enabled yet in Firebase Authentication.';
+    case 'auth/unauthorized-domain':
+      return 'This domain is not authorized for Google sign-in in Firebase.';
+    case 'PERMISSION_DENIED':
+      return 'Account created, but profile setup was blocked. Ask an admin to add your profile.';
+    default:
+      return fallback;
+  }
+}
+
 // ── Load user profile from /users/{uid} ─────────────────────
 //  After Firebase Auth confirms identity, we fetch the role,
 //  project assignments, and bossOf list from the Realtime DB.
@@ -88,6 +109,8 @@ async function loadUserProfile(uid) {
         uid,
         name:       data.name || displayNameFromEmail(firebase.auth().currentUser?.email || uid),
         role,
+        status:     data.status || 'active',
+        position:   data.position || '',
         projects:   data.projects || [],
         bossOf:     data.bossOf || [],
         loginAt:    Date.now(),
@@ -106,6 +129,8 @@ async function loadUserProfile(uid) {
     uid,
     name: displayNameFromEmail(email || uid),
     role,
+    status: 'pending',
+    position: '',
     projects: [],
     bossOf: [],
     loginAt: Date.now(),
@@ -117,6 +142,8 @@ async function loadUserProfile(uid) {
     name: fallback.name,
     email: email || null,
     role: fallback.role,
+    status: fallback.status,
+    position: fallback.position,
     projects: [],
     bossOf: [],
     createdAt: Date.now()
@@ -135,6 +162,10 @@ function applyProfile(profile) {
     badge.textContent = `${profile?.name || 'User'} - ${roleLabel(role)}`;
     badge.title = `Signed in as ${profile?.name || 'User'} (${profile?.uid || 'unknown'})`;
   }
+  if (profile?.status && profile.status !== 'active' && !isBoss(profile.role)) {
+    showPendingAccessScreen(profile);
+    return;
+  }
   initAppForUser();
 }
 
@@ -147,11 +178,9 @@ function startAuthObserver() {
     if (user) {
       // Authenticated — load the profile from RTDB
       const profile = await loadUserProfile(user.uid);
-      applyProfile(profile);
-
-      // Also remove the old auth overlay if it's still visible
       const overlay = document.getElementById('authOverlay');
       if (overlay) overlay.remove();
+      applyProfile(profile);
     } else {
       // Signed out — show login screen
       _currentAuthUser = null;
@@ -177,6 +206,37 @@ function initAuth() {
 
 // ── Login Screen ────────────────────────────────────────────
 
+function showPendingAccessScreen(profile) {
+  let overlay = document.getElementById('authOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'authOverlay';
+    overlay.className = 'auth-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div class="auth-box">
+      <div class="auth-brand">
+        <div class="auth-logo">LB</div>
+        <div>
+          <div class="auth-name">Request Pending</div>
+          <div class="auth-sub">LeBuild Design &amp; Construction</div>
+        </div>
+      </div>
+      <div class="auth-pending">
+        <div class="auth-pending-title">Admin approval needed</div>
+        <div class="auth-pending-text">Your account request was received. An admin must approve your role and assign projects before you can use ACPM.</div>
+        <div class="auth-pending-meta">
+          <div><span>Name</span><strong>${escapeHtml(profile.name || 'User')}</strong></div>
+          <div><span>Position</span><strong>${escapeHtml(profile.position || '-')}</strong></div>
+          <div><span>Email</span><strong>${escapeHtml(profile.email || '-')}</strong></div>
+        </div>
+      </div>
+      <button class="auth-btn auth-btn-secondary" onclick="logout()">Back to Sign In</button>
+    </div>
+  `;
+}
+
 function showAuthScreen() {
   // Don't double-render
   if (document.getElementById('authOverlay')) return;
@@ -196,10 +256,17 @@ function showAuthScreen() {
       <div class="auth-form">
         <input type="email" id="authUser" placeholder="Email address" autocomplete="email">
         <input type="password" id="authPass" placeholder="Password" autocomplete="current-password">
-        <button class="auth-btn" onclick="doLogin()">Sign In</button>
-        <button class="auth-btn auth-btn-secondary" onclick="doRegister()">Register as APM</button>
+        <button class="auth-btn" id="authLoginBtn" onclick="doLogin()">Sign In</button>
+        <button class="auth-btn auth-btn-google" onclick="doGoogleSignIn()">Continue with Google</button>
+        <div class="auth-divider"><span>Request access</span></div>
+        <input type="text" id="requestName" placeholder="Full name" autocomplete="name">
+        <input type="text" id="requestPosition" placeholder="Position" autocomplete="organization-title">
+        <input type="email" id="requestEmail" placeholder="Google email / work email" autocomplete="email">
+        <input type="password" id="requestPass" placeholder="Password for email request" autocomplete="new-password">
+        <button class="auth-btn auth-btn-secondary" onclick="doRequestAccess()">Submit Request</button>
+        <button class="auth-btn auth-btn-secondary" onclick="doGoogleAccessRequest()">Request with Google</button>
       </div>
-      <div class="auth-hint">Use a real email for registration and password reset. Admin assigns projects.</div>
+      <div class="auth-hint">Requests stay pending until an admin approves your role and projects.</div>
       <div id="authError" class="auth-error hidden"></div>
       <div class="auth-reset-row">
         <button class="auth-reset-btn" onclick="doResetPassword()">Forgot password?</button>
@@ -216,6 +283,9 @@ function showAuthScreen() {
   document.getElementById('authUser').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('authPass').focus();
   });
+  document.getElementById('requestPass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doRequestAccess();
+  });
 }
 
 // ── Login ────────────────────────────────────────────────────
@@ -224,7 +294,7 @@ async function doLogin() {
   const userIn  = document.getElementById('authUser');
   const passIn  = document.getElementById('authPass');
   const errEl   = document.getElementById('authError');
-  const btn     = document.querySelector('.auth-btn');
+  const btn     = document.getElementById('authLoginBtn');
 
   const email    = normaliseEmail(userIn?.value || '');
   const password = passIn?.value || '';
@@ -267,69 +337,113 @@ async function doLogin() {
 
 // ── Password Reset ──────────────────────────────────────────
 
-async function doRegister() {
-  const userIn  = document.getElementById('authUser');
-  const passIn  = document.getElementById('authPass');
-  const errEl   = document.getElementById('authError');
+function requestAccessFields({ requireEmail = true, requirePassword = true } = {}) {
+  const name = document.getElementById('requestName')?.value?.trim() || '';
+  const position = document.getElementById('requestPosition')?.value?.trim() || '';
+  const rawEmail = document.getElementById('requestEmail')?.value || '';
+  const email = normaliseEmail(rawEmail);
+  const password = document.getElementById('requestPass')?.value || '';
+  const errEl = document.getElementById('authError');
+
+  if (!name) return { ok: false, errEl, message: 'Enter your full name.' };
+  if (!position) return { ok: false, errEl, message: 'Enter your position.' };
+  if (requireEmail && !email) return { ok: false, errEl, message: 'Enter your email.' };
+  if (requireEmail && !isRealEmail(rawEmail)) return { ok: false, errEl, message: 'Use a real email address.' };
+  if (requirePassword && password.length < 6) return { ok: false, errEl, message: 'Password must be at least 6 characters.' };
+  return { ok: true, errEl, name, position, email, password };
+}
+
+async function saveAccessRequest(user, details = {}, provider = 'password') {
+  const email = user.email || details.email || '';
+  const ref = firebase.database().ref(`users/${user.uid}`);
+  const existingSnap = await ref.once('value');
+  if (existingSnap.exists()) {
+    const existing = existingSnap.val() || {};
+    if (existing.status === 'active' || existing.role === 'boss' || (existing.projects || []).length) {
+      return existing;
+    }
+  }
+  const profile = {
+    name: details.name || user.displayName || displayNameFromEmail(email || user.uid),
+    position: details.position || '',
+    email,
+    role: 'apm',
+    status: 'pending',
+    projects: [],
+    bossOf: [],
+    provider,
+    requestedAt: Date.now(),
+    createdAt: Date.now()
+  };
+  await ref.set(profile);
+  return profile;
+}
+
+async function doRequestAccess() {
+  const fields = requestAccessFields();
+  if (!fields.ok) {
+    fields.errEl.textContent = fields.message;
+    fields.errEl.classList.remove('hidden');
+    return;
+  }
   const buttons = document.querySelectorAll('.auth-btn');
-
-  const rawEmail = userIn?.value || '';
-  const email    = normaliseEmail(rawEmail);
-  const password = passIn?.value || '';
-
-  if (!email || !password) {
-    errEl.textContent = 'Enter email and password to register';
-    errEl.classList.remove('hidden');
-    return;
-  }
-  if (!isRealEmail(rawEmail)) {
-    errEl.textContent = 'Use a real email address for registration';
-    errEl.classList.remove('hidden');
-    return;
-  }
-  if (password.length < 6) {
-    errEl.textContent = 'Password must be at least 6 characters';
-    errEl.classList.remove('hidden');
-    return;
-  }
-
   buttons.forEach(btn => { btn.disabled = true; });
-  errEl.textContent = 'Creating APM account...';
-  errEl.classList.remove('hidden');
+  fields.errEl.textContent = 'Sending access request...';
+  fields.errEl.classList.remove('hidden');
 
   try {
-    const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
-    const uid = cred.user.uid;
-    await firebase.database().ref(`users/${uid}`).set({
-      name: displayNameFromEmail(email),
-      email,
-      role: 'apm',
-      projects: [],
-      bossOf: [],
-      createdAt: Date.now()
-    });
-    errEl.textContent = 'Account created as APM. Ask an admin to assign your projects.';
+    const cred = await firebase.auth().createUserWithEmailAndPassword(fields.email, fields.password);
+    await cred.user.updateProfile({ displayName: fields.name }).catch(() => {});
+    await saveAccessRequest(cred.user, fields, 'password');
+    fields.errEl.textContent = 'Access request sent. An admin must approve your role and projects before you can use ACPM.';
+    await firebase.auth().signOut();
   } catch (e) {
-    console.error('Registration error:', e);
-    let msg = 'Could not create account.';
-    switch (e.code) {
-      case 'auth/email-already-in-use':
-        msg = 'Account already exists. Sign in instead.';
-        break;
-      case 'auth/invalid-email':
-        msg = 'Invalid email format.';
-        break;
-      case 'auth/weak-password':
-        msg = 'Password is too weak.';
-        break;
-      case 'PERMISSION_DENIED':
-        msg = 'Account created, but profile setup was blocked. Ask an admin to add your profile.';
-        break;
-    }
-    errEl.textContent = msg;
+    console.error('Access request error:', e);
+    fields.errEl.textContent = authErrorMessage(e, 'Could not send access request.');
     buttons.forEach(btn => { btn.disabled = false; });
   }
 }
+
+async function doGoogleSignIn() {
+  const errEl = document.getElementById('authError');
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    await firebase.auth().signInWithPopup(provider);
+  } catch (e) {
+    console.error('Google sign-in error:', e);
+    errEl.textContent = authErrorMessage(e, 'Could not sign in with Google.');
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function doGoogleAccessRequest() {
+  const fields = requestAccessFields({ requireEmail: false, requirePassword: false });
+  if (!fields.ok) {
+    fields.errEl.textContent = fields.message;
+    fields.errEl.classList.remove('hidden');
+    return;
+  }
+  const buttons = document.querySelectorAll('.auth-btn');
+  buttons.forEach(btn => { btn.disabled = true; });
+  fields.errEl.textContent = 'Opening Google sign-in...';
+  fields.errEl.classList.remove('hidden');
+
+  try {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const cred = await firebase.auth().signInWithPopup(provider);
+    await saveAccessRequest(cred.user, fields, 'google');
+    fields.errEl.textContent = 'Access request sent. An admin must approve your role and projects before you can use ACPM.';
+    await firebase.auth().signOut();
+  } catch (e) {
+    console.error('Google access request error:', e);
+    fields.errEl.textContent = authErrorMessage(e, 'Could not send Google access request.');
+    buttons.forEach(btn => { btn.disabled = false; });
+  }
+}
+
+const doRegister = doRequestAccess;
 async function doResetPassword() {
   const userIn = document.getElementById('authUser');
   const rawEmail = userIn?.value || '';
@@ -426,6 +540,8 @@ function initAppForUser() {
   const createCard = document.querySelector('.hub-create-card');
   if (createCard) createCard.style.display = isBoss(role) ? '' : 'none';
 
+  if (typeof initNotifications === 'function') initNotifications();
+
   // Re-render hub with role-aware data
   renderHub();
 
@@ -465,6 +581,9 @@ function canEditProject(pid) {
 window.initAuth          = initAuth;
 window.doLogin           = doLogin;
 window.doRegister        = doRegister;
+window.doRequestAccess   = doRequestAccess;
+window.doGoogleSignIn    = doGoogleSignIn;
+window.doGoogleAccessRequest = doGoogleAccessRequest;
 window.doResetPassword   = doResetPassword;
 window.logout            = logout;
 window.canAccessProject  = canAccessProject;

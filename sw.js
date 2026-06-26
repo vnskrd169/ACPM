@@ -7,7 +7,7 @@
 // ════════════════════════════════════════════════════════════
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v25';
+const CACHE_NAME = 'acpm-v31';
 
 const ASSETS = [
   './',

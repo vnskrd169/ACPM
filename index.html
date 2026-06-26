@@ -223,8 +223,8 @@ window.addEventListener('appinstalled', () => {
 
   <!-- Locked banner -->
   <div id="lockedBanner" class="locked-banner hidden">
-    <span>&#x26A0; This project is marked <strong>Completed</strong> — viewing read-only.</span>
-    <button class="btn-unlock-ws" onclick="unlockForEdit()">&#x1F513; Unlock for Edit</button>
+    <span>&#x26A0; This project is locked for editing &mdash; viewing read-only until reopened.</span>
+    <button class="btn-unlock-ws" onclick="unlockForEdit()">&#x21BB; Reopen Project</button>
   </div>
 
   <!-- Workspace topbar -->
@@ -912,6 +912,7 @@ window.addEventListener('appinstalled', () => {
       <div class="tab-group">
         <button id="adminTab_summary" class="tab-btn tab-active" onclick="switchAdminSection('summary')">&#x1F464; Summary</button>
         <button id="adminTab_team" class="tab-btn" onclick="switchAdminSection('team')" data-boss-only>&#x1F465; Team</button>
+        <button id="adminTab_requests" class="tab-btn" onclick="switchAdminSection('requests')" data-boss-only>&#x2709; Requests</button>
         <button id="adminTab_audit" class="tab-btn" onclick="switchAdminSection('audit')" data-boss-only>&#x1F4DC; Audit Log</button>
         <button id="adminTab_system" class="tab-btn" onclick="switchAdminSection('system')" data-boss-only>&#x2699;&#xFE0F; System</button>
       </div>
@@ -938,7 +939,22 @@ window.addEventListener('appinstalled', () => {
       <div id="teamAdminList"><p class="empty-hint">Loading users...</p></div>
     </div>
 
-    <!-- Section 3: AUDIT LOG (boss only) -->
+    <!-- Section 3: LIFECYCLE REQUESTS (boss only) -->
+    <div id="adminSection_requests" class="panel-card hidden">
+      <div class="panel-title">&#x2709; Lifecycle Requests <span id="lifecycleRequestCount" class="badge badge-purple" style="font-size:11px;margin-left:6px;">0</span></div>
+      <div class="task-form-row">
+        <select id="lifecycleRequestFilter" onchange="renderLifecycleRequests()" style="background:var(--surface2);border:1px solid var(--border2);color:#fff;border-radius:8px;padding:8px 10px;font-size:13px;">
+          <option value="pending">Pending only</option>
+          <option value="all">All requests</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <button class="btn-ws-secondary" onclick="initLifecycleRequests()">&#x1F504; Refresh</button>
+      </div>
+      <div id="lifecycleRequestList"><p class="empty-hint">Loading requests...</p></div>
+    </div>
+
+    <!-- Section 4: AUDIT LOG (boss only) -->
     <div id="adminSection_audit" class="panel-card hidden">
       <div class="panel-title">&#x1F4DC; Audit Log <span id="auditCountBadge" class="badge badge-purple" style="font-size:11px;margin-left:6px;">0</span></div>
       <div class="task-form-row">
@@ -952,9 +968,13 @@ window.addEventListener('appinstalled', () => {
       <div id="auditLogFeed" style="max-height:560px;overflow-y:auto;"><p class="empty-hint">Loading audit log...</p></div>
     </div>
 
-    <!-- Section 4: SYSTEM STATUS (boss only) -->
+    <!-- Section 5: SYSTEM STATUS (boss only) -->
     <div id="adminSection_system" class="panel-card hidden">
       <div class="panel-title">&#x2699;&#xFE0F; System Status</div>
+      <div class="task-form-row">
+        <button class="btn-ws-secondary" onclick="exportDatabaseBackup()">&#x2B07;&#xFE0F; Download Database JSON</button>
+        <span class="empty-hint">Manual backup snapshot for now. Automation can be added later.</span>
+      </div>
       <div id="systemStatus"><p class="empty-hint">Loading...</p></div>
     </div>
   </div>

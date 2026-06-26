@@ -33,7 +33,9 @@ function populateCompDocTypeSelect() {
 }
 
 function canTouchComplianceProject() {
-  return !!_compPid && typeof canEditProject === 'function' && canEditProject(_compPid);
+  return typeof requireEdit === 'function'
+    ? requireEdit(_compPid)
+    : !!_compPid && typeof canEditProject === 'function' && canEditProject(_compPid);
 }
 
 function detachComplianceListeners() {

@@ -4,7 +4,9 @@ let _billingsListener = null;
 let _collectionsListener = null;
 
 function canTouchBillingProject() {
-  return !!_bpid && typeof canEditProject === 'function' && canEditProject(_bpid);
+  return typeof requireEdit === 'function'
+    ? requireEdit(_bpid)
+    : !!_bpid && typeof canEditProject === 'function' && canEditProject(_bpid);
 }
 
 function initBilling(pid) {

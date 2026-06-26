@@ -12,7 +12,9 @@ let _defListeners = [];
 const DEFECT_SEVERITY = ['minor', 'major', 'critical'];
 
 function canTouchDefectsProject() {
-  return !!_defPid && typeof canEditProject === 'function' && canEditProject(_defPid);
+  return typeof requireEdit === 'function'
+    ? requireEdit(_defPid)
+    : !!_defPid && typeof canEditProject === 'function' && canEditProject(_defPid);
 }
 
 function initDefects(pid) {

@@ -154,10 +154,16 @@ function addDraftItem() {
   renderDraft();
 }
 
-function removeDraftItem(i) { _draftItems.splice(i, 1); renderDraft(); }
+function removeDraftItem(i) {
+  if (!canTouchMaterialsProject()) return;
+  _draftItems.splice(i, 1);
+  renderDraft();
+}
 
 function canTouchMaterialsProject() {
-  return !!_mpid && typeof canEditProject === 'function' && canEditProject(_mpid);
+  return typeof requireEdit === 'function'
+    ? requireEdit(_mpid)
+    : !!_mpid && typeof canEditProject === 'function' && canEditProject(_mpid);
 }
 
 function renderDraft() {
@@ -600,7 +606,7 @@ function watchLedger(pid) {
     tbody.appendChild(fragment);
     setText('ledgerTotal', peso(paidTotal));
     setText('ledgerCount', `${orderCount} item${orderCount !== 1 ? 's' : ''}`);
-    if (paidTotal !== _prevMatSpent) {
+    if (paidTotal !== _prevMatSpent && !(typeof isProjectReadOnly === 'function' && isProjectReadOnly(pid))) {
       safeDb(() => firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal }), 'Failed to sync material spend')
         .then(() => { _prevMatSpent = paidTotal; })
         .catch(() => {});

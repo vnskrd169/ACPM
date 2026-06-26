@@ -2,7 +2,9 @@ let _copid = null;
 let _coListeners = [];
 
 function canTouchChangeOrdersProject() {
-  return !!_copid && typeof canEditProject === 'function' && canEditProject(_copid);
+  return typeof requireEdit === 'function'
+    ? requireEdit(_copid)
+    : !!_copid && typeof canEditProject === 'function' && canEditProject(_copid);
 }
 
 function initChangeOrders(pid) {

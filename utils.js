@@ -260,6 +260,21 @@ window.setFeatureFlag = setFeatureFlag;
 // and returns false otherwise — call at the top of every
 // write function.
 // Usage:  if (!requireEdit(pid)) return;
+function isProjectReadOnly(pid) {
+  if (!pid) return false;
+  const activePid = (typeof window !== 'undefined' && window._currentPid) || null;
+  const status = activePid === pid
+    ? String(window._currentProjectStatus || '').toLowerCase()
+    : '';
+  return status === 'completed'
+    || status === 'archived'
+    || (!!window._isReadOnly && (!activePid || activePid === pid));
+}
+
+function showReadOnlyBlocked() {
+  showToast('This project is read-only. Reopen it before making changes.', 'warn');
+}
+
 function requireEdit(pid) {
   const user = (typeof window !== 'undefined' && window._currentUser) || {};
   if (!pid) {
@@ -268,6 +283,10 @@ function requireEdit(pid) {
   }
   if (!user.uid || user.uid === 'anonymous') {
     showToast('You must be signed in.', 'error');
+    return false;
+  }
+  if (isProjectReadOnly(pid)) {
+    showReadOnlyBlocked();
     return false;
   }
   if (typeof canEditProject === 'function' && canEditProject(pid)) return true;
@@ -290,6 +309,8 @@ function requireBoss(action) {
 
 window.requireEdit = requireEdit;
 window.requireBoss = requireBoss;
+window.isProjectReadOnly = isProjectReadOnly;
+window.showReadOnlyBlocked = showReadOnlyBlocked;
 
 // ════════════════════════════════════════════════════════════
 //  Supplier dropdown (shared by materials + suppliers modules)

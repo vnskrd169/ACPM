@@ -22,6 +22,7 @@ window._db = db;
 window._currentPid = null;
 let _hubListeners = [];
 window._isReadOnly = false;
+window._currentProjectStatus = null;
 // Overwritten by auth.js once Firebase Auth resolves — this is only
 // a pre-auth fallback so other modules don't crash on null access.
 window._currentUser = { uid: 'anonymous', role: 'apm', name: 'System', projects: [], bossOf: [] };
@@ -182,75 +183,162 @@ function showHubTab(tab) {
   });
 }
 
+function canListAllProjects(user = window._currentUser || {}) {
+  return typeof isBoss === 'function'
+    ? isBoss(user.role)
+    : String(user.role || '').toLowerCase() === 'boss';
+}
+
+function canDeleteProject(pid) {
+  const user = window._currentUser || {};
+  return typeof isBoss === 'function'
+    ? isBoss(user.role)
+    : String(user.role || '').toLowerCase() === 'boss';
+}
+
+function canManageProjectLifecycle(pid) {
+  const user = window._currentUser || {};
+  return typeof isBoss === 'function'
+    ? isBoss(user.role)
+    : String(user.role || '').toLowerCase() === 'boss';
+}
+
+function assignedProjectIds(user = window._currentUser || {}) {
+  return Array.from(new Set([
+    ...(Array.isArray(user.projects) ? user.projects : []),
+    ...(Array.isArray(user.bossOf) ? user.bossOf : [])
+  ].filter(Boolean)));
+}
+
+function projectMatchesHubTab(project, tab, isAll) {
+  if ((project.status || 'active') === 'archived') {
+    return isAll && canListAllProjects(window._currentUser || {});
+  }
+  if (isAll) return true;
+  return (project.status || 'active') === tab;
+}
+
+function sortProjectsNewest(projects) {
+  return projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function renderProjectHubList(projects, gridId, tab, isAll) {
+  const el = $(gridId);
+  if (!el) return;
+
+  const visibleProjects = sortProjectsNewest(projects.filter(p => projectMatchesHubTab(p, tab, isAll)));
+  el.innerHTML = '';
+
+  if (!visibleProjects.length) {
+    el.innerHTML = `<p class="hub-empty">No ${isAll ? '' : tab} projects.</p>`;
+    if (isAll) {
+      renderDashboardSummary([], 'All');
+      renderComparison([], 'comparisonViewAll');
+      renderDashboardAlerts([]);
+    } else if (tab === 'active') {
+      renderDashboardSummary([]);
+      renderComparison([]);
+      renderDashboardAlerts([]);
+    } else {
+      renderCompletedSummary([]);
+    }
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  visibleProjects.forEach(p => fragment.appendChild(buildProjectCard(p)));
+  el.appendChild(fragment);
+
+  if (isAll) {
+    renderDashboardSummary(visibleProjects, 'All');
+    renderComparison(visibleProjects, 'comparisonViewAll');
+    renderDashboardAlerts(visibleProjects);
+  } else if (tab === 'active') {
+    renderDashboardSummary(visibleProjects);
+    renderComparison(visibleProjects);
+    renderDashboardAlerts(visibleProjects);
+  } else {
+    renderCompletedSummary(visibleProjects);
+  }
+
+  visibleProjects.forEach(p => cacheProject(p.id, p));
+}
+
+function watchAssignedProjects(user, gridId, tab, isAll) {
+  const grid = $(gridId);
+  const ids = assignedProjectIds(user);
+  if (!ids.length) {
+    renderProjectHubList([], gridId, tab, isAll);
+    return;
+  }
+
+  const projectMap = new Map();
+  const render = () => renderProjectHubList(Array.from(projectMap.values()), gridId, tab, isAll);
+
+  ids.forEach(pid => {
+    const projectRef = db.ref(`projects/${pid}`);
+    projectRef.on('value', snap => {
+      if (snap.exists()) {
+        projectMap.set(pid, { id: pid, ...snap.val() });
+      } else {
+        projectMap.delete(pid);
+      }
+      render();
+    }, error => {
+      console.error('Firebase project load error:', error);
+      if (grid) grid.innerHTML = '<p class="hub-empty">Error loading assigned projects. Check console.</p>';
+      showToast('Error loading assigned projects: ' + error.message, 'error');
+    });
+    _hubListeners.push(projectRef);
+  });
+}
+
+async function fetchAccessibleProjectsOnce(statusFilter = null) {
+  const user = window._currentUser || {};
+  const projects = [];
+
+  if (canListAllProjects(user)) {
+    const snap = await db.ref('projects').once('value');
+    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+  } else {
+    const ids = assignedProjectIds(user);
+    const snaps = await Promise.all(ids.map(pid => db.ref(`projects/${pid}`).once('value').then(snap => ({ pid, snap }))));
+    snaps.forEach(({ pid, snap }) => {
+      if (snap.exists()) projects.push({ id: pid, ...snap.val() });
+    });
+  }
+
+  const filtered = statusFilter
+    ? projects.filter(p => (p.status || 'active') === statusFilter)
+    : projects;
+  return sortProjectsNewest(filtered);
+}
+
 function renderHub() {
   detachHubListeners();
   const tab = document.querySelector('.hub-tab.tab-active')?.id?.replace('hubTab_', '') || 'active';
   const isAll = tab === 'all';
-
   const gridId = isAll ? 'allProjectsGrid' : (tab === 'active' ? 'projectGrid' : 'completedGrid');
   const grid = $(gridId);
   if (grid) grid.innerHTML = '<p class="hub-empty">Loading...</p>';
 
-  // Role-based filtering
-  const user = window._currentUser;
-  let projectsRef;
-  if (isAll) {
-    projectsRef = db.ref('projects');
-  } else {
-    projectsRef = db.ref('projects').orderByChild('status').equalTo(tab);
+  const user = window._currentUser || {};
+  if (!canListAllProjects(user)) {
+    watchAssignedProjects(user, gridId, tab, isAll);
+    return;
   }
 
+  const projectsRef = isAll
+    ? db.ref('projects')
+    : db.ref('projects').orderByChild('status').equalTo(tab);
+
   projectsRef.on('value', snap => {
-    const el = $(gridId);
-    if (!el) return;
-    el.innerHTML = '';
-
     const projects = [];
-    snap.forEach(c => {
-      const pid = c.key;
-      // Filter by role
-      if (!canAccessProject(pid)) return;
-      projects.push({ id: pid, ...c.val() });
-    });
-    projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-
-    if (!projects.length) {
-      el.innerHTML = `<p class="hub-empty">No ${isAll ? '' : tab} projects.</p>`;
-      if (isAll) {
-        renderDashboardSummary([], 'All');
-        renderComparison([], 'comparisonViewAll');
-        renderDashboardAlerts([]);
-      } else if (tab === 'active') {
-        renderDashboardSummary([]);
-        renderComparison([]);
-        renderDashboardAlerts([]);
-      } else {
-        renderCompletedSummary([]);
-      }
-      return;
-    }
-
-    const fragment = document.createDocumentFragment();
-    projects.forEach(p => fragment.appendChild(buildProjectCard(p)));
-    el.appendChild(fragment);
-
-    if (isAll) {
-      renderDashboardSummary(projects, 'All');
-      renderComparison(projects, 'comparisonViewAll');
-      renderDashboardAlerts(projects);
-    } else if (tab === 'active') {
-      renderDashboardSummary(projects);
-      renderComparison(projects);
-      renderDashboardAlerts(projects);
-    } else {
-      renderCompletedSummary(projects);
-    }
-
-    // Cache for offline
-    projects.forEach(p => cacheProject(p.id, p));
+    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+    renderProjectHubList(projects, gridId, tab, isAll);
   }, error => {
     console.error('Firebase error:', error);
-    if (grid) grid.innerHTML = `<p class="hub-empty">Error loading projects. Check console.</p>`;
+    if (grid) grid.innerHTML = '<p class="hub-empty">Error loading projects. Check console.</p>';
     showToast('Error loading projects: ' + error.message, 'error');
   });
   _hubListeners.push(projectsRef);
@@ -283,8 +371,9 @@ function buildProjectCard(p) {
     const isWarning = pctUsed >= 80 && pctUsed < 95;
     const isCritical = pctUsed >= 95;
 
-    const statusClass = p.status === 'completed' ? 'completed-tag' : 'active-tag';
-    const statusText = p.status === 'completed' ? 'COMPLETED' : 'ACTIVE';
+    const projectStatus = p.status || 'active';
+    const statusClass = projectStatus === 'completed' ? 'completed-tag' : projectStatus === 'archived' ? 'archived-tag' : 'active-tag';
+    const statusText = projectStatus === 'completed' ? 'COMPLETED' : projectStatus === 'archived' ? 'ARCHIVED' : 'ACTIVE';
 
     const hasDelta = (parseFloat(p.laborBudgetDelta) || 0) || (parseFloat(p.materialBudgetDelta) || 0);
     const coNote = hasDelta
@@ -294,6 +383,7 @@ function buildProjectCard(p) {
     const health = typeof calculateProjectHealth === 'function' ? calculateProjectHealth(p) : { score: 100, warnings: [] };
     const healthColor = health.score >= 80 ? 'var(--green)' : health.score >= 60 ? 'var(--amber)' : 'var(--red)';
     const healthBadge = `<span class="health-mini" style="color:${healthColor}">\u2665 ${health.score}</span>`;
+    const canLifecycle = canManageProjectLifecycle(p.id);
 
     div.innerHTML = `
       <div class="proj-card-top">
@@ -339,14 +429,19 @@ function buildProjectCard(p) {
         <div class="budget-sub">${peso(matSpent)} spent \u00B7; ${pUsedMat}%</div>
       </div>
       <div class="proj-actions">
-        ${p.status === 'active'
+        ${projectStatus === 'archived'
+          ? `${canDeleteProject(p.id) ? `<button class="btn-reopen" data-action="restore">\u21BB; Restore</button>` : ''}`
+          : projectStatus === 'active'
           ? `<button class="proj-open-btn" data-action="open">Open Workspace \u2192;</button>
-             <button class="btn-complete" data-action="complete">\u2713; Done</button>`
-          : `<button class="btn-reopen" data-action="reopen">\u21BB; Reopen</button>`
+             <button class="btn-complete" data-action="complete">${canLifecycle ? '\u2713; Done' : '\u2709; Request Done'}</button>`
+          : `<button class="proj-open-btn" data-action="open">View Workspace \u2192;</button>
+             <button class="btn-reopen" data-action="reopen">${canLifecycle ? '\u21BB; Reopen' : '\u2709; Request Reopen'}</button>`
         }
-        ${canEditProject(p.id) ? `
+        ${canEditProject(p.id) && projectStatus === 'active' ? `
           <button class="btn-edit-proj" data-action="edit">\u270E; Edit</button>
-          <button class="btn-delete" data-action="delete">\u1F5D1;</button>
+        ` : ''}
+        ${canDeleteProject(p.id) && projectStatus !== 'archived' ? `
+          <button class="btn-delete" data-action="delete">\u1F5C4; Archive</button>
         ` : ''}
       </div>
     `;
@@ -358,6 +453,7 @@ function buildProjectCard(p) {
       if (action === 'open') enterProject(p.id);
       else if (action === 'complete') markComplete(p.id);
       else if (action === 'reopen') reopenProject(p.id);
+      else if (action === 'restore') restoreProject(p.id);
       else if (action === 'edit') openEditProjectModal(p.id);
       else if (action === 'delete') deleteProject(p.id);
     });
@@ -534,8 +630,23 @@ async function markComplete(pid) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
+  if (!canManageProjectLifecycle(pid)) {
+    await requestProjectLifecycleChange(pid, 'complete');
+    return;
+  }
   if (!confirm('Mark this project as completed?\n\nThis will lock the project for editing.')) return;
-  await safeDb(() => db.ref(`projects/${pid}`).update({ status: 'completed', completedAt: Date.now() }), 'Failed to update');
+  await safeDb(() => db.ref(`projects/${pid}`).update({
+    status: 'completed',
+    completedAt: Date.now(),
+    completedBy: window._currentUser?.uid || null,
+    completedByName: window._currentUser?.name || null
+  }), 'Failed to update');
+  if (window._currentPid === pid) {
+    window._currentProjectStatus = 'completed';
+    window._isReadOnly = true;
+    $('lockedBanner')?.classList.remove('hidden');
+    document.querySelectorAll('.panel').forEach(pn => pn.classList.add('read-only'));
+  }
   auditLog('complete', 'project', pid, {});
   showToast('Project marked as completed');
 }
@@ -545,24 +656,147 @@ async function reopenProject(pid) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
+  if (!canManageProjectLifecycle(pid)) {
+    await requestProjectLifecycleChange(pid, 'reopen');
+    return;
+  }
   if (!confirm('Reopen this project?')) return;
-  await safeDb(() => db.ref(`projects/${pid}`).update({ status: 'active', reopenedAt: Date.now() }), 'Failed to update');
+  await safeDb(() => db.ref(`projects/${pid}`).update({
+    status: 'active',
+    reopenedAt: Date.now(),
+    reopenedBy: window._currentUser?.uid || null,
+    reopenedByName: window._currentUser?.name || null
+  }), 'Failed to update');
+  if (window._currentPid === pid) {
+    window._currentProjectStatus = 'active';
+    window._isReadOnly = false;
+    $('lockedBanner')?.classList.add('hidden');
+    document.querySelectorAll('.panel').forEach(pn => pn.classList.remove('read-only'));
+  }
   auditLog('reopen', 'project', pid, {});
   showToast('Project reopened');
 }
 
-async function deleteProject(pid) {
-  if (!canEditProject(pid)) {
-    showToast('You do not have edit access to this project.', 'error');
+async function requestProjectLifecycleChange(pid, requestType) {
+  if (!canAccessProject(pid)) {
+    showToast('You do not have access to this project.', 'error');
     return;
   }
-  if (!confirm('\u26A0\uFE0F; WARNING: This will permanently delete ALL project data including workers, timecards, payroll, materials, billing, and site logs.\n\nClick OK to proceed to typed confirmation.')) return;
-  const confirmText = prompt('Type DELETE PROJECT to confirm permanent deletion:');
-  if (confirmText !== 'DELETE PROJECT') { showToast('Deletion cancelled.', 'warn'); return; }
 
-  await safeDb(() => db.ref(`projects/${pid}`).remove(), 'Failed to delete');
-  auditLog('delete', 'project', pid, {});
-  showToast('Project and all data deleted', 'warn');
+  const actionLabel = requestType === 'reopen' ? 'reopen' : 'completion';
+  if (!confirm(`Request project ${actionLabel}? Boss/Admin/PM will be notified.`)) return;
+
+  const projectSnap = await db.ref(`projects/${pid}`).once('value');
+  const project = projectSnap.val();
+  if (!project) {
+    showToast('Project not found.', 'error');
+    return;
+  }
+
+  if (requestType === 'complete' && project.status !== 'active') {
+    showToast('Only active projects can be requested for completion.', 'warn');
+    return;
+  }
+  if (requestType === 'reopen' && project.status !== 'completed') {
+    showToast('Only completed projects can be requested for reopening.', 'warn');
+    return;
+  }
+
+  const user = window._currentUser || {};
+  const request = {
+    type: requestType,
+    status: 'pending',
+    requestedAt: Date.now(),
+    requestedBy: user.uid || null,
+    requestedByName: user.name || 'APM',
+    projectStatus: project.status || 'active'
+  };
+
+  await safeDb(() => db.ref(`projects/${pid}/lifecycleRequests`).push(request), 'Failed to save request');
+  auditLog('request', 'project', pid, { lifecycle: requestType });
+
+  const bossSnap = await db.ref('users').once('value');
+  const notifications = [];
+  bossSnap.forEach(c => {
+    const recipient = c.val() || {};
+    if (recipient.role === 'boss' && typeof sendNotification === 'function') {
+      notifications.push(sendNotification({
+        to: c.key,
+        type: 'alert',
+        projectId: pid,
+        projectName: project.name || pid,
+        message: `${user.name || 'APM'} requested to ${requestType === 'reopen' ? 'reopen' : 'complete'} ${project.name || 'this project'}.`
+      }));
+    }
+  });
+  await Promise.allSettled(notifications);
+  showToast(`Project ${actionLabel} request sent to Boss/Admin/PM.`);
+}
+
+async function deleteProject(pid) {
+  return archiveProject(pid);
+}
+
+async function archiveProject(pid) {
+  if (!canDeleteProject(pid)) {
+    showToast('Boss access required to archive projects.', 'error');
+    return;
+  }
+  const snap = await db.ref(`projects/${pid}`).once('value');
+  const project = snap.val();
+  if (!project) {
+    showToast('Project not found.', 'error');
+    return;
+  }
+  if (!confirm('Archive this project?\n\nIt will be hidden from Active and Completed tabs but can be restored from All Projects.')) return;
+
+  await safeDb(() => db.ref(`projects/${pid}`).update({
+    status: 'archived',
+    archivedAt: Date.now(),
+    archivedBy: window._currentUser?.uid || null,
+    archivedByName: window._currentUser?.name || null,
+    previousStatus: project.status || 'active'
+  }), 'Failed to archive');
+  if (window._currentPid === pid) {
+    window._currentProjectStatus = 'archived';
+    window._isReadOnly = true;
+    $('lockedBanner')?.classList.remove('hidden');
+    document.querySelectorAll('.panel').forEach(pn => pn.classList.add('read-only'));
+  }
+  auditLog('archive', 'project', pid, { previousStatus: project.status || 'active' });
+  showToast('Project archived. It can be restored from All Projects.', 'warn');
+}
+
+async function restoreProject(pid) {
+  if (!canDeleteProject(pid)) {
+    showToast('Boss access required to restore projects.', 'error');
+    return;
+  }
+  const snap = await db.ref(`projects/${pid}`).once('value');
+  const project = snap.val();
+  if (!project) {
+    showToast('Project not found.', 'error');
+    return;
+  }
+  const restoreStatus = ['active', 'completed'].includes(project.previousStatus) ? project.previousStatus : 'active';
+  if (!confirm(`Restore this project to ${restoreStatus}?`)) return;
+  await safeDb(() => db.ref(`projects/${pid}`).update({
+    status: restoreStatus,
+    restoredAt: Date.now(),
+    restoredBy: window._currentUser?.uid || null,
+    restoredByName: window._currentUser?.name || null,
+    archivedAt: null,
+    archivedBy: null,
+    archivedByName: null
+  }), 'Failed to restore');
+  if (window._currentPid === pid) {
+    window._currentProjectStatus = restoreStatus;
+    window._isReadOnly = restoreStatus === 'completed';
+    $('lockedBanner')?.classList.toggle('hidden', !window._isReadOnly);
+    document.querySelectorAll('.panel').forEach(pn => pn.classList.toggle('read-only', window._isReadOnly));
+  }
+  auditLog('restore', 'project', pid, { status: restoreStatus });
+  showToast('Project restored');
 }
 
 function detachHubListeners() {
@@ -589,9 +823,10 @@ async function enterProject(pid) {
   $('hubView').classList.add('hidden');
   $('workspaceView').classList.remove('hidden');
 
-  window._isReadOnly = false;
-  $('lockedBanner')?.classList.add('hidden');
-  document.querySelectorAll('.panel').forEach(pn => pn.classList.remove('read-only'));
+  window._currentProjectStatus = p.status || 'active';
+  window._isReadOnly = p.status === 'completed' || p.status === 'archived';
+  $('lockedBanner')?.classList.toggle('hidden', !window._isReadOnly);
+  document.querySelectorAll('.panel').forEach(pn => pn.classList.toggle('read-only', window._isReadOnly));
 
   // Init all modules
   initLabor(pid);
@@ -624,11 +859,12 @@ function exitHub() {
   detachEquipListeners();
   detachComplianceListeners();
   detachDefectListeners();
-  detachNotifications();
 
   $('workspaceView').classList.add('hidden');
   $('hubView').classList.remove('hidden');
   window._currentPid = null;
+  window._currentProjectStatus = null;
+  window._isReadOnly = false;
   renderHub();
 }
 
@@ -702,11 +938,9 @@ function switchAdminSection(section) {
 }
 
 function unlockForEdit() {
-  window._isReadOnly = false;
-  $('lockedBanner')?.classList.add('hidden');
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('read-only'));
-  auditLog('unlock', 'project', window._currentPid, {});
-  showToast('Workspace unlocked for editing');
+  const pid = window._currentPid;
+  if (!pid) return;
+  reopenProject(pid);
 }
 
 async function exportAllData() {
@@ -725,6 +959,51 @@ async function exportAllData() {
   showToast('Project data exported!');
 }
 
+async function exportDatabaseBackup() {
+  const user = window._currentUser || {};
+  if (!canListAllProjects(user)) {
+    showToast('Boss access required to download database backup.', 'error');
+    return;
+  }
+
+  const backupPaths = ['projects', 'users', 'suppliers', 'auditLogs', 'notifications', 'complianceAlertsSent'];
+  const backup = {
+    _meta: {
+      app: 'ACPM',
+      exportedAt: new Date().toISOString(),
+      exportedBy: {
+        uid: user.uid || null,
+        name: user.name || null,
+        email: user.email || null,
+        role: user.role || null
+      },
+      format: 'firebase-rtdb-json-snapshot',
+      paths: backupPaths
+    }
+  };
+
+  const failed = [];
+  await Promise.all(backupPaths.map(async path => {
+    try {
+      const snap = await db.ref(path).once('value');
+      backup[path] = snap.val() || null;
+    } catch (error) {
+      failed.push({ path, message: error?.message || error?.code || 'read failed' });
+      backup[path] = null;
+    }
+  }));
+
+  if (failed.length) backup._meta.failedPaths = failed;
+
+  downloadTextFile(
+    `ACPM_Database_Backup_${new Date().toISOString().slice(0, 10)}.json`,
+    JSON.stringify(backup, null, 2),
+    'application/json'
+  );
+  auditLog('backup', 'database', 'manual-json', { paths: backupPaths, failed: failed.map(f => f.path) });
+  showToast(failed.length ? 'Backup downloaded with some unreadable paths noted.' : 'Database backup downloaded.');
+}
+
 // ════════════════════════════════════════════════════════════
 //  PROJECT NOTES
 // ════════════════════════════════════════════════════════════
@@ -740,10 +1019,7 @@ function loadProjectNotes(pid) {
 async function saveProjectNotes() {
   const pid = window._currentPid;
   if (!pid) return;
-  if (!canEditProject(pid)) {
-    showToast('You do not have edit access to this project.', 'error');
-    return;
-  }
+  if (typeof requireEdit === 'function' ? !requireEdit(pid) : !canEditProject(pid)) return;
   const text = $('projectNotesInput')?.value?.trim() || '';
   await safeDb(() => db.ref(`projects/${pid}/notes`).set({
     text, updatedAt: Date.now(), updatedBy: window._currentUser.uid
@@ -807,10 +1083,7 @@ function buildProgressRing(pctUsed, isCritical, isWarning) {
 window._editProjectId = null;
 
 function openEditProjectModal(pid) {
-  if (!canEditProject(pid)) {
-    showToast('You do not have edit access to this project.', 'error');
-    return;
-  }
+  if (typeof requireEdit === 'function' ? !requireEdit(pid) : !canEditProject(pid)) return;
   const snap = db.ref(`projects/${pid}`).once('value').then(snap => {
     const p = snap.val();
     if (!p) { showToast('Project not found.', 'error'); return; }
@@ -830,10 +1103,7 @@ function closeEditProjectModal() {
 async function editProject() {
   const pid = window._editProjectId;
   if (!pid) return;
-  if (!canEditProject(pid)) {
-    showToast('You do not have edit access to this project.', 'error');
-    return;
-  }
+  if (typeof requireEdit === 'function' ? !requireEdit(pid) : !canEditProject(pid)) return;
   const vName = validateProjectName($('editProjName')?.value);
   if (!vName.ok) { showToast(vName.msg, 'error'); return; }
   const name = vName.value;
@@ -846,11 +1116,13 @@ async function editProject() {
   if (!vMaterial.ok) { showToast(vMaterial.msg, 'error'); return; }
   const materialBudget = vMaterial.value;
 
-  const dupCheck = await db.ref('projects').orderByChild('name').equalTo(name).once('value');
-  if (dupCheck.exists()) {
-    const keys = Object.keys(dupCheck.val());
-    if (keys.length > 1 || keys[0] !== pid) {
-      showToast('A project with that name already exists.', 'error'); return;
+  if (canListAllProjects(window._currentUser || {})) {
+    const dupCheck = await db.ref('projects').orderByChild('name').equalTo(name).once('value');
+    if (dupCheck.exists()) {
+      const keys = Object.keys(dupCheck.val());
+      if (keys.length > 1 || keys[0] !== pid) {
+        showToast('A project with that name already exists.', 'error'); return;
+      }
     }
   }
 
@@ -934,12 +1206,7 @@ function renderCompletedSummary(projects) {
 async function exportHubCSV() {
   const btn = event?.currentTarget;
   await withBusy(btn, async () => {
-    const snap = await db.ref('projects').once('value');
-    const projects = [];
-    snap.forEach(c => {
-      if (canAccessProject(c.key)) projects.push({ id: c.key, ...c.val() });
-    });
-    projects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const projects = await fetchAccessibleProjectsOnce();
 
     if (!projects.length) { showToast('No projects to export.', 'warn'); return; }
 
@@ -981,6 +1248,8 @@ window.createProject = createProject;
 window.markComplete = markComplete;
 window.reopenProject = reopenProject;
 window.deleteProject = deleteProject;
+window.archiveProject = archiveProject;
+window.restoreProject = restoreProject;
 window.editProject = editProject;
 window.openEditProjectModal = openEditProjectModal;
 window.closeEditProjectModal = closeEditProjectModal;
@@ -991,6 +1260,7 @@ window.exitHub = exitHub;
 window.switchTab = switchTab;
 window.unlockForEdit = unlockForEdit;
 window.exportAllData = exportAllData;
+window.exportDatabaseBackup = exportDatabaseBackup;
 window.filterProjects = filterProjects;
 window.showHubTab = showHubTab;
 window.saveProjectNotes = saveProjectNotes;

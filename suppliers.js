@@ -1,5 +1,18 @@
 let _supListener = null;
 
+function canManageSuppliers() {
+  const user = window._currentUser;
+  if (!user || user.role !== 'boss') {
+    showToast('Boss access required to manage suppliers.', 'error');
+    return false;
+  }
+  if (window._currentPid && typeof isProjectReadOnly === 'function' && isProjectReadOnly(window._currentPid)) {
+    showReadOnlyBlocked();
+    return false;
+  }
+  return true;
+}
+
 function initSuppliers() {
   if (_supListener) { _supListener.off(); _supListener = null; }
   watchGlobalSuppliers();
@@ -64,11 +77,7 @@ function watchGlobalSuppliers() {
 }
 
 async function addSupplier() {
-  const user = window._currentUser;
-  if (!user || user.role !== 'boss') {
-    showToast('Boss access required to manage suppliers.', 'error');
-    return;
-  }
+  if (!canManageSuppliers()) return;
   const name = $('supName')?.value.trim();
   const contact = $('supContact')?.value.trim() || '';
   const spec = $('supSpecialty')?.value.trim() || '';
@@ -94,6 +103,7 @@ async function addSupplier() {
 }
 
 function openEditSupplier(key) {
+  if (!canManageSuppliers()) return;
   firebase.database().ref(`suppliers/${key}`).once('value', snap => {
     const s = snap.val() || {};
     $('editSupKey').value = key;
@@ -112,11 +122,7 @@ function closeEditSupplier() {
 }
 
 async function saveEditSupplier() {
-  const user = window._currentUser;
-  if (!user || user.role !== 'boss') {
-    showToast('Boss access required to manage suppliers.', 'error');
-    return;
-  }
+  if (!canManageSuppliers()) return;
   const key = $('editSupKey').value;
   const name = $('editSupName').value.trim();
   const contact = $('editSupContact').value.trim() || '';
@@ -137,11 +143,7 @@ async function saveEditSupplier() {
 }
 
 async function deleteSupplier(key, name) {
-  const user = window._currentUser;
-  if (!user || user.role !== 'boss') {
-    showToast('Boss access required to manage suppliers.', 'error');
-    return;
-  }
+  if (!canManageSuppliers()) return;
   if (!confirm(`Delete supplier "${name}" from the entire system?`)) return;
   const confirmText = prompt('Type DELETE SUPPLIER to confirm permanent deletion:');
   if (confirmText !== 'DELETE SUPPLIER') {

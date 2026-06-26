@@ -11,17 +11,44 @@ let _auditListener = null;
 let _auditRowsCache = [];
 let _auditUsersCache = {};
 let _projectCache = [];
+let _lifecycleRequestListener = null;
+let _lifecycleRequestsCache = [];
 
 function initReports() {
   detachReportsListeners();
+  if (!reportCurrentUserIsBoss()) {
+    ['executiveDashboard', 'teamPerformance', 'budgetVariance'].forEach(id => {
+      const el = $(id);
+      if (el) el.innerHTML = '<p class="empty-hint">Reports available for admins only.</p>';
+    });
+    return;
+  }
   renderExecutiveDashboard();
   renderTeamPerformance();
   renderBudgetVariance();
 }
 
+function reportCurrentUserIsBoss() {
+  const user = window._currentUser || {};
+  return typeof isBoss === 'function'
+    ? isBoss(user.role)
+    : String(user.role || '').trim().toLowerCase() === 'boss';
+}
+
+function reportRoleLabel(role) {
+  if (typeof window !== 'undefined' && typeof window.roleLabel === 'function') {
+    return window.roleLabel(role);
+  }
+  return String(role || '').trim().toLowerCase() === 'boss'
+    ? 'Admin / Boss / Project Manager'
+    : 'Assoc. Project Manager';
+}
 function formatProjectLabel(projectId) {
   const project = _projectCache.find(p => p.id === projectId);
-  return project?.name || project?.id || projectId || '-';
+  if (project?.name) return project.name;
+  if (project?.id && !String(project.id).startsWith('-')) return project.id;
+  if (projectId && String(projectId).startsWith('-')) return 'Unlinked project';
+  return projectId || '-';
 }
 
 function initAdminSummary() {
@@ -34,7 +61,7 @@ function initAdminSummary() {
         <tbody>
           <tr><td>Name</td><td>${escapeHtml(user.name || 'User')}</td></tr>
           <tr><td>UID</td><td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid || '-')}</td></tr>
-          <tr><td>Role</td><td>${escapeHtml(teamRoleLabel(user.role))}</td></tr>
+          <tr><td>Role</td><td>${escapeHtml(reportRoleLabel(user.role))}</td></tr>
           <tr><td>Projects</td><td>${escapeHtml((user.projects || []).map(formatProjectLabel).join(', ') || '-')}</td></tr>
           <tr><td>Boss Of</td><td>${escapeHtml((user.bossOf || []).map(formatProjectLabel).join(', ') || '-')}</td></tr>
         </tbody>
@@ -149,7 +176,7 @@ function initSystemStatus() {
       <table class="summary-table">
         <tbody>
           <tr><td>App</td><td>ACPM</td></tr>
-          <tr><td>Current Role</td><td>${escapeHtml(teamRoleLabel(user.role))}</td></tr>
+          <tr><td>Current Role</td><td>${escapeHtml(reportRoleLabel(user.role))}</td></tr>
           <tr><td>Current User</td><td>${escapeHtml(user.name || 'User')}</td></tr>
           <tr><td>Project Context</td><td>${escapeHtml(window._currentPid || 'Hub')}</td></tr>
           <tr><td>Offline Cache</td><td>${navigator.onLine ? 'Online' : 'Offline'}</td></tr>
@@ -168,6 +195,13 @@ function initTeamAdmin() {
     _teamAdminListener.off();
     _teamAdminListener = null;
   }
+  const el = $('teamAdminList');
+  if (el) el.innerHTML = '<p class="empty-hint">Loading users and projects...</p>';
+
+  const renderWithProjectNames = () => loadProjectsForAssignments(false)
+    .catch(() => [])
+    .then(() => renderTeamAdmin(_teamUsersCache));
+
   const ref = firebase.database().ref('users');
   _teamAdminListener = ref;
   ref.on('value', snap => {
@@ -175,9 +209,8 @@ function initTeamAdmin() {
     snap.forEach(c => users.push({ uid: c.key, ...c.val() }));
     users.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
     _teamUsersCache = users;
-    renderTeamAdmin(users);
+    renderWithProjectNames();
   });
-  loadProjectsForAssignments();
 }
 
 function projectAssignmentRows(projects) {
@@ -226,23 +259,34 @@ function renderProjectAssignmentList(projects, note = '') {
   return projects;
 }
 
-function loadProjectsForAssignments() {
-  const sel = $('assignProjectList');
-  if (sel) sel.innerHTML = '<p class="empty-hint">Loading projects...</p>';
-  setText('assignProjectCount', 'Loading...');
-
+function fetchProjectsForAssignments() {
   return firebase.database().ref('projects').once('value')
     .then(snap => {
       const projects = [];
       snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
       projects.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
-      if (projects.length) return renderProjectAssignmentList(projects);
+      if (projects.length) {
+        _projectCache = projects;
+        return projects;
+      }
       const fallbackProjects = collectProjectAssignmentFallbacks();
-      return renderProjectAssignmentList(fallbackProjects);
-    })
+      _projectCache = fallbackProjects;
+      return fallbackProjects;
+    });
+}
+
+function loadProjectsForAssignments(renderList = true) {
+  const sel = $('assignProjectList');
+  if (renderList && sel) sel.innerHTML = '<p class="empty-hint">Loading projects...</p>';
+  if (renderList) setText('assignProjectCount', 'Loading...');
+
+  return fetchProjectsForAssignments()
+    .then(projects => renderList ? renderProjectAssignmentList(projects) : projects)
     .catch(e => {
       console.error('loadProjectsForAssignments failed:', e);
       const fallbackProjects = collectProjectAssignmentFallbacks();
+      _projectCache = fallbackProjects;
+      if (!renderList) return fallbackProjects;
       if (fallbackProjects.length) {
         return renderProjectAssignmentList(fallbackProjects, 'Using projects already loaded in Hub.');
       }
@@ -263,7 +307,7 @@ function openProjectAssignModal(uid) {
   if (title) title.textContent = user.name || 'User';
   if (holder) { holder.dataset.uid = uid; holder.textContent = uid; }
   if (names) names.textContent = (user.projects || []).map(formatProjectLabel).join(', ') || 'None yet';
-  if (status) status.textContent = teamRoleLabel(user.role);
+  if (status) status.textContent = reportRoleLabel(user.role);
   const modal = $('projectAssignModal');
   modal?.classList.remove('hidden');
 
@@ -294,10 +338,17 @@ async function saveProjectAssignments() {
     .filter(pid => pid && knownProjects.has(pid))
     .sort((a, b) => String(a).localeCompare(String(b)));
   try {
-    await firebase.database().ref(`users/${uid}/projects`).set(projects);
+    await firebase.database().ref(`users/${uid}`).update({
+      projects,
+      status: 'active',
+      approvedAt: Date.now(),
+      approvedBy: window._currentUser?.uid || null,
+      updatedAt: Date.now(),
+      updatedBy: window._currentUser?.uid || null
+    });
     auditLog('update', 'user', uid, { projects });
     if (window._currentUser && window._currentUser.uid === uid) {
-      window._currentUser = { ...window._currentUser, projects };
+      window._currentUser = { ...window._currentUser, projects, status: 'active' };
       if (typeof filterProjectsByRole === 'function') filterProjectsByRole();
       if (typeof renderHub === 'function') renderHub();
     }
@@ -311,7 +362,7 @@ async function saveProjectAssignments() {
 }
 
 function switchAdminSection(section) {
-  const sections = ['summary', 'team', 'audit', 'system'];
+  const sections = ['summary', 'team', 'requests', 'audit', 'system'];
   sections.forEach(name => {
     const panel = $(`adminSection_${name}`);
     const tab = $(`adminTab_${name}`);
@@ -319,6 +370,7 @@ function switchAdminSection(section) {
     if (tab) tab.classList.toggle('tab-active', name === section);
   });
   if (section === 'team') initTeamAdmin();
+  if (section === 'requests' && typeof initLifecycleRequests === 'function') initLifecycleRequests();
   if (section === 'audit' && typeof initAuditLog === 'function') initAuditLog();
   if (section === 'summary' && typeof initAdminSummary === 'function') initAdminSummary();
   if (section === 'system' && typeof initSystemStatus === 'function') initSystemStatus();
@@ -335,6 +387,13 @@ function normalizeTeamRole(role) {
   return r === 'boss' ? 'boss' : 'apm';
 }
 
+function teamStatusBadge(user) {
+  const status = String(user?.status || 'active').trim().toLowerCase();
+  if (status === 'pending') return '<span class="badge badge-amber">Pending</span>';
+  if (status === 'disabled') return '<span class="badge badge-red">Disabled</span>';
+  return '<span class="badge badge-green">Active</span>';
+}
+
 async function updateUserRole(uid, role) {
   if (window._currentUser?.role !== 'boss') {
     showToast('You do not have permission to manage users.', 'error');
@@ -347,15 +406,18 @@ async function updateUserRole(uid, role) {
     showToast('You cannot remove your own admin role from this screen.', 'error');
     return;
   }
-  if (!confirm(`Set ${target.name || uid} role to ${teamRoleLabel(nextRole)}?`)) return;
+  if (!confirm(`Set ${target.name || uid} role to ${reportRoleLabel(nextRole)}?`)) return;
   try {
     await firebase.database().ref(`users/${uid}`).update({
       role: nextRole,
+      status: 'active',
+      approvedAt: Date.now(),
+      approvedBy: window._currentUser?.uid || null,
       updatedAt: Date.now(),
       updatedBy: window._currentUser?.uid || null
     });
     auditLog('update', 'user', uid, { role: nextRole });
-    showToast(`${target.name || uid} set to ${teamRoleLabel(nextRole)}`);
+    showToast(`${target.name || uid} set to ${reportRoleLabel(nextRole)}`);
     initTeamAdmin();
   } catch (e) {
     console.error('updateUserRole failed:', e);
@@ -371,6 +433,171 @@ function filterTeamUsers(term) {
   });
 }
 
+function lifecycleRequestTypeLabel(type) {
+  return type === 'reopen' ? 'Reopen project' : 'Complete project';
+}
+
+function initLifecycleRequests() {
+  if (window._currentUser?.role !== 'boss') {
+    const el = $('lifecycleRequestList');
+    if (el) el.innerHTML = '<p class="empty-hint">Lifecycle requests are available for admins only.</p>';
+    return;
+  }
+  if (_lifecycleRequestListener) {
+    _lifecycleRequestListener.off();
+    _lifecycleRequestListener = null;
+  }
+  const el = $('lifecycleRequestList');
+  if (el) el.innerHTML = '<p class="empty-hint">Loading requests...</p>';
+
+  const ref = firebase.database().ref('projects');
+  _lifecycleRequestListener = ref;
+  ref.on('value', snap => {
+    const rows = [];
+    snap.forEach(projectSnap => {
+      const projectId = projectSnap.key;
+      const project = projectSnap.val() || {};
+      Object.entries(project.lifecycleRequests || {}).forEach(([requestId, request]) => {
+        rows.push({
+          projectId,
+          requestId,
+          projectName: project.name || projectId,
+          currentProjectStatus: project.status || 'active',
+          ...request
+        });
+      });
+    });
+    rows.sort((a, b) => (b.requestedAt || 0) - (a.requestedAt || 0));
+    _lifecycleRequestsCache = rows;
+    renderLifecycleRequests(rows);
+  }, error => {
+    console.error('initLifecycleRequests failed:', error);
+    if (el) el.innerHTML = `<p class="empty-hint">Could not load requests: ${escapeHtml(error?.message || 'permission denied')}</p>`;
+  });
+}
+
+function renderLifecycleRequests(rows = _lifecycleRequestsCache) {
+  const el = $('lifecycleRequestList');
+  if (!el) return;
+  const filter = String($('lifecycleRequestFilter')?.value || 'pending').toLowerCase();
+  const pendingCount = rows.filter(r => (r.status || 'pending') === 'pending').length;
+  setText('lifecycleRequestCount', pendingCount);
+
+  const visible = rows.filter(r => filter === 'all' ? true : (r.status || 'pending') === filter);
+  if (!visible.length) {
+    el.innerHTML = '<p class="empty-hint">No lifecycle requests found.</p>';
+    return;
+  }
+
+  el.innerHTML = `<div class="lifecycle-request-list">
+    ${visible.map(row => {
+      const status = row.status || 'pending';
+      const requestedBy = row.requestedByName || row.requestedBy || 'APM';
+      const requestedAt = row.requestedAt ? timeAgo(row.requestedAt) : 'just now';
+      const projectArg = JSON.stringify(row.projectId);
+      const requestArg = JSON.stringify(row.requestId);
+      const typeArg = JSON.stringify(row.type || 'complete');
+      return `<div class="lifecycle-request-card">
+        <div class="lifecycle-request-main">
+          <div class="lifecycle-request-title">${escapeHtml(lifecycleRequestTypeLabel(row.type))}</div>
+          <div class="lifecycle-request-meta">${escapeHtml(row.projectName)} | ${escapeHtml(requestedBy)} | ${escapeHtml(requestedAt)}</div>
+          <div class="lifecycle-request-sub">Current status: ${escapeHtml(row.currentProjectStatus || '-')}</div>
+        </div>
+        <div class="lifecycle-request-side">
+          <span class="badge ${status === 'pending' ? 'badge-amber' : status === 'approved' ? 'badge-green' : 'badge-red'}">${escapeHtml(status)}</span>
+          ${status === 'pending' ? `<div class="lifecycle-request-actions">
+            <button class="btn-save-payroll" onclick='approveLifecycleRequest(${projectArg}, ${requestArg}, ${typeArg})'>Approve</button>
+            <button class="btn-mc" onclick='rejectLifecycleRequest(${projectArg}, ${requestArg}, ${typeArg})'>Reject</button>
+          </div>` : ''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+async function approveLifecycleRequest(projectId, requestId, type) {
+  if (window._currentUser?.role !== 'boss') {
+    showToast('Admin access required.', 'error');
+    return;
+  }
+  const snap = await firebase.database().ref(`projects/${projectId}`).once('value');
+  const project = snap.val();
+  const request = project?.lifecycleRequests?.[requestId];
+  if (!project || !request) {
+    showToast('Request not found.', 'error');
+    return;
+  }
+  if ((request.status || 'pending') !== 'pending') {
+    showToast('Request is already reviewed.', 'warn');
+    return;
+  }
+
+  const isReopen = type === 'reopen';
+  const nextStatus = isReopen ? 'active' : 'completed';
+  const reviewer = window._currentUser || {};
+  const updates = {
+    [`projects/${projectId}/status`]: nextStatus,
+    [`projects/${projectId}/lifecycleRequests/${requestId}/status`]: 'approved',
+    [`projects/${projectId}/lifecycleRequests/${requestId}/reviewedAt`]: Date.now(),
+    [`projects/${projectId}/lifecycleRequests/${requestId}/reviewedBy`]: reviewer.uid || null,
+    [`projects/${projectId}/lifecycleRequests/${requestId}/reviewedByName`]: reviewer.name || null
+  };
+  if (isReopen) {
+    updates[`projects/${projectId}/reopenedAt`] = Date.now();
+    updates[`projects/${projectId}/reopenedBy`] = reviewer.uid || null;
+    updates[`projects/${projectId}/reopenedByName`] = reviewer.name || null;
+  } else {
+    updates[`projects/${projectId}/completedAt`] = Date.now();
+    updates[`projects/${projectId}/completedBy`] = reviewer.uid || null;
+    updates[`projects/${projectId}/completedByName`] = reviewer.name || null;
+  }
+
+  await safeDb(() => firebase.database().ref().update(updates), 'Failed to approve request');
+  auditLog('approve', 'project', projectId, { lifecycle: type, requestId });
+  if (request.requestedBy && typeof sendNotification === 'function') {
+    await sendNotification({
+      to: request.requestedBy,
+      type: 'alert',
+      projectId,
+      projectName: project.name || projectId,
+      message: `Your request to ${isReopen ? 'reopen' : 'complete'} ${project.name || 'the project'} was approved.`
+    }).catch(() => {});
+  }
+  showToast('Lifecycle request approved.');
+}
+
+async function rejectLifecycleRequest(projectId, requestId, type) {
+  if (window._currentUser?.role !== 'boss') {
+    showToast('Admin access required.', 'error');
+    return;
+  }
+  if (!confirm('Reject this lifecycle request?')) return;
+  const snap = await firebase.database().ref(`projects/${projectId}`).once('value');
+  const project = snap.val();
+  const request = project?.lifecycleRequests?.[requestId];
+  if (!project || !request) {
+    showToast('Request not found.', 'error');
+    return;
+  }
+  const reviewer = window._currentUser || {};
+  await safeDb(() => firebase.database().ref(`projects/${projectId}/lifecycleRequests/${requestId}`).update({
+    status: 'rejected',
+    reviewedAt: Date.now(),
+    reviewedBy: reviewer.uid || null,
+    reviewedByName: reviewer.name || null
+  }), 'Failed to reject request');
+  auditLog('reject', 'project', projectId, { lifecycle: type, requestId });
+  if (request.requestedBy && typeof sendNotification === 'function') {
+    await sendNotification({
+      to: request.requestedBy,
+      type: 'alert',
+      projectId,
+      projectName: project.name || projectId,
+      message: `Your request to ${type === 'reopen' ? 'reopen' : 'complete'} ${project.name || 'the project'} was rejected.`
+    }).catch(() => {});
+  }
+  showToast('Lifecycle request rejected.');
+}
 function renderTeamAdmin(users) {
   const el = $('teamAdminList');
   if (!el) return;
@@ -389,7 +616,7 @@ function renderTeamAdmin(users) {
 
   el.innerHTML = `<div style="overflow-x:auto"><table class="summary-table">
     <thead><tr>
-      <th>Name</th><th>Email</th><th>Role / Projects</th><th>Boss Of</th>
+      <th>Name</th><th>Position</th><th>Email</th><th>Status</th><th>Role / Projects</th><th>Boss Of</th>
     </tr></thead>
     <tbody>
       ${users.map(user => {
@@ -397,10 +624,13 @@ function renderTeamAdmin(users) {
         const projectNames = (user.projects || []).map(formatProjectLabel);
         const projectCount = projectNames.length;
         const projectPreview = projectNames.slice(0, 2).join(', ');
-        const search = [user.name, user.email, user.uid, role, ...(user.projects || []).map(formatProjectLabel), ...(user.bossOf || []).map(formatProjectLabel)].join(' ').toLowerCase();
+        const status = String(user.status || 'active').toLowerCase();
+        const search = [user.name, user.position, user.email, user.uid, role, status, ...(user.projects || []).map(formatProjectLabel), ...(user.bossOf || []).map(formatProjectLabel)].join(' ').toLowerCase();
         return `<tr data-team-user-row data-search="${escapeHtml(search)}">
           <td>${escapeHtml(user.name || '-')}</td>
+          <td>${escapeHtml(user.position || '-')}</td>
           <td>${escapeHtml(user.email || '-')}</td>
+          <td>${teamStatusBadge(user)}</td>
           <td>
             <div style="display:flex;flex-direction:column;gap:10px;min-width:220px">
               <select onchange="updateUserRole('${user.uid}', this.value)" ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
@@ -425,6 +655,10 @@ function renderTeamAdmin(users) {
 function detachReportsListeners() {
   _reportsListeners.forEach(ref => ref.off());
   _reportsListeners = [];
+  if (_lifecycleRequestListener) {
+    _lifecycleRequestListener.off();
+    _lifecycleRequestListener = null;
+  }
 }
 // ══════════════════════════════════════════════════════
 function renderExecutiveDashboard() {
@@ -718,6 +952,10 @@ function renderBudgetVariance() {
 async function generateWeeklyReport() {
   const user = window._currentUser;
   if (!user) return;
+  if (!reportCurrentUserIsBoss()) {
+    showToast('Reports available for admins only.', 'error');
+    return;
+  }
 
   const snap = await firebase.database().ref('projects').once('value');
   const projects = [];
@@ -732,7 +970,7 @@ async function generateWeeklyReport() {
   weekStart.setDate(weekStart.getDate() - 7);
   const weekStr = weekStart.toLocaleDateString('en-PH');
 
-  let report = `WEEKLY PROJECT REPORT\\nGenerated: ${new Date().toLocaleDateString('en-PH')}\\nReporter: ${user.name} (${teamRoleLabel(user.role)})\\n${'='.repeat(60)}\\n\\n`;
+  let report = `WEEKLY PROJECT REPORT\\nGenerated: ${new Date().toLocaleDateString('en-PH')}\\nReporter: ${user.name} (${reportRoleLabel(user.role)})\\n${'='.repeat(60)}\\n\\n`;
 
   myProjects.forEach(p => {
     const eff = effectiveBudget(p);
@@ -759,6 +997,10 @@ window.switchAdminSection = switchAdminSection;
 window.initAdminSummary = initAdminSummary;
 window.initAuditLog = initAuditLog;
 window.renderAuditLog = renderAuditLog;
+window.initLifecycleRequests = initLifecycleRequests;
+window.renderLifecycleRequests = renderLifecycleRequests;
+window.approveLifecycleRequest = approveLifecycleRequest;
+window.rejectLifecycleRequest = rejectLifecycleRequest;
 window.initSystemStatus = initSystemStatus;
 window.openProjectAssignModal = openProjectAssignModal;
 window.closeProjectAssignModal = closeProjectAssignModal;

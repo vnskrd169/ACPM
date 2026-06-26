@@ -7,7 +7,9 @@ let _tpid = null;
 let _taskListeners = [];
 
 function canTouchTasksProject() {
-  return !!_tpid && typeof canEditProject === 'function' && canEditProject(_tpid);
+  return typeof requireEdit === 'function'
+    ? requireEdit(_tpid)
+    : !!_tpid && typeof canEditProject === 'function' && canEditProject(_tpid);
 }
 
 function initTasks(pid) {

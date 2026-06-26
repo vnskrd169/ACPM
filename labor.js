@@ -7,7 +7,9 @@ let _projectName = '';
 let _projectSettings = { leader: '', payMethod: 'Bank' };
 
 function canTouchLaborProject() {
-  return !!_lpid && typeof canEditProject === 'function' && canEditProject(_lpid);
+  return typeof requireEdit === 'function'
+    ? requireEdit(_lpid)
+    : !!_lpid && typeof canEditProject === 'function' && canEditProject(_lpid);
 }
 
 const ATTENDANCE_STATUS = {
@@ -832,6 +834,7 @@ function updateAttendanceSummary(data) {
 // ══════════════════════════════════════════════════════
 async function compilePayroll() {
   if (!_lpid) return;
+  if (!canTouchLaborProject()) return;
   const start = $('weekStart')?.value || '\u2014';
   const end = $('weekEnd')?.value || '\u2014';
 
