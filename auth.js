@@ -83,7 +83,7 @@ function authErrorMessage(e, fallback = 'Could not complete request.') {
     case 'auth/operation-not-allowed':
       return 'Google sign-in is not enabled yet in Firebase Authentication.';
     case 'auth/unauthorized-domain':
-      return 'This domain is not authorized for Google sign-in in Firebase.';
+      return `This domain is not authorized for Google sign-in in Firebase. Add "${window.location.hostname || window.location.origin}" to Firebase Authentication > Settings > Authorized domains.`;
     case 'PERMISSION_DENIED':
       return 'Account created, but profile setup was blocked. Ask an admin to add your profile.';
     default:
@@ -173,14 +173,68 @@ function applyProfile(profile) {
 //  Firebase Auth SDK persists the session across refreshes and
 //  tabs automatically — no more localStorage acpm_auth tokens.
 
+function setAppLoading(isLoading) {
+  document.body.classList.toggle('auth-checking', !!isLoading);
+  const loader = document.getElementById('appLoading');
+  if (loader) loader.classList.toggle('hidden', !isLoading);
+}
+
+function lockPrivateUi(isLocked) {
+  document.body.classList.toggle('auth-locked', !!isLocked);
+  if (isLocked) document.body.classList.remove('auth-ready');
+}
+
+function unlockPrivateUi() {
+  setAppLoading(false);
+  lockPrivateUi(false);
+  document.body.classList.add('auth-ready');
+}
+
+function showPublicAuthUi() {
+  setAppLoading(false);
+  lockPrivateUi(true);
+}
+
+function currentAppPage() {
+  if (typeof window.getAppPage === 'function') return window.getAppPage();
+  if (window.ACPM_PAGE) return String(window.ACPM_PAGE).toLowerCase();
+  const path = window.location.pathname.toLowerCase();
+  if (path.endsWith('/login.html')) return 'login';
+  if (path.endsWith('/dashboard.html')) return 'dashboard';
+  if (path.endsWith('/workspace.html')) return 'workspace';
+  return 'app';
+}
+
+function routeTo(page, params = {}) {
+  if (typeof window.appUrl === 'function') {
+    window.location.replace(window.appUrl(page, params));
+    return;
+  }
+  if (page === 'login') window.location.replace('login.html');
+  else if (page === 'workspace' && params.projectId) window.location.replace(`workspace.html?projectId=${encodeURIComponent(params.projectId)}`);
+  else window.location.replace('dashboard.html');
+}
+
+function isProtectedPage() {
+  return ['dashboard', 'workspace'].includes(currentAppPage());
+}
+
 function startAuthObserver() {
   firebase.auth().onAuthStateChanged(async (user) => {
+    setAppLoading(true);
+    lockPrivateUi(true);
     if (user) {
       // Authenticated — load the profile from RTDB
-      const profile = await loadUserProfile(user.uid);
-      const overlay = document.getElementById('authOverlay');
-      if (overlay) overlay.remove();
-      applyProfile(profile);
+      try {
+        const profile = await loadUserProfile(user.uid);
+        const overlay = document.getElementById('authOverlay');
+        if (overlay) overlay.remove();
+        applyProfile(profile);
+      } catch (e) {
+        console.error('Auth profile load error:', e);
+        await firebase.auth().signOut().catch(() => {});
+        showAuthScreen();
+      }
     } else {
       // Signed out — show login screen
       _currentAuthUser = null;
@@ -189,6 +243,10 @@ function startAuthObserver() {
       if (badge) {
         badge.textContent = 'System';
         badge.title = 'Signed out';
+      }
+      if (isProtectedPage()) {
+        routeTo('login');
+        return;
       }
       showAuthScreen();
     }
@@ -200,13 +258,21 @@ function startAuthObserver() {
 function initAuth() {
   // Firebase Auth persistence is LOCAL by default (survives refresh,
   // cleared only by explicit signOut or password change).
-  firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
-  startAuthObserver();
+  setAppLoading(true);
+  lockPrivateUi(true);
+  firebase.auth()
+    .setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+    .then(startAuthObserver)
+    .catch(e => {
+      console.warn('Auth persistence fallback:', e);
+      startAuthObserver();
+    });
 }
 
 // ── Login Screen ────────────────────────────────────────────
 
 function showPendingAccessScreen(profile) {
+  showPublicAuthUi();
   let overlay = document.getElementById('authOverlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -238,6 +304,7 @@ function showPendingAccessScreen(profile) {
 }
 
 function showAuthScreen() {
+  showPublicAuthUi();
   // Don't double-render
   if (document.getElementById('authOverlay')) return;
 
@@ -478,6 +545,8 @@ async function doResetPassword() {
 // ── Logout ──────────────────────────────────────────────────
 
 function logout() {
+  setAppLoading(true);
+  lockPrivateUi(true);
   firebase.auth().signOut().catch(() => {});
   // onAuthStateChanged (sign-out path) will clear _currentAuthUser
   // and reload via showAuthScreen. No explicit reload needed.
@@ -485,7 +554,12 @@ function logout() {
 
 // ── App Bootstrap ───────────────────────────────────────────
 
-function initAppForUser() {
+async function initAppForUser() {
+  const page = currentAppPage();
+  if (page === 'login') {
+    routeTo('dashboard');
+    return;
+  }
   const role = normalizeRole(_currentAuthUser?.role || 'apm');
   const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false;
 
@@ -542,8 +616,32 @@ function initAppForUser() {
 
   if (typeof initNotifications === 'function') initNotifications();
 
-  // Re-render hub with role-aware data
-  renderHub();
+  if (page === 'workspace') {
+    const pid = typeof getRouteProjectId === 'function'
+      ? getRouteProjectId()
+      : new URLSearchParams(window.location.search).get('projectId');
+    if (!pid) {
+      routeTo('dashboard');
+      return;
+    }
+    try {
+      const opened = await enterProject(pid);
+      if (!opened) {
+        routeTo('dashboard');
+        return;
+      }
+    } catch (e) {
+      console.error('Workspace route failed:', e);
+      showToast('Could not open that workspace. Returning to dashboard.', 'error');
+      routeTo('dashboard');
+      return;
+    }
+    unlockPrivateUi();
+  } else {
+    // Re-render hub with role-aware data
+    renderHub();
+    unlockPrivateUi();
+  }
 
   // Boss-only background housekeeping
   if (isBoss(role)) {

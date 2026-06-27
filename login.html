@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#7c3aed">
+<title>ACPM Login - LeBuild Construction</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<script>window.ACPM_PAGE = 'login';</script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script src="utils.js"></script>
+<script src="auth.js"></script>
+<script src="main.js"></script>
+</head>
+<body class="auth-checking auth-locked auth-login-page">
+<div id="appLoading" class="app-loading" role="status" aria-live="polite">
+  <div class="app-loading-card">
+    <div class="auth-logo">LB</div>
+    <div>
+      <div class="app-loading-title">Loading ACPM</div>
+      <div class="app-loading-sub">Checking secure session...</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

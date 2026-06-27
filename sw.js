@@ -7,11 +7,14 @@
 // ════════════════════════════════════════════════════════════
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v33';
+const CACHE_NAME = 'acpm-v36';
 
 const ASSETS = [
   './',
   './index.html',
+  './login.html',
+  './dashboard.html',
+  './workspace.html',
   './style.css',
   './utils.js',
   './auth.js',

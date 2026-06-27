@@ -2,7 +2,7 @@
   "name": "ACPM Dashboard",
   "short_name": "ACPM",
   "description": "Art and Choi Project Management",
-  "start_url": "./",
+  "start_url": "./login.html",
   "display": "standalone",
   "background_color": "#111318",
   "theme_color": "#7c3aed",

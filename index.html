@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ACPM">
 <link rel="manifest" href="./manifest.json">
+<script>window.ACPM_PAGE = window.ACPM_PAGE || 'app';</script>
 <title>ACPM — LeBuild Construction</title>
 
 <!-- Firebase v8 compat SDK (must load first) -->
@@ -73,7 +74,17 @@ window.addEventListener('appinstalled', () => {
 });
 </script>
 </head>
-<body>
+<body class="auth-checking auth-locked">
+
+<div id="appLoading" class="app-loading" role="status" aria-live="polite">
+  <div class="app-loading-card">
+    <div class="auth-logo">LB</div>
+    <div>
+      <div class="app-loading-title">Loading ACPM</div>
+      <div class="app-loading-sub">Checking secure session...</div>
+    </div>
+  </div>
+</div>
 
 <a href="#hubView" class="skip-link">Skip to content</a>
 
@@ -124,6 +135,18 @@ window.addEventListener('appinstalled', () => {
 <!-- ═══ HUB VIEW ═══════════════════════════════════════════════ -->
 <section id="hubView" class="view-hub">
 
+  <div class="hub-command">
+    <div>
+      <div class="hub-kicker">Project Command Center</div>
+      <h1>ACPM Dashboard</h1>
+      <p>Track budgets, site progress, alerts, and active workspaces in one clean boss view.</p>
+    </div>
+    <div class="hub-command-actions">
+      <button class="btn-export-hub" onclick="exportHubCSV()">Export CSV</button>
+      <button class="btn-hub" onclick="refreshHub()">Refresh</button>
+    </div>
+  </div>
+
   <!-- Create project -->
   <div class="card hub-create-card" data-boss-only style="display:none;">
     <div class="card-title">
@@ -144,7 +167,6 @@ window.addEventListener('appinstalled', () => {
   <div class="hub-search-wrap">
     <span class="hub-search-icon">&#x1F50D;</span>
     <input id="projectSearch" type="text" placeholder="Search projects..." oninput="filterProjects(this.value)">
-    <button class="btn-export-hub" onclick="exportHubCSV()">&#x1F4CA; Export CSV</button>
   </div>
 
   <!-- Hub tabs -->
@@ -172,9 +194,15 @@ window.addEventListener('appinstalled', () => {
 
     <div id="projectGrid"><p class="hub-empty">Loading projects...</p></div>
 
-    <div class="card gap">
-      <div class="sec-label">Budget Comparison — All Projects</div>
-      <div id="comparisonView"><p class="empty-hint">Add 2+ projects to see comparison.</p></div>
+    <div class="dashboard-split">
+      <div class="card gap budget-comparison-card">
+        <div class="sec-label">Budget Comparison - All Projects</div>
+        <div id="comparisonView"><p class="empty-hint">Add 2+ projects to see comparison.</p></div>
+      </div>
+      <div class="card gap recent-activity-card">
+        <div class="sec-label">Recent Activity</div>
+        <div id="recentActivityView"><p class="empty-hint">No recent project activity yet.</p></div>
+      </div>
     </div>
   </div>
   <!-- All Projects pane -->
@@ -194,9 +222,15 @@ window.addEventListener('appinstalled', () => {
 
     <div id="allProjectsGrid"><p class="hub-empty">Loading projects...</p></div>
 
-    <div class="card gap">
-      <div class="sec-label">Budget Comparison — All Projects</div>
-      <div id="comparisonViewAll"><p class="empty-hint">Add 2+ projects to see comparison.</p></div>
+    <div class="dashboard-split">
+      <div class="card gap budget-comparison-card">
+        <div class="sec-label">Budget Comparison - All Projects</div>
+        <div id="comparisonViewAll"><p class="empty-hint">Add 2+ projects to see comparison.</p></div>
+      </div>
+      <div class="card gap recent-activity-card">
+        <div class="sec-label">Recent Activity</div>
+        <div id="recentActivityViewAll"><p class="empty-hint">No recent project activity yet.</p></div>
+      </div>
     </div>
   </div>
   <!-- Completed pane -->

@@ -28,6 +28,28 @@ window._currentProjectStatus = null;
 window._currentUser = { uid: 'anonymous', role: 'apm', name: 'System', projects: [], bossOf: [] };
 window._allowedProjects = null;
 
+function getAppPage() {
+  if (window.ACPM_PAGE) return String(window.ACPM_PAGE).toLowerCase();
+  const path = window.location.pathname.toLowerCase();
+  if (path.endsWith('/login.html')) return 'login';
+  if (path.endsWith('/dashboard.html')) return 'dashboard';
+  if (path.endsWith('/workspace.html')) return 'workspace';
+  return 'app';
+}
+
+function appUrl(page, params = {}) {
+  if (page === 'login') return 'login.html';
+  if (page === 'workspace') {
+    const pid = encodeURIComponent(params.projectId || '');
+    return pid ? `workspace.html?projectId=${pid}` : 'workspace.html';
+  }
+  return 'dashboard.html';
+}
+
+function getRouteProjectId() {
+  return new URLSearchParams(window.location.search).get('projectId') || '';
+}
+
 // ════════════════════════════════════════════════════════════
 //  Offline Cache Layer (IndexedDB)
 //  Stores project data locally for instant load + offline work
@@ -234,10 +256,12 @@ function renderProjectHubList(projects, gridId, tab, isAll) {
     if (isAll) {
       renderDashboardSummary([], 'All');
       renderComparison([], 'comparisonViewAll');
+      renderRecentActivity([], 'recentActivityViewAll');
       renderDashboardAlerts([]);
     } else if (tab === 'active') {
       renderDashboardSummary([]);
       renderComparison([]);
+      renderRecentActivity([]);
       renderDashboardAlerts([]);
     } else {
       renderCompletedSummary([]);
@@ -252,10 +276,12 @@ function renderProjectHubList(projects, gridId, tab, isAll) {
   if (isAll) {
     renderDashboardSummary(visibleProjects, 'All');
     renderComparison(visibleProjects, 'comparisonViewAll');
+    renderRecentActivity(visibleProjects, 'recentActivityViewAll');
     renderDashboardAlerts(visibleProjects);
   } else if (tab === 'active') {
     renderDashboardSummary(visibleProjects);
     renderComparison(visibleProjects);
+    renderRecentActivity(visibleProjects);
     renderDashboardAlerts(visibleProjects);
   } else {
     renderCompletedSummary(visibleProjects);
@@ -344,122 +370,125 @@ function renderHub() {
   _hubListeners.push(projectsRef);
 }
 
+function budgetHealthLabel(percentUsed) {
+  if (percentUsed >= 95) return { text: 'Over Budget', className: 'critical' };
+  if (percentUsed >= 80) return { text: 'Warning', className: 'warning' };
+  return { text: 'Healthy', className: 'healthy' };
+}
+
+function budgetMetricRow(label, budget, spent) {
+  const used = pct(spent, budget);
+  const remaining = budget - spent;
+  const barWidth = Math.min(Math.max(used, spent > 0 ? 2 : 0), 100);
+  const health = budgetHealthLabel(used);
+  return `
+    <div class="budget-metric-row">
+      <div class="budget-metric-head">
+        <span>${label}</span>
+        <strong>${peso(spent)} / ${peso(budget)}</strong>
+      </div>
+      <div class="mini-bar">
+        <div class="mini-fill ${budgetBarClass(used)}" style="width:${barWidth}%"></div>
+      </div>
+      <div class="budget-metric-foot">
+        <span class="budget-health ${health.className}">${health.text}</span>
+        <span>${used}% used · ${peso(remaining)} remaining</span>
+      </div>
+    </div>`;
+}
+
 function buildProjectCard(p) {
-    const div = document.createElement('div');
-    div.className = `proj-card ${p.status === 'completed' ? 'proj-card-done' : ''}`;
-    div.setAttribute('data-name', (p.name || '').toLowerCase());
-    div.setAttribute('data-pid', p.id);
+  const div = document.createElement('div');
+  div.className = `proj-card ${p.status === 'completed' ? 'proj-card-done' : ''}`;
+  div.setAttribute('data-name', (p.name || '').toLowerCase());
+  div.setAttribute('data-pid', p.id);
 
-    const eff = effectiveBudget(p);
-    const laborSpent = parseFloat(p.laborSpent) || 0;
-    const matSpent = parseFloat(p.materialSpent) || 0;
-    const totalSpent = laborSpent + matSpent;
-    const remaining = eff.total - totalSpent;
-    const pctUsed = pct(totalSpent, eff.total);
+  const eff = effectiveBudget(p);
+  const laborSpent = parseFloat(p.laborSpent) || 0;
+  const matSpent = parseFloat(p.materialSpent) || 0;
+  const otherBudget = Math.max(0, eff.total - eff.labor - eff.material);
+  const otherSpent = parseFloat(p.otherSpent) || 0;
+  const totalSpent = laborSpent + matSpent + otherSpent;
+  const remaining = eff.total - totalSpent;
+  const pctUsed = pct(totalSpent, eff.total);
+  const isWarning = pctUsed >= 80 && pctUsed < 95;
+  const isCritical = pctUsed >= 95;
+  const status = p.status || 'active';
+  const statusClass = status === 'completed' ? 'completed-tag' : status === 'archived' ? 'archived-tag' : 'active-tag';
+  const statusText = status === 'completed' ? 'Completed' : status === 'archived' ? 'Archived' : 'Active';
+  const health = typeof calculateProjectHealth === 'function' ? calculateProjectHealth(p) : { score: 100, warnings: [] };
+  const healthColor = health.score >= 80 ? 'var(--green)' : health.score >= 60 ? 'var(--amber)' : 'var(--red)';
+  const budgetHealth = budgetHealthLabel(pctUsed);
+  const hasDelta = (parseFloat(p.laborBudgetDelta) || 0) || (parseFloat(p.materialBudgetDelta) || 0);
+  const canLifecycle = canManageProjectLifecycle(p.id);
+  const budgetRows = [
+    budgetMetricRow('Labor Budget', eff.labor, laborSpent),
+    budgetMetricRow('Materials Budget', eff.material, matSpent),
+    otherBudget ? budgetMetricRow('Other Budget', otherBudget, otherSpent) : ''
+  ].join('');
 
-    const pUsedTotal = pctUsed;
-    const pUsedLabor = pct(laborSpent, eff.labor);
-    const pUsedMat   = pct(matSpent, eff.material);
-
-    const wTotal = Math.min(pUsedTotal, 100);
-    const wLabor = Math.min(pUsedLabor, 100);
-    const wMat   = Math.min(pUsedMat, 100);
-    const dTotal = wTotal > 0 && wTotal < 2 ? 2 : wTotal;
-    const dLabor = wLabor > 0 && wLabor < 2 ? 2 : wLabor;
-    const dMat   = wMat   > 0 && wMat   < 2 ? 2 : wMat;
-
-    const isWarning = pctUsed >= 80 && pctUsed < 95;
-    const isCritical = pctUsed >= 95;
-
-    const projectStatus = p.status || 'active';
-    const statusClass = projectStatus === 'completed' ? 'completed-tag' : projectStatus === 'archived' ? 'archived-tag' : 'active-tag';
-    const statusText = projectStatus === 'completed' ? 'COMPLETED' : projectStatus === 'archived' ? 'ARCHIVED' : 'ACTIVE';
-
-    const hasDelta = (parseFloat(p.laborBudgetDelta) || 0) || (parseFloat(p.materialBudgetDelta) || 0);
-    const coNote = hasDelta
-      ? `<div class="budget-sub" style="color:var(--purple-xl)">\u21BB; includes approved change orders</div>` : '';
-
-    // Health score indicator
-    const health = typeof calculateProjectHealth === 'function' ? calculateProjectHealth(p) : { score: 100, warnings: [] };
-    const healthColor = health.score >= 80 ? 'var(--green)' : health.score >= 60 ? 'var(--amber)' : 'var(--red)';
-    const healthBadge = `<span class="health-mini" style="color:${healthColor}">\u2665 ${health.score}</span>`;
-    const canLifecycle = canManageProjectLifecycle(p.id);
-
-    div.innerHTML = `
-      <div class="proj-card-top">
+  div.innerHTML = `
+    <div class="proj-card-top">
+      <div>
+        <span class="proj-label">Project</span>
+        <h3 class="proj-name">${escapeHtml(p.name || 'Untitled')}</h3>
+        <span class="proj-date">Created ${escapeHtml(p.createdDate || '-')}</span>
+      </div>
+      <div class="proj-card-meta">
+        <span class="health-mini" style="color:${healthColor}">Health ${health.score}</span>
+        ${buildProgressRing(pctUsed, isCritical, isWarning)}
+        <span class="${statusClass}">${statusText}</span>
+      </div>
+    </div>
+    <div class="budget-section">
+      <div class="budget-card-total">
         <div>
-          <span class="proj-label">PROJECT</span>
-          <h3 class="proj-name">${escapeHtml(p.name || 'Untitled')}</h3>
-          <span class="proj-date">Created ${p.createdDate || '\u2014'}</span>
+          <span class="budget-label">Budget Used</span>
+          <strong>${peso(totalSpent)} / ${peso(eff.total)}</strong>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          ${healthBadge}
-          ${buildProgressRing(pctUsed, isCritical, isWarning)}
-          <span class="${statusClass}">${statusText}</span>
+        <div>
+          <span class="budget-label">Remaining</span>
+          <strong class="${remaining < 0 ? 'text-red' : 'text-green'}">${peso(remaining)}</strong>
         </div>
       </div>
-      <div class="budget-section">
-        <div class="budget-row">
-          <span class="budget-label">\u1F4B0; Total Budget</span>
-          <span class="budget-val">${peso(eff.total)}</span>
-        </div>
-        <div class="mini-bar">
-          <div class="mini-fill ${budgetBarClass(pUsedTotal)}" style="width:${dTotal}%"></div>
-        </div>
-        <div class="budget-sub">
-          ${isCritical ? '<span class="warn-tag critical">\u26A0; CRITICAL</span>' : isWarning ? '<span class="warn-tag">\u26A0; WARNING</span>' : '<span style="color:var(--green)">\u2713; Healthy</span>'}
-          <span>${peso(totalSpent)} spent \u00B7; ${pctUsed}%</span>
-        </div>
-        ${coNote}
-        <div class="budget-row" style="margin-top:6px">
-          <span class="budget-label">\u1F477; Labor</span>
-          <span class="budget-val">${peso(eff.labor)}</span>
-        </div>
-        <div class="mini-bar">
-          <div class="mini-fill ${budgetBarClass(pUsedLabor)}" style="width:${dLabor}%"></div>
-        </div>
-        <div class="budget-sub">${peso(laborSpent)} spent \u00B7; ${pUsedLabor}%</div>
-        <div class="budget-row" style="margin-top:6px">
-          <span class="budget-label">\u1F4E6; Materials</span>
-          <span class="budget-val">${peso(eff.material)}</span>
-        </div>
-        <div class="mini-bar">
-          <div class="mini-fill ${budgetBarClass(pUsedMat)}" style="width:${dMat}%"></div>
-        </div>
-        <div class="budget-sub">${peso(matSpent)} spent \u00B7; ${pUsedMat}%</div>
+      <div class="mini-bar total-budget-bar">
+        <div class="mini-fill ${budgetBarClass(pctUsed)}" style="width:${Math.min(Math.max(pctUsed, totalSpent > 0 ? 2 : 0), 100)}%"></div>
       </div>
-      <div class="proj-actions">
-        ${projectStatus === 'archived'
-          ? `${canDeleteProject(p.id) ? `<button class="btn-reopen" data-action="restore">\u21BB; Restore</button>` : ''}`
-          : projectStatus === 'active'
-          ? `<button class="proj-open-btn" data-action="open">Open Workspace \u2192;</button>
-             <button class="btn-complete" data-action="complete">${canLifecycle ? '\u2713; Done' : '\u2709; Request Done'}</button>`
-          : `<button class="proj-open-btn" data-action="open">View Workspace \u2192;</button>
-             <button class="btn-reopen" data-action="reopen">${canLifecycle ? '\u21BB; Reopen' : '\u2709; Request Reopen'}</button>`
-        }
-        ${canEditProject(p.id) && projectStatus === 'active' ? `
-          <button class="btn-edit-proj" data-action="edit">\u270E; Edit</button>
-        ` : ''}
-        ${canDeleteProject(p.id) && projectStatus !== 'archived' ? `
-          <button class="btn-delete" data-action="delete">\u1F5C4; Archive</button>
-        ` : ''}
+      <div class="budget-sub">
+        <span class="budget-health ${budgetHealth.className}">${budgetHealth.text}</span>
+        <span>${pctUsed}% used</span>
       </div>
-    `;
+      ${hasDelta ? '<div class="budget-sub budget-note">Includes approved change orders</div>' : ''}
+      ${budgetRows}
+    </div>
+    <div class="proj-actions">
+      ${status === 'archived'
+        ? `${canDeleteProject(p.id) ? '<button class="btn-reopen" data-action="restore">Restore</button>' : ''}`
+        : status === 'active'
+          ? `<button class="proj-open-btn" data-action="open">Open Workspace</button>
+             <button class="btn-complete" data-action="complete">${canLifecycle ? '\u2713 Done' : 'Request Done'}</button>`
+          : `<button class="proj-open-btn" data-action="open">View Workspace</button>
+             <button class="btn-reopen" data-action="reopen">${canLifecycle ? 'Reopen' : 'Request Reopen'}</button>`
+      }
+      ${canEditProject(p.id) && status === 'active' ? '<button class="btn-edit-proj" data-action="edit">Edit</button>' : ''}
+      ${canDeleteProject(p.id) && status !== 'archived' ? '<button class="btn-delete" data-action="delete">Archive</button>' : ''}
+    </div>
+  `;
 
-    div.addEventListener('click', e => {
-      const btn = e.target.closest('[data-action]');
-      if (!btn) return;
-      const action = btn.dataset.action;
-      if (action === 'open') enterProject(p.id);
-      else if (action === 'complete') markComplete(p.id);
-      else if (action === 'reopen') reopenProject(p.id);
-      else if (action === 'restore') restoreProject(p.id);
-      else if (action === 'edit') openEditProjectModal(p.id);
-      else if (action === 'delete') deleteProject(p.id);
-    });
+  div.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    if (action === 'open') openProjectFromHub(p.id);
+    else if (action === 'complete') markComplete(p.id);
+    else if (action === 'reopen') reopenProject(p.id);
+    else if (action === 'restore') restoreProject(p.id);
+    else if (action === 'edit') openEditProjectModal(p.id);
+    else if (action === 'delete') deleteProject(p.id);
+  });
 
-    return div;
-  }
+  return div;
+}
 
 function renderDashboardSummary(projects, context = '') {
   const el = context === 'All' ? $('dashSummaryAll') : $('dashSummary');
@@ -526,10 +555,10 @@ function renderDashboardSummary(projects, context = '') {
   }
   warn.innerHTML =
     critical > 0
-      ? `<div class="budget-warn-bar warn-critical">\u26A0; ${critical} project${critical !== 1 ? 's' : ''} with CRITICAL budget usage!</div>`
+      ? `<div class="budget-warn-bar warn-critical">Warning: ${critical} project${critical !== 1 ? 's' : ''} over budget.</div>`
       : warning > 0
-        ? `<div class="budget-warn-bar warn-high">\u26A0; ${warning} project${warning !== 1 ? 's' : ''} with HIGH budget usage.</div>`
-        : `<div style="font-size:12px;color:var(--green);padding:8px 0">\u2713; All projects are within budget limits.</div>`;
+        ? `<div class="budget-warn-bar warn-high">Warning: ${warning} project${warning !== 1 ? 's are' : ' is'} approaching budget limit.</div>`
+        : `<div style="font-size:12px;color:var(--green);padding:8px 0">All projects are within budget limits.</div>`;
 }
 
 function renderComparison(projects, targetId = 'comparisonView') {
@@ -541,24 +570,48 @@ function renderComparison(projects, targetId = 'comparisonView') {
     return;
   }
 
-  const totals = projects.map(p => effectiveBudget(p).total);
-  const maxBudget = Math.max(...totals);
-
   el.innerHTML = projects.map((p, i) => {
     const eff = effectiveBudget(p);
     const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
     const pUsed = pct(spent, eff.total);
-    const barWidth = maxBudget ? (totals[i] / maxBudget) * 100 : 0;
+    const remaining = eff.total - spent;
+    const health = budgetHealthLabel(pUsed);
+    const barWidth = Math.min(Math.max(pUsed, spent > 0 ? 2 : 0), 100);
     return `
-      <div class="cmp-row">
-        <span class="cmp-name">${escapeHtml(p.name || 'Untitled')}</span>
-        <div class="cmp-bars">
-          <div class="cmp-bar-wrap"><div class="mini-fill ${budgetBarClass(pUsed)}" style="width:${barWidth}%"></div></div>
+      <div class="cmp-card">
+        <div class="cmp-card-head">
+          <strong>${escapeHtml(p.name || 'Untitled')}</strong>
+          <span class="budget-health ${health.className}">${health.text}</span>
         </div>
-        <span class="cmp-pct">${pUsed}%</span>
-        <span class="cmp-total">${peso(spent)} / ${peso(eff.total)}</span>
+        <div class="cmp-bar-wrap"><div class="mini-fill ${budgetBarClass(pUsed)}" style="width:${barWidth}%"></div></div>
+        <div class="cmp-card-grid">
+          <span><b>${pUsed}%</b> used</span>
+          <span>${peso(spent)} spent</span>
+          <span>${peso(remaining)} remaining</span>
+        </div>
       </div>`;
   }).join('');
+}
+
+function renderRecentActivity(projects, targetId = 'recentActivityView') {
+  const el = $(targetId);
+  if (!el) return;
+  const items = sortProjectsNewest([...projects])
+    .slice(0, 5)
+    .map(p => {
+      const status = p.status === 'completed' ? 'Completed' : p.status === 'archived' ? 'Archived' : 'Active';
+      const time = p.completedAt || p.archivedAt || p.updatedAt || p.createdAt || null;
+      const date = time ? new Date(time).toLocaleDateString('en-PH') : (p.createdDate || '-');
+      return `
+        <div class="activity-row">
+          <div>
+            <strong>${escapeHtml(p.name || 'Untitled')}</strong>
+            <span>${status} · ${escapeHtml(date)}</span>
+          </div>
+          <button class="btn-equip-action" onclick="openProjectFromHub('${escapeHtml(p.id)}')">Open</button>
+        </div>`;
+    });
+  el.innerHTML = items.length ? items.join('') : '<p class="empty-hint">No recent project activity yet.</p>';
 }
 
 let _searchDebounce = null;
@@ -620,6 +673,9 @@ async function createProject(evt) {
     }
 
     $('newName').value = ''; $('newLaborBudget').value = ''; $('newMaterialBudget').value = '';
+    const search = $('projectSearch');
+    if (search) search.value = '';
+    showHubTab('active');
     auditLog('create', 'project', null, { name, laborBudget, materialBudget });
     showToast(`Project "${name}" created!`);
   });
@@ -804,6 +860,14 @@ function detachHubListeners() {
   _hubListeners = [];
 }
 
+function openProjectFromHub(pid) {
+  if (getAppPage() === 'dashboard') {
+    window.location.href = appUrl('workspace', { projectId: pid });
+    return;
+  }
+  enterProject(pid);
+}
+
 // ════════════════════════════════════════════════════════════
 //  WORKSPACE — Enter / Exit
 // ════════════════════════════════════════════════════════════
@@ -811,14 +875,14 @@ function detachHubListeners() {
 async function enterProject(pid) {
   if (!canAccessProject(pid)) {
     showToast('You do not have access to this project.', 'error');
-    return;
+    return false;
   }
 
-  window._currentPid = pid;
   const snap = await db.ref(`projects/${pid}`).once('value');
   const p = snap.val();
-  if (!p) { showToast('Project not found.', 'error'); return; }
+  if (!p) { showToast('Project not found.', 'error'); return false; }
 
+  window._currentPid = pid;
   setText('wsName', p.name || 'Untitled');
   $('hubView').classList.add('hidden');
   $('workspaceView').classList.remove('hidden');
@@ -846,9 +910,14 @@ async function enterProject(pid) {
 
   switchTab('labor');
   auditLog('enter', 'project', pid, { name: p.name });
+  return true;
 }
 
 function exitHub() {
+  if (getAppPage() === 'workspace') {
+    window.location.href = appUrl('dashboard');
+    return;
+  }
   detachLaborListeners();
   detachMatListeners();
   detachBillingListeners();
@@ -1032,7 +1101,8 @@ window.addEventListener('keydown', e => {
   if (e.ctrlKey && e.key >= '1' && e.key <= '8') {
     const tabs = ['labor', 'materials', 'billing', 'changeorders', 'sitelog', 'suppliers', 'tasks', 'equipment', 'compliance', 'defects', 'reports'];
     const idx = parseInt(e.key) - 1;
-    if (tabs[idx] && !$('workspaceView').classList.contains('hidden')) {
+    const workspace = $('workspaceView');
+    if (tabs[idx] && workspace && !workspace.classList.contains('hidden')) {
       switchTab(tabs[idx]);
       e.preventDefault();
     }
@@ -1162,13 +1232,13 @@ function renderDashboardAlerts(projects) {
 
   if (critical > 0) {
     el.className = 'dashboard-alerts warn-critical';
-    el.innerHTML = `\u26A0\uFE0F; <strong>${critical} project${critical !== 1 ? 's' : ''}</strong> with CRITICAL budget usage &nbsp;|&nbsp; ${warning} warning &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+    el.innerHTML = `<strong>${critical} project${critical !== 1 ? 's' : ''}</strong> over budget &nbsp;|&nbsp; ${warning} warning &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
   } else if (warning > 0) {
     el.className = 'dashboard-alerts warn-high';
-    el.innerHTML = `\u26A0\uFE0F; <strong>${warning} project${warning !== 1 ? 's' : ''}</strong> approaching budget limit &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+    el.innerHTML = `<strong>${warning} project${warning !== 1 ? 's' : ''}</strong> approaching budget limit &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
   } else if (projects.length) {
     el.className = 'dashboard-alerts warn-ok';
-    el.innerHTML = `\u2713; All ${active} active project${active !== 1 ? 's' : ''} within budget &nbsp;|&nbsp; Total: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+    el.innerHTML = `All ${active} active project${active !== 1 ? 's' : ''} within budget &nbsp;|&nbsp; Total: ${peso(totalSpent)} / ${peso(totalBudget)}`;
   } else {
     el.className = 'dashboard-alerts';
     el.innerHTML = '';
@@ -1254,6 +1324,10 @@ window.editProject = editProject;
 window.openEditProjectModal = openEditProjectModal;
 window.closeEditProjectModal = closeEditProjectModal;
 window.enterProject = enterProject;
+window.openProjectFromHub = openProjectFromHub;
+window.getAppPage = getAppPage;
+window.appUrl = appUrl;
+window.getRouteProjectId = getRouteProjectId;
 window.openTeamAdmin = openTeamAdmin;
 window.switchAdminSection = switchAdminSection;
 window.exitHub = exitHub;
