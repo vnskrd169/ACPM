@@ -3563,6 +3563,24 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   font-weight: 800;
 }
 
+#materialsPanel .material-issue-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(100px, .55fr) minmax(160px, 1fr) minmax(140px, .8fr) minmax(160px, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+#materialsPanel .material-issue-form select,
+#materialsPanel .material-issue-form input,
+#materialsPanel .material-issue-form button {
+  min-width: 0;
+}
+
+#materialsPanel .material-issue-form .btn-add-sm {
+  min-width: 92px;
+  font-weight: 800;
+}
+
 #materialsPanel #draftList,
 #materialsPanel #poHistory {
   min-width: 0;
@@ -3693,6 +3711,25 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   min-height: 34px;
   border-radius: var(--radius-xs);
   font-weight: 700;
+}
+
+#materialsPanel .movement-table {
+  min-width: 860px;
+}
+
+#materialsPanel .movement-type {
+  font-weight: 800;
+  color: var(--text);
+}
+
+#materialsPanel .movement-in {
+  color: var(--green);
+  font-weight: 900;
+}
+
+#materialsPanel .movement-out {
+  color: var(--red);
+  font-weight: 900;
 }
 
 #materialsPanel .led-footer {
@@ -3857,7 +3894,12 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
     grid-template-columns: minmax(0, 1fr) minmax(110px, .7fr);
   }
 
-  #materialsPanel .po-item-form .btn-add-sm {
+  #materialsPanel .material-issue-form {
+    grid-template-columns: minmax(0, 1fr) minmax(110px, .7fr);
+  }
+
+  #materialsPanel .po-item-form .btn-add-sm,
+  #materialsPanel .material-issue-form .btn-add-sm {
     grid-column: 1 / -1;
   }
 
@@ -3877,7 +3919,8 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 
 @media(max-width: 640px) {
   #materialsPanel .po-meta-grid,
-  #materialsPanel .po-item-form {
+  #materialsPanel .po-item-form,
+  #materialsPanel .material-issue-form {
     grid-template-columns: 1fr;
   }
 

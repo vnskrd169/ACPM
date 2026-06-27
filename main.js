@@ -21,6 +21,7 @@ window._db = db;
 // ── Globals ───────────────────────────────────────────────
 window._currentPid = null;
 let _hubListeners = [];
+let _projectNotesListener = null;
 window._isReadOnly = false;
 window._currentProjectStatus = null;
 // Overwritten by auth.js once Firebase Auth resolves — this is only
@@ -325,7 +326,9 @@ async function fetchAccessibleProjectsOnce(statusFilter = null) {
 
   if (canListAllProjects(user)) {
     const snap = await db.ref('projects').once('value');
-    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      projects.push({ id: c.key, ...c.val() });
+    });
   } else {
     const ids = assignedProjectIds(user);
     const snaps = await Promise.all(ids.map(pid => db.ref(`projects/${pid}`).once('value').then(snap => ({ pid, snap }))));
@@ -354,13 +357,13 @@ function renderHub() {
     return;
   }
 
-  const projectsRef = isAll
-    ? db.ref('projects')
-    : db.ref('projects').orderByChild('status').equalTo(tab);
+  const projectsRef = db.ref('projects');
 
   projectsRef.on('value', snap => {
     const projects = [];
-    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      projects.push({ id: c.key, ...c.val() });
+    });
     renderProjectHubList(projects, gridId, tab, isAll);
   }, error => {
     console.error('Firebase error:', error);
@@ -860,6 +863,13 @@ function detachHubListeners() {
   _hubListeners = [];
 }
 
+function detachProjectNotesListener() {
+  if (_projectNotesListener) {
+    _projectNotesListener.off();
+    _projectNotesListener = null;
+  }
+}
+
 function openProjectFromHub(pid) {
   if (getAppPage() === 'dashboard') {
     window.location.href = appUrl('workspace', { projectId: pid });
@@ -928,6 +938,8 @@ function exitHub() {
   detachEquipListeners();
   detachComplianceListeners();
   detachDefectListeners();
+  detachProjectNotesListener();
+  if (typeof detachNotifications === 'function') detachNotifications();
 
   $('workspaceView').classList.add('hidden');
   $('hubView').classList.remove('hidden');
@@ -1077,7 +1089,9 @@ async function exportDatabaseBackup() {
 //  PROJECT NOTES
 // ════════════════════════════════════════════════════════════
 function loadProjectNotes(pid) {
-  db.ref(`projects/${pid}/notes`).on('value', snap => {
+  detachProjectNotesListener();
+  _projectNotesListener = db.ref(`projects/${pid}/notes`);
+  _projectNotesListener.on('value', snap => {
     const ta = $('projectNotesInput');
     if (ta && document.activeElement !== ta) {
       ta.value = snap.val()?.text || '';

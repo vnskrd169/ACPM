@@ -134,7 +134,9 @@ function auditLog(action, entityType, entityId, details = {}) {
 
   try {
     if (typeof firebase !== 'undefined' && firebase.database) {
-      firebase.database().ref('auditLogs').push(logEntry).catch(() => {});
+      firebase.database().ref('auditLogs').push(logEntry, error => {
+        if (error) console.warn('auditLog skipped:', error.code || error.message || error);
+      });
     }
   } catch (e) { /* never let audit logging break the calling action */ }
 }
@@ -145,7 +147,9 @@ async function pruneAuditLog(keepLatest = 2000) {
   try {
     const snap = await firebase.database().ref('auditLogs').orderByChild('timestamp').once('value');
     const keys = [];
-    snap.forEach(c => keys.push(c.key));
+    snap.forEach(c => {
+      keys.push(c.key);
+    });
     if (keys.length <= keepLatest) return;
     const updates = {};
     keys.slice(0, keys.length - keepLatest).forEach(k => updates[k] = null);
@@ -323,7 +327,9 @@ function refreshSupplierDropdown(snap) {
   sel.innerHTML = '<option value="">— Quick-select supplier —</option>';
   if (snap && snap.exists()) {
     const suppliers = [];
-    snap.forEach(c => suppliers.push({ key: c.key, ...c.val() }));
+    snap.forEach(c => {
+      suppliers.push({ key: c.key, ...c.val() });
+    });
     suppliers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     suppliers.forEach(s => {
       const opt = document.createElement('option');

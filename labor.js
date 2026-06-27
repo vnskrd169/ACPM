@@ -8,6 +8,9 @@ let _projectSettings = { leader: '', payMethod: 'Bank' };
 let _tradeMetaByName = {};
 let _activeWeekKey = '';
 let _compiledWeekKeys = new Set();
+let _workersSnap = null;
+let _attendanceSnap = null;
+let _advancesSnap = null;
 
 function getWeekKey(start = $('weekStart')?.value, end = $('weekEnd')?.value) {
   return start && end ? `${start}_${end}` : '';
@@ -46,6 +49,12 @@ function initLabor(pid) {
   _lpid = pid;
   _projectName = '';
   _workersRegistered = false;
+  _pendingPayrollData = null;
+  _tradeMetaByName = {};
+  _compiledWeekKeys = new Set();
+  _workersSnap = null;
+  _attendanceSnap = null;
+  _advancesSnap = null;
   detachLaborListeners();
   loadPayrollConfig(pid);
   loadProjectSettings(pid);
@@ -106,6 +115,13 @@ async function saveTradeSettings(tradeKey) {
 function detachLaborListeners() {
   _laborListeners.forEach(ref => ref.off());
   _laborListeners = [];
+  if (_tcHistoryListener) {
+    _tcHistoryListener.off();
+    _tcHistoryListener = null;
+  }
+  _workersSnap = null;
+  _attendanceSnap = null;
+  _advancesSnap = null;
 }
 
 function laborListen(ref, cb) {
@@ -331,20 +347,21 @@ function populateTradeSelect(snap) {
 function watchWorkers(pid) {
   const wRef = firebase.database().ref(`projects/${pid}/workers`);
   laborListen(wRef, wSnap => {
-    firebase.database().ref(`projects/${pid}/advances`).once('value', allAdvSnap => {
-      renderRoster(wSnap, pid, allAdvSnap);
-      firebase.database().ref(`projects/${pid}/attendance`).once('value', attSnap => {
-        buildGrid(pid, wSnap, attSnap);
-      });
-    });
+    _workersSnap = wSnap;
+    renderLaborWorkspaceViews();
   });
 
   const attRef = firebase.database().ref(`projects/${pid}/attendance`);
   laborListen(attRef, attSnap => {
-    firebase.database().ref(`projects/${pid}/workers`).once('value', wSnap => {
-      buildGrid(pid, wSnap, attSnap);
-    });
+    _attendanceSnap = attSnap;
+    renderLaborWorkspaceViews();
   });
+}
+
+function renderLaborWorkspaceViews() {
+  if (!_lpid || !_workersSnap) return;
+  if (_advancesSnap) renderRoster(_workersSnap, _lpid, _advancesSnap);
+  if (_attendanceSnap) buildGrid(_lpid, _workersSnap, _attendanceSnap);
 }
 
 function renderRoster(wSnap, pid, allAdvSnap) {
@@ -357,9 +374,11 @@ function renderRoster(wSnap, pid, allAdvSnap) {
     const wid = c.key;
 
     let pending = 0;
-    const workerAdv = allAdvSnap.child(wid);
-    if (workerAdv.exists()) {
-      workerAdv.forEach(a => { if (!a.val().deducted) pending += a.val().amount || 0; });
+    const workerAdv = allAdvSnap?.child?.(wid);
+    if (workerAdv?.exists()) {
+      workerAdv.forEach(a => {
+        if (!a.val().deducted) pending += a.val().amount || 0;
+      });
     }
 
     const div = document.createElement('div');
@@ -435,8 +454,12 @@ async function removeWorker(wid) {
   const advSnap = await firebase.database().ref(`projects/${_lpid}/advances/${wid}`).once('value');
   const updates = {};
   updates[`projects/${_lpid}/workers/${wid}`] = null;
-  attSnap.forEach(c => { updates[`projects/${_lpid}/attendance/${wid}/${c.key}`] = null; });
-  advSnap.forEach(c => { updates[`projects/${_lpid}/advances/${wid}/${c.key}`] = null; });
+  attSnap.forEach(c => {
+    updates[`projects/${_lpid}/attendance/${wid}/${c.key}`] = null;
+  });
+  advSnap.forEach(c => {
+    updates[`projects/${_lpid}/advances/${wid}/${c.key}`] = null;
+  });
 
   await safeDb(() => firebase.database().ref().update(updates), 'Failed to remove worker');
   auditLog('delete', 'worker', wid, { projectId: _lpid });
@@ -525,18 +548,16 @@ async function saveAdvance() {
   loadAdvanceHistory(_advWid);
   auditLog('create', 'advance', null, { workerId: _advWid, amount, projectId: _lpid });
   showToast(`Advance of ${peso(amount)} saved for ${workerName}`);
-
-  firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap2 => {
-    firebase.database().ref(`projects/${_lpid}/advances`).once('value', allAdvSnap => {
-      renderRoster(wSnap2, _lpid, allAdvSnap);
-    });
-  });
 }
 
 // ── Centralized Cash Advance Transaction Log (all workers) ──────
 function watchAdvances(pid) {
   const ref = firebase.database().ref(`projects/${pid}/advances`);
-  laborListen(ref, () => renderAdvanceLog());
+  laborListen(ref, snap => {
+    _advancesSnap = snap;
+    renderLaborWorkspaceViews();
+    renderAdvanceLog();
+  });
 }
 
 function renderAdvanceLog() {
@@ -544,79 +565,89 @@ function renderAdvanceLog() {
   const ws = $('weekStart')?.value;
   const we = $('weekEnd')?.value;
 
+  if (_workersSnap && _advancesSnap) {
+    renderAdvanceLogFromSnapshots(el, _workersSnap, _advancesSnap, ws, we);
+    return;
+  }
+
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
     firebase.database().ref(`projects/${_lpid}/advances`).once('value', advSnap => {
-      const workers = {};
-      wSnap.forEach(c => { workers[c.key] = c.val(); });
-
-      const rows = [];
-      advSnap.forEach(workerAdv => {
-        const wid = workerAdv.key;
-        const w = workers[wid] || {};
-        workerAdv.forEach(entrySnap => {
-          const a = entrySnap.val();
-          rows.push({
-            key: entrySnap.key, wid,
-            workerName: a.workerName || w.name || wid,
-            trade: a.trade || w.trade || '',
-            date: a.date,
-            amount: a.amount || 0,
-            notes: a.notes || '',
-            deducted: !!a.deducted,
-            deductedAmount: a.deductedAmount || 0,
-            recordedBy: a.recordedBy || '',
-            addedAt: a.addedAt || 0
-          });
-        });
-      });
-
-      // Period filter (only when a range is set)
-      const filtered = (ws && we)
-        ? rows.filter(r => r.date >= ws && r.date <= we)
-        : rows;
-
-      filtered.sort((a, b) => (b.addedAt || b.date || '').toString().localeCompare((a.addedAt || a.date || '').toString()));
-
-      if (!filtered.length) {
-        el.innerHTML = `<p class="empty-hint">${(ws && we) ? 'No advances in the selected period.' : 'No advance records yet.'}</p>`;
-        return;
-      }
-
-      const totalOut = filtered.reduce((s, r) => s + (r.amount - r.deductedAmount), 0);
-      const totalDeducted = filtered.reduce((s, r) => s + r.deductedAmount, 0);
-
-      el.innerHTML = `<div style="overflow-x:auto">
-        <table class="advance-log-table">
-          <thead><tr>
-            <th class="al-worker">Worker</th>
-            <th class="al-trade">Trade</th>
-            <th class="al-date">Date</th>
-            <th class="al-amount" style="text-align:right">Amount</th>
-            <th class="al-notes">Notes</th>
-            <th class="al-status">Status</th>
-            <th class="al-by">Recorded By</th>
-          </tr></thead>
-          <tbody>
-            ${filtered.map(r => `<tr>
-              <td class="al-worker">${escapeHtml(r.workerName)}</td>
-              <td class="al-trade">${escapeHtml(r.trade || '\u2014')}</td>
-              <td class="al-date">${r.date || '\u2014'}</td>
-              <td class="al-amount" style="text-align:right">${peso(r.amount)}</td>
-              <td class="al-notes">${escapeHtml(r.notes) || '\u2014'}</td>
-              <td class="al-status ${r.deducted ? 'adv-deducted' : 'adv-pending'}">${r.deducted ? 'Deducted' : 'Pending'}</td>
-              <td class="al-by">${escapeHtml(r.recordedBy) || '\u2014'}</td>
-            </tr>`).join('')}
-          </tbody>
-          <tfoot><tr>
-            <td colspan="3" style="font-weight:600">Period Totals</td>
-            <td class="al-amount" style="text-align:right;font-weight:600">${peso(filtered.reduce((s, r) => s + r.amount, 0))}</td>
-            <td colspan="2" style="font-size:11px;color:var(--muted)">Outstanding: ${peso(totalOut)} \u00B7 Deducted: ${peso(totalDeducted)}</td>
-            <td></td>
-          </tr></tfoot>
-        </table>
-      </div>`;
+      renderAdvanceLogFromSnapshots(el, wSnap, advSnap, ws, we);
     });
   });
+}
+
+function renderAdvanceLogFromSnapshots(el, wSnap, advSnap, ws, we) {
+  const workers = {};
+  wSnap.forEach(c => {
+    workers[c.key] = c.val();
+  });
+
+  const rows = [];
+  advSnap.forEach(workerAdv => {
+    const wid = workerAdv.key;
+    const w = workers[wid] || {};
+    workerAdv.forEach(entrySnap => {
+      const a = entrySnap.val();
+      rows.push({
+        key: entrySnap.key, wid,
+        workerName: a.workerName || w.name || wid,
+        trade: a.trade || w.trade || '',
+        date: a.date,
+        amount: a.amount || 0,
+        notes: a.notes || '',
+        deducted: !!a.deducted,
+        deductedAmount: a.deductedAmount || 0,
+        recordedBy: a.recordedBy || '',
+        addedAt: a.addedAt || 0
+      });
+    });
+  });
+
+  const filtered = (ws && we)
+    ? rows.filter(r => r.date >= ws && r.date <= we)
+    : rows;
+
+  filtered.sort((a, b) => (b.addedAt || b.date || '').toString().localeCompare((a.addedAt || a.date || '').toString()));
+
+  if (!filtered.length) {
+    el.innerHTML = `<p class="empty-hint">${(ws && we) ? 'No advances in the selected period.' : 'No advance records yet.'}</p>`;
+    return;
+  }
+
+  const totalOut = filtered.reduce((s, r) => s + (r.amount - r.deductedAmount), 0);
+  const totalDeducted = filtered.reduce((s, r) => s + r.deductedAmount, 0);
+
+  el.innerHTML = `<div style="overflow-x:auto">
+    <table class="advance-log-table">
+      <thead><tr>
+        <th class="al-worker">Worker</th>
+        <th class="al-trade">Trade</th>
+        <th class="al-date">Date</th>
+        <th class="al-amount" style="text-align:right">Amount</th>
+        <th class="al-notes">Notes</th>
+        <th class="al-status">Status</th>
+        <th class="al-by">Recorded By</th>
+      </tr></thead>
+      <tbody>
+        ${filtered.map(r => `<tr>
+          <td class="al-worker">${escapeHtml(r.workerName)}</td>
+          <td class="al-trade">${escapeHtml(r.trade || '\u2014')}</td>
+          <td class="al-date">${r.date || '\u2014'}</td>
+          <td class="al-amount" style="text-align:right">${peso(r.amount)}</td>
+          <td class="al-notes">${escapeHtml(r.notes) || '\u2014'}</td>
+          <td class="al-status ${r.deducted ? 'adv-deducted' : 'adv-pending'}">${r.deducted ? 'Deducted' : 'Pending'}</td>
+          <td class="al-by">${escapeHtml(r.recordedBy) || '\u2014'}</td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot><tr>
+        <td colspan="3" style="font-weight:600">Period Totals</td>
+        <td class="al-amount" style="text-align:right;font-weight:600">${peso(filtered.reduce((s, r) => s + r.amount, 0))}</td>
+        <td colspan="2" style="font-size:11px;color:var(--muted)">Outstanding: ${peso(totalOut)} \u00B7 Deducted: ${peso(totalDeducted)}</td>
+        <td></td>
+      </tr></tfoot>
+    </table>
+  </div>`;
 }
 
 async function deleteAdvance(wid, key) {
@@ -635,11 +666,6 @@ async function deleteAdvance(wid, key) {
   loadAdvanceHistory(wid);
   renderAdvanceLog();
   auditLog('delete', 'advance', key, { workerId: wid, projectId: _lpid });
-  firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
-    firebase.database().ref(`projects/${_lpid}/advances`).once('value', allAdvSnap => {
-      renderRoster(wSnap, _lpid, allAdvSnap);
-    });
-  });
 }
 
 // ══════════════════════════════════════════════════════
@@ -958,7 +984,9 @@ async function compilePayroll() {
   const weekSet = new Set(days.map(d => d.iso));
 
   const workers = {};
-  wSnap.forEach(c => { workers[c.key] = c.val(); });
+  wSnap.forEach(c => {
+    workers[c.key] = c.val();
+  });
 
   const weekKey = getWeekKey(start, end);
   const byTrade = {};
@@ -1046,6 +1074,7 @@ async function compilePayroll() {
       if (a.deducted) return;
       if (a.date && end !== '\u2014' && a.date > end) return;
 
+      const advanceTrade = normalizeTradeName(a.trade || workers[wid]?.trade);
       const remaining = a.amount - (a.deductedAmount || 0);
       const maxDeduct = Math.min(workerGross * 0.2, remaining);
       const deductThisPayroll = maxDeduct > 0 ? maxDeduct : 0;
@@ -1061,14 +1090,15 @@ async function compilePayroll() {
       pendingAdvances[wid].advances.push({
         key: advEntry.key,
         ...a,
+        trade: advanceTrade,
         deductThisPayroll,
         remainingAfter: remaining - deductThisPayroll
       });
       pendingAdvances[wid].totalDeduct += deductThisPayroll;
       totalPending += deductThisPayroll;
-      const tradeName = normalizeTradeName(workers[wid]?.trade);
-      if (byTrade[tradeName]) {
-        byTrade[tradeName].cashAdvanceDeductions += deductThisPayroll;
+      const deductionTrade = byTrade[advanceTrade] ? advanceTrade : normalizeTradeName(workers[wid]?.trade);
+      if (byTrade[deductionTrade]) {
+        byTrade[deductionTrade].cashAdvanceDeductions += deductThisPayroll;
       }
     });
   });
@@ -1464,7 +1494,9 @@ function renderTimecardHistory(snap) {
   // Resolve all worker profiles in one read
   firebase.database().ref(`projects/${_lpid}/workers`).once('value', wSnap => {
     const workers = {};
-    wSnap.forEach(c => { workers[c.key] = c.val(); });
+    wSnap.forEach(c => {
+      workers[c.key] = c.val();
+    });
 
     // Some archived workers may have been removed — fall back to any name stored on the entry itself
     entries.forEach(e => appendHistoryCard(el, e, workers));
@@ -1555,7 +1587,9 @@ async function generateRFP() {
   const weekSet = new Set(days.map(d => d.iso));
 
   const workers = {};
-  wSnap.forEach(c => { workers[c.key] = c.val(); });
+  wSnap.forEach(c => {
+    workers[c.key] = c.val();
+  });
 
   const byTrade = {};
   let grand = 0, filteredDays = 0;
@@ -1822,7 +1856,9 @@ async function exportPayrollCSV() {
   if (!snap.exists()) { showToast('No payroll data to export.', 'warn'); return; }
 
   const rows = [];
-  snap.forEach(c => rows.push(c.val()));
+  snap.forEach(c => {
+    rows.push(c.val());
+  });
   rows.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
   let csv = 'Date,Period,Regular,OT,Night Diff,Gross,Deductions,Net,GovDeductions\n';

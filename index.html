@@ -19,25 +19,25 @@
 <!-- ReCapcha anti bot lol-->
 <script src="https://www.google.com/recaptcha/enterprise.js?render=6LcZsi0tAAAAAIsQaR686BvIDAjZVDyzdw4afHoW"></script>
 <!-- Utilities (DOM helpers, formatting, safeDb, etc.) -->
-<script src="utils.js"></script>
+<script src="utils.js?v=43"></script>
 
 <!-- Auth (must load before main.js — main.js calls canAccessProject/canEditProject) -->
-<script src="auth.js"></script>
+<script src="auth.js?v=43"></script>
 
 <!-- Core modules -->
-<script src="main.js"></script>
-<script src="labor.js"></script>
-<script src="materials.js"></script>
-<script src="sitelog.js"></script>
-<script src="suppliers.js"></script>
-<script src="billing.js"></script>
-<script src="changeorders.js"></script>
-<script src="equipment.js"></script>
-<script src="compliance.js"></script>
-<script src="defects.js"></script>
-<script src="tasks.js"></script>
-<script src="notifications.js"></script>
-<script src="report.js"></script>
+<script src="main.js?v=43"></script>
+<script src="labor.js?v=43"></script>
+<script src="materials.js?v=47"></script>
+<script src="sitelog.js?v=43"></script>
+<script src="suppliers.js?v=43"></script>
+<script src="billing.js?v=49"></script>
+<script src="changeorders.js?v=49"></script>
+<script src="equipment.js?v=43"></script>
+<script src="compliance.js?v=43"></script>
+<script src="defects.js?v=43"></script>
+<script src="tasks.js?v=43"></script>
+<script src="notifications.js?v=43"></script>
+<script src="report.js?v=43"></script>
 
 <!-- PDF generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -547,6 +547,21 @@ window.addEventListener('appinstalled', () => {
       <div id="inventoryList"><p class="empty-hint">No inventory tracked yet. Record deliveries to update stock.</p></div>
     </div>
 
+    <!-- Material Issuance -->
+    <div class="card gap">
+      <div class="card-title"><span class="ct-icon" style="background:rgba(59,130,246,.1)">&#x1F4E4;</span> Material Issuance</div>
+      <div class="material-issue-form">
+        <select id="matIssueItem">
+          <option value="">Select stock item</option>
+        </select>
+        <input id="matIssueQty" type="number" placeholder="Qty to issue" inputmode="decimal">
+        <input id="matIssueTo" type="text" placeholder="Issued to / receiver">
+        <input id="matIssueScope" type="text" placeholder="Scope / trade">
+        <input id="matIssuePurpose" type="text" placeholder="Purpose / location">
+        <button class="btn-add-sm" onclick="submitMaterialIssuance()">Issue Stock</button>
+      </div>
+    </div>
+
     <!-- Materials Ledger -->
     <div class="card gap">
       <div class="card-title">
@@ -567,6 +582,24 @@ window.addEventListener('appinstalled', () => {
       <div class="led-footer">
         <span class="footer-label">Total Paid / Delivered</span>
         <span class="footer-total" id="ledgerTotal">&#x20B1;0.00</span>
+      </div>
+    </div>
+
+    <!-- Material Movement Ledger -->
+    <div class="card gap">
+      <div class="card-title">
+        <span class="ct-icon" style="background:rgba(59,130,246,.1)">&#x1F501;</span>
+        Material Movement Ledger
+        <span class="ledger-count" id="materialMovementCount"></span>
+      </div>
+      <div class="overflow-scroll">
+        <table class="led-table movement-table">
+          <thead><tr>
+            <th>Date / Time</th><th>Action</th><th>Item / Source</th><th>Qty</th>
+            <th class="text-right">Cost</th><th>Source</th><th>User</th>
+          </tr></thead>
+          <tbody id="materialMovementBody"><tr><td colspan="7" class="empty-cell">No material movement history yet.</td></tr></tbody>
+        </table>
       </div>
     </div>
 

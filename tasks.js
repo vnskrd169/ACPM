@@ -45,7 +45,9 @@ function watchTasks(pid) {
     }
 
     const tasks = [];
-    snap.forEach(c => tasks.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      tasks.push({ id: c.key, ...c.val() });
+    });
 
     // Sort: overdue first, then by due date, then priority
     const now = Date.now();
@@ -381,7 +383,9 @@ function renderGanttView() {
     if (!el) return;
 
     const tasks = [];
-    snap.forEach(c => tasks.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      tasks.push({ id: c.key, ...c.val() });
+    });
 
     if (!tasks.length) {
       el.innerHTML = '<p class="empty-hint">No tasks to display.</p>';

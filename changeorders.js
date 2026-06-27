@@ -39,7 +39,9 @@ function watchChangeOrders(pid) {
     }
 
     const orders = [];
-    snap.forEach(c => orders.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      orders.push({ id: c.key, ...c.val() });
+    });
     orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     let totalApproved = 0, totalPending = 0, totalLabor = 0, totalMaterials = 0;
@@ -212,6 +214,9 @@ async function approveRejectCO(key, newStatus) {
   updates[`projects/${_copid}/materialBudgetDelta`] = materialDelta;
 
   await safeDb(() => firebase.database().ref().update(updates), 'Failed to update CO status');
+  if (typeof rebuildBillingRollups === 'function') {
+    await rebuildBillingRollups(_copid);
+  }
   auditLog('update', 'changeOrder', key, { oldStatus, newStatus, projectId: _copid });
 
   const action = newStatus === 'approved' ? 'approved \u2713' : newStatus === 'rejected' ? 'rejected \u2715' : 'reverted to pending';
@@ -235,6 +240,9 @@ async function deleteCO(key, status) {
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_copid}/changeOrders/${key}`).remove(), 'Failed to delete CO');
+  if (typeof rebuildBillingRollups === 'function') {
+    await rebuildBillingRollups(_copid);
+  }
   auditLog('delete', 'changeOrder', key, { status, projectId: _copid });
   showToast('Change order deleted', 'warn');
 }

@@ -1,13 +1,14 @@
-let _notifListener = null;
+let _notifListeners = [];
 let _notifCount = 0;
 
 function initNotifications() {
-  if (_notifListener) { _notifListener.off(); _notifListener = null; }
+  detachNotifications();
   watchNotifications();
 }
 
 function detachNotifications() {
-  if (_notifListener) { _notifListener.off(); _notifListener = null; }
+  _notifListeners.forEach(ref => ref.off());
+  _notifListeners = [];
 }
 
 function watchNotifications() {
@@ -15,16 +16,20 @@ function watchNotifications() {
   if (!user) return;
 
   const ref = firebase.database().ref(`notifications/${user.uid}`);
-  _notifListener = ref;
+  const unreadRef = ref.orderByChild('read').equalTo(false);
+  const recentRef = ref.orderByChild('createdAt').limitToLast(20);
+  _notifListeners = [unreadRef, recentRef];
 
-  ref.orderByChild('read').equalTo(false).on('value', snap => {
+  unreadRef.on('value', snap => {
     _notifCount = 0;
-    snap.forEach(() => _notifCount++);
+    snap.forEach(() => {
+      _notifCount++;
+    });
     updateNotifBadge();
   });
 
   // Also show recent notifications
-  ref.orderByChild('createdAt').limitToLast(20).on('value', snap => {
+  recentRef.on('value', snap => {
     renderNotificationFeed(snap);
   });
 }
@@ -45,7 +50,9 @@ function renderNotificationFeed(snap) {
   if (!el) return;
 
   const items = [];
-  snap.forEach(c => items.push({ id: c.key, ...c.val() }));
+  snap.forEach(c => {
+    items.push({ id: c.key, ...c.val() });
+  });
   items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
   if (!items.length) {
@@ -82,7 +89,10 @@ async function markAllNotifRead() {
   if (!user || !user.uid) return;
   const snap = await firebase.database().ref(`notifications/${user.uid}`).orderByChild('read').equalTo(false).once('value');
   const updates = {};
-  snap.forEach(c => { updates[`${c.key}/read`] = true; updates[`${c.key}/readAt`] = Date.now(); });
+  snap.forEach(c => {
+    updates[`${c.key}/read`] = true;
+    updates[`${c.key}/readAt`] = Date.now();
+  });
   if (Object.keys(updates).length) {
     await safeDb(() => firebase.database().ref(`notifications/${user.uid}`).update(updates), 'Failed to mark notifications read');
   }

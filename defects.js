@@ -49,7 +49,9 @@ function watchDefects(pid) {
     }
 
     const items = [];
-    snap.forEach(c => items.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      items.push({ id: c.key, ...c.val() });
+    });
 
     const severityRank = { critical: 0, major: 1, minor: 2 };
     items.sort((a, b) => {

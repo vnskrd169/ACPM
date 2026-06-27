@@ -64,7 +64,9 @@ function watchCompliance(pid) {
     }
 
     const items = [];
-    snap.forEach(c => items.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      items.push({ id: c.key, ...c.val() });
+    });
     items.sort((a, b) => daysUntil(a.expiryDate) - daysUntil(b.expiryDate));
 
     updateComplianceSummary(items);
@@ -217,7 +219,7 @@ async function scanComplianceAcrossProjects() {
   const todayKey = todayISO();
   const alerts = [];
 
-  for (const c of (() => { const arr = []; snap.forEach(x => arr.push(x)); return arr; })()) {
+  for (const c of (() => { const arr = []; snap.forEach(x => { arr.push(x); }); return arr; })()) {
     const pid = c.key;
     const proj = c.val();
     const compliance = proj.compliance || {};

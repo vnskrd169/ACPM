@@ -1,8 +1,8 @@
 
-//  ACPM — reports.js
+//  ACPM â€” reports.js
 //  Executive dashboard, project health scores, variance analysis
 //  Cross-project visibility for bosses, team performance metrics
-// ════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 let _reportsListeners = [];
 let _teamAdminListener = null;
@@ -103,7 +103,9 @@ function initAuditLog() {
   firebase.database().ref('users').once('value')
     .then(snap => {
       const users = {};
-      snap.forEach(c => { users[c.key] = { uid: c.key, ...c.val() }; });
+      snap.forEach(c => {
+        users[c.key] = { uid: c.key, ...c.val() };
+      });
       _auditUsersCache = users;
     })
     .catch(e => console.error('audit user lookup failed:', e))
@@ -115,7 +117,9 @@ function initAuditLog() {
     const el = $('auditLogFeed');
     if (!el) return;
     const rows = [];
-    snap.forEach(c => rows.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      rows.push({ id: c.key, ...c.val() });
+    });
     rows.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     _auditRowsCache = rows;
     const projectSel = $('auditFilterProject');
@@ -159,7 +163,7 @@ function renderAuditLog(rows = _auditRowsCache) {
         </div>
         <div style="font-size:12px;color:var(--muted2);line-height:1.5">
           <div><strong>User:</strong> ${auditActorHtml(r)}</div>
-          <div><strong>Entity:</strong> ${escapeHtml(r.entityType || '-')} ${r.entityId ? `� ${escapeHtml(r.entityId)}` : ''}</div>
+          <div><strong>Entity:</strong> ${escapeHtml(r.entityType || '-')} ${r.entityId ? `· ${escapeHtml(r.entityId)}` : ''}</div>
           <div><strong>Project:</strong> ${escapeHtml(formatProjectLabel(r.projectId || '-'))}</div>
           ${r.details ? `<div><strong>Details:</strong> ${escapeHtml(JSON.stringify(r.details))}</div>` : ''}
         </div>
@@ -206,7 +210,9 @@ function initTeamAdmin() {
   _teamAdminListener = ref;
   ref.on('value', snap => {
     const users = [];
-    snap.forEach(c => users.push({ uid: c.key, ...c.val() }));
+    snap.forEach(c => {
+      users.push({ uid: c.key, ...c.val() });
+    });
     users.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
     _teamUsersCache = users;
     renderWithProjectNames();
@@ -263,7 +269,9 @@ function fetchProjectsForAssignments() {
   return firebase.database().ref('projects').once('value')
     .then(snap => {
       const projects = [];
-      snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+      snap.forEach(c => {
+      projects.push({ id: c.key, ...c.val() });
+    });
       projects.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
       if (projects.length) {
         _projectCache = projects;
@@ -660,7 +668,7 @@ function detachReportsListeners() {
     _lifecycleRequestListener = null;
   }
 }
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function renderExecutiveDashboard() {
   const user = window._currentUser;
   if (!user || user.role !== 'boss') {
@@ -673,7 +681,9 @@ function renderExecutiveDashboard() {
   _reportsListeners.push(ref);
   ref.on('value', snap => {
     const projects = [];
-    snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      projects.push({ id: c.key, ...c.val() });
+    });
 
     // Health scores
     const healthData = projects.map(p => ({
@@ -754,9 +764,9 @@ function renderExecutiveDashboard() {
   });
 }
 
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  PROJECT HEALTH ALGORITHM
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function calculateProjectHealth(p) {
   const eff = effectiveBudget(p);
   const laborSpent = parseFloat(p.laborSpent) || 0;
@@ -815,9 +825,9 @@ function calculateProjectHealth(p) {
   };
 }
 
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  TEAM PERFORMANCE
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function renderTeamPerformance() {
   const ref = firebase.database().ref('projects');
   _reportsListeners.push(ref);
@@ -885,9 +895,9 @@ function renderTeamPerformance() {
   });
 }
 
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  BUDGET VARIANCE ANALYSIS
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function renderBudgetVariance() {
   const ref = firebase.database().ref('projects');
   _reportsListeners.push(ref);
@@ -946,9 +956,9 @@ function renderBudgetVariance() {
   });
 }
 
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 //  WEEKLY REPORT GENERATOR
-// ══════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 async function generateWeeklyReport() {
   const user = window._currentUser;
   if (!user) return;
@@ -959,7 +969,9 @@ async function generateWeeklyReport() {
 
   const snap = await firebase.database().ref('projects').once('value');
   const projects = [];
-  snap.forEach(c => projects.push({ id: c.key, ...c.val() }));
+  snap.forEach(c => {
+      projects.push({ id: c.key, ...c.val() });
+    });
 
   // Filter for APM's projects
   const myProjects = user.role === 'boss'
@@ -990,7 +1002,7 @@ async function generateWeeklyReport() {
   showToast('Weekly report generated!');
 }
 
-// ── Expose ──────────────────────────────────────────────────
+// â”€â”€ Expose â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.initReports = initReports;
 window.initTeamAdmin = initTeamAdmin;
 window.switchAdminSection = switchAdminSection;

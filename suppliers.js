@@ -36,7 +36,9 @@ function watchGlobalSuppliers() {
     }
 
     const suppliers = [];
-    snap.forEach(c => suppliers.push({ key: c.key, ...c.val() }));
+    snap.forEach(c => {
+      suppliers.push({ key: c.key, ...c.val() });
+    });
     suppliers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     const fragment = document.createDocumentFragment();

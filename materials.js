@@ -14,6 +14,7 @@ function initMaterials(pid) {
   watchLedger(pid);
   watchPOHistory(pid);
   watchInventory(pid);
+  watchMaterialMovements(pid);
   loadGlobalSuppliersForPO();
 
   // Set default PO date to today
@@ -60,9 +61,12 @@ function watchInventory(pid) {
   const ref = firebase.database().ref(`projects/${pid}/inventory`);
   matListen(ref, snap => {
     _inventory = {};
-    snap.forEach(c => { _inventory[c.key] = c.val(); });
+    snap.forEach(c => {
+      _inventory[c.key] = c.val();
+    });
     renderInventoryList(snap);
     renderInventoryAlerts(snap);
+    renderMaterialIssueOptions();
   });
 }
 
@@ -76,7 +80,9 @@ function renderInventoryList(snap) {
   }
 
   const items = [];
-  snap.forEach(c => items.push({ key: c.key, ...c.val() }));
+  snap.forEach(c => {
+    items.push({ key: c.key, ...c.val() });
+  });
   items.sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
 
   const table = document.createElement('table');
@@ -126,6 +132,84 @@ function renderInventoryAlerts(snap) {
 }
 
 // ── Load global suppliers for PO quick-select ───────────────
+function renderMaterialIssueOptions() {
+  const sel = $('matIssueItem');
+  if (!sel) return;
+
+  const prev = sel.value;
+  const items = Object.entries(_inventory || {})
+    .map(([key, item]) => ({ key, ...(item || {}) }))
+    .filter(item => (parseFloat(item.qtyOnHand) || 0) > 0)
+    .sort((a, b) => String(a.item || a.description || '').localeCompare(String(b.item || b.description || '')));
+
+  sel.innerHTML = '<option value="">Select stock item</option>';
+  items.forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = item.key;
+    opt.textContent = `${item.item || item.description || item.key}${item.size ? ' [' + item.size + ']' : ''} - ${item.qtyOnHand || 0} ${item.unit || ''}`;
+    opt.dataset.item = item.item || item.description || '';
+    opt.dataset.description = item.description || item.item || '';
+    opt.dataset.size = item.size || '';
+    opt.dataset.unit = item.unit || '';
+    opt.dataset.cost = item.avgCost || 0;
+    opt.dataset.qty = item.qtyOnHand || 0;
+    sel.appendChild(opt);
+  });
+
+  if ([...sel.options].some(opt => opt.value === prev)) sel.value = prev;
+}
+
+async function submitMaterialIssuance() {
+  if (!_mpid) return;
+  if (!canTouchMaterialsProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+
+  const sel = $('matIssueItem');
+  const itemKey = sel?.value || '';
+  const opt = sel?.options[sel.selectedIndex];
+  const qtyIssued = parseFloat($('matIssueQty')?.value) || 0;
+  const issuedTo = $('matIssueTo')?.value.trim() || '';
+  const scope = $('matIssueScope')?.value.trim() || '';
+  const purpose = $('matIssuePurpose')?.value.trim() || '';
+
+  if (!itemKey || !opt) { showToast('Select stock item to issue.', 'error'); return; }
+  if (qtyIssued <= 0) { showToast('Enter valid issue quantity.', 'error'); return; }
+  if (!issuedTo) { showToast('Enter issued to / receiver.', 'error'); return; }
+  const availableQty = parseFloat(opt.dataset.qty) || 0;
+  if (qtyIssued > availableQty) {
+    const itemLabel = opt.dataset.item || opt.dataset.description || 'selected item';
+    showToast(`Only ${availableQty} ${opt.dataset.unit || ''} available for ${itemLabel}.`, 'error');
+    return;
+  }
+
+  try {
+    const result = await issueMaterial(_mpid, {
+      issuedTo,
+      scope,
+      purpose,
+      items: [{
+        itemKey,
+        desc: opt.dataset.item || opt.dataset.description || itemKey,
+        description: opt.dataset.description || opt.dataset.item || itemKey,
+        size: opt.dataset.size || '',
+        unit: opt.dataset.unit || '',
+        qtyIssued,
+        unitCost: parseFloat(opt.dataset.cost) || 0
+      }]
+    });
+
+    ['matIssueQty', 'matIssueTo', 'matIssueScope', 'matIssuePurpose'].forEach(id => { const el = $(id); if (el) el.value = ''; });
+    if (sel) sel.value = '';
+    auditLog('issue', 'materialIssuance', result.issueId, { projectId: _mpid, totalCost: result.totalCost });
+    showToast(`Material issued. ${result.issueNo}`);
+  } catch (e) {
+    console.error('submitMaterialIssuance failed:', e);
+    showToast(e?.message || 'Failed to issue material.', 'error');
+  }
+}
+
 function loadGlobalSuppliersForPO() {
   firebase.database().ref('suppliers').once('value', snap => {
     refreshSupplierDropdown(snap);
@@ -167,6 +251,565 @@ function canTouchMaterialsProject() {
     : !!_mpid && typeof canEditProject === 'function' && canEditProject(_mpid);
 }
 
+function materialUserId() {
+  return window._currentUser?.uid || 'unknown';
+}
+
+function materialItemsArray(items) {
+  if (Array.isArray(items)) return items;
+  return Object.entries(items || {}).map(([key, value]) => ({ itemId: key, ...(value || {}) }));
+}
+
+function buildMaterialItemKey(item) {
+  return item.itemKey || normalizeInvKey(item.desc || item.description, item.size);
+}
+
+function buildPoItem(raw, index = 0) {
+  const desc = String(raw.desc || raw.description || '').trim();
+  const size = String(raw.size || '').trim();
+  const qty = parseFloat(raw.qtyOrdered ?? raw.qty) || 0;
+  const cost = parseFloat(raw.unitCost ?? raw.cost) || 0;
+  const itemId = raw.itemId || `item_${String(index + 1).padStart(3, '0')}`;
+  const itemKey = buildMaterialItemKey({ ...raw, desc, size });
+  const qtyReceived = parseFloat(raw.qtyReceived) || 0;
+  const qtyAccepted = parseFloat(raw.qtyAccepted) || qtyReceived || 0;
+  const qtyRejected = parseFloat(raw.qtyRejected) || 0;
+  const qtyCancelled = parseFloat(raw.qtyCancelled) || 0;
+
+  return {
+    itemId,
+    itemKey,
+    desc,
+    description: desc,
+    size,
+    qty,
+    qtyOrdered: qty,
+    qtyReceived,
+    qtyAccepted,
+    qtyRejected,
+    qtyCancelled,
+    qtyRemaining: Math.max(0, qty - qtyAccepted - qtyCancelled),
+    unit: String(raw.unit || '').trim(),
+    cost,
+    unitCost: cost,
+    total: qty * cost,
+    totalCost: qty * cost,
+    reorderPoint: parseFloat(raw.reorderPoint) || Math.ceil(qty * 0.3)
+  };
+}
+
+function materialMovementPayload(data) {
+  const now = Date.now();
+  return {
+    type: data.type,
+    date: data.date || new Date(now).toISOString().slice(0, 10),
+    createdAt: data.createdAt || now,
+    createdBy: data.createdBy || materialUserId(),
+    itemKey: data.itemKey || '',
+    description: data.description || data.desc || '',
+    size: data.size || '',
+    unit: data.unit || '',
+    qtyIn: parseFloat(data.qtyIn) || 0,
+    qtyOut: parseFloat(data.qtyOut) || 0,
+    unitCost: parseFloat(data.unitCost ?? data.cost) || 0,
+    movementCost: parseFloat(data.movementCost ?? data.total) || 0,
+    balanceAfter: parseFloat(data.balanceAfter) || 0,
+    sourceType: data.sourceType || '',
+    sourceId: data.sourceId || '',
+    poId: data.poId || '',
+    deliveryId: data.deliveryId || '',
+    issueId: data.issueId || '',
+    supplierId: data.supplierId || '',
+    supplierName: data.supplierName || data.supplier || '',
+    notes: data.notes || ''
+  };
+}
+
+async function createMaterialMovement(pid, movement) {
+  if (!pid) throw new Error('Project id is required.');
+  const ref = firebase.database().ref(`projects/${pid}/materialMovements`).push();
+  const payload = materialMovementPayload(movement);
+  await safeDb(() => ref.set(payload), 'Failed to create material movement');
+  return { id: ref.key, ...payload };
+}
+
+function addMaterialMovementUpdate(pid, updates, movement) {
+  const key = firebase.database().ref().push().key;
+  updates[`projects/${pid}/materialMovements/${key}`] = materialMovementPayload(movement);
+  return key;
+}
+
+async function createPurchaseOrder(pid, input) {
+  if (!pid) throw new Error('Project id is required.');
+  const items = materialItemsArray(input.items).map(buildPoItem);
+  if (!items.length) throw new Error('At least one PO item is required.');
+
+  const supplierName = String(input.supplierName || input.supplier || '').trim();
+  if (!supplierName) throw new Error('Supplier is required.');
+
+  const total = items.reduce((sum, item) => sum + (parseFloat(item.totalCost ?? item.total) || 0), 0);
+  const counterRef = firebase.database().ref(`projects/${pid}/poCounter`);
+  const counterResult = await counterRef.transaction(current => (current || 0) + 1);
+  const seq = counterResult.snapshot.val();
+  const poId = firebase.database().ref(`projects/${pid}/purchaseOrders`).push().key;
+  const now = Date.now();
+  const poNo = `PO-${String(seq).padStart(3, '0')}`;
+
+  const po = {
+    supplier: supplierName,
+    supplierName,
+    supplierId: input.supplierId || '',
+    date: input.date,
+    notes: input.notes || '',
+    urgency: input.urgency || 'normal',
+    items,
+    total,
+    committedCost: 0,
+    receivedCost: 0,
+    issuedCost: 0,
+    seq,
+    poNo,
+    status: 'pending_approval',
+    deliveryStatus: 'not_ordered',
+    invoiceStatus: 'none',
+    approvalWorkflow: {
+      submittedBy: materialUserId(),
+      submittedAt: now,
+      approvedBy: null,
+      approvedAt: null
+    },
+    createdAt: now,
+    createdBy: materialUserId(),
+    createdDate: new Date(now).toLocaleDateString('en-PH')
+  };
+
+  const invSnap = await firebase.database().ref(`projects/${pid}/inventory`).once('value');
+  const liveInv = {};
+  invSnap.forEach(c => {
+    liveInv[c.key] = c.val();
+  });
+
+  const updates = {};
+  updates[`projects/${pid}/purchaseOrders/${poId}`] = po;
+  items.forEach((item, i) => {
+    updates[`projects/${pid}/ledger/${poId}_${item.itemId}`] = {
+      poId,
+      poItemId: item.itemId,
+      supplier: supplierName,
+      supplierName,
+      supplierId: input.supplierId || '',
+      date: input.date,
+      desc: item.desc,
+      size: item.size || '',
+      qty: item.qty,
+      unit: item.unit,
+      cost: item.cost,
+      total: item.total,
+      status: 'pending_approval',
+      createdAt: now
+    };
+
+    if (!liveInv[item.itemKey]) {
+      updates[`projects/${pid}/inventory/${item.itemKey}`] = {
+        itemKey: item.itemKey,
+        item: item.desc,
+        description: item.desc,
+        size: item.size || '',
+        unit: item.unit,
+        qtyOnHand: 0,
+        avgCost: item.cost,
+        totalValue: 0,
+        reorderPoint: item.reorderPoint,
+        lastUpdated: now,
+        lastMovementAt: now
+      };
+    }
+  });
+
+  addMaterialMovementUpdate(pid, updates, {
+    type: 'po_submit',
+    date: input.date,
+    sourceType: 'purchaseOrder',
+    sourceId: poId,
+    poId,
+    supplierId: input.supplierId || '',
+    supplierName,
+    movementCost: total,
+    notes: input.notes || ''
+  });
+
+  await safeDb(() => firebase.database().ref().update(updates), 'Failed to submit PO');
+  return { poId, po, seq };
+}
+
+async function getPurchaseOrder(pid, poId) {
+  const snap = await firebase.database().ref(`projects/${pid}/purchaseOrders/${poId}`).once('value');
+  const po = snap.val();
+  return po ? { id: poId, ...po } : null;
+}
+
+async function listPurchaseOrders(pid) {
+  const snap = await firebase.database().ref(`projects/${pid}/purchaseOrders`).once('value');
+  const orders = [];
+  snap.forEach(c => {
+    orders.push({ id: c.key, ...c.val() });
+  });
+  return orders.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+async function calculateReceivedQtyByPOItem(pid, poId) {
+  const snap = await firebase.database().ref(`projects/${pid}/deliveries`).orderByChild('poId').equalTo(poId).once('value');
+  const totals = {};
+  snap.forEach(deliverySnap => {
+    const delivery = deliverySnap.val() || {};
+    if (delivery.status === 'voided') return;
+    materialItemsArray(delivery.items).forEach(item => {
+      const key = item.poItemId || item.itemId || item.itemKey || buildMaterialItemKey(item);
+      const accepted = parseFloat(item.qtyAccepted ?? item.qtyReceived) || 0;
+      const rejected = parseFloat(item.qtyRejected) || 0;
+      if (!totals[key]) totals[key] = { qtyReceived: 0, qtyAccepted: 0, qtyRejected: 0 };
+      totals[key].qtyReceived += parseFloat(item.qtyReceived) || accepted;
+      totals[key].qtyAccepted += accepted;
+      totals[key].qtyRejected += rejected;
+    });
+  });
+  return totals;
+}
+
+async function receiveDelivery(pid, poId, input) {
+  if (!pid || !poId) throw new Error('Project and PO are required.');
+  const po = await getPurchaseOrder(pid, poId);
+  if (!po) throw new Error('Purchase order not found.');
+
+  const poItems = materialItemsArray(po.items).map((item, index) => ({ ...buildPoItem(item, index), _index: index }));
+  const receivedMap = await calculateReceivedQtyByPOItem(pid, poId);
+  const date = input.date || input.deliveryDate || new Date().toISOString().slice(0, 10);
+  const deliveryId = firebase.database().ref(`projects/${pid}/deliveries`).push().key;
+  const updates = {};
+  const deliveryItems = [];
+  let allGood = true;
+
+  materialItemsArray(input.items).forEach(raw => {
+    const index = Number.isInteger(raw.index) ? raw.index : parseInt(raw.index, 10);
+    const poItem = poItems[index] || poItems.find(item => item.itemId === raw.poItemId || item.itemKey === raw.itemKey);
+    if (!poItem) return;
+
+    const qtyReceived = parseFloat(raw.qtyReceived) || 0;
+    if (qtyReceived <= 0) return;
+
+    const condition = raw.condition || 'good';
+    const qtyAccepted = condition === 'damaged' ? 0 : qtyReceived;
+    const qtyRejected = condition === 'damaged' ? qtyReceived : 0;
+    const prior = receivedMap[poItem.itemId] || receivedMap[poItem.itemKey] || {};
+    const priorAccepted = parseFloat(prior.qtyAccepted) || parseFloat(poItem.qtyAccepted) || 0;
+    const ordered = parseFloat(poItem.qtyOrdered ?? poItem.qty) || 0;
+    const remaining = Math.max(0, ordered - priorAccepted);
+
+    if (qtyReceived > remaining) {
+      throw new Error(`${poItem.desc} exceeds remaining PO quantity. Remaining: ${remaining}.`);
+    }
+    if (condition !== 'good') allGood = false;
+
+    deliveryItems.push({
+      poItemId: poItem.itemId,
+      itemKey: poItem.itemKey,
+      desc: poItem.desc,
+      description: poItem.desc,
+      size: poItem.size || '',
+      qtyOrdered: ordered,
+      qtyReceived,
+      qtyAccepted,
+      qtyRejected,
+      unit: poItem.unit,
+      unitCost: poItem.unitCost,
+      cost: poItem.cost,
+      acceptedCost: qtyAccepted * poItem.unitCost,
+      condition
+    });
+
+    const nextAccepted = priorAccepted + qtyAccepted;
+    const nextRejected = (parseFloat(prior.qtyRejected) || parseFloat(poItem.qtyRejected) || 0) + qtyRejected;
+    updates[`projects/${pid}/purchaseOrders/${poId}/items/${poItem._index}/qtyReceived`] = nextAccepted + nextRejected;
+    updates[`projects/${pid}/purchaseOrders/${poId}/items/${poItem._index}/qtyAccepted`] = nextAccepted;
+    updates[`projects/${pid}/purchaseOrders/${poId}/items/${poItem._index}/qtyRejected`] = nextRejected;
+    updates[`projects/${pid}/purchaseOrders/${poId}/items/${poItem._index}/qtyRemaining`] = Math.max(0, ordered - nextAccepted);
+    updates[`projects/${pid}/purchaseOrders/${poId}/items/${poItem._index}/lastReceivedAt`] = Date.now();
+  });
+
+  if (!deliveryItems.length) throw new Error('Enter quantities received.');
+
+  const acceptedItems = deliveryItems.filter(item => item.qtyAccepted > 0);
+  const inventoryResult = await updateInventoryFromReceiving(pid, acceptedItems, { updates, date });
+  const acceptedCost = inventoryResult.items.reduce((sum, item) => sum + item.movementCost, 0);
+  const currentBudgetUpdates = {};
+  const currentReceivedCost = await calculateMaterialBudgetSpent(pid, { updates: currentBudgetUpdates });
+  const nextReceivedCost = currentReceivedCost + acceptedCost;
+
+  inventoryResult.items.forEach(item => {
+    addMaterialMovementUpdate(pid, updates, {
+      type: 'receive',
+      date,
+      itemKey: item.itemKey,
+      description: item.desc || item.description,
+      size: item.size,
+      unit: item.unit,
+      qtyIn: item.qtyAccepted,
+      unitCost: item.unitCost,
+      movementCost: item.movementCost,
+      balanceAfter: item.balanceAfter,
+      sourceType: 'delivery',
+      sourceId: deliveryId,
+      poId,
+      deliveryId,
+      supplierId: po.supplierId || '',
+      supplierName: po.supplierName || po.supplier || '',
+      notes: input.notes || input.reference || ''
+    });
+  });
+
+  const projectedTotals = {};
+  poItems.forEach(item => {
+    const prior = receivedMap[item.itemId] || receivedMap[item.itemKey] || {};
+    projectedTotals[item.itemId] = parseFloat(prior.qtyAccepted) || parseFloat(item.qtyAccepted) || 0;
+  });
+  deliveryItems.forEach(item => {
+    projectedTotals[item.poItemId] = (projectedTotals[item.poItemId] || 0) + item.qtyAccepted;
+  });
+
+  const totalOrdered = poItems.reduce((sum, item) => sum + (parseFloat(item.qtyOrdered ?? item.qty) || 0), 0);
+  const totalAccepted = Object.values(projectedTotals).reduce((sum, qty) => sum + (parseFloat(qty) || 0), 0);
+  const deliveryStatus = totalAccepted >= totalOrdered ? 'fully_delivered' : 'partially_delivered';
+  const orders = await listPurchaseOrders(pid);
+  const nextCommitted = orders
+    .map(order => order.id === poId ? { ...order, status: deliveryStatus } : order)
+    .filter(order => ['approved', 'ordered', 'partially_delivered'].includes(order.status))
+    .reduce((sum, order) => sum + (parseFloat(order.total) || 0), 0);
+
+  updates[`projects/${pid}/deliveries/${deliveryId}`] = {
+    poId,
+    poNo: po.poNo || `PO-${String(po.seq || '???').padStart(3, '0')}`,
+    date,
+    deliveryDate: date,
+    reference: input.reference || '',
+    items: deliveryItems,
+    receivedAt: Date.now(),
+    receivedBy: materialUserId(),
+    supplierId: po.supplierId || '',
+    supplierName: po.supplierName || po.supplier || '',
+    status: allGood ? 'received' : 'received_with_issues',
+    notes: input.notes || ''
+  };
+  updates[`projects/${pid}/purchaseOrders/${poId}/deliveryStatus`] = deliveryStatus;
+  updates[`projects/${pid}/purchaseOrders/${poId}/status`] = deliveryStatus;
+  updates[`projects/${pid}/purchaseOrders/${poId}/lastDelivery`] = deliveryId;
+  updates[`projects/${pid}/purchaseOrders/${poId}/lastDeliveryDate`] = date;
+  updates[`projects/${pid}/purchaseOrders/${poId}/receivedCost`] = (parseFloat(po.receivedCost) || 0) + acceptedCost;
+  updates[`projects/${pid}/materialCommitted`] = nextCommitted;
+  updates[`projects/${pid}/materialReceivedCost`] = nextReceivedCost;
+  updates[`projects/${pid}/materialSpent`] = nextReceivedCost;
+
+  await safeDb(() => firebase.database().ref().update(updates), 'Failed to record delivery');
+  return { deliveryId, deliveryStatus, acceptedCost, items: deliveryItems };
+}
+
+async function updateInventoryFromReceiving(pid, receivedItems, options = {}) {
+  const invSnap = await firebase.database().ref(`projects/${pid}/inventory`).once('value');
+  const liveInv = {};
+  invSnap.forEach(c => {
+    liveInv[c.key] = c.val();
+  });
+
+  const now = Date.now();
+  const updates = options.updates || {};
+  const results = [];
+  receivedItems.forEach(item => {
+    const qtyAccepted = parseFloat(item.qtyAccepted ?? item.qtyReceived) || 0;
+    if (qtyAccepted <= 0) return;
+
+    const key = item.itemKey || buildMaterialItemKey(item);
+    const current = liveInv[key] || {};
+    const currentQty = parseFloat(current.qtyOnHand) || 0;
+    const currentValue = parseFloat(current.totalValue) || ((parseFloat(current.avgCost) || 0) * currentQty);
+    const unitCost = parseFloat(item.unitCost ?? item.cost) || 0;
+    const addedValue = qtyAccepted * unitCost;
+    const nextQty = currentQty + qtyAccepted;
+    const nextValue = currentValue + addedValue;
+    const avgCost = nextQty > 0 ? nextValue / nextQty : unitCost;
+
+    updates[`projects/${pid}/inventory/${key}`] = {
+      ...current,
+      itemKey: key,
+      item: item.desc || item.description || current.item || '',
+      description: item.description || item.desc || current.description || current.item || '',
+      size: item.size || current.size || '',
+      unit: item.unit || current.unit || '',
+      qtyOnHand: nextQty,
+      avgCost,
+      totalValue: nextValue,
+      reorderPoint: parseFloat(current.reorderPoint) || parseFloat(item.reorderPoint) || 0,
+      lastReceived: options.date || item.date || new Date(now).toISOString().slice(0, 10),
+      lastReceivedAt: now,
+      lastUpdated: now,
+      lastMovementAt: now
+    };
+
+    results.push({
+      ...item,
+      itemKey: key,
+      qtyAccepted,
+      unitCost,
+      movementCost: addedValue,
+      balanceAfter: nextQty
+    });
+  });
+
+  if (!options.updates && Object.keys(updates).length) {
+    await safeDb(() => firebase.database().ref().update(updates), 'Failed to update inventory');
+  }
+  return { updates, items: results };
+}
+
+async function validateStockAvailability(pid, issueItems) {
+  const invSnap = await firebase.database().ref(`projects/${pid}/inventory`).once('value');
+  const inventory = {};
+  invSnap.forEach(c => {
+    inventory[c.key] = c.val();
+  });
+
+  materialItemsArray(issueItems).forEach(item => {
+    const itemKey = item.itemKey || buildMaterialItemKey(item);
+    const qtyIssued = parseFloat(item.qtyIssued ?? item.qty) || 0;
+    const onHand = parseFloat(inventory[itemKey]?.qtyOnHand) || 0;
+    if (qtyIssued <= 0) throw new Error(`Invalid issue quantity for ${item.desc || item.description || itemKey}.`);
+    if (qtyIssued > onHand) {
+      throw new Error(`Insufficient stock for ${item.desc || item.description || itemKey}. Available: ${onHand}, requested: ${qtyIssued}.`);
+    }
+  });
+
+  return inventory;
+}
+
+async function updateInventoryFromIssuance(pid, issueItems, options = {}) {
+  const inventory = options.inventory || await validateStockAvailability(pid, issueItems);
+  const now = Date.now();
+  const updates = options.updates || {};
+  const results = [];
+
+  materialItemsArray(issueItems).forEach(item => {
+    const itemKey = item.itemKey || buildMaterialItemKey(item);
+    const current = inventory[itemKey] || {};
+    const qtyIssued = parseFloat(item.qtyIssued ?? item.qty) || 0;
+    const currentQty = parseFloat(current.qtyOnHand) || 0;
+    if (qtyIssued > currentQty) throw new Error(`Insufficient stock for ${item.desc || item.description || itemKey}.`);
+
+    const unitCost = parseFloat(item.unitCost ?? item.cost ?? current.avgCost) || 0;
+    const nextQty = currentQty - qtyIssued;
+    const movementCost = qtyIssued * unitCost;
+    const nextValue = Math.max(0, (parseFloat(current.totalValue) || (currentQty * unitCost)) - movementCost);
+
+    updates[`projects/${pid}/inventory/${itemKey}`] = {
+      ...current,
+      itemKey,
+      item: current.item || item.desc || item.description || '',
+      description: current.description || item.description || item.desc || '',
+      size: current.size || item.size || '',
+      unit: current.unit || item.unit || '',
+      qtyOnHand: nextQty,
+      avgCost: unitCost,
+      totalValue: nextValue,
+      lastIssuedAt: now,
+      lastUpdated: now,
+      lastMovementAt: now
+    };
+
+    results.push({
+      ...item,
+      itemKey,
+      qtyIssued,
+      unitCost,
+      movementCost,
+      balanceAfter: nextQty
+    });
+  });
+
+  if (!options.updates && Object.keys(updates).length) {
+    await safeDb(() => firebase.database().ref().update(updates), 'Failed to update inventory');
+  }
+  return { updates, items: results };
+}
+
+async function issueMaterial(pid, input) {
+  if (!pid) throw new Error('Project id is required.');
+  const issueItems = materialItemsArray(input.items);
+  if (!issueItems.length) throw new Error('At least one material item is required.');
+
+  const inventory = await validateStockAvailability(pid, issueItems);
+  const issueId = firebase.database().ref(`projects/${pid}/materialIssuances`).push().key;
+  const now = Date.now();
+  const issueNo = input.issueNo || `ISS-${new Date(now).toISOString().slice(0, 10).replace(/-/g, '')}-${issueId.slice(-5)}`;
+  const updates = {};
+  const inventoryResult = await updateInventoryFromIssuance(pid, issueItems, { updates, inventory });
+  const totalCost = inventoryResult.items.reduce((sum, item) => sum + item.movementCost, 0);
+
+  updates[`projects/${pid}/materialIssuances/${issueId}`] = {
+    issueNo,
+    date: input.date || new Date(now).toISOString().slice(0, 10),
+    issuedTo: input.issuedTo || '',
+    requestedBy: input.requestedBy || '',
+    location: input.location || '',
+    scope: input.scope || '',
+    purpose: input.purpose || '',
+    notes: input.notes || '',
+    createdAt: now,
+    createdBy: materialUserId(),
+    status: 'posted',
+    totalCost,
+    items: inventoryResult.items
+  };
+
+  inventoryResult.items.forEach(item => {
+    addMaterialMovementUpdate(pid, updates, {
+      type: 'issue',
+      date: input.date,
+      itemKey: item.itemKey,
+      description: item.desc || item.description,
+      size: item.size,
+      unit: item.unit,
+      qtyOut: item.qtyIssued,
+      unitCost: item.unitCost,
+      movementCost: item.movementCost,
+      balanceAfter: item.balanceAfter,
+      sourceType: 'materialIssuance',
+      sourceId: issueId,
+      issueId,
+      notes: input.notes || ''
+    });
+  });
+
+  await safeDb(() => firebase.database().ref().update(updates), 'Failed to issue material');
+  return { issueId, issueNo, totalCost };
+}
+
+async function calculateMaterialBudgetSpent(pid, options = {}) {
+  const movementSnap = await firebase.database().ref(`projects/${pid}/materialMovements`).once('value');
+  let receivedCost = 0;
+  movementSnap.forEach(c => {
+    const movement = c.val() || {};
+    if (movement.type === 'receive') {
+      receivedCost += parseFloat(movement.movementCost) || 0;
+    }
+  });
+
+  const updates = options.updates || {};
+  updates[`projects/${pid}/materialReceivedCost`] = receivedCost;
+  updates[`projects/${pid}/materialSpent`] = receivedCost;
+
+  if (!options.updates) {
+    await safeDb(() => firebase.database().ref().update(updates), 'Failed to update material budget');
+  }
+  return receivedCost;
+}
+
 function renderDraft() {
   const el = $('draftList'); if (!el) return;
   if (!_draftItems.length) {
@@ -203,6 +846,7 @@ async function submitPO() {
   if (!_draftItems.length) { showToast('Add at least one item first.', 'error'); return; }
 
   const supplier = $('poSupplier')?.value.trim();
+  const supplierId = $('poSupplierId')?.value.trim() || '';
   const date = $('poDate')?.value;
   const notes = $('poNotes')?.value.trim() || '';
   const urgency = $('poUrgency')?.value || 'normal';
@@ -227,82 +871,31 @@ async function submitPO() {
     if (!confirm(`\u26A0\uFE0F This PO (${peso(total)}) exceeds remaining budget (${peso(remaining)}). Submit anyway?`)) return;
   }
 
-  const counterRef = firebase.database().ref(`projects/${_mpid}/poCounter`);
-  let seq;
   try {
-    const result = await counterRef.transaction(current => (current || 0) + 1);
-    seq = result.snapshot.val();
+    const result = await createPurchaseOrder(_mpid, {
+      supplier,
+      supplierName: supplier,
+      supplierId,
+      date,
+      notes,
+      urgency,
+      items: _draftItems
+    });
+
+    _draftItems = [];
+    ['poSupplier', 'poSupplierId', 'poDate', 'poNotes'].forEach(id => { const e = $(id); if (e) e.value = ''; });
+    const sel = $('poSupplierSelect'); if (sel) sel.value = '';
+    renderDraft();
+    auditLog('create', 'purchaseOrder', result.poId, { seq: result.seq, supplier, total, projectId: _mpid });
+    notifyProject(_mpid, {
+      type: 'billing',
+      message: `PO #${String(result.seq).padStart(3, '0')} (${peso(total)} to ${supplier}) needs your approval`
+    }).catch(() => {});
+    showToast(`\u1F4CB PO #${String(result.seq).padStart(3, '0')} submitted for approval`);
   } catch (e) {
-    showToast('Failed to generate PO number. Try again.', 'error');
-    return;
+    console.error('submitPO failed:', e);
+    showToast(e?.message || 'Failed to submit PO. Try again.', 'error');
   }
-
-  const po = {
-    supplier, date, notes, urgency,
-    items: _draftItems,
-    total, seq,
-    status: 'pending_approval',
-    approvalWorkflow: {
-      submittedBy: window._currentUser.uid,
-      submittedAt: Date.now(),
-      approvedBy: null,
-      approvedAt: null
-    },
-    deliveryStatus: 'not_ordered',
-    invoiceStatus: 'none',
-    createdAt: Date.now(),
-    createdDate: new Date().toLocaleDateString('en-PH')
-  };
-
-  const poRef = await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders`).push(po), 'Failed to submit PO');
-
-  // Create ledger entries
-  const ledgerUpdates = {};
-  _draftItems.forEach((item, i) => {
-    ledgerUpdates[`${poRef.key}_${i}`] = {
-      poId: poRef.key,
-      supplier, date,
-      desc: item.desc,
-      size: item.size || '',
-      qty: item.qty,
-      unit: item.unit,
-      cost: item.cost,
-      total: item.total,
-      status: 'pending_approval',
-      createdAt: Date.now()
-    };
-  });
-  await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger`).update(ledgerUpdates), 'Failed to update ledger');
-
-  // Set reorder points for new items if not exists
-  const invUpdates = {};
-  _draftItems.forEach(item => {
-    const invKey = normalizeInvKey(item.desc, item.size);
-    if (!_inventory[invKey]) {
-      invUpdates[invKey] = {
-        item: item.desc,
-        size: item.size || '',
-        unit: item.unit,
-        qtyOnHand: 0,
-        reorderPoint: Math.ceil(item.qty * 0.3),
-        lastUpdated: Date.now()
-      };
-    }
-  });
-  if (Object.keys(invUpdates).length) {
-    await safeDb(() => firebase.database().ref(`projects/${_mpid}/inventory`).update(invUpdates), 'Failed to update inventory');
-  }
-
-  _draftItems = [];
-  ['poSupplier', 'poDate', 'poNotes'].forEach(id => { const e = $(id); if (e) e.value = ''; });
-  const sel = $('poSupplierSelect'); if (sel) sel.value = '';
-  renderDraft();
-  auditLog('create', 'purchaseOrder', poRef.key, { seq, supplier, total, projectId: _mpid });
-  notifyProject(_mpid, {
-    type: 'billing',
-    message: `PO #${String(seq).padStart(3, '0')} (${peso(total)} to ${supplier}) needs your approval`
-  }).catch(() => {});
-  showToast(`\u1F4CB PO #${String(seq).padStart(3, '0')} submitted for approval`);
 }
 
 // ── Approve PO (boss-only — APMs submit, bosses approve) ────
@@ -316,19 +909,40 @@ async function approvePO(poId) {
   }
 
   try {
+    const po = await getPurchaseOrder(_mpid, poId);
     await safeDb(() => firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).update({
       status: 'approved',
-      'approvalWorkflow.approvedBy': window._currentUser.uid,
-      'approvalWorkflow.approvedAt': Date.now()
+      committedCost: parseFloat(po?.total) || 0,
+      'approvalWorkflow/approvedBy': window._currentUser.uid,
+      'approvalWorkflow/approvedAt': Date.now()
     }), 'Failed to approve PO');
 
     const ledgerSnap = await firebase.database().ref(`projects/${_mpid}/ledger`).orderByChild('poId').equalTo(poId).once('value');
     const updates = {};
-    ledgerSnap.forEach(c => { updates[`${c.key}/status`] = 'ordered'; });
+    ledgerSnap.forEach(c => {
+      updates[`${c.key}/status`] = 'ordered';
+    });
 
     if (Object.keys(updates).length) {
       await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger`).update(updates), 'Failed to update ledger items');
     }
+
+    await createMaterialMovement(_mpid, {
+      type: 'po_approve',
+      date: po?.date,
+      sourceType: 'purchaseOrder',
+      sourceId: poId,
+      poId,
+      supplierId: po?.supplierId || '',
+      supplierName: po?.supplierName || po?.supplier || '',
+      movementCost: parseFloat(po?.total) || 0
+    });
+
+    const orders = await listPurchaseOrders(_mpid);
+    const committed = orders
+      .filter(order => ['approved', 'ordered', 'partially_delivered'].includes(order.status))
+      .reduce((sum, order) => sum + (parseFloat(order.total) || 0), 0);
+    await safeDb(() => firebase.database().ref(`projects/${_mpid}`).update({ materialCommitted: committed }), 'Failed to update committed materials');
 
     auditLog('approve', 'purchaseOrder', poId, { projectId: _mpid, ledgerItems: Object.keys(updates).length });
     showToast('PO approved and ready to order');
@@ -341,30 +955,40 @@ async function approvePO(poId) {
 // ══════════════════════════════════════════════════════
 //  DELIVERY RECEIPT (3-Way Match Step 1)
 // ══════════════════════════════════════════════════════
-function openDeliveryModal(poId) {
+async function openDeliveryModal(poId) {
   _currentDeliveryPO = poId;
-  firebase.database().ref(`projects/${_mpid}/purchaseOrders/${poId}`).once('value', snap => {
-    const po = snap.val();
+  try {
+    const po = await getPurchaseOrder(_mpid, poId);
     if (!po) return;
+    const receivedMap = await calculateReceivedQtyByPOItem(_mpid, poId);
+    const items = materialItemsArray(po.items).map(buildPoItem);
 
     const list = $('deliveryItemsList');
     if (list) {
-      list.innerHTML = (po.items || []).map((item, i) => `
+      list.innerHTML = items.map((item, i) => {
+        const received = receivedMap[item.itemId] || receivedMap[item.itemKey] || {};
+        const acceptedQty = parseFloat(received.qtyAccepted) || parseFloat(item.qtyAccepted) || 0;
+        const remaining = Math.max(0, (parseFloat(item.qtyOrdered ?? item.qty) || 0) - acceptedQty);
+        return `
         <div class="delivery-item-row">
           <span class="delivery-item-name">${escapeHtml(item.desc)} ${item.size ? `[${escapeHtml(item.size)}]` : ''}</span>
-          <span class="delivery-item-ordered">Ordered: ${item.qty} ${escapeHtml(item.unit)}</span>
-          <input type="number" class="delivery-qty-received" id="delQty_${i}" placeholder="Qty Received" inputmode="decimal">
+          <span class="delivery-item-ordered">Ordered: ${item.qty} ${escapeHtml(item.unit)} &middot; Remaining: ${remaining} ${escapeHtml(item.unit)}</span>
+          <input type="number" class="delivery-qty-received" id="delQty_${i}" placeholder="Qty Received" inputmode="decimal" max="${remaining}" ${remaining <= 0 ? 'disabled' : ''}>
           <select id="delCondition_${i}">
             <option value="good">Good</option>
             <option value="damaged">Damaged</option>
             <option value="incomplete">Incomplete</option>
           </select>
         </div>
-      `).join('');
+      `;
+      }).join('');
     }
     $('deliveryDate').value = new Date().toISOString().slice(0, 10);
     $('deliveryModal').classList.remove('hidden');
-  });
+  } catch (e) {
+    console.error('openDeliveryModal failed:', e);
+    showToast('Failed to load delivery form.', 'error');
+  }
 }
 
 function closeDeliveryModal() {
@@ -379,17 +1003,6 @@ async function confirmDelivery() {
     return;
   }
 
-  const [poSnap, invSnap] = await Promise.all([
-    firebase.database().ref(`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}`).once('value'),
-    firebase.database().ref(`projects/${_mpid}/inventory`).once('value')
-  ]);
-  const po = poSnap.val();
-  if (!po) return;
-
-  // Build live inventory map from fresh snapshot
-  const liveInv = {};
-  invSnap.forEach(c => { liveInv[c.key] = c.val(); });
-
   const deliveryDate = $('deliveryDate')?.value;
   const deliveryRef = $('deliveryRef')?.value.trim() || '';
 
@@ -400,73 +1013,35 @@ async function confirmDelivery() {
   const today = new Date(); today.setHours(0,0,0,0);
   if (inputDate > today) { showToast('Delivery date cannot be in the future.', 'error'); return; }
 
-  const receivedItems = [];
-  const invUpdates = {};
-  let allGood = true;
+  try {
+    const po = await getPurchaseOrder(_mpid, _currentDeliveryPO);
+    const items = materialItemsArray(po?.items || []).map((item, i) => ({
+      index: i,
+      poItemId: item.itemId || `item_${String(i + 1).padStart(3, '0')}`,
+      itemKey: item.itemKey || buildMaterialItemKey(item),
+      qtyReceived: parseFloat($(`delQty_${i}`)?.value) || 0,
+      condition: $(`delCondition_${i}`)?.value || 'good'
+    })).filter(item => item.qtyReceived > 0);
 
-  (po.items || []).forEach((item, i) => {
-    const qtyReceived = parseFloat($(`delQty_${i}`)?.value) || 0;
-    const condition = $(`delCondition_${i}`)?.value || 'good';
+    const result = await receiveDelivery(_mpid, _currentDeliveryPO, {
+      date: deliveryDate,
+      reference: deliveryRef,
+      items
+    });
 
-    if (qtyReceived > 0) {
-      receivedItems.push({
-        desc: item.desc,
-        size: item.size || '',
-        qtyOrdered: item.qty,
-        qtyReceived,
-        unit: item.unit,
-        condition
-      });
+    auditLog('delivery', 'purchaseOrder', _currentDeliveryPO, {
+      deliveryKey: result.deliveryId,
+      items: result.items.length,
+      acceptedCost: result.acceptedCost,
+      projectId: _mpid
+    });
 
-      // Update inventory from live snapshot
-      const invKey = normalizeInvKey(item.desc, item.size);
-      const current = liveInv[invKey]?.qtyOnHand || 0;
-      invUpdates[invKey] = {
-        item: item.desc,
-        size: item.size || '',
-        unit: item.unit,
-        qtyOnHand: current + qtyReceived,
-        lastReceived: deliveryDate,
-        lastUpdated: Date.now()
-      };
-
-      if (condition !== 'good') allGood = false;
-    }
-  });
-
-  if (!receivedItems.length) { showToast('Enter quantities received.', 'error'); return; }
-
-  const deliveryKey = firebase.database().ref().push().key;
-  const updates = {};
-
-  updates[`projects/${_mpid}/deliveries/${deliveryKey}`] = {
-    poId: _currentDeliveryPO,
-    date: deliveryDate,
-    reference: deliveryRef,
-    items: receivedItems,
-    receivedAt: Date.now(),
-    receivedBy: window._currentUser.uid,
-    status: allGood ? 'complete' : 'has_issues'
-  };
-
-  // Update PO status
-  const totalOrdered = po.items.reduce((s, i) => s + i.qty, 0);
-  const totalReceived = receivedItems.reduce((s, i) => s + i.qtyReceived, 0);
-  const deliveryStatus = totalReceived >= totalOrdered ? 'fully_delivered' : 'partially_delivered';
-
-  updates[`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}/deliveryStatus`] = deliveryStatus;
-  updates[`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}/lastDelivery`] = deliveryKey;
-  updates[`projects/${_mpid}/purchaseOrders/${_currentDeliveryPO}/lastDeliveryDate`] = deliveryDate;
-
-  Object.assign(updates, Object.fromEntries(
-    Object.entries(invUpdates).map(([k, v]) => [`projects/${_mpid}/inventory/${k}`, v])
-  ));
-
-  await safeDb(() => firebase.database().ref().update(updates), 'Failed to record delivery');
-  auditLog('delivery', 'purchaseOrder', _currentDeliveryPO, { deliveryKey, items: receivedItems.length, projectId: _mpid });
-
-  closeDeliveryModal();
-  showToast(`\u1F4E6 Delivery recorded! ${allGood ? 'All items good.' : 'Some items have issues.'}`);
+    closeDeliveryModal();
+    showToast(`\u1F4E6 Delivery recorded. Status: ${result.deliveryStatus.replace(/_/g, ' ')}`);
+  } catch (e) {
+    console.error('confirmDelivery failed:', e);
+    showToast(e?.message || 'Failed to record delivery.', 'error');
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -514,7 +1089,9 @@ async function confirmInvoice() {
 
   const po = poSnap.val();
   const deliveries = [];
-  delSnap.forEach(c => deliveries.push(c.val()));
+  delSnap.forEach(c => {
+    deliveries.push(c.val());
+  });
 
   const totalDelivered = deliveries.reduce((sum, d) =>
     sum + d.items.reduce((s, i) => s + i.qtyReceived, 0), 0
@@ -607,11 +1184,7 @@ function watchLedger(pid) {
     tbody.appendChild(fragment);
     setText('ledgerTotal', peso(paidTotal));
     setText('ledgerCount', `${orderCount} item${orderCount !== 1 ? 's' : ''}`);
-    if (paidTotal !== _prevMatSpent && !(typeof isProjectReadOnly === 'function' && isProjectReadOnly(pid))) {
-      safeDb(() => firebase.database().ref(`projects/${pid}`).update({ materialSpent: paidTotal }), 'Failed to sync material spend')
-        .then(() => { _prevMatSpent = paidTotal; })
-        .catch(() => {});
-    }
+    _prevMatSpent = paidTotal;
     updateMaterialsSummary(snap);
   });
 }
@@ -686,6 +1259,109 @@ function updateMaterialsSummary(snap) {
 // ══════════════════════════════════════════════════════
 //  PO HISTORY (Enhanced with Actions)
 // ══════════════════════════════════════════════════════
+function materialActionLabel(type) {
+  return {
+    po_submit: 'PO Submit',
+    po_approve: 'Approval',
+    receive: 'Receive',
+    issue: 'Issue',
+    adjust_in: 'Adjust In',
+    adjust_out: 'Adjust Out',
+    return: 'Return',
+    cancel: 'Cancel',
+    invoice: 'Invoice'
+  }[type] || String(type || 'Movement').replace(/_/g, ' ');
+}
+
+function formatMaterialMovementDate(value) {
+  const ts = parseFloat(value) || 0;
+  if (!ts) return '-';
+  try {
+    return new Date(ts).toLocaleString('en-PH', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+  } catch {
+    return '-';
+  }
+}
+
+function formatMaterialMovementQty(movement) {
+  const inQty = parseFloat(movement.qtyIn) || 0;
+  const outQty = parseFloat(movement.qtyOut) || 0;
+  const unit = escapeHtml(movement.unit || '');
+  if (inQty > 0) return `<span class="movement-in">+${inQty} ${unit}</span>`;
+  if (outQty > 0) return `<span class="movement-out">-${outQty} ${unit}</span>`;
+  return '-';
+}
+
+function movementSourceLabel(movement) {
+  const sourceType = movement.sourceType || '';
+  const sourceId = movement.sourceId || movement.poId || movement.deliveryId || movement.issueId || '';
+  if (!sourceType && !sourceId) return '-';
+  const shortId = sourceId ? String(sourceId).slice(-6) : '';
+  return `${sourceType || 'source'}${shortId ? ' #' + shortId : ''}`;
+}
+
+function watchMaterialMovements(pid) {
+  const ref = firebase.database().ref(`projects/${pid}/materialMovements`).orderByChild('createdAt').limitToLast(80);
+  matListen(ref, snap => {
+    const tbody = $('materialMovementBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    if (!snap.exists()) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-cell">No material movement history yet.</td></tr>`;
+      setText('materialMovementCount', '0 rows');
+      return;
+    }
+
+    const movements = [];
+    snap.forEach(c => {
+      movements.push({ id: c.key, ...(c.val() || {}) });
+    });
+    movements.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+    const fragment = document.createDocumentFragment();
+    movements.forEach(movement => {
+      const row = document.createElement('tr');
+      row.className = 'led-row';
+      const itemName = movement.description || movement.supplierName || movement.poId || '-';
+      const size = movement.size ? ` <span class="po-item-size">[${escapeHtml(movement.size)}]</span>` : '';
+      row.innerHTML = `
+        <td class="l-cell">${formatMaterialMovementDate(movement.createdAt)}</td>
+        <td class="l-cell"><span class="movement-type">${escapeHtml(materialActionLabel(movement.type))}</span></td>
+        <td class="l-cell l-desc">${escapeHtml(itemName)}${size}</td>
+        <td class="l-cell l-center">${formatMaterialMovementQty(movement)}</td>
+        <td class="l-cell l-right">${movement.movementCost ? peso(movement.movementCost) : '-'}</td>
+        <td class="l-cell">${escapeHtml(movementSourceLabel(movement))}</td>
+        <td class="l-cell">${escapeHtml(String(movement.createdBy || '-').slice(0, 12))}</td>
+      `;
+      fragment.appendChild(row);
+    });
+
+    tbody.appendChild(fragment);
+    setText('materialMovementCount', `${movements.length} row${movements.length === 1 ? '' : 's'}`);
+  });
+}
+
+function poStatusLabel(status) {
+  return {
+    draft: 'Draft',
+    pending_approval: 'Submitted',
+    submitted: 'Submitted',
+    approved: 'Approved',
+    ordered: 'Approved',
+    partially_delivered: 'Partially Delivered',
+    fully_delivered: 'Fully Delivered',
+    closed: 'Closed',
+    cancelled: 'Cancelled'
+  }[status] || String(status || 'Submitted').replace(/_/g, ' ');
+}
+
 function watchPOHistory(pid) {
   const ref = firebase.database().ref(`projects/${pid}/purchaseOrders`);
   matListen(ref, snap => {
@@ -698,7 +1374,9 @@ function watchPOHistory(pid) {
     }
 
     const entries = [];
-    snap.forEach(c => entries.unshift({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      entries.unshift({ id: c.key, ...c.val() });
+    });
 
     const byMonth = {};
     entries.forEach(po => {
@@ -729,22 +1407,31 @@ function watchPOHistory(pid) {
       monthGroup.appendChild(monthHeader);
 
       byMonth[monthKey].forEach(po => {
-        const itemRows = (po.items || []).map(it => `
+        const itemRows = (po.items || []).map(it => {
+          const orderedQty = parseFloat(it.qtyOrdered ?? it.qty) || 0;
+          const acceptedQty = parseFloat(it.qtyAccepted) || 0;
+          const remainingQty = Math.max(0, parseFloat(it.qtyRemaining ?? (orderedQty - acceptedQty)) || 0);
+          return `
           <div class="po-item-row">
             <span class="po-item-desc">${escapeHtml(it.desc)}${it.size ? ` <span class="po-item-size">[${escapeHtml(it.size)}]</span>` : ''}</span>
-            <span class="po-item-qty">${it.qty} ${escapeHtml(it.unit)}</span>
+            <span class="po-item-qty">${orderedQty} ${escapeHtml(it.unit)}<br><small>Recv ${acceptedQty} / Rem ${remainingQty}</small></span>
             <span class="po-item-cost">${peso(it.cost)}</span>
             <span class="po-item-total">${peso(it.total)}</span>
-          </div>`).join('');
+          </div>`;
+        }).join('');
 
-        const statusBadge = {
-          pending_approval: '<span class="po-status-badge po-pending">\u23F3 Pending Approval</span>',
-          approved: '<span class="po-status-badge po-approved">\u2713 Approved</span>',
-          ordered: '<span class="po-status-badge po-ordered">\u1F4E6 Ordered</span>',
-          partially_delivered: '<span class="po-status-badge po-partial">\u1F4E6 Partial Delivery</span>',
-          fully_delivered: '<span class="po-status-badge po-delivered">\u2713 Delivered</span>',
-          cancelled: '<span class="po-status-badge po-cancelled">\u2715 Cancelled</span>'
-        }[po.status] || `<span class="po-status-badge">${po.status}</span>`;
+        const statusClass = {
+          draft: 'po-pending',
+          pending_approval: 'po-pending',
+          submitted: 'po-pending',
+          approved: 'po-approved',
+          ordered: 'po-approved',
+          partially_delivered: 'po-partial',
+          fully_delivered: 'po-delivered',
+          closed: 'po-delivered',
+          cancelled: 'po-cancelled'
+        }[po.status] || '';
+        const statusBadge = `<span class="po-status-badge ${statusClass}">${escapeHtml(poStatusLabel(po.status))}</span>`;
 
         const urgencyBadge = po.urgency === 'critical' ? '<span class="urgency-badge urgency-critical">\u1F534 CRITICAL</span>' :
                             po.urgency === 'urgent' ? '<span class="urgency-badge urgency-urgent">\u26A0\uFE0F URGENT</span>' : '';
@@ -767,7 +1454,7 @@ function watchPOHistory(pid) {
         let actions = '';
         if (po.status === 'pending_approval') {
           actions = `<button class="po-approve-btn" data-po="${po.id}" data-action="approve">\u2713 Approve PO</button>`;
-        } else if (po.status === 'approved' || po.status === 'ordered') {
+        } else if (po.status === 'approved' || po.status === 'ordered' || po.status === 'partially_delivered') {
           actions = `
             <button class="po-mark-btn" data-po="${po.id}" data-action="delivery">\u1F4E6 Record Delivery</button>
             <button class="po-mark-btn po-paid-btn" data-po="${po.id}" data-action="invoice">\u1F4CB Approve Invoice</button>
@@ -941,6 +1628,18 @@ window.initMaterials = initMaterials;
 window.detachMatListeners = detachMatListeners;
 window.addDraftItem = addDraftItem;
 window.removeDraftItem = removeDraftItem;
+window.submitMaterialIssuance = submitMaterialIssuance;
+window.createPurchaseOrder = createPurchaseOrder;
+window.getPurchaseOrder = getPurchaseOrder;
+window.listPurchaseOrders = listPurchaseOrders;
+window.receiveDelivery = receiveDelivery;
+window.calculateReceivedQtyByPOItem = calculateReceivedQtyByPOItem;
+window.updateInventoryFromReceiving = updateInventoryFromReceiving;
+window.issueMaterial = issueMaterial;
+window.updateInventoryFromIssuance = updateInventoryFromIssuance;
+window.createMaterialMovement = createMaterialMovement;
+window.calculateMaterialBudgetSpent = calculateMaterialBudgetSpent;
+window.validateStockAvailability = validateStockAvailability;
 window.submitPO = submitPO;
 window.approvePO = approvePO;
 window.openDeliveryModal = openDeliveryModal;

@@ -43,13 +43,55 @@
         "lifecycleRequests": {
           ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
         },
-        "billings": { ".indexOn": ["seq", "status"] 
+        "billingConfig": { ".indexOn": ["nextBillingNo", "nextCollectionNo", "nextAdjustmentNo"] 
+        },
+        "billings": { ".indexOn": ["seq", "billingNo", "type", "status", "date", "dueDate", "createdAt"] 
+        },
+        "collections": { ".indexOn": ["collectionNo", "billingId", "date", "status", "createdAt", "referenceNo"] 
+        },
+        "billingAdjustments": { ".indexOn": ["adjustmentNo", "billingId", "type", "status", "date", "createdAt"] 
+        },
+        "billingEvents": {
+          ".indexOn": ["type", "billingId", "collectionId", "date", "createdAt", "status"],
+          "$eventId": {
+            ".validate": "newData.hasChildren(['type', 'createdAt', 'createdBy'])"
+          }
+        },
+        "billingOutputs": { ".indexOn": ["type", "billingId", "outputNo", "generatedAt"] 
+        },
+        "billingRollups": { ".indexOn": ["lastUpdatedAt"] 
         },
         "changeOrders": { ".indexOn": ["seq", "status"] 
         },
-        "purchaseOrders": { ".indexOn": ["seq", "status"] 
+        "purchaseRequests": { ".indexOn": ["requestNo", "status", "requestedAt", "neededBy"] 
         },
-        "ledger": { ".indexOn": ["poId", "status"] 
+        "purchaseOrders": { ".indexOn": ["seq", "poNo", "status", "supplierId", "createdAt", "date", "deliveryStatus"] 
+        },
+        "deliveries": { ".indexOn": ["poId", "deliveryDate", "receivedAt", "status", "supplierId"] 
+        },
+        "inventory": { ".indexOn": ["itemKey", "description", "qtyOnHand", "lastMovementAt"] 
+        },
+        "materialMovements": { 
+          ".indexOn": ["type", "date", "createdAt", "itemKey", "poId", "deliveryId", "issueId", "supplierId"],
+          "$movementId": {
+            ".validate": "newData.hasChildren(['type', 'createdAt', 'createdBy'])"
+          }
+        },
+        "materialIssuances": { ".indexOn": ["issueNo", "date", "createdAt", "issuedTo", "scope", "status"] 
+        },
+        "ledger": { ".indexOn": ["poId", "poItemId", "status", "supplierId", "date", "createdAt"] 
+        },
+        "trades": { ".indexOn": ["name", "foremanName"]
+        },
+        "workers": { ".indexOn": ["name", "trade", "active", "addedAt"]
+        },
+        "attendance": {
+          "$workerId": { ".indexOn": ["weekKey", "date"]
+          }
+        },
+        "advances": {
+          "$workerId": { ".indexOn": ["weekKey", "date", "deducted", "trade"]
+          }
         },
         "attendanceHistory": { ".indexOn": ["savedAt", "weekKey"]
         },
@@ -63,13 +105,15 @@
     "suppliers": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
-      ".indexOn": "name"
+      ".indexOn": ["name", "specialty", "updatedAt"]
     },
 
     "auditLogs": {
       ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
-      ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp']) && newData.child('action').isString() && newData.child('entityType').isString() && newData.child('userId').val() === auth.uid && newData.child('userName').isString() && newData.child('timestamp').isNumber()",
-      ".indexOn": "timestamp"
+      ".indexOn": "timestamp",
+      "$logId": {
+        ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp']) && newData.child('action').isString() && newData.child('entityType').isString() && newData.child('userId').val() === auth.uid && newData.child('userName').isString() && newData.child('timestamp').isNumber()"
+      }
     },
 
     "notifications": {

@@ -45,7 +45,9 @@ function watchEquipment(pid) {
     }
 
     const items = [];
-    snap.forEach(c => items.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      items.push({ id: c.key, ...c.val() });
+    });
     items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
     const fragment = document.createDocumentFragment();

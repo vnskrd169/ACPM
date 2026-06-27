@@ -38,7 +38,9 @@ function watchSiteLog(pid) {
     }
 
     const entries = [];
-    snap.forEach(c => entries.push({ id: c.key, ...c.val() }));
+    snap.forEach(c => {
+      entries.push({ id: c.key, ...c.val() });
+    });
     entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
     // Group by month, then by date
@@ -234,7 +236,9 @@ async function exportSiteLogs() {
   if (!snap.exists()) { showToast('No logs to export.', 'warn'); return; }
 
   const entries = [];
-  snap.forEach(c => entries.push({ id: c.key, ...c.val() }));
+  snap.forEach(c => {
+    entries.push({ id: c.key, ...c.val() });
+  });
   entries.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 
   const lines = [
