@@ -102,7 +102,19 @@
           }
         },
         "advances": {
-          "$workerId": { ".indexOn": ["weekKey", "date", "deducted", "trade"]
+          "$workerId": { ".indexOn": ["weekKey", "date", "deducted", "trade", "status", "requestedByUid", "approvedBy", "releasedBy", "closedAt"]
+          }
+        },
+        "cashAdvanceEvents": {
+          ".indexOn": ["type", "workerId", "advanceId", "status", "createdAt"],
+          "$eventId": {
+            ".validate": "newData.hasChildren(['type', 'workerId', 'advanceId', 'createdAt', 'createdBy'])"
+          }
+        },
+        "notificationEvents": {
+          ".indexOn": ["module", "type", "status", "consumed", "createdAt"],
+          "$eventId": {
+            ".validate": "newData.hasChildren(['module', 'type', 'status', 'consumed', 'createdAt'])"
           }
         },
         "attendanceHistory": { ".indexOn": ["savedAt", "weekKey"]
@@ -124,7 +136,7 @@
       ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
       ".indexOn": "timestamp",
       "$logId": {
-        ".write": "auth != null && newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp']) && newData.child('action').isString() && newData.child('entityType').isString() && newData.child('userId').val() === auth.uid && newData.child('userName').isString() && newData.child('timestamp').isNumber()"
+        ".write": "auth != null && ((!newData.exists() && root.child('users/' + auth.uid + '/role').val() === 'boss') || (newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp']) && newData.child('action').isString() && newData.child('entityType').isString() && (newData.child('userId').val() === auth.uid || root.child('users/' + auth.uid + '/role').val() === 'boss') && newData.child('userName').isString() && newData.child('timestamp').isNumber()))"
       }
     },
 

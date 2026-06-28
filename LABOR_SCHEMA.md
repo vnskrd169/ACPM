@@ -58,13 +58,52 @@ projects/{projectId}/advances/{workerId}/{advanceId}
   trade
   amount
   notes
+  status
+  requestedBy
+  requestedByUid
+  requestedAt
+  approvedBy
+  approvedByName
+  approvedAt
+  rejectedBy
+  rejectedByName
+  rejectedAt
+  releasedBy
+  releasedByName
+  releasedAt
   deducted
   deductedAmount
   lastDeductedAt
+  closedBy
+  closedByName
+  closedAt
+  statusHistory/{eventId}
   recordedBy
   recordedByUid
   addedAt
   addedBy
+
+projects/{projectId}/cashAdvanceEvents/{eventId}
+  type
+  workerId
+  advanceId
+  status
+  notes
+  amount
+  payrollLogId
+  createdAt
+  createdBy
+  createdByName
+
+projects/{projectId}/notificationEvents/{eventId}
+  module
+  type
+  status
+  consumed
+  payload
+  createdAt
+  createdBy
+  createdByName
 
 projects/{projectId}/attendanceHistory/{logId}
   projectId
@@ -107,6 +146,11 @@ projects/{projectId}/payrollLogs/{logId}
 - Workers keep their current trade name for v1 compatibility. Payroll archives also store worker trade, foreman, and rate so old weeks remain readable even if the live roster changes.
 - Active attendance is stored by worker/date. Each record carries `weekKey`, so the selected payroll period can be reset without touching other weeks.
 - Active cash advances are stored by worker, with `weekKey`, trade, deducted amount, and paid status. This supports multiple advances per worker and running balances.
+- Cash advances follow a full lifecycle: `draft`, `submitted`, `pending_approval`, `approved`, `rejected`, `released`, `deducted`, `closed`.
+- New cash advance requests start as `pending_approval`. They are not deducted from payroll until marked `released`.
+- Legacy advances without a `status` are treated as `released` for payroll compatibility, so old active balances do not require a migration.
+- Cash advances are never deleted in the normal workflow. Incorrect or finished requests are closed with status history.
+- `cashAdvanceEvents` stores immutable workflow events. `notificationEvents` stores notification hooks for future Notification module consumption; no live notification delivery is implemented in Labor v1.
 - Payroll logs are immutable v1 archives. Each log stores the full `byTrade`, worker details, attendance snapshot, and cash advance deductions used at compile time.
 - RFP output is generated per trade/foreman from the selected week. The generated text/PDF is derived from current attendance and trade settings.
 
@@ -117,7 +161,9 @@ Realtime Database rules define indexes for:
 - `projects/{projectId}/trades`: `name`, `foremanName`
 - `projects/{projectId}/workers`: `name`, `trade`, `active`, `addedAt`
 - `projects/{projectId}/attendance/{workerId}`: `weekKey`, `date`
-- `projects/{projectId}/advances/{workerId}`: `weekKey`, `date`, `deducted`, `trade`
+- `projects/{projectId}/advances/{workerId}`: `weekKey`, `date`, `deducted`, `trade`, `status`, `requestedByUid`, `approvedBy`, `releasedBy`, `closedAt`
+- `projects/{projectId}/cashAdvanceEvents`: `type`, `workerId`, `advanceId`, `status`, `createdAt`
+- `projects/{projectId}/notificationEvents`: `module`, `type`, `status`, `consumed`, `createdAt`
 - `projects/{projectId}/attendanceHistory`: `savedAt`, `weekKey`
 - `projects/{projectId}/payrollLogs`: `savedAt`, `weekKey`
 
@@ -126,3 +172,4 @@ Realtime Database rules define indexes for:
 - The live worker record stores `trade` by name instead of `tradeId`. Archives are still safe because payroll logs snapshot trade and foreman details at compile time.
 - Payroll archive is one log per compile, with trade groups nested under `byTrade`. It is not split into separate Firebase nodes per trade.
 - There is no backend payroll validator yet. Firebase rules protect access and shape lightly, while payroll math still runs client-side.
+- Cash advance approval is enforced in client helpers. Firebase rules index and shape the data, but role-specific approval validation is not server-enforced without Cloud Functions.

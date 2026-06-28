@@ -1,8 +1,8 @@
 # Labor v1 Final QA
 
-Status: STABLE
+Status: STABLE BASELINE; CASH ADVANCE APPROVAL WORKFLOW UPDATED - MANUAL QA REQUIRED BEFORE RC1
 
-Labor v1 is ready for final manual QA before Materials v1. This checklist is limited to verification and release confidence. Do not add new Labor features during this pass.
+Labor v1 baseline was stable before Materials v1. Cash Advance approval workflow was later redesigned for production integrity and now requires focused manual QA before ACPM Release Candidate 1.
 
 ## Scope
 
@@ -56,16 +56,24 @@ Known limitation:
 ### 4. Cash Advance Balance
 
 - PASS when multiple advances per worker are allowed.
+- PASS when a new advance starts as `pending_approval`.
+- PASS when pending approval, approved-but-not-released, rejected, and closed advances are not deducted by payroll.
+- PASS when only `released` or legacy active advances are eligible for payroll deduction.
 - PASS when payroll deducts only from the worker who received the advance.
 - PASS when deduction is capped by the current amortization rule.
 - PASS when `deductedAmount` increases by exactly the payroll deduction.
-- PASS when `deducted` becomes `true` only after `deductedAmount >= amount`.
+- PASS when partial deduction changes status to `deducted`.
+- PASS when `deducted` becomes `true` and status becomes `closed` only after `deductedAmount >= amount`.
 - PASS when advance deduction appears under the correct trade group.
+- PASS when rejected and closed cash advances remain visible in history.
+- PASS when `cashAdvanceEvents` receives request, approval/release/reject/close, and payroll deduction events.
+- PASS when `notificationEvents` receives pending notification hooks but no actual Notification module delivery is triggered.
 
 Verified code paths:
 
 - `compilePayroll()` calculates remaining balance as `amount - deductedAmount`.
-- `confirmSavePayroll()` writes updated `deductedAmount`, `deducted`, and `lastDeductedAt`.
+- `compilePayroll()` ignores cash advances that are not released/legacy-eligible.
+- `confirmSavePayroll()` writes updated `deductedAmount`, `deducted`, `lastDeductedAt`, `status`, and `statusHistory`.
 - Payroll archive stores deductions in `cashAdvancesDeducted`.
 
 ### 5. Listener Cleanup
@@ -101,7 +109,9 @@ Verified code paths:
   - `projects/{projectId}/trades`: `name`, `foremanName`
   - `projects/{projectId}/workers`: `name`, `trade`, `active`, `addedAt`
   - `projects/{projectId}/attendance/{workerId}`: `weekKey`, `date`
-  - `projects/{projectId}/advances/{workerId}`: `weekKey`, `date`, `deducted`, `trade`
+  - `projects/{projectId}/advances/{workerId}`: `weekKey`, `date`, `deducted`, `trade`, `status`, `requestedByUid`, `approvedBy`, `releasedBy`, `closedAt`
+  - `projects/{projectId}/cashAdvanceEvents`: `type`, `workerId`, `advanceId`, `status`, `createdAt`
+  - `projects/{projectId}/notificationEvents`: `module`, `type`, `status`, `consumed`, `createdAt`
   - `projects/{projectId}/attendanceHistory`: `savedAt`, `weekKey`
   - `projects/{projectId}/payrollLogs`: `savedAt`, `weekKey`
 
@@ -120,10 +130,13 @@ Labor v1 can be marked STABLE when:
 - Payroll archive is one log per compile with nested `byTrade`, not separate Firebase nodes per trade.
 - RFP is generated from selected week live attendance/current trade settings, not from a stored archived RFP node.
 - Payroll math is client-side; no backend payroll validator exists yet.
+- Cash advance approval/release permissions are enforced in client helpers, not server-side Cloud Functions.
 - Firebase rules indexes must be deployed/imported before production use.
 
 ## Final Mark
 
-Labor v1: STABLE
+Labor v1 baseline: STABLE
+
+Cash Advance approval workflow: IMPLEMENTED, MANUAL QA REQUIRED
 
 Ready for: Materials v1

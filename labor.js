@@ -377,7 +377,7 @@ function renderRoster(wSnap, pid, allAdvSnap) {
     const workerAdv = allAdvSnap?.child?.(wid);
     if (workerAdv?.exists()) {
       workerAdv.forEach(a => {
-        if (!a.val().deducted) pending += a.val().amount || 0;
+        pending += cashAdvanceActiveOutstanding(a.val());
       });
     }
 
@@ -471,6 +471,153 @@ async function removeWorker(wid) {
 // ══════════════════════════════════════════════════════
 let _advWid = null, _advName = '';
 
+const CASH_ADVANCE_STATUSES = {
+  draft: 'Draft',
+  submitted: 'Submitted',
+  pending_approval: 'Pending Approval',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  released: 'Released',
+  deducted: 'Deducted',
+  closed: 'Closed'
+};
+
+function currentLaborUserLabel() {
+  return window._currentUser?.name || window._currentUser?.displayName || window._currentUser?.email || 'Staff';
+}
+
+function canApproveCashAdvance() {
+  const role = String(window._currentUser?.role || '').toLowerCase();
+  return role === 'boss';
+}
+
+function normalizeAdvanceStatus(a = {}) {
+  if (a.status) return a.status;
+  if (a.deducted) return 'closed';
+  return 'released';
+}
+
+function cashAdvanceOutstanding(a = {}) {
+  return Math.max(0, (parseFloat(a.amount) || 0) - (parseFloat(a.deductedAmount) || 0));
+}
+
+function cashAdvancePayrollEligible(a = {}) {
+  const status = normalizeAdvanceStatus(a);
+  return ['released', 'deducted'].includes(status) && cashAdvanceOutstanding(a) > 0;
+}
+
+function cashAdvanceActiveOutstanding(a = {}) {
+  const status = normalizeAdvanceStatus(a);
+  if (['rejected', 'closed'].includes(status)) return 0;
+  return cashAdvanceOutstanding(a);
+}
+
+function cashAdvanceStatusLabel(a = {}) {
+  return CASH_ADVANCE_STATUSES[normalizeAdvanceStatus(a)] || 'Pending Approval';
+}
+
+function cashAdvanceStatusClass(a = {}) {
+  const status = normalizeAdvanceStatus(a);
+  return ['released', 'deducted', 'closed'].includes(status) ? 'adv-deducted' : 'adv-pending';
+}
+
+async function createCashAdvanceEvent(pid, wid, advanceId, type, details = {}) {
+  if (!pid || !wid || !advanceId) return null;
+  const ref = firebase.database().ref(`projects/${pid}/cashAdvanceEvents`).push();
+  const payload = {
+    type,
+    workerId: wid,
+    advanceId,
+    status: details.status || '',
+    notes: details.notes || '',
+    amount: parseFloat(details.amount) || 0,
+    createdAt: Date.now(),
+    createdBy: window._currentUser?.uid || 'unknown',
+    createdByName: currentLaborUserLabel()
+  };
+  await safeDb(() => ref.set(payload), 'Failed to write cash advance event');
+  return { id: ref.key, ...payload };
+}
+
+async function createLaborNotificationEvent(pid, type, payload = {}) {
+  if (!pid) return null;
+  const ref = firebase.database().ref(`projects/${pid}/notificationEvents`).push();
+  const event = {
+    module: 'labor',
+    type,
+    status: 'pending',
+    consumed: false,
+    payload,
+    createdAt: Date.now(),
+    createdBy: window._currentUser?.uid || null,
+    createdByName: currentLaborUserLabel()
+  };
+  await safeDb(() => ref.set(event), 'Failed to write notification event');
+  return { id: ref.key, ...event };
+}
+
+async function updateCashAdvanceStatus(wid, key, nextStatus, notes = '') {
+  if (!_lpid || !wid || !key) throw new Error('Missing cash advance reference.');
+  if (!CASH_ADVANCE_STATUSES[nextStatus]) throw new Error('Invalid cash advance status.');
+  if (['approved', 'rejected', 'released', 'closed'].includes(nextStatus) && !canApproveCashAdvance()) {
+    throw new Error('Only Admin/Boss/Project Manager can approve, reject, release, or close cash advances.');
+  }
+  const snap = await firebase.database().ref(`projects/${_lpid}/advances/${wid}/${key}`).once('value');
+  if (!snap.exists()) throw new Error('Cash advance not found.');
+  const advance = snap.val() || {};
+  const now = Date.now();
+  const eventKey = firebase.database().ref().push().key;
+  const updates = {};
+  updates[`projects/${_lpid}/advances/${wid}/${key}/status`] = nextStatus;
+  updates[`projects/${_lpid}/advances/${wid}/${key}/statusUpdatedAt`] = now;
+  updates[`projects/${_lpid}/advances/${wid}/${key}/statusUpdatedBy`] = window._currentUser?.uid || null;
+  updates[`projects/${_lpid}/advances/${wid}/${key}/statusUpdatedByName`] = currentLaborUserLabel();
+  updates[`projects/${_lpid}/advances/${wid}/${key}/statusHistory/${eventKey}`] = {
+    status: nextStatus,
+    notes,
+    at: now,
+    by: window._currentUser?.uid || null,
+    byName: currentLaborUserLabel()
+  };
+  if (nextStatus === 'approved') {
+    updates[`projects/${_lpid}/advances/${wid}/${key}/approvedAt`] = now;
+    updates[`projects/${_lpid}/advances/${wid}/${key}/approvedBy`] = window._currentUser?.uid || null;
+    updates[`projects/${_lpid}/advances/${wid}/${key}/approvedByName`] = currentLaborUserLabel();
+  }
+  if (nextStatus === 'rejected') {
+    updates[`projects/${_lpid}/advances/${wid}/${key}/rejectedAt`] = now;
+    updates[`projects/${_lpid}/advances/${wid}/${key}/rejectedBy`] = window._currentUser?.uid || null;
+    updates[`projects/${_lpid}/advances/${wid}/${key}/rejectedByName`] = currentLaborUserLabel();
+    updates[`projects/${_lpid}/advances/${wid}/${key}/rejectionNotes`] = notes;
+  }
+  if (nextStatus === 'released') {
+    updates[`projects/${_lpid}/advances/${wid}/${key}/releasedAt`] = now;
+    updates[`projects/${_lpid}/advances/${wid}/${key}/releasedBy`] = window._currentUser?.uid || null;
+    updates[`projects/${_lpid}/advances/${wid}/${key}/releasedByName`] = currentLaborUserLabel();
+  }
+  if (nextStatus === 'closed') {
+    updates[`projects/${_lpid}/advances/${wid}/${key}/closedAt`] = now;
+    updates[`projects/${_lpid}/advances/${wid}/${key}/closedBy`] = window._currentUser?.uid || null;
+    updates[`projects/${_lpid}/advances/${wid}/${key}/closedByName`] = currentLaborUserLabel();
+    updates[`projects/${_lpid}/advances/${wid}/${key}/closeNotes`] = notes;
+  }
+
+  await safeDb(() => firebase.database().ref().update(updates), 'Failed to update cash advance status');
+  await createCashAdvanceEvent(_lpid, wid, key, `cash_advance_${nextStatus}`, {
+    status: nextStatus,
+    notes,
+    amount: advance.amount || 0
+  });
+  await createLaborNotificationEvent(_lpid, `cash_advance_${nextStatus}`, {
+    workerId: wid,
+    advanceId: key,
+    status: nextStatus,
+    amount: advance.amount || 0,
+    workerName: advance.workerName || _advName || wid
+  });
+  return { id: key, ...advance, status: nextStatus };
+}
+
 function openAdvanceModal(wid, name) {
   _advWid = wid; _advName = name;
   const nameEl = $('advanceWorkerName');
@@ -494,16 +641,30 @@ function loadAdvanceHistory(wid) {
     }
     snap.forEach(c => {
       const a = c.val();
-      if (!a.deducted) total += a.amount || 0;
+      total += cashAdvanceActiveOutstanding(a);
       const row = document.createElement('div');
       row.className = 'advance-row';
+      const status = normalizeAdvanceStatus(a);
+      const actions = [];
+      if (canApproveCashAdvance() && ['draft', 'submitted', 'pending_approval'].includes(status)) {
+        actions.push(`<button class="btn-mini" data-adv-action="approved" data-key="${c.key}">Approve</button>`);
+        actions.push(`<button class="btn-mini" data-adv-action="rejected" data-key="${c.key}">Reject</button>`);
+      }
+      if (canApproveCashAdvance() && status === 'approved') {
+        actions.push(`<button class="btn-mini" data-adv-action="released" data-key="${c.key}">Release</button>`);
+      }
+      if (canApproveCashAdvance() && !['rejected', 'closed'].includes(status)) {
+        actions.push(`<button class="del-advance" data-adv-action="closed" data-key="${c.key}">Close</button>`);
+      }
       row.innerHTML = `<span class="advance-date">${a.date}</span>
         <span class="advance-amt">${peso(a.amount)}</span>
         ${a.notes ? `<span class="advance-note">${escapeHtml(a.notes)}</span>` : ''}
-        <span class="advance-status ${a.deducted ? 'adv-deducted' : 'adv-pending'}">${a.deducted ? 'Deducted' : 'Pending'}</span>
-        <button class="del-advance" aria-label="Delete advance" data-key="${c.key}">\u2715</button>`;
+        <span class="advance-status ${cashAdvanceStatusClass(a)}">${cashAdvanceStatusLabel(a)}</span>
+        <span class="advance-actions">${actions.join(' ')}</span>`;
 
-      row.querySelector('.del-advance').addEventListener('click', () => deleteAdvance(wid, c.key));
+      row.querySelectorAll('[data-adv-action]').forEach(btn => {
+        btn.addEventListener('click', () => handleAdvanceStatusAction(wid, btn.dataset.key, btn.dataset.advAction));
+      });
       el.appendChild(row);
     });
     setText('advanceTotalLabel', peso(total));
@@ -534,20 +695,80 @@ async function saveAdvance() {
   const workerName = w.name || _advName || _advWid;
   const trade = w.trade || '';
 
-  await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${_advWid}`).push({
+  const advRef = firebase.database().ref(`projects/${_lpid}/advances/${_advWid}`).push();
+  const advanceId = advRef.key;
+  const now = Date.now();
+  const advancePayload = {
     date, amount, notes,
     weekKey: getWeekKey(),
     workerName, trade,
+    status: 'pending_approval',
+    requestedBy: currentLaborUserLabel(),
+    requestedByUid: window._currentUser?.uid || null,
+    requestedAt: now,
+    submittedAt: now,
+    pendingApprovalAt: now,
+    statusHistory: {
+      requested: {
+        status: 'pending_approval',
+        notes: 'Cash advance submitted for approval.',
+        at: now,
+        by: window._currentUser?.uid || null,
+        byName: currentLaborUserLabel()
+      }
+    },
     recordedBy: window._currentUser?.displayName || window._currentUser?.email || 'Staff',
     recordedByUid: window._currentUser?.uid || null,
     deducted: false, deductedAmount: 0,
-    addedAt: Date.now(), addedBy: window._currentUser.uid
-  }), 'Failed to save advance');
+    addedAt: now, addedBy: window._currentUser.uid
+  };
+  await safeDb(() => advRef.set(advancePayload), 'Failed to save advance');
 
   $('advanceDate').value = ''; $('advanceAmount').value = ''; $('advanceNotes').value = '';
   loadAdvanceHistory(_advWid);
   auditLog('create', 'advance', null, { workerId: _advWid, amount, projectId: _lpid });
-  showToast(`Advance of ${peso(amount)} saved for ${workerName}`);
+  await createCashAdvanceEvent(_lpid, _advWid, advanceId, 'cash_advance_pending_approval', {
+    status: 'pending_approval',
+    notes,
+    amount
+  });
+  await createLaborNotificationEvent(_lpid, 'cash_advance_pending_approval', {
+    workerId: _advWid,
+    advanceId,
+    workerName,
+    amount,
+    trade
+  });
+  showToast(`Advance request of ${peso(amount)} submitted for ${workerName}`);
+}
+
+async function handleAdvanceStatusAction(wid, key, action) {
+  if (!_lpid) return;
+  if (!canApproveCashAdvance()) {
+    showToast('Only Admin/Boss/Project Manager can approve or release advances.', 'error');
+    return;
+  }
+  const label = CASH_ADVANCE_STATUSES[action] || action;
+  let notes = '';
+  if (['rejected', 'closed'].includes(action)) {
+    notes = prompt(`Notes for ${label}:`) || '';
+    if (!notes.trim()) {
+      showToast('Action cancelled. Notes are required.', 'warn');
+      return;
+    }
+  } else if (!confirm(`Mark this cash advance as ${label}?`)) {
+    return;
+  }
+  try {
+    await updateCashAdvanceStatus(wid, key, action, notes.trim());
+    loadAdvanceHistory(wid);
+    renderAdvanceLog();
+    auditLog('update', 'advance', key, { workerId: wid, status: action, projectId: _lpid });
+    showToast(`Cash advance marked ${label}`);
+  } catch (e) {
+    console.error(e);
+    showToast(e.message || 'Failed to update cash advance.', 'error');
+  }
 }
 
 // ── Centralized Cash Advance Transaction Log (all workers) ──────
@@ -599,7 +820,8 @@ function renderAdvanceLogFromSnapshots(el, wSnap, advSnap, ws, we) {
         deducted: !!a.deducted,
         deductedAmount: a.deductedAmount || 0,
         recordedBy: a.recordedBy || '',
-        addedAt: a.addedAt || 0
+        addedAt: a.addedAt || 0,
+        status: normalizeAdvanceStatus(a)
       });
     });
   });
@@ -615,7 +837,7 @@ function renderAdvanceLogFromSnapshots(el, wSnap, advSnap, ws, we) {
     return;
   }
 
-  const totalOut = filtered.reduce((s, r) => s + (r.amount - r.deductedAmount), 0);
+  const totalOut = filtered.reduce((s, r) => s + cashAdvanceActiveOutstanding(r), 0);
   const totalDeducted = filtered.reduce((s, r) => s + r.deductedAmount, 0);
 
   el.innerHTML = `<div style="overflow-x:auto">
@@ -636,7 +858,7 @@ function renderAdvanceLogFromSnapshots(el, wSnap, advSnap, ws, we) {
           <td class="al-date">${r.date || '\u2014'}</td>
           <td class="al-amount" style="text-align:right">${peso(r.amount)}</td>
           <td class="al-notes">${escapeHtml(r.notes) || '\u2014'}</td>
-          <td class="al-status ${r.deducted ? 'adv-deducted' : 'adv-pending'}">${r.deducted ? 'Deducted' : 'Pending'}</td>
+          <td class="al-status ${cashAdvanceStatusClass(r)}">${cashAdvanceStatusLabel(r)}</td>
           <td class="al-by">${escapeHtml(r.recordedBy) || '\u2014'}</td>
         </tr>`).join('')}
       </tbody>
@@ -656,16 +878,16 @@ async function deleteAdvance(wid, key) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  if (!confirm('Remove this advance record?\n\nThis affects payroll deductions.')) return;
-  const confirmText = prompt('Type DELETE ADVANCE to confirm permanent deletion:');
-  if (confirmText !== 'DELETE ADVANCE') {
-    showToast('Deletion cancelled.', 'warn');
+  if (!confirm('Close this advance record?\n\nThe history will remain in Firebase and it will no longer be deducted.')) return;
+  const notes = prompt('Reason for closing this advance:') || '';
+  if (!notes.trim()) {
+    showToast('Close cancelled. Notes are required.', 'warn');
     return;
   }
-  await safeDb(() => firebase.database().ref(`projects/${_lpid}/advances/${wid}/${key}`).remove(), 'Failed to delete advance');
-  loadAdvanceHistory(wid);
+  await updateCashAdvanceStatus(wid, key, 'closed', notes.trim());
+  if (_advWid === wid) loadAdvanceHistory(wid);
   renderAdvanceLog();
-  auditLog('delete', 'advance', key, { workerId: wid, projectId: _lpid });
+  auditLog('close', 'advance', key, { workerId: wid, projectId: _lpid });
 }
 
 // ══════════════════════════════════════════════════════
@@ -1072,6 +1294,7 @@ async function compilePayroll() {
     workerAdv.forEach(advEntry => {
       const a = advEntry.val();
       if (a.deducted) return;
+      if (!cashAdvancePayrollEligible(a)) return;
       if (a.date && end !== '\u2014' && a.date > end) return;
 
       const advanceTrade = normalizeTradeName(a.trade || workers[wid]?.trade);
@@ -1294,9 +1517,52 @@ async function confirmSavePayroll() {
       for (const adv of wAdv.advances) {
         const newDeducted = (adv.deductedAmount || 0) + adv.deductThisPayroll;
         const isFullyPaid = newDeducted >= adv.amount;
+        const nextStatus = isFullyPaid ? 'closed' : 'deducted';
+        const statusEventKey = firebase.database().ref().push().key;
         updates[`projects/${_lpid}/advances/${wid}/${adv.key}/deductedAmount`] = newDeducted;
         updates[`projects/${_lpid}/advances/${wid}/${adv.key}/deducted`] = isFullyPaid;
         updates[`projects/${_lpid}/advances/${wid}/${adv.key}/lastDeductedAt`] = Date.now();
+        updates[`projects/${_lpid}/advances/${wid}/${adv.key}/status`] = nextStatus;
+        updates[`projects/${_lpid}/advances/${wid}/${adv.key}/statusUpdatedAt`] = Date.now();
+        updates[`projects/${_lpid}/advances/${wid}/${adv.key}/statusUpdatedBy`] = window._currentUser?.uid || null;
+        updates[`projects/${_lpid}/advances/${wid}/${adv.key}/statusHistory/${statusEventKey}`] = {
+          status: nextStatus,
+          notes: `Payroll deduction ${peso(adv.deductThisPayroll)} applied for ${d.weekKey}.`,
+          payrollLogId: logKey,
+          at: Date.now(),
+          by: window._currentUser?.uid || null,
+          byName: currentLaborUserLabel()
+        };
+        const advanceEventKey = firebase.database().ref().push().key;
+        const notificationEventKey = firebase.database().ref().push().key;
+        updates[`projects/${_lpid}/cashAdvanceEvents/${advanceEventKey}`] = {
+          type: 'cash_advance_payroll_deducted',
+          workerId: wid,
+          advanceId: adv.key,
+          status: nextStatus,
+          amount: adv.deductThisPayroll,
+          notes: `Payroll deduction applied for ${d.weekKey}.`,
+          payrollLogId: logKey,
+          createdAt: Date.now(),
+          createdBy: window._currentUser?.uid || 'unknown',
+          createdByName: currentLaborUserLabel()
+        };
+        updates[`projects/${_lpid}/notificationEvents/${notificationEventKey}`] = {
+          module: 'labor',
+          type: 'cash_advance_payroll_deducted',
+          status: 'pending',
+          consumed: false,
+          payload: {
+            workerId: wid,
+            advanceId: adv.key,
+            payrollLogId: logKey,
+            amount: adv.deductThisPayroll,
+            nextStatus
+          },
+          createdAt: Date.now(),
+          createdBy: window._currentUser?.uid || null,
+          createdByName: currentLaborUserLabel()
+        };
       }
     }
   }
@@ -1886,6 +2152,10 @@ window.openAdvanceModal = openAdvanceModal;
 window.closeAdvanceModal = closeAdvanceModal;
 window.saveAdvance = saveAdvance;
 window.deleteAdvance = deleteAdvance;
+window.updateCashAdvanceStatus = updateCashAdvanceStatus;
+window.handleAdvanceStatusAction = handleAdvanceStatusAction;
+window.createCashAdvanceEvent = createCashAdvanceEvent;
+window.createLaborNotificationEvent = createLaborNotificationEvent;
 window.handleAttendanceChange = handleAttendanceChange;
 window.markAttendance = markAttendance;
 window.updateAttendanceOT = updateAttendanceOT;
