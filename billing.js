@@ -2,7 +2,12 @@ let _bpid = null;
 let _contractListener = null;
 let _billingsListener = null;
 let _collectionsListener = null;
+let _billingAdjustmentsListener = null;
+let _billingAllocationsListener = null;
+let _retentionLedgerListener = null;
 let _billingRollupListener = null;
+let _billingRollupRebuildTimer = null;
+let _billingRollupRebuildSources = {};
 
 function canTouchBillingProject() {
   return typeof requireEdit === 'function'
@@ -17,13 +22,34 @@ function initBilling(pid) {
   watchBillingRollups(pid);
   watchBillings(pid);
   watchCollections(pid);
+  watchBillingAdjustments(pid);
+  watchBillingAllocations(pid);
+  watchRetentionLedger(pid);
 }
 
 function detachBillingListeners() {
   if (_contractListener) { _contractListener.off(); _contractListener = null; }
   if (_billingsListener) { _billingsListener.off(); _billingsListener = null; }
   if (_collectionsListener) { _collectionsListener.off(); _collectionsListener = null; }
+  if (_billingAdjustmentsListener) { _billingAdjustmentsListener.off(); _billingAdjustmentsListener = null; }
+  if (_billingAllocationsListener) { _billingAllocationsListener.off(); _billingAllocationsListener = null; }
+  if (_retentionLedgerListener) { _retentionLedgerListener.off(); _retentionLedgerListener = null; }
   if (_billingRollupListener) { _billingRollupListener.off(); _billingRollupListener = null; }
+  if (_billingRollupRebuildTimer) { clearTimeout(_billingRollupRebuildTimer); _billingRollupRebuildTimer = null; }
+}
+
+function scheduleBillingRollupRebuild(pid, sources = {}) {
+  if (!pid) return;
+  _billingRollupRebuildSources = { ..._billingRollupRebuildSources, ...sources };
+  if (_billingRollupRebuildTimer) clearTimeout(_billingRollupRebuildTimer);
+  _billingRollupRebuildTimer = setTimeout(() => {
+    const rebuildSources = _billingRollupRebuildSources;
+    _billingRollupRebuildSources = {};
+    _billingRollupRebuildTimer = null;
+    rebuildBillingRollups(pid, rebuildSources).catch(err => {
+      console.error('Failed to rebuild billing rollups:', err);
+    });
+  }, 400);
 }
 
 // ══════════════════════════════════════════════════════
@@ -80,11 +106,140 @@ function collectionNet(record) {
   return billingAmount(record.amount);
 }
 
+function billingChildRows(obj) {
+  return Object.entries(obj || {}).map(([id, value]) => ({ id, ...(value || {}) }));
+}
+
+function billingRecordApproved(record) {
+  const status = (record && record.status) || '';
+  return status === 'approved' || status === 'posted' || status === 'released' || !status;
+}
+
+function billingDeductionTotal(record) {
+  if (!record) return 0;
+  const nested = billingChildRows(record.deductions)
+    .filter(d => billingActive(d) && billingRecordApproved(d))
+    .reduce((sum, d) => sum + billingAmount(d.amount), 0);
+  return nested || billingAmount(record.deductionTotal);
+}
+
+function calculateBillingRetentionAmount(record, gross = billingGross(record), deductions = billingDeductionTotal(record)) {
+  if (!record) return 0;
+  if (record.retentionAmount !== undefined) return billingAmount(record.retentionAmount);
+  const base = Math.max(0, gross - deductions);
+  const fixed = billingAmount(record.retentionFixedAmount);
+  if ((record.retentionMode || '').toLowerCase() === 'fixed' || fixed > 0) {
+    return Math.min(base, fixed);
+  }
+  return Math.min(base, base * (billingAmount(record.retentionPct) / 100));
+}
+
+function billingCurrentCollectible(record) {
+  const gross = billingGross(record);
+  const deductions = billingDeductionTotal(record);
+  const retention = calculateBillingRetentionAmount(record, gross, deductions);
+  return Math.max(0, gross - deductions - retention);
+}
+
 function billingSnapRows(snap) {
   const rows = [];
   if (!snap || !snap.exists()) return rows;
-  snap.forEach(child => rows.push({ id: child.key, ...child.val() }));
+  snap.forEach(child => {
+    rows.push({ id: child.key, ...child.val() });
+    return false;
+  });
   return rows;
+}
+
+function activeBillingMap(rows = []) {
+  const map = {};
+  rows.filter(b => billingActive(b) && billingApproved(b)).forEach(b => { map[b.id] = b; });
+  return map;
+}
+
+function activeCollectionMap(rows = []) {
+  const map = {};
+  rows.filter(billingActive).forEach(c => { map[c.id] = c; });
+  return map;
+}
+
+function effectiveAllocationRows(collections = [], allocations = []) {
+  const activeCollections = activeCollectionMap(collections);
+  const mirrored = (allocations || []).filter(a =>
+    billingActive(a) &&
+    a.collectionId &&
+    a.billingId &&
+    activeCollections[a.collectionId]
+  );
+  const mirroredCollectionIds = new Set(mirrored.map(a => a.collectionId));
+  const legacy = [];
+
+  (collections || []).filter(billingActive).forEach(col => {
+    const nestedRows = billingChildRows(col.allocations).filter(a => billingActive(a) && a.billingId);
+    if (nestedRows.length && !mirroredCollectionIds.has(col.id)) {
+      nestedRows.forEach(a => {
+        legacy.push({
+          id: a.id,
+          collectionId: col.id,
+          billingId: a.billingId,
+          amount: billingAmount(a.amount),
+          allocationType: a.allocationType || 'manual',
+          status: a.status || 'posted',
+          createdAt: a.createdAt || col.createdAt || col.savedAt || 0
+        });
+      });
+      return;
+    }
+    if (!col.billingId || mirroredCollectionIds.has(col.id)) return;
+    legacy.push({
+      id: `legacy_${col.id}`,
+      collectionId: col.id,
+      billingId: col.billingId,
+      amount: collectionNet(col),
+      allocationType: 'legacy',
+      status: col.status || 'posted',
+      createdAt: col.createdAt || col.savedAt || 0
+    });
+  });
+
+  return [...mirrored, ...legacy].map(a => ({
+    ...a,
+    amount: billingAmount(a.amount)
+  }));
+}
+
+function retentionReleaseRows(collections = [], retentionLedger = []) {
+  const collectionRows = (collections || []).filter(billingActive).map(c => ({
+    id: `collection_${c.id}`,
+    billingId: c.billingId || '',
+    collectionId: c.id,
+    amount: billingAmount(c.retentionReleased),
+    type: 'release',
+    status: c.status || 'posted'
+  })).filter(r => r.amount > 0);
+  const ledgerRows = (retentionLedger || []).filter(r =>
+    billingActive(r) &&
+    billingRecordApproved(r) &&
+    String(r.type || '').toLowerCase() === 'release'
+  );
+  return [...collectionRows, ...ledgerRows].map(r => ({
+    ...r,
+    amount: billingAmount(r.amount)
+  }));
+}
+
+function billingAllocationSummary(billingId, collections = [], allocations = [], retentionLedger = []) {
+  const allocationRows = effectiveAllocationRows(collections, allocations)
+    .filter(a => a.billingId === billingId);
+  const allocatedCollectionTotal = allocationRows.reduce((sum, a) => sum + billingAmount(a.amount), 0);
+  const retentionReleased = retentionReleaseRows(collections, retentionLedger)
+    .filter(r => !r.billingId || r.billingId === billingId)
+    .reduce((sum, r) => sum + billingAmount(r.amount), 0);
+  return { allocationRows, allocatedCollectionTotal, retentionReleased };
+}
+
+function outputNo(seq) {
+  return `OUT-${String(seq || 0).padStart(4, '0')}`;
 }
 
 function billingNo(seq) {
@@ -184,9 +339,19 @@ async function createBilling(pid, input = {}) {
   const grossAmount = billingAmount(input.grossAmount ?? input.amount);
   if (grossAmount <= 0) throw new Error('Billing amount must be greater than zero.');
   const seq = input.seq || await nextBillingSeq(pid, 'nextBillingNo');
-  const retentionAmount = billingAmount(input.retentionAmount);
   const deductionTotal = billingAmount(input.deductionTotal);
-  const netBillable = Math.max(0, grossAmount - retentionAmount - deductionTotal);
+  const retentionMode = input.retentionMode || (billingAmount(input.retentionFixedAmount) > 0 ? 'fixed' : 'percent');
+  const retentionDraft = {
+    grossAmount,
+    deductionTotal,
+    retentionMode,
+    retentionPct: billingAmount(input.retentionPct),
+    retentionFixedAmount: billingAmount(input.retentionFixedAmount),
+    retentionAmount: input.retentionAmount
+  };
+  const retentionAmount = calculateBillingRetentionAmount(retentionDraft, grossAmount, deductionTotal);
+  const currentCollectible = Math.max(0, grossAmount - retentionAmount - deductionTotal);
+  const netBillable = currentCollectible;
   const ref = billingProjectRef(pid, 'billings').push();
   const billingId = ref.key;
   const payload = {
@@ -202,12 +367,20 @@ async function createBilling(pid, input = {}) {
     percentComplete: billingAmount(input.percentComplete),
     grossAmount,
     amount: grossAmount,
+    retentionMode,
     retentionPct: billingAmount(input.retentionPct),
+    retentionFixedAmount: billingAmount(input.retentionFixedAmount),
     retentionAmount,
+    retentionReleased: 0,
+    retentionReceivable: retentionAmount,
     deductionTotal,
     netBillable,
+    currentCollectible,
+    allocatedCollectionTotal: 0,
+    currentReceivable: currentCollectible,
     collectedAmount: 0,
-    receivableBalance: netBillable,
+    receivableBalance: currentCollectible,
+    outputSnapshotIds: input.outputSnapshotIds || null,
     createdAt: billingNow(),
     createdBy: billingUserId(),
     savedAt: billingNow(),
@@ -224,6 +397,31 @@ async function createBilling(pid, input = {}) {
   });
   await rebuildBillingRollups(pid);
   return { id: billingId, ...payload };
+}
+
+async function createDownpaymentBilling(pid, input = {}) {
+  const contract = await getContract(pid) || {};
+  const amount = billingAmount(input.amount ?? input.grossAmount ?? contract.downPaymentAmount ?? contract.downPayment);
+  if (amount <= 0) throw new Error('Downpayment amount must be greater than zero.');
+  return createBilling(pid, {
+    ...input,
+    type: 'downpayment',
+    description: input.description || 'Downpayment billing',
+    amount,
+    grossAmount: amount
+  });
+}
+
+async function createMobilizationBilling(pid, input = {}) {
+  const amount = billingAmount(input.amount ?? input.grossAmount);
+  if (amount <= 0) throw new Error('Mobilization amount must be greater than zero.');
+  return createBilling(pid, {
+    ...input,
+    type: 'mobilization',
+    description: input.description || 'Mobilization billing',
+    amount,
+    grossAmount: amount
+  });
 }
 
 async function approveBilling(pid, billingId) {
@@ -244,6 +442,201 @@ async function listCollections(pid) {
   return billingSnapRows(snap);
 }
 
+async function listCollectionAllocations(pid) {
+  const snap = await billingProjectRef(pid, 'billingAllocations').once('value');
+  return billingSnapRows(snap);
+}
+
+async function listRetentionLedger(pid) {
+  const snap = await billingProjectRef(pid, 'retentionLedger').once('value');
+  return billingSnapRows(snap);
+}
+
+async function calculateBillingReceivable(pid, billingId) {
+  if (!pid || !billingId) throw new Error('Missing billing reference.');
+  const [billingSnap, collections, allocations, retentionLedger] = await Promise.all([
+    billingProjectRef(pid, `billings/${billingId}`).once('value'),
+    listCollections(pid),
+    listCollectionAllocations(pid),
+    listRetentionLedger(pid)
+  ]);
+  const billing = { id: billingId, ...(billingSnap.val() || {}) };
+  if (!billingSnap.exists() || !billingActive(billing)) {
+    return {
+      billingId,
+      grossAmount: 0,
+      deductionTotal: 0,
+      retentionAmount: 0,
+      retentionReleased: 0,
+      retentionReceivable: 0,
+      currentCollectible: 0,
+      allocatedCollectionTotal: 0,
+      currentReceivable: 0,
+      totalReceivable: 0
+    };
+  }
+  const grossAmount = billingGross(billing);
+  const deductionTotal = billingDeductionTotal(billing);
+  const retentionAmount = calculateBillingRetentionAmount(billing, grossAmount, deductionTotal);
+  const currentCollectible = Math.max(0, grossAmount - deductionTotal - retentionAmount);
+  const allocationSummary = billingAllocationSummary(billingId, collections, allocations, retentionLedger);
+  const retentionReleased = Math.min(retentionAmount, allocationSummary.retentionReleased);
+  const retentionReceivable = Math.max(0, retentionAmount - retentionReleased);
+  const allocatedCollectionTotal = allocationSummary.allocatedCollectionTotal;
+  const currentReceivable = Math.max(0, currentCollectible - allocatedCollectionTotal);
+  return {
+    billingId,
+    grossAmount,
+    deductionTotal,
+    retentionAmount,
+    retentionReleased,
+    retentionReceivable,
+    currentCollectible,
+    allocatedCollectionTotal,
+    currentReceivable,
+    totalReceivable: currentReceivable + retentionReceivable,
+    allocationRows: allocationSummary.allocationRows
+  };
+}
+
+async function calculateCollectionUnapplied(pid, collectionId) {
+  if (!pid || !collectionId) throw new Error('Missing collection reference.');
+  const [collectionSnap, allocations] = await Promise.all([
+    billingProjectRef(pid, `collections/${collectionId}`).once('value'),
+    listCollectionAllocations(pid)
+  ]);
+  const collection = { id: collectionId, ...(collectionSnap.val() || {}) };
+  const allocated = allocations
+    .filter(a => billingActive(a) && a.collectionId === collectionId)
+    .reduce((sum, a) => sum + billingAmount(a.amount), 0);
+  return {
+    collectionId,
+    amount: collectionNet(collection),
+    allocated,
+    unappliedAmount: Math.max(0, collectionNet(collection) - allocated)
+  };
+}
+
+async function syncBillingDerivedFields(pid, billingId) {
+  const summary = await calculateBillingReceivable(pid, billingId);
+  const billingSnap = await billingProjectRef(pid, `billings/${billingId}`).once('value');
+  const billing = billingSnap.val() || {};
+  if (!billingSnap.exists() || !billingActive(billing)) return summary;
+  const nextStatus = summary.currentReceivable <= 0 && summary.currentCollectible > 0
+    ? 'collected'
+    : summary.allocatedCollectionTotal > 0
+      ? 'partially_collected'
+      : billing.status;
+  await safeDb(() => billingProjectRef(pid, `billings/${billingId}`).update({
+    deductionTotal: summary.deductionTotal,
+    retentionAmount: summary.retentionAmount,
+    retentionReleased: summary.retentionReleased,
+    retentionReceivable: summary.retentionReceivable,
+    netBillable: summary.currentCollectible,
+    currentCollectible: summary.currentCollectible,
+    allocatedCollectionTotal: summary.allocatedCollectionTotal,
+    collectedAmount: summary.allocatedCollectionTotal,
+    currentReceivable: summary.currentReceivable,
+    receivableBalance: summary.currentReceivable,
+    status: nextStatus,
+    updatedAt: billingNow(),
+    updatedBy: billingUserId()
+  }), 'Failed to sync billing balance');
+  return summary;
+}
+
+async function syncCollectionDerivedFields(pid, collectionId) {
+  const summary = await calculateCollectionUnapplied(pid, collectionId);
+  await safeDb(() => billingProjectRef(pid, `collections/${collectionId}`).update({
+    allocatedAmount: summary.allocated,
+    unappliedAmount: summary.unappliedAmount,
+    updatedAt: billingNow(),
+    updatedBy: billingUserId()
+  }), 'Failed to sync collection allocation');
+  return summary;
+}
+
+async function validateCollectionAllocation(pid, collectionId, billingId, amount) {
+  const allocationAmount = billingAmount(amount);
+  if (!pid || !collectionId || !billingId) throw new Error('Missing allocation reference.');
+  if (allocationAmount <= 0) throw new Error('Allocation amount must be greater than zero.');
+  const [collectionSnap, billingSnap] = await Promise.all([
+    billingProjectRef(pid, `collections/${collectionId}`).once('value'),
+    billingProjectRef(pid, `billings/${billingId}`).once('value')
+  ]);
+  if (!collectionSnap.exists()) throw new Error('Collection not found.');
+  if (!billingSnap.exists()) throw new Error('Billing not found.');
+  const collection = { id: collectionId, ...collectionSnap.val() };
+  const billing = { id: billingId, ...billingSnap.val() };
+  if (!billingActive(collection)) throw new Error('Voided collections cannot be allocated.');
+  if (!billingActive(billing) || !billingApproved(billing)) throw new Error('Only active approved billings can receive collections.');
+  const collectionBalance = await calculateCollectionUnapplied(pid, collectionId);
+  const billingBalance = await calculateBillingReceivable(pid, billingId);
+  if (allocationAmount > collectionBalance.unappliedAmount + 0.0001) {
+    throw new Error(`Allocation exceeds unapplied collection balance (${peso(collectionBalance.unappliedAmount)}).`);
+  }
+  if (allocationAmount > billingBalance.currentReceivable + 0.0001) {
+    throw new Error(`Allocation exceeds billing receivable (${peso(billingBalance.currentReceivable)}).`);
+  }
+  return { collection, billing, collectionBalance, billingBalance, amount: allocationAmount };
+}
+
+async function allocateCollectionToBilling(pid, collectionId, billingId, amount, options = {}) {
+  const validated = await validateCollectionAllocation(pid, collectionId, billingId, amount);
+  const allocationRef = billingProjectRef(pid, 'billingAllocations').push();
+  const allocationId = allocationRef.key;
+  const payload = {
+    collectionId,
+    billingId,
+    billingNo: validated.billing.billingNo || '',
+    amount: validated.amount,
+    allocationType: options.allocationType || 'manual',
+    status: options.status || 'posted',
+    createdAt: billingNow(),
+    createdBy: billingUserId()
+  };
+  const updates = {};
+  updates[`billingAllocations/${allocationId}`] = payload;
+  updates[`collections/${collectionId}/allocations/${allocationId}`] = payload;
+  await safeDb(() => billingProjectRef(pid).update(updates), 'Failed to allocate collection');
+  await syncBillingDerivedFields(pid, billingId);
+  await syncCollectionDerivedFields(pid, collectionId);
+  await createBillingEvent(pid, {
+    type: 'collection_allocate',
+    billingId,
+    collectionId,
+    amount: validated.amount,
+    status: payload.status,
+    sourceType: 'billingAllocation',
+    sourceId: allocationId
+  });
+  if (!options.skipRebuild) await rebuildBillingRollups(pid);
+  return { id: allocationId, ...payload };
+}
+
+async function allocateCollectionToOldestBillings(pid, collectionId, amount) {
+  const billings = (await listBillings(pid))
+    .filter(b => billingActive(b) && billingApproved(b))
+    .sort((a, b) => (a.seq || 0) - (b.seq || 0) || (a.createdAt || 0) - (b.createdAt || 0));
+  let remaining = billingAmount(amount);
+  const allocations = [];
+  for (const billing of billings) {
+    if (remaining <= 0) break;
+    const balance = await calculateBillingReceivable(pid, billing.id);
+    const toApply = Math.min(remaining, balance.currentReceivable);
+    if (toApply <= 0) continue;
+    const allocation = await allocateCollectionToBilling(pid, collectionId, billing.id, toApply, {
+      allocationType: 'auto_oldest',
+      skipRebuild: true
+    });
+    allocations.push(allocation);
+    remaining -= toApply;
+  }
+  await syncCollectionDerivedFields(pid, collectionId);
+  if (allocations.length) await rebuildBillingRollups(pid);
+  return { allocations, unappliedAmount: Math.max(0, remaining) };
+}
+
 async function recordCollection(pid, input = {}) {
   if (!pid) throw new Error('Missing project id.');
   const amountReceived = billingAmount(input.amountReceived ?? input.amount);
@@ -253,6 +646,12 @@ async function recordCollection(pid, input = {}) {
   const withholdingTax = billingAmount(input.withholdingTax);
   const otherDeductions = billingAmount(input.otherDeductions);
   const netCashReceived = Math.max(0, amountReceived - withholdingTax - otherDeductions);
+  if (input.billingId) {
+    const balance = await calculateBillingReceivable(pid, input.billingId);
+    if (netCashReceived > balance.currentReceivable + 0.0001) {
+      throw new Error(`Collection exceeds billing receivable (${peso(balance.currentReceivable)}).`);
+    }
+  }
   const ref = billingProjectRef(pid, 'collections').push();
   const collectionId = ref.key;
   const payload = {
@@ -266,6 +665,8 @@ async function recordCollection(pid, input = {}) {
     withholdingTax,
     otherDeductions,
     netCashReceived,
+    allocatedAmount: 0,
+    unappliedAmount: netCashReceived,
     paymentMethod: input.paymentMethod || '',
     referenceNo: input.referenceNo || '',
     paidBy: input.paidBy || '',
@@ -282,18 +683,12 @@ async function recordCollection(pid, input = {}) {
   await safeDb(() => ref.set(payload), 'Failed to record collection');
 
   if (payload.billingId) {
-    const billingRef = billingProjectRef(pid, `billings/${payload.billingId}`);
-    const billingSnap = await billingRef.once('value');
-    const billing = billingSnap.val() || {};
-    const collectedAmount = billingAmount(billing.collectedAmount) + netCashReceived;
-    const receivableBalance = Math.max(0, billingNet(billing) - collectedAmount);
-    await safeDb(() => billingRef.update({
-      collectedAmount,
-      receivableBalance,
-      status: receivableBalance <= 0 ? 'collected' : 'partially_collected',
-      updatedAt: billingNow(),
-      updatedBy: billingUserId()
-    }), 'Failed to update billing balance');
+    await allocateCollectionToBilling(pid, collectionId, payload.billingId, netCashReceived, {
+      allocationType: input.allocationType || 'manual',
+      skipRebuild: true
+    });
+  } else if (input.allocateToOldest !== false) {
+    await allocateCollectionToOldestBillings(pid, collectionId, netCashReceived);
   }
 
   await createBillingEvent(pid, {
@@ -358,78 +753,347 @@ async function updateBillingAdjustmentStatus(pid, adjustmentId, status) {
   await rebuildBillingRollups(pid);
 }
 
+async function createBillingDeduction(pid, billingId, input = {}) {
+  if (!pid || !billingId) throw new Error('Missing billing reference.');
+  const amount = billingAmount(input.amount);
+  if (amount <= 0) throw new Error('Deduction amount must be greater than zero.');
+  const ref = billingProjectRef(pid, `billings/${billingId}/deductions`).push();
+  const deductionId = ref.key;
+  const payload = {
+    type: input.type || 'other',
+    description: String(input.description || input.reason || '').trim(),
+    amount,
+    status: input.status || 'pending',
+    reason: input.reason || '',
+    notes: input.notes || '',
+    createdAt: billingNow(),
+    createdBy: billingUserId()
+  };
+  await safeDb(() => ref.set(payload), 'Failed to create billing deduction');
+  await createBillingEvent(pid, {
+    type: 'deduction_create',
+    billingId,
+    adjustmentId: deductionId,
+    amount,
+    description: payload.description,
+    status: payload.status
+  });
+  await syncBillingDerivedFields(pid, billingId);
+  await rebuildBillingRollups(pid);
+  return { id: deductionId, ...payload };
+}
+
+async function updateBillingDeductionStatus(pid, billingId, deductionId, status) {
+  if (!pid || !billingId || !deductionId) throw new Error('Missing deduction reference.');
+  if (!['approved', 'rejected', 'voided', 'pending'].includes(status)) throw new Error('Invalid deduction status.');
+  await safeDb(() => billingProjectRef(pid, `billings/${billingId}/deductions/${deductionId}`).update({
+    status,
+    updatedAt: billingNow(),
+    updatedBy: billingUserId(),
+    [`${status}At`]: billingNow(),
+    [`${status}By`]: billingUserId()
+  }), 'Failed to update billing deduction');
+  await createBillingEvent(pid, {
+    type: status === 'approved' ? 'deduction_approve' : `deduction_${status}`,
+    billingId,
+    adjustmentId: deductionId,
+    status
+  });
+  await syncBillingDerivedFields(pid, billingId);
+  await rebuildBillingRollups(pid);
+}
+
+function approveBillingDeduction(pid, billingId, deductionId) {
+  return updateBillingDeductionStatus(pid, billingId, deductionId, 'approved');
+}
+
+function rejectBillingDeduction(pid, billingId, deductionId) {
+  return updateBillingDeductionStatus(pid, billingId, deductionId, 'rejected');
+}
+
+async function voidBillingDeduction(pid, billingId, deductionId, reason = 'Voided billing deduction') {
+  if (!pid || !billingId || !deductionId) throw new Error('Missing deduction reference.');
+  await safeDb(() => billingProjectRef(pid, `billings/${billingId}/deductions/${deductionId}`).update({
+    status: 'voided',
+    voidReason: reason,
+    voidedAt: billingNow(),
+    voidedBy: billingUserId(),
+    updatedAt: billingNow(),
+    updatedBy: billingUserId()
+  }), 'Failed to void billing deduction');
+  await createBillingEvent(pid, {
+    type: 'deduction_void',
+    billingId,
+    adjustmentId: deductionId,
+    description: reason,
+    status: 'voided'
+  });
+  await syncBillingDerivedFields(pid, billingId);
+  await rebuildBillingRollups(pid);
+}
+
+function calculateRetentionForBilling(pid, billingId) {
+  return calculateBillingReceivable(pid, billingId);
+}
+
+async function releaseRetention(pid, billingId, input = {}) {
+  if (!pid || !billingId) throw new Error('Missing billing reference.');
+  const amount = billingAmount(input.amount);
+  if (amount <= 0) throw new Error('Retention release amount must be greater than zero.');
+  const balance = await calculateBillingReceivable(pid, billingId);
+  if (amount > balance.retentionReceivable + 0.0001) {
+    throw new Error(`Retention release exceeds outstanding retention (${peso(balance.retentionReceivable)}).`);
+  }
+  const ref = billingProjectRef(pid, 'retentionLedger').push();
+  const retentionId = ref.key;
+  const payload = {
+    billingId,
+    collectionId: input.collectionId || '',
+    type: 'release',
+    amount,
+    status: input.status || 'approved',
+    date: input.date || new Date().toISOString().slice(0, 10),
+    notes: input.notes || '',
+    createdAt: billingNow(),
+    createdBy: billingUserId()
+  };
+  await safeDb(() => ref.set(payload), 'Failed to release retention');
+  await createBillingEvent(pid, {
+    type: 'retention_release',
+    billingId,
+    collectionId: payload.collectionId,
+    amount,
+    status: payload.status
+  });
+  await syncBillingDerivedFields(pid, billingId);
+  await rebuildBillingRollups(pid);
+  return { id: retentionId, ...payload };
+}
+
+async function generateBillingOutputSnapshot(pid, options = {}) {
+  if (!pid) throw new Error('Missing project id.');
+  const sourceBillingIds = Array.isArray(options.billingIds)
+    ? options.billingIds
+    : options.billingId ? [options.billingId] : [];
+  if (!sourceBillingIds.length) throw new Error('Select at least one billing for output.');
+  const [projectSnap, contract, billings, collections, allocations, adjustments, retentionLedger, rollup] = await Promise.all([
+    billingProjectRef(pid).once('value'),
+    getContract(pid),
+    listBillings(pid),
+    listCollections(pid),
+    listCollectionAllocations(pid),
+    billingProjectRef(pid, 'billingAdjustments').once('value').then(billingSnapRows),
+    listRetentionLedger(pid),
+    rebuildBillingRollups(pid)
+  ]);
+  const project = projectSnap.val() || {};
+  const selectedBillings = billings.filter(b => sourceBillingIds.includes(b.id));
+  if (!selectedBillings.length) throw new Error('Selected billing not found.');
+  const selectedBillingIdSet = new Set(selectedBillings.map(b => b.id));
+  const sourceCollectionIds = new Set(
+    effectiveAllocationRows(collections, allocations)
+      .filter(a => selectedBillingIdSet.has(a.billingId))
+      .map(a => a.collectionId)
+  );
+  const selectedCollections = collections.filter(c => sourceCollectionIds.has(c.id));
+  const selectedAdjustments = adjustments.filter(a => !a.billingId || selectedBillingIdSet.has(a.billingId));
+  const selectedRetention = retentionLedger.filter(r => selectedBillingIdSet.has(r.billingId));
+  const totals = selectedBillings.reduce((acc, b) => {
+    const gross = billingGross(b);
+    const deductions = billingDeductionTotal(b);
+    const retention = calculateBillingRetentionAmount(b, gross, deductions);
+    const collectible = Math.max(0, gross - deductions - retention);
+    acc.gross += gross;
+    acc.deductions += deductions;
+    acc.retention += retention;
+    acc.netBillable += collectible;
+    return acc;
+  }, { gross: 0, deductions: 0, retention: 0, netBillable: 0 });
+  totals.collected = selectedCollections.reduce((sum, c) => sum + collectionNet(c), 0);
+  totals.receivable = Math.max(0, totals.netBillable - totals.collected);
+
+  const seq = options.seq || await nextBillingSeq(pid, 'nextOutputNo');
+  const ref = billingProjectRef(pid, 'billingOutputs').push();
+  const outputId = ref.key;
+  const sourceBillingMap = {};
+  const sourceCollectionMap = {};
+  const sourceAdjustmentMap = {};
+  selectedBillings.forEach(b => { sourceBillingMap[b.id] = true; });
+  selectedCollections.forEach(c => { sourceCollectionMap[c.id] = true; });
+  selectedAdjustments.forEach(a => { sourceAdjustmentMap[a.id] = true; });
+  const payload = {
+    type: options.type || 'billing_output',
+    status: 'archived',
+    outputNo: options.outputNo || outputNo(seq),
+    billingId: selectedBillings[0]?.id || '',
+    sourceBillingIds: sourceBillingMap,
+    sourceCollectionIds: sourceCollectionMap,
+    sourceAdjustmentIds: sourceAdjustmentMap,
+    generatedAt: billingNow(),
+    generatedBy: billingUserId(),
+    snapshotVersion: 1,
+    title: options.title || 'Billing Output',
+    snapshot: {
+      project: {
+        id: pid,
+        name: project.name || '',
+        status: project.status || ''
+      },
+      client: {
+        name: (contract && (contract.clientName || contract.client)) || ''
+      },
+      contract: contract || {},
+      billing: selectedBillings,
+      collections: selectedCollections,
+      deductions: selectedBillings.flatMap(b => billingChildRows(b.deductions).map(d => ({ billingId: b.id, ...d }))),
+      retention: selectedRetention,
+      totals,
+      rollup: rollup || {}
+    },
+    textSnapshot: options.textSnapshot || JSON.stringify({
+      title: options.title || 'Billing Output',
+      project: project.name || pid,
+      client: (contract && (contract.clientName || contract.client)) || '',
+      totals
+    }, null, 2)
+  };
+  await safeDb(() => ref.set(payload), 'Failed to archive billing output');
+  const linkUpdates = {};
+  selectedBillings.forEach(b => {
+    linkUpdates[`billings/${b.id}/outputSnapshotIds/${outputId}`] = true;
+  });
+  await safeDb(() => billingProjectRef(pid).update(linkUpdates), 'Failed to link billing output');
+  await createBillingEvent(pid, {
+    type: 'billing_output_archive',
+    billingId: payload.billingId,
+    amount: totals.netBillable,
+    sourceType: 'billingOutput',
+    sourceId: outputId,
+    status: payload.status
+  });
+  return { id: outputId, ...payload };
+}
+
+async function listBillingOutputs(pid) {
+  const snap = await billingProjectRef(pid, 'billingOutputs').once('value');
+  return billingSnapRows(snap);
+}
+
 async function calculateReceivable(pidOrBillings, maybeCollections) {
   let billings = pidOrBillings;
   let collections = maybeCollections;
   if (typeof pidOrBillings === 'string') {
-    [billings, collections] = await Promise.all([
-      listBillings(pidOrBillings),
-      listCollections(pidOrBillings)
+    const [rollup] = await Promise.all([
+      rebuildBillingRollups(pidOrBillings)
     ]);
+    return billingAmount(rollup && rollup.receivable);
   }
-  const totalNetBillable = (billings || []).filter(b => billingActive(b) && billingApproved(b)).reduce((sum, b) => sum + billingNet(b), 0);
+  const totalNetBillable = (billings || []).filter(b => billingActive(b) && billingApproved(b)).reduce((sum, b) => sum + billingCurrentCollectible(b), 0);
   const totalCollected = (collections || []).filter(billingActive).reduce((sum, c) => sum + collectionNet(c), 0);
   return Math.max(0, totalNetBillable - totalCollected);
 }
 
-async function rebuildBillingRollups(pid) {
+async function rebuildBillingRollups(pid, sources = {}) {
   if (!pid) return null;
-  const [laborCostSnap, materialCostSnap, contractSnap, billingsSnap, collectionsSnap, adjustmentsSnap, changeOrdersSnap] = await Promise.all([
+  const [
+    laborCostSnap,
+    materialCostSnap,
+    contractSnap,
+    billingsSnap,
+    collectionsSnap,
+    adjustmentsSnap,
+    changeOrdersSnap,
+    allocationsSnap,
+    retentionSnap
+  ] = await Promise.all([
     billingProjectRef(pid, 'laborSpent').once('value'),
     billingProjectRef(pid, 'materialSpent').once('value'),
-    billingProjectRef(pid, 'contract').once('value'),
-    billingProjectRef(pid, 'billings').once('value'),
-    billingProjectRef(pid, 'collections').once('value'),
-    billingProjectRef(pid, 'billingAdjustments').once('value'),
-    billingProjectRef(pid, 'changeOrders').once('value')
+    sources.contractSnap ? Promise.resolve(sources.contractSnap) : billingProjectRef(pid, 'contract').once('value'),
+    sources.billingsSnap ? Promise.resolve(sources.billingsSnap) : billingProjectRef(pid, 'billings').once('value'),
+    sources.collectionsSnap ? Promise.resolve(sources.collectionsSnap) : billingProjectRef(pid, 'collections').once('value'),
+    sources.adjustmentsSnap ? Promise.resolve(sources.adjustmentsSnap) : billingProjectRef(pid, 'billingAdjustments').once('value'),
+    sources.changeOrdersSnap ? Promise.resolve(sources.changeOrdersSnap) : billingProjectRef(pid, 'changeOrders').once('value'),
+    sources.allocationsSnap ? Promise.resolve(sources.allocationsSnap) : billingProjectRef(pid, 'billingAllocations').once('value'),
+    sources.retentionSnap ? Promise.resolve(sources.retentionSnap) : billingProjectRef(pid, 'retentionLedger').once('value')
   ]);
   const contract = contractSnap.val() || {};
-  const billings = billingSnapRows(billingsSnap).filter(b => billingActive(b) && billingApproved(b));
+  const allBillings = billingSnapRows(billingsSnap);
+  const billings = allBillings.filter(b => billingActive(b) && billingApproved(b));
+  const billingsById = activeBillingMap(allBillings);
   const collections = billingSnapRows(collectionsSnap).filter(billingActive);
   const adjustments = billingSnapRows(adjustmentsSnap).filter(a => billingActive(a) && (a.status || '') === 'approved');
   const changeOrders = billingSnapRows(changeOrdersSnap).filter(co => (co.status || '') === 'approved');
+  const allocationRows = effectiveAllocationRows(collections, billingSnapRows(allocationsSnap))
+    .filter(a => billingsById[a.billingId]);
+  const retentionRows = retentionReleaseRows(collections, billingSnapRows(retentionSnap))
+    .filter(r => !r.billingId || billingsById[r.billingId]);
+
   const contractAmount = billingAmount(contract.originalAmount ?? contract.amount);
   const approvedChangeOrders = changeOrders.reduce((sum, co) => {
     return sum + Math.max(0, billingAmount(co.laborImpact) + billingAmount(co.materialsImpact) + billingAmount(co.amount));
   }, 0);
   const adjustedContractAmount = contractAmount + approvedChangeOrders;
-  const totalApprovedAdjustments = adjustments.reduce((sum, a) => sum + signedAdjustmentAmount(a), 0);
-  const totalBilledGross = billings.reduce((sum, b) => sum + billingGross(b), 0);
-  const totalRetentionHeld = Math.max(0,
-    billings.reduce((sum, b) => sum + billingAmount(b.retentionAmount), 0) -
-    collections.reduce((sum, c) => sum + billingAmount(c.retentionReleased), 0)
+  const receivableAdjustments = adjustments.filter(a => a.affectsReceivable !== false);
+  const additionAdjustments = receivableAdjustments
+    .filter(a => signedAdjustmentAmount(a) > 0)
+    .reduce((sum, a) => sum + signedAdjustmentAmount(a), 0);
+  const approvedAdjustmentDeductions = receivableAdjustments
+    .filter(a => signedAdjustmentAmount(a) < 0)
+    .reduce((sum, a) => sum + Math.abs(signedAdjustmentAmount(a)), 0);
+  const totalBilledGross = billings.reduce((sum, b) => sum + billingGross(b), 0) + additionAdjustments;
+  const billingDeductions = billings.reduce((sum, b) => sum + billingDeductionTotal(b), 0);
+  const totalApprovedDeductions = billingDeductions + approvedAdjustmentDeductions;
+  const totalRetentionHeldRaw = billings.reduce((sum, b) => {
+    return sum + calculateBillingRetentionAmount(b, billingGross(b), billingDeductionTotal(b));
+  }, 0);
+  const totalRetentionReleased = Math.min(
+    totalRetentionHeldRaw,
+    retentionRows.reduce((sum, r) => sum + billingAmount(r.amount), 0)
   );
-  const totalDeductions = billings.reduce((sum, b) => sum + billingAmount(b.deductionTotal), 0) +
-    adjustments.filter(a => signedAdjustmentAmount(a) < 0).reduce((sum, a) => sum + Math.abs(signedAdjustmentAmount(a)), 0);
-  const totalNetBillable = Math.max(0, billings.reduce((sum, b) => sum + billingNet(b), 0) + totalApprovedAdjustments);
-  const totalCollected = collections.reduce((sum, c) => sum + collectionNet(c), 0);
-  const receivable = Math.max(0, totalNetBillable - totalCollected);
+  const retentionReceivable = Math.max(0, totalRetentionHeldRaw - totalRetentionReleased);
+  const totalCurrentCollectible = Math.max(0, totalBilledGross - totalApprovedDeductions - totalRetentionHeldRaw);
+  const totalAllocatedCollections = allocationRows.reduce((sum, a) => sum + billingAmount(a.amount), 0);
+  const totalRevenueCollected = collections.reduce((sum, c) => sum + collectionNet(c), 0);
+  const unappliedCollections = Math.max(0, totalRevenueCollected - totalAllocatedCollections);
+  const currentReceivable = Math.max(0, totalCurrentCollectible - totalAllocatedCollections);
+  const totalReceivable = currentReceivable + retentionReceivable;
   const laborCost = billingAmount(laborCostSnap.val());
   const materialCost = billingAmount(materialCostSnap.val());
   const totalCost = laborCost + materialCost;
-  const estimatedProfit = totalCollected - totalCost;
-  const estimatedProfitPct = totalCollected > 0 ? Math.round((estimatedProfit / totalCollected) * 100) : 0;
+  const estimatedProfit = totalRevenueCollected - totalCost;
+  const estimatedProfitPct = totalRevenueCollected > 0 ? Math.round((estimatedProfit / totalRevenueCollected) * 100) : 0;
+  const margin = totalRevenueCollected > 0 ? estimatedProfit / totalRevenueCollected : 0;
   const rollup = {
     contractAmount,
     originalContractAmount: contractAmount,
     approvedChangeOrders,
     approvedChangeOrderTotal: approvedChangeOrders,
     adjustedContractAmount,
-    approvedAdjustments: totalApprovedAdjustments,
-    totalApprovedAdjustments,
+    approvedAdjustments: additionAdjustments - approvedAdjustmentDeductions,
+    totalApprovedAdjustments: additionAdjustments - approvedAdjustmentDeductions,
     totalBilled: totalBilledGross,
     totalBilledGross,
-    totalRetentionHeld,
-    totalDeductions,
-    totalNetBillable,
-    totalCollected,
-    totalReceivable: receivable,
-    receivable,
+    totalGrossBilled: totalBilledGross,
+    totalRetentionHeld: totalRetentionHeldRaw,
+    totalRetentionReleased,
+    retentionReceivable,
+    totalDeductions: totalApprovedDeductions,
+    totalApprovedDeductions,
+    totalNetBillable: totalCurrentCollectible,
+    totalCurrentCollectible,
+    totalAllocatedCollections,
+    unappliedCollections,
+    totalCollected: totalRevenueCollected,
+    totalRevenueCollected,
+    currentReceivable,
+    totalReceivable,
+    receivable: totalReceivable,
     laborCost,
     materialCost,
     totalCost,
     estimatedProfit,
     estimatedProfitPct,
+    margin,
     lastUpdatedAt: billingNow(),
     updatedBy: billingUserId()
   };
@@ -490,6 +1154,7 @@ function watchContract(pid) {
     if (dashboard) dashboard.classList.toggle('hidden', !hasContract);
 
     if (hasContract) renderContractDashboard(c, pid);
+    if (hasContract) scheduleBillingRollupRebuild(pid, { contractSnap: snap });
   });
 }
 
@@ -497,6 +1162,27 @@ function watchBillingRollups(pid) {
   _billingRollupListener = billingProjectRef(pid, 'billingRollups');
   _billingRollupListener.on('value', snap => {
     applyBillingDashboardRollup(snap.val() || {});
+  });
+}
+
+function watchBillingAdjustments(pid) {
+  _billingAdjustmentsListener = billingProjectRef(pid, 'billingAdjustments');
+  _billingAdjustmentsListener.on('value', snap => {
+    scheduleBillingRollupRebuild(pid, { adjustmentsSnap: snap });
+  });
+}
+
+function watchBillingAllocations(pid) {
+  _billingAllocationsListener = billingProjectRef(pid, 'billingAllocations');
+  _billingAllocationsListener.on('value', snap => {
+    scheduleBillingRollupRebuild(pid, { allocationsSnap: snap });
+  });
+}
+
+function watchRetentionLedger(pid) {
+  _retentionLedgerListener = billingProjectRef(pid, 'retentionLedger');
+  _retentionLedgerListener.on('value', snap => {
+    scheduleBillingRollupRebuild(pid, { retentionSnap: snap });
   });
 }
 
@@ -604,11 +1290,11 @@ function renderContractDashboard(c, pid) {
 }
 
 function applyBillingDashboardRollup(rollup = {}) {
-  const totalBilled = billingAmount(rollup.totalBilled);
-  const totalCollected = billingAmount(rollup.totalCollected);
-  const retentionHeld = billingAmount(rollup.totalRetentionHeld);
-  const netCollected = Math.max(0, totalCollected - retentionHeld);
-  const outstanding = billingAmount(rollup.receivable ?? rollup.totalReceivable);
+  const totalBilled = billingAmount(rollup.totalBilled ?? rollup.totalGrossBilled);
+  const totalCollected = billingAmount(rollup.totalCollected ?? rollup.totalRevenueCollected);
+  const retentionHeld = billingAmount(rollup.retentionReceivable ?? rollup.totalRetentionHeld);
+  const netCollected = totalCollected;
+  const outstanding = billingAmount(rollup.receivable ?? rollup.totalReceivable ?? rollup.currentReceivable);
   const contractAmount = billingAmount(rollup.adjustedContractAmount ?? rollup.contractAmount);
 
   setText('cdTotalBilled', peso(totalBilled));
@@ -638,6 +1324,7 @@ function watchBillings(pid) {
 
     if (!snap.exists()) {
       tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">No billing requests yet.</td></tr>`;
+      scheduleBillingRollupRebuild(pid, { billingsSnap: snap });
       return;
     }
 
@@ -688,6 +1375,7 @@ function watchBillings(pid) {
       fragment.appendChild(tr);
     });
     tbody.appendChild(fragment);
+    scheduleBillingRollupRebuild(pid, { billingsSnap: snap });
   });
 }
 
@@ -797,6 +1485,7 @@ function watchCollections(pid) {
     if (!snap.exists()) {
       tbody.innerHTML = `<tr><td colspan="4" class="empty-cell">No collections yet.</td></tr>`;
       setText('collectionGrand', peso(0));
+      scheduleBillingRollupRebuild(pid, { collectionsSnap: snap });
       return;
     }
 
@@ -839,6 +1528,7 @@ function watchCollections(pid) {
     firebase.database().ref(`projects/${pid}/contract`).once('value', cSnap => {
       if (cSnap.exists()) renderContractDashboard(cSnap.val(), pid);
     });
+    scheduleBillingRollupRebuild(pid, { collectionsSnap: snap });
   });
 }
 
@@ -946,12 +1636,28 @@ window.detachBillingListeners = detachBillingListeners;
 window.getContract = getContract;
 window.saveContract = saveContract;
 window.createBilling = createBilling;
+window.createDownpaymentBilling = createDownpaymentBilling;
+window.createMobilizationBilling = createMobilizationBilling;
 window.listBillings = listBillings;
 window.approveBilling = approveBilling;
 window.recordCollection = recordCollection;
 window.listCollections = listCollections;
+window.listCollectionAllocations = listCollectionAllocations;
+window.calculateBillingReceivable = calculateBillingReceivable;
+window.validateCollectionAllocation = validateCollectionAllocation;
+window.allocateCollectionToBilling = allocateCollectionToBilling;
+window.allocateCollectionToOldestBillings = allocateCollectionToOldestBillings;
 window.createAdjustment = createAdjustment;
 window.updateBillingAdjustmentStatus = updateBillingAdjustmentStatus;
+window.createBillingDeduction = createBillingDeduction;
+window.approveBillingDeduction = approveBillingDeduction;
+window.rejectBillingDeduction = rejectBillingDeduction;
+window.voidBillingDeduction = voidBillingDeduction;
+window.calculateRetentionForBilling = calculateRetentionForBilling;
+window.releaseRetention = releaseRetention;
+window.generateBillingOutputSnapshot = generateBillingOutputSnapshot;
+window.listBillingOutputs = listBillingOutputs;
+window.scheduleBillingRollupRebuild = scheduleBillingRollupRebuild;
 window.rebuildBillingRollups = rebuildBillingRollups;
 window.calculateBillingRollup = calculateBillingRollup;
 window.calculateReceivable = calculateReceivable;

@@ -104,6 +104,9 @@ function watchChangeOrders(pid) {
 
     container.appendChild(fragment);
     renderCOSummary(orders, { totalApproved, totalPending, totalLabor, totalMaterials });
+    if (typeof scheduleBillingRollupRebuild === 'function') {
+      scheduleBillingRollupRebuild(pid, { changeOrdersSnap: snap });
+    }
   });
 }
 

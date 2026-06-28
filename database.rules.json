@@ -51,13 +51,25 @@
         },
         "billingAdjustments": { ".indexOn": ["adjustmentNo", "billingId", "type", "status", "date", "createdAt"] 
         },
+        "billingAllocations": {
+          ".indexOn": ["billingId", "collectionId", "status", "createdAt", "allocationType"],
+          "$allocationId": {
+            ".validate": "newData.hasChildren(['collectionId', 'billingId', 'amount', 'status', 'createdAt', 'createdBy'])"
+          }
+        },
+        "retentionLedger": {
+          ".indexOn": ["billingId", "collectionId", "type", "status", "date", "createdAt"],
+          "$retentionId": {
+            ".validate": "newData.hasChildren(['billingId', 'type', 'amount', 'status', 'createdAt', 'createdBy'])"
+          }
+        },
         "billingEvents": {
           ".indexOn": ["type", "billingId", "collectionId", "date", "createdAt", "status"],
           "$eventId": {
             ".validate": "newData.hasChildren(['type', 'createdAt', 'createdBy'])"
           }
         },
-        "billingOutputs": { ".indexOn": ["type", "billingId", "outputNo", "generatedAt"] 
+        "billingOutputs": { ".indexOn": ["type", "status", "billingId", "outputNo", "generatedAt"] 
         },
         "billingRollups": { ".indexOn": ["lastUpdatedAt"] 
         },

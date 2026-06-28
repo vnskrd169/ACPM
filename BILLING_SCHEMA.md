@@ -1,6 +1,6 @@
 # ACPM Billing v1 Workflow and Firebase Schema
 
-Status: PHASE 1 BACKEND FOUNDATION IMPLEMENTED
+Status: PHASE 1 STABLE - ROLLUP REBUILD QA PASSED; PHASE 2 DATA FOUNDATION IMPLEMENTED - QA PENDING
 
 Labor v1 and Materials v1 are frozen. Billing v1 must track project revenue, billings, collections, receivables, and profit reporting without changing Labor or Materials.
 
@@ -461,6 +461,8 @@ Phase 1 implementation status:
 - Implemented in `database.rules.json`.
 - Billing helpers now write/read the existing Billing paths plus the new `billingConfig`, `billingAdjustments`, `billingEvents`, and `billingRollups` paths.
 - `billingOutputs` is indexed for Phase 2 output/archive work but is not generated in Phase 1.
+- `billingRollups` are rebuilt from full Firebase history by `rebuildBillingRollups(projectId)`.
+- Phase 1 real Firebase QA passed on 2026-06-28 after fixing Firebase `DataSnapshot.forEach()` iteration.
 
 ## Phase 1 Helper Functions Implemented
 
@@ -476,7 +478,8 @@ Implemented in `billing.js`:
 | `recordCollection(projectId, data)` | Creates posted collection, optionally applies it to one billing, writes event, recalculates rollup. |
 | `listCollections(projectId)` | Lists collection history rows. |
 | `createAdjustment(projectId, data)` | Creates billing adjustment, writes event, recalculates rollup. |
-| `calculateBillingRollup(projectId)` | Rebuilds revenue/cost rollups from contract, billing, collection, adjustment, change-order, labor cost, and material cost records. |
+| `rebuildBillingRollups(projectId)` | Authoritative rebuild of revenue/cost rollups from contract, approved billings, active collections, approved adjustments, approved change orders, labor cost, and material cost records. |
+| `calculateBillingRollup(projectId)` | Compatibility alias for `rebuildBillingRollups(projectId)`. |
 | `calculateReceivable(projectId)` | Calculates receivable from active billings minus active collections. |
 | `calculateRevenueVsCost(projectId)` | Returns revenue, billed, collected, receivable, labor cost, material cost, total cost, and estimated profit. |
 | `createBillingEvent(projectId, event)` | Appends a Billing event row for traceability. |
@@ -487,6 +490,7 @@ Phase 1 UI compatibility:
 - Existing tables remain visually unchanged except that new status values can be displayed.
 - Contract setup no longer auto-posts downpayment as collected revenue. Downpayment terms are stored on the contract; actual revenue must come from an intentional billing/collection flow.
 - Delete actions now void Billing and Collection records instead of removing history.
+- Billing dashboard summary reads `billingRollups` only.
 
 Phase 1 rollup fields written to `projects/{projectId}/billingRollups`:
 
@@ -512,6 +516,369 @@ totalNetBillable
 totalReceivable
 totalCost
 estimatedProfitPct
+```
+
+## Billing v1 Phase 2 Architecture
+
+Phase 2 extends the Phase 1 rebuild-based design. It should not increment or decrement stored totals directly. Every billing, collection, retention, deduction, and output archive update must still end with `rebuildBillingRollups(projectId)`, which overwrites `billingRollups` from source history.
+
+Phase 2 goals:
+
+- Link collections to one or more billings while still allowing temporarily unallocated collections.
+- Represent downpayment and mobilization as billing records, not hidden collections.
+- Track retention receivable separately from immediately collectible receivable.
+- Treat deductions as explicit approved/rejected/voidable records.
+- Archive generated billing/invoice/RFP output as immutable JSON snapshots.
+
+Phase 2 non-goals:
+
+- No Labor or Materials schema changes.
+- No UI redesign.
+- No formal accounting/tax replacement.
+- No server-side Cloud Functions automation unless selected in a later infrastructure phase.
+
+### Phase 2 Firebase Path Extensions
+
+Existing Phase 1 paths remain valid. Phase 2 adds structure under the same Billing namespace:
+
+```text
+projects/{projectId}/
+  billingConfig/
+    defaultRetentionMode
+    defaultRetentionPct
+    allowOverpayment
+    overpaymentPolicy
+    collectionAllocationPolicy
+    outputPrefix
+
+  billings/{billingId}/
+    type
+    status
+    grossAmount
+    deductionTotal
+    retentionMode
+    retentionPct
+    retentionFixedAmount
+    retentionAmount
+    retentionReleased
+    retentionReceivable
+    netBillable
+    currentCollectible
+    allocatedCollectionTotal
+    currentReceivable
+    outputSnapshotIds/{outputId}: true
+    deductions/{deductionId}/
+      type
+      description
+      amount
+      status
+      reason
+      createdAt
+      createdBy
+      approvedAt
+      approvedBy
+      rejectedAt
+      rejectedBy
+      voidedAt
+      voidedBy
+
+  collections/{collectionId}/
+    collectionNo
+    status
+    amountReceived
+    netCashReceived
+    unappliedAmount
+    billingId
+    allocations/{allocationId}/
+      billingId
+      billingNo
+      amount
+      allocationType
+      createdAt
+      createdBy
+
+  billingAllocations/{allocationId}/
+    collectionId
+    billingId
+    amount
+    allocationType
+    status
+    createdAt
+    createdBy
+    voidedAt
+    voidedBy
+    voidReason
+
+  retentionLedger/{retentionId}/
+    billingId
+    collectionId
+    type
+    amount
+    status
+    date
+    createdAt
+    createdBy
+
+  billingAdjustments/{adjustmentId}/
+    type
+    scope
+    billingId
+    amount
+    status
+    affectsContract
+    affectsReceivable
+    reason
+    createdAt
+    createdBy
+    approvedAt
+    approvedBy
+    rejectedAt
+    rejectedBy
+    voidedAt
+    voidedBy
+
+  billingOutputs/{outputId}/
+    type
+    status
+    outputNo
+    sourceBillingIds/{billingId}: true
+    sourceCollectionIds/{collectionId}: true
+    sourceAdjustmentIds/{adjustmentId}: true
+    generatedAt
+    generatedBy
+    snapshotVersion
+    snapshot/
+      project
+      client
+      contract
+      billing
+      collections
+      deductions
+      retention
+      totals
+      lineItems
+    textSnapshot
+```
+
+Phase 2 indexes implemented in `database.rules.json`:
+
+```json
+"billingAllocations": {
+  ".indexOn": ["billingId", "collectionId", "status", "createdAt", "allocationType"]
+},
+"retentionLedger": {
+  ".indexOn": ["billingId", "collectionId", "type", "status", "date", "createdAt"]
+},
+"billingOutputs": {
+  ".indexOn": ["type", "status", "billingId", "outputNo", "generatedAt"]
+}
+```
+
+### Linked Collections
+
+Collections should support both simple and allocated payment workflows:
+
+- A collection may have `billingId` when it pays one billing.
+- A collection may have `allocations` when it is split across multiple billings.
+- A collection may be temporarily unallocated when the office receives payment before deciding which billing it pays.
+- Each allocation must also be mirrored as an append-only row under `billingAllocations`.
+
+Default allocation rule for Phase 2:
+
+```text
+overpaymentPolicy = reject
+collectionAllocationPolicy = manual
+```
+
+This means:
+
+- Allocation amount cannot exceed the billing's active collectible receivable.
+- Allocation amount cannot exceed the collection's unapplied amount.
+- Voided billings and voided collections cannot receive new allocations.
+- Rejected/voided deductions and rejected/voided adjustments are ignored.
+- If overpayment handling is later needed, use `unapplied_credit` as a separate policy instead of silently overpaying a billing.
+
+### Downpayment and Mobilization Billing
+
+Downpayment and mobilization must be normal billing records:
+
+```text
+billings/{billingId}/type = downpayment | mobilization
+```
+
+Rules:
+
+- Approved downpayment or mobilization billings increase billed revenue and receivable.
+- Collections against them increase collected revenue.
+- They never increase Labor or Materials cost.
+- Contract downpayment fields define the expected amount; the billing record is the historical revenue document.
+- Saving contract terms alone should not create hidden billed or collected revenue.
+
+### Retention
+
+Retention is not a cash collection and should not be treated as collected revenue.
+
+Per billing, retention can be:
+
+```text
+retentionMode = none | percent | fixed
+retentionPct = number
+retentionFixedAmount = number
+retentionAmount = calculated amount held
+retentionReleased = amount later released
+retentionReceivable = retentionAmount - retentionReleased
+```
+
+Phase 2 calculation:
+
+```text
+approvedGross = sum approved billing gross amounts
+approvedDeductions = sum approved billing deductions
+retentionHeld = sum approved billing retention amounts
+currentCollectible = approvedGross - approvedDeductions - retentionHeld
+currentReceivable = currentCollectible - allocatedCollections
+retentionReceivable = retentionHeld - retentionReleased
+totalReceivable = currentReceivable + retentionReceivable
+```
+
+Retention release should be explicit:
+
+- Preferred record: `retentionLedger/{retentionId}` with `type = release`.
+- Optional billing document: `billings/{billingId}/type = retention_release` if the client requires a separate request document.
+- Released retention only becomes collected revenue when a collection is posted.
+
+### Deductions
+
+Deductions reduce the amount collectible from the client. They are not project costs.
+
+Examples:
+
+```text
+damages
+penalty
+backcharge
+admin_deduction
+withholding
+other
+```
+
+Rules:
+
+- Draft deductions do not affect totals.
+- Rejected deductions do not affect totals.
+- Approved deductions reduce `netBillable`, `currentCollectible`, and receivable.
+- Voided deductions are preserved but ignored by rebuilds.
+- Deductions may live inside a billing for document-specific deductions, or under `billingAdjustments` for project-level revenue adjustments.
+
+### Billing Output Archive
+
+Generated billing, invoice, and RFP-style outputs must be immutable snapshots.
+
+`billingOutputs/{outputId}` should copy all values needed to re-open the historical document:
+
+- project name and address at generation time
+- client name and contact at generation time
+- contract values at generation time
+- source billing IDs and billing numbers
+- line items
+- deductions
+- retention
+- collections included, if any
+- final totals
+- generated text/table payload
+- generated user and timestamp
+
+Historical output must not change if the project name, client name, rates, contract terms, deduction descriptions, or current billing settings change later.
+
+### Phase 2 Helper Functions Implemented
+
+Implemented in `billing.js`:
+
+| Helper | Purpose |
+| --- | --- |
+| `createDownpaymentBilling(projectId, data)` | Creates a billing with `type = downpayment` from contract terms or manual amount. |
+| `createMobilizationBilling(projectId, data)` | Creates a billing with `type = mobilization`. |
+| `calculateBillingReceivable(projectId, billingId)` | Calculates one billing's current collectible, allocated collections, retention receivable, and remaining balance from history. |
+| `validateCollectionAllocation(projectId, collectionId, billingId, amount)` | Rejects allocations that exceed billing receivable, collection unapplied amount, or status rules. |
+| `allocateCollectionToBilling(projectId, collectionId, billingId, amount)` | Creates `billingAllocations` and collection allocation records, then rebuilds rollups. |
+| `listCollectionAllocations(projectId, filters)` | Reads allocation history by billing or collection. |
+| `createBillingDeduction(projectId, billingId, data)` | Adds a draft/pending deduction row. |
+| `approveBillingDeduction(projectId, billingId, deductionId)` | Marks deduction approved and rebuilds rollups. |
+| `rejectBillingDeduction(projectId, billingId, deductionId)` | Marks deduction rejected and rebuilds rollups. |
+| `voidBillingDeduction(projectId, billingId, deductionId, reason)` | Preserves but ignores the deduction. |
+| `calculateRetentionForBilling(projectId, billingId)` | Calculates retention held and remaining retention receivable. |
+| `releaseRetention(projectId, billingId, data)` | Creates a retention ledger release event; collection is still required to count cash received. |
+| `generateBillingOutputSnapshot(projectId, options)` | Writes immutable JSON and text snapshots under `billingOutputs`. |
+| `listBillingOutputs(projectId, filters)` | Reads generated historical outputs. |
+| `rebuildBillingRollups(projectId)` | Extended to include allocations, deductions, retention, output-independent revenue fields, cost rollups, and compatibility fields. |
+
+Phase 2 implementation notes:
+
+- `recordCollection()` now writes historical collection rows and allocation rows instead of incrementing stored billing totals.
+- If `billingId` is supplied, collection allocation is validated against that billing's current receivable before writing.
+- If no `billingId` is supplied, the current simple UI stays compatible by auto-allocating against oldest approved receivables where possible; any excess remains `unappliedAmount`.
+- `billingAllocations` mirrors collection allocation data so allocation history remains reportable even if the collection display changes.
+- Billing deductions are stored under `billings/{billingId}/deductions` and only approved deductions affect rollups.
+- Retention releases are stored under `retentionLedger`; released retention is not counted as collected cash unless a collection exists.
+- `billingOutputs` snapshots copy project/client/contract/billing/collection/deduction/retention/totals at generation time.
+- PWA cache and script version were bumped to `acpm-v54` / `billing.js?v=54`.
+
+### Phase 2 Rollup Changes
+
+Dashboard and reports should continue reading only `projects/{projectId}/billingRollups`.
+
+Additional Phase 2 rollup fields:
+
+```text
+totalGrossBilled
+totalApprovedDeductions
+totalRetentionHeld
+totalRetentionReleased
+retentionReceivable
+totalCurrentCollectible
+totalAllocatedCollections
+unappliedCollections
+currentReceivable
+totalReceivable
+totalRevenueCollected
+```
+
+Recommended definitions:
+
+```text
+totalGrossBilled = approved non-void billing gross amounts
+totalApprovedDeductions = approved non-void billing deductions and receivable-affecting approved adjustments
+totalRetentionHeld = approved retention held from billings
+totalRetentionReleased = approved retention release ledger amount
+retentionReceivable = totalRetentionHeld - totalRetentionReleased
+totalCurrentCollectible = totalGrossBilled - totalApprovedDeductions - totalRetentionHeld
+totalAllocatedCollections = active allocations applied to active billings
+unappliedCollections = active collection amount not allocated to billings
+currentReceivable = totalCurrentCollectible - totalAllocatedCollections
+totalReceivable = currentReceivable + retentionReceivable
+totalRevenueCollected = posted non-void net cash received
+estimatedProfit = totalRevenueCollected - laborCost - materialCost
+```
+
+Compatibility fields from Phase 1 should remain:
+
+```text
+contractAmount
+approvedChangeOrders
+totalBilled
+totalCollected
+receivable
+laborCost
+materialCost
+estimatedProfit
+```
+
+For compatibility, map:
+
+```text
+totalBilled = totalGrossBilled
+totalCollected = totalRevenueCollected
+receivable = totalReceivable
 ```
 
 ## Migration Plan
@@ -553,10 +920,10 @@ Existing downpayment collection should become a `downpayment` or `mobilization` 
 2. Add Firebase indexes for Billing paths. Done in Phase 1.
 3. Add Billing helper layer. Done in Phase 1 for contract, billings, collections, adjustments, events, rollups, receivable, and revenue-vs-cost.
 4. Refactor current UI to use helpers without redesigning UI. Partially done in Phase 1 for contract save, billing create, collection create, status update, and void actions.
-5. Add downpayment/mobilization billing support. Pending Phase 2 UI/workflow.
-6. Add partial collection linkage to billing records. Helper supports this when `billingId` is supplied; UI linkage is pending.
-7. Add retention and deduction calculations. Helper fields exist; full UI is pending.
-8. Add billing output archive. Pending.
+5. Add downpayment/mobilization billing support. Helper/data foundation implemented in Phase 2; dedicated UI pending.
+6. Add partial collection linkage to billing records. Implemented through `billingAllocations`; dedicated UI pending.
+7. Add retention and deduction calculations. Helper/data foundation implemented in Phase 2; dedicated UI pending.
+8. Add billing output archive. Immutable JSON snapshot helper implemented in Phase 2; polished output UI/PDF pending.
 9. Add dashboard/report integration. Rollups exist; full dashboard/report wiring is pending.
 10. Run Billing v1 manual QA. Phase 1 checklist added in `QA_BILLING.md`.
 
@@ -638,15 +1005,32 @@ Existing downpayment collection should become a `downpayment` or `mobilization` 
 - Tax handling is limited to explicit deduction/withholding fields, not full accounting compliance.
 - Estimated profit is operational, not formal accounting profit.
 - Phase 1 keeps the simple status dropdown for compatibility; cash/revenue totals still come from collection records, not status labels.
+- Phase 2 overpayment prevention can be enforced in app code, but Firebase Realtime Database rules cannot reliably protect every concurrent allocation race without server-side logic.
+- Unapplied credit handling is documented as a future policy; Phase 2 should default to rejecting over-allocation.
+- Billing output snapshots are operational archives and should not be treated as government-compliant invoices unless reviewed for local accounting/tax requirements.
+- Retention release workflows differ by client. Phase 2 should support the data model first, then validate exact release documents during QA.
 
 ## Completion Definition
 
-Billing v1 can be marked stable when:
+Billing v1 Phase 1 is stable when:
+
+- Firebase indexes match actual query paths.
+- Helper functions save historical contract, billing, collection, adjustment, event, and rollup data.
+- `billingRollups` rebuild from full Firebase history and ignore voided/rejected records.
+- Dashboard summary reads `billingRollups`.
+- Manual QA passes on a real Firebase project.
+
+Phase 1 status:
+
+```text
+STABLE as of 2026-06-28.
+```
+
+Full Billing v1 can be marked stable when:
 
 - Contract, downpayment, progress billing, collections, retention, deductions, and change-order billings are historical.
 - Partial collections update receivables correctly.
 - Billing outputs are archived.
 - Dashboard shows revenue, collected, receivable, cost, and estimated profit.
 - Reports read history, not only current totals.
-- Firebase indexes match actual query paths.
-- Manual QA passes on a real Firebase project.
+- Manual QA passes all Billing v1 scenarios on a real Firebase project.
