@@ -8,7 +8,7 @@ const SUPPLIER_STATUSES = {
 
 function canManageSuppliers() {
   const user = window._currentUser;
-  if (!user || user.role !== 'boss') {
+  if (!user || (typeof isBoss === 'function' ? !isBoss(user.role) : user.role !== 'boss')) {
     showToast('Boss access required to manage suppliers.', 'error');
     return false;
   }
@@ -118,6 +118,23 @@ async function listSupplierTransactions(supplierIdOrName) {
         });
       }
     });
+    Object.entries(project.deliveries || {}).forEach(([deliveryId, delivery]) => {
+      const supplierId = String(delivery?.supplierId || '').toLowerCase();
+      const supplierName = String(delivery?.supplierName || delivery?.supplier || '').toLowerCase();
+      if (supplierId === needle || supplierName === needle) {
+        rows.push({
+          type: 'delivery',
+          projectId,
+          projectName: project.name || projectId,
+          deliveryId,
+          poId: delivery.poId || '',
+          status: delivery.status || '',
+          deliveryDate: delivery.deliveryDate || delivery.date || '',
+          total: parseFloat(delivery.totalCost || delivery.total || delivery.acceptedCost) || 0,
+          createdAt: delivery.receivedAt || delivery.createdAt || 0
+        });
+      }
+    });
   });
   return rows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
@@ -129,16 +146,25 @@ async function rebuildSupplierRollup(supplierId) {
   const transactions = await listSupplierTransactions(supplierId);
   const supplierNameTransactions = supplier.name ? await listSupplierTransactions(supplier.name) : [];
   const merged = [...transactions, ...supplierNameTransactions]
-    .filter((row, index, arr) => arr.findIndex(x => x.projectId === row.projectId && x.poId === row.poId) === index);
-  const totalPOAmount = merged.reduce((sum, row) => sum + (parseFloat(row.total) || 0), 0);
-  const outstandingDeliveries = merged.filter(row => !['fully_delivered', 'closed'].includes(String(row.deliveryStatus || '').toLowerCase())).length;
+    .filter((row, index, arr) => arr.findIndex(x =>
+      x.type === row.type &&
+      x.projectId === row.projectId &&
+      (x.poId || '') === (row.poId || '') &&
+      (x.deliveryId || '') === (row.deliveryId || '')
+    ) === index);
+  const poRows = merged.filter(row => row.type === 'purchaseOrder');
+  const deliveryRows = merged.filter(row => row.type === 'delivery');
+  const totalPOAmount = poRows.reduce((sum, row) => sum + (parseFloat(row.total) || 0), 0);
+  const outstandingDeliveries = poRows.filter(row => !['fully_delivered', 'closed'].includes(String(row.deliveryStatus || '').toLowerCase())).length;
   const rollup = {
     supplierId,
     supplierName: supplier.name || '',
-    totalPurchaseOrders: merged.length,
+    totalPurchaseOrders: poRows.length,
     totalPOAmount,
+    totalDeliveries: deliveryRows.length,
     outstandingDeliveries,
-    lastPODate: merged.map(row => row.date).filter(Boolean).sort().pop() || '',
+    lastPODate: poRows.map(row => row.date).filter(Boolean).sort().pop() || '',
+    lastDeliveryDate: deliveryRows.map(row => row.deliveryDate).filter(Boolean).sort().pop() || '',
     lastUpdatedAt: Date.now(),
     updatedBy: supplierUserId()
   };
@@ -152,6 +178,7 @@ async function createSupplier(data = {}) {
   const now = Date.now();
   const ref = firebase.database().ref('suppliers').push();
   const eventRef = firebase.database().ref('supplierEvents').push();
+  const notificationRef = firebase.database().ref('globalNotificationEvents').push();
   const payload = {
     name,
     contact: data.contact || '',
@@ -168,12 +195,33 @@ async function createSupplier(data = {}) {
     createdBy: supplierUserId(),
     createdByName: supplierUserName(),
     updatedAt: now,
-    updatedBy: supplierUserId()
+    updatedBy: supplierUserId(),
+    statusHistory: {
+      [`${now}_created`]: {
+        fromStatus: '',
+        toStatus: SUPPLIER_STATUSES.active,
+        notes: data.notes || '',
+        createdAt: now,
+        createdBy: supplierUserId(),
+        createdByName: supplierUserName()
+      }
+    }
   };
   const updates = {};
   updates[`suppliers/${ref.key}`] = payload;
   updates[`supplierEvents/${eventRef.key}`] = {
     type: 'created',
+    supplierId: ref.key,
+    supplierName: name,
+    createdAt: now,
+    createdBy: supplierUserId(),
+    createdByName: supplierUserName()
+  };
+  updates[`globalNotificationEvents/${notificationRef.key}`] = {
+    module: 'suppliers',
+    type: 'supplier_created',
+    status: 'pending',
+    consumed: false,
     supplierId: ref.key,
     supplierName: name,
     createdAt: now,
@@ -187,12 +235,22 @@ async function createSupplier(data = {}) {
 
 async function updateSupplier(key, data = {}) {
   if (!key) throw new Error('Supplier ID is required.');
+  const snap = await firebase.database().ref(`suppliers/${key}`).once('value');
+  if (!snap.exists()) throw new Error('Supplier not found.');
   const now = Date.now();
   const updates = {
     ...data,
     updatedAt: now,
     updatedBy: supplierUserId(),
-    updatedByName: supplierUserName()
+    updatedByName: supplierUserName(),
+    [`statusHistory/${now}_updated`]: {
+      fromStatus: supplierStatus(snap.val()),
+      toStatus: supplierStatus(data.status ? data : snap.val()),
+      notes: data.notes || 'Supplier updated',
+      createdAt: now,
+      createdBy: supplierUserId(),
+      createdByName: supplierUserName()
+    }
   };
   await firebase.database().ref(`suppliers/${key}`).update(updates);
   await createSupplierEvent({
@@ -200,6 +258,10 @@ async function updateSupplier(key, data = {}) {
     supplierId: key,
     supplierName: data.name || '',
     createdAt: now
+  });
+  await createSupplierNotificationEvent('supplier_updated', {
+    supplierId: key,
+    supplierName: data.name || (snap.val() || {}).name || ''
   });
   await rebuildSupplierRollup(key);
   return true;
@@ -209,6 +271,7 @@ async function archiveSupplier(key, reason = '') {
   if (!key) throw new Error('Supplier ID is required.');
   if (!reason.trim()) throw new Error('Archive reason is required.');
   const snap = await firebase.database().ref(`suppliers/${key}`).once('value');
+  if (!snap.exists()) throw new Error('Supplier not found.');
   const supplier = snap.val() || {};
   const now = Date.now();
   const updates = {};
@@ -219,12 +282,33 @@ async function archiveSupplier(key, reason = '') {
   updates[`suppliers/${key}/archiveReason`] = reason.trim();
   updates[`suppliers/${key}/updatedAt`] = now;
   updates[`suppliers/${key}/updatedBy`] = supplierUserId();
+  updates[`suppliers/${key}/statusHistory/${now}_archived`] = {
+    fromStatus: supplierStatus(supplier),
+    toStatus: SUPPLIER_STATUSES.archived,
+    notes: reason.trim(),
+    createdAt: now,
+    createdBy: supplierUserId(),
+    createdByName: supplierUserName()
+  };
   const eventRef = firebase.database().ref('supplierEvents').push();
+  const notificationRef = firebase.database().ref('globalNotificationEvents').push();
   updates[`supplierEvents/${eventRef.key}`] = {
     type: 'archived',
     supplierId: key,
     supplierName: supplier.name || '',
     description: reason.trim(),
+    createdAt: now,
+    createdBy: supplierUserId(),
+    createdByName: supplierUserName()
+  };
+  updates[`globalNotificationEvents/${notificationRef.key}`] = {
+    module: 'suppliers',
+    type: 'supplier_archived',
+    status: 'pending',
+    consumed: false,
+    supplierId: key,
+    supplierName: supplier.name || '',
+    reason: reason.trim(),
     createdAt: now,
     createdBy: supplierUserId(),
     createdByName: supplierUserName()

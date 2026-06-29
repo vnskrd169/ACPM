@@ -28,6 +28,7 @@ Production gaps fixed in v1 data foundation:
 
 - Site logs now support structured work, manpower, visitors, equipment, issues, delays, safety, media URL metadata, GPS, events, notification hooks, and rollups.
 - `siteLogEvents` records posted/revised/voided events.
+- `statusHistory` records posted/revised/voided transitions on the log itself.
 - `siteLogRollups` rebuilds from historical `siteLogs`.
 
 Remaining production gaps:
@@ -129,6 +130,12 @@ projects/{projectId}/
     savedBy
     updatedAt
     updatedBy
+    statusHistory/{historyId}/
+      fromStatus
+      toStatus
+      notes
+      createdAt
+      createdBy
     voidedAt
     voidedBy
     voidReason

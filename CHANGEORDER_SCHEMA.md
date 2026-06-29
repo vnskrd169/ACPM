@@ -212,6 +212,7 @@ Implemented helper functions in `changeorders.js`:
 
 - `createChangeOrder(projectId, data)`
 - `listChangeOrders(projectId)`
+- `reviewChangeOrder(projectId, changeOrderId, notes)`
 - `approveChangeOrder(projectId, changeOrderId)`
 - `rejectChangeOrder(projectId, changeOrderId, reason)`
 - `voidChangeOrder(projectId, changeOrderId, reason)`
@@ -219,6 +220,11 @@ Implemented helper functions in `changeorders.js`:
 - `syncProjectBudgetDeltasFromChangeOrders(projectId)`
 - `linkChangeOrderBilling(projectId, changeOrderId, billingId)`
 - `createChangeOrderEvent(projectId, event)`
+
+Implementation notes:
+
+- The Change Order watcher rebuilds CO rollups, project budget deltas, and Billing rollups from history, including the empty-list case.
+- Billing linkage validates both records, writes `changeOrders/{id}/billingId`, mirrors the link under `billings/{billingId}/changeOrderIds/{changeOrderId}`, and creates a future notification event.
 
 Browser/UI compatibility functions are still exported:
 
@@ -265,7 +271,7 @@ Existing permanent delete behavior must be replaced with `status = voided`.
 
 - Current button icon still uses an `X`, but its aria label/title and behavior are void, not delete.
 - Attachments are architecture-ready but not implemented.
-- Change-order billing should be linked to Billing v1 records, but dedicated UI can come after data integrity is stable.
+- Change-order billing can be linked through the helper layer, but a dedicated UI can come after data integrity is stable.
 - Contract/legal approval details vary by client and may require custom printed output later.
 - Manual Firebase QA for creating, approving, rejecting, voiding, and billing-linking a safe test change order is still pending to avoid polluting live project records without a QA project.
 

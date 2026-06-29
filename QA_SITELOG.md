@@ -12,6 +12,7 @@ Scope:
 
 - [x] Save helper supports date, notes, work accomplished, weather, manpower, equipment, visitors, issues, delays, safety, photo URLs.
 - [x] Automatic current time is stored.
+- [x] Posted/revised/voided status history is stored on the log record.
 - [x] GPS is requested when browser permission allows.
 - [x] Log appears grouped by month and date through existing listener.
 - [x] Summary counts total logs, GPS logs, and current-week logs.
@@ -31,6 +32,7 @@ Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
   - `voidReason`
 - [x] Active views hide voided logs by default.
 - [x] Helper `listSiteLogs(projectId, { includeVoided: true })` can read voided logs when requested.
+- [x] Fixed Firebase `forEach` iteration so log history/rollups read every child, not only the first row.
 
 Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 
@@ -124,6 +126,7 @@ Result: PASS STATIC
 - [x] `node --check sitelog.js`
 - [x] Firebase rules JSON parse after Site Log rule update
 - [x] Browser smoke test after cache v57: `sitelog.js?v=57` loaded, structured fields existed, console had no errors/warnings.
+- [ ] Browser smoke test after cache v65
 - [ ] Real Firebase save/void/reopen test in QA project
 
 ## Stability Gate

@@ -34,6 +34,12 @@ suppliers/{supplierId}/
   createdBy
   updatedAt
   updatedBy
+  statusHistory/{historyId}/
+    fromStatus
+    toStatus
+    notes
+    createdAt
+    createdBy
   archivedAt
   archivedBy
   archiveReason
@@ -51,8 +57,10 @@ supplierRollups/{supplierId}/
   supplierName
   totalPurchaseOrders
   totalPOAmount
+  totalDeliveries
   outstandingDeliveries
   lastPODate
+  lastDeliveryDate
   lastUpdatedAt
   updatedBy
 
@@ -89,7 +97,7 @@ projects/{projectId}/purchaseOrders/{poId}/supplierId
 projects/{projectId}/purchaseOrders/{poId}/supplierName
 ```
 
-Supplier rollups derive PO history from existing project purchase orders. This avoids changing the frozen Materials v1 workflow.
+Supplier rollups derive PO and delivery history from existing project purchase orders and deliveries. This avoids changing the frozen Materials v1 workflow.
 
 ## Implemented Helpers
 
@@ -112,7 +120,7 @@ Existing UI functions preserved:
 
 ## Known Limitations
 
-- Supplier rollups rebuild from existing project POs when supplier helpers run; Materials PO submit is not modified in this pass.
-- Supplier performance is currently basic: total POs, total PO amount, outstanding delivery count, and last PO date.
+- Supplier rollups rebuild from existing project POs and deliveries when supplier helpers run; Materials PO submit is not modified in this pass.
+- Supplier performance is currently basic: total POs, total PO amount, delivery count, outstanding delivery count, last PO date, and last delivery date.
 - Supplier notes/history UI is still minimal.
 - Manual Firebase QA is pending because create/archive operations produce permanent historical records.

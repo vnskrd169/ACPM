@@ -29,6 +29,7 @@ Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
   - `archiveReason`
 - [x] Active supplier directory hides archived suppliers.
 - [x] Export includes archived suppliers with status and archive reason.
+- [x] Supplier create/update/archive writes status history and event hooks.
 
 Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 
@@ -39,6 +40,7 @@ Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 - [x] Archived suppliers are excluded from the shared PO quick-select dropdown.
 - [ ] Create PO from supplier and verify linkage in real Firebase.
 - [ ] Verify delivery history reads linked supplier POs.
+- [x] Static verification: `listSupplierTransactions()` reads matching delivery records in addition to POs.
 
 Result: PASS STATIC / PENDING REAL FIREBASE QA
 
@@ -48,8 +50,10 @@ Result: PASS STATIC / PENDING REAL FIREBASE QA
 - [x] Rollup reads historical project POs and computes:
   - total purchase orders
   - total PO amount
+  - total deliveries
   - outstanding deliveries
   - last PO date
+  - last delivery date
 - [ ] Verify against real Firebase project PO data.
 
 Result: PASS STATIC / PENDING REAL FIREBASE QA
@@ -78,12 +82,13 @@ Result: PASS STATIC
 - [x] `node --check utils.js`
 - [x] Firebase rules JSON parse
 - [x] Browser smoke test after cache bump: `utils.js?v=58` and `suppliers.js?v=58` loaded, supplier fields present.
+- [ ] Browser smoke test after cache v66
 - [ ] Browser console clean after deployed Firebase rules: current live smoke still shows older audit-log permission warning from cached/live rules.
 - [ ] Real Firebase create/edit/archive/PO-link test in QA project
 
 ## Known Limitations
 
-- Supplier performance is a basic rollup, not a full scorecard.
+- Supplier performance is a basic operational rollup, not a full vendor scorecard.
 - Materials submit was not modified because Materials v1 is frozen.
 - Manual Firebase QA is pending because supplier create/archive produces permanent records.
 

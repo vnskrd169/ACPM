@@ -113,7 +113,7 @@ async function sendNotification({ to, type, message, projectId, projectName, lin
     return;
   }
 
-  if (to !== sender.uid && sender.role !== 'boss') {
+  if (to !== sender.uid && !(typeof isBoss === 'function' ? isBoss(sender.role) : sender.role === 'boss')) {
     if (!projectId || !canAccessProject(projectId)) {
       showToast('You do not have permission to notify that project.', 'error');
       return;
@@ -121,7 +121,7 @@ async function sendNotification({ to, type, message, projectId, projectName, lin
     const recipientSnap = await firebase.database().ref(`users/${to}`).once('value');
     const recipient = recipientSnap.val() || {};
     const recipientProjects = Array.isArray(recipient.projects) ? recipient.projects : [];
-    if (recipient.role !== 'boss' && !recipientProjects.includes(projectId)) {
+    if (!(typeof isBoss === 'function' ? isBoss(recipient.role) : recipient.role === 'boss') && !recipientProjects.includes(projectId)) {
       showToast('You can only notify members of that project.', 'error');
       return;
     }
@@ -143,7 +143,7 @@ async function sendNotification({ to, type, message, projectId, projectName, lin
 async function notifyProject(projectId, { type, message }) {
   const sender = window._currentUser || {};
   if (!sender.uid) return;
-  if (sender.role !== 'boss' && !canAccessProject(projectId)) {
+  if (!(typeof isBoss === 'function' ? isBoss(sender.role) : sender.role === 'boss') && !canAccessProject(projectId)) {
     showToast('You do not have permission to notify that project.', 'error');
     return;
   }
@@ -159,13 +159,35 @@ async function notifyProject(projectId, { type, message }) {
   const promises = [];
   usersSnap.forEach(c => {
     const u = c.val();
-    if (u.projects?.includes(projectId) || u.role === 'boss') {
+    if (u.projects?.includes(projectId) || (typeof isBoss === 'function' ? isBoss(u.role) : u.role === 'boss')) {
       promises.push(sendNotification({
         to: c.key, type, message, projectId, projectName: name
       }));
     }
   });
   await Promise.all(promises);
+}
+
+async function createNotificationEvent({ projectId = '', module = 'general', type, payload = {}, global = false }) {
+  if (!type) return null;
+  const sender = window._currentUser || {};
+  const event = {
+    module,
+    type,
+    status: 'pending',
+    consumed: false,
+    projectId: projectId || '',
+    createdAt: Date.now(),
+    createdBy: sender.uid || 'system',
+    createdByName: sender.name || 'System',
+    ...payload
+  };
+  const path = global || !projectId
+    ? 'globalNotificationEvents'
+    : `projects/${projectId}/notificationEvents`;
+  const ref = firebase.database().ref(path).push();
+  await safeDb(() => ref.set(event), 'Failed to create notification event');
+  return { id: ref.key, path, ...event };
 }
 
 // ══════════════════════════════════════════════════════
@@ -189,6 +211,7 @@ window.initNotifications = initNotifications;
 window.detachNotifications = detachNotifications;
 window.sendNotification = sendNotification;
 window.notifyProject = notifyProject;
+window.createNotificationEvent = createNotificationEvent;
 window.markNotifRead = markNotifRead;
 window.markAllNotifRead = markAllNotifRead;
 window.timeAgo = timeAgo;

@@ -121,7 +121,15 @@ function auditLog(action, entityType, entityId, details = {}) {
   const user = (typeof window !== 'undefined' && window._currentUser) ? window._currentUser : { uid: 'anonymous', role: 'apm', name: 'System' };
   const pid = (typeof window !== 'undefined' && window._currentPid) ? window._currentPid : null;
   const logEntry = {
-    action, entityType, entityId, details,
+    action,
+    entityType,
+    entityId,
+    module: entityType,
+    recordId: entityId,
+    details,
+    previousStatus: details.previousStatus || details.oldStatus || null,
+    newStatus: details.newStatus || details.status || null,
+    notes: details.notes || details.reason || null,
     userId: user.uid,
     userName: user.name,
     userEmail: user.email || null,

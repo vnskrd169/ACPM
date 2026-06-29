@@ -19,25 +19,25 @@
 <!-- ReCapcha anti bot lol-->
 <script src="https://www.google.com/recaptcha/enterprise.js?render=6LcZsi0tAAAAAIsQaR686BvIDAjZVDyzdw4afHoW"></script>
 <!-- Utilities (DOM helpers, formatting, safeDb, etc.) -->
-<script src="utils.js?v=58"></script>
+<script src="utils.js?v=62"></script>
 
 <!-- Auth (must load before main.js — main.js calls canAccessProject/canEditProject) -->
-<script src="auth.js?v=43"></script>
+<script src="auth.js?v=62"></script>
 
 <!-- Core modules -->
-<script src="main.js?v=60"></script>
+<script src="main.js?v=62"></script>
 <script src="labor.js?v=55"></script>
 <script src="materials.js?v=47"></script>
-<script src="sitelog.js?v=57"></script>
-<script src="suppliers.js?v=58"></script>
-<script src="billing.js?v=54"></script>
-<script src="changeorders.js?v=56"></script>
+<script src="sitelog.js?v=65"></script>
+<script src="suppliers.js?v=66"></script>
+<script src="billing.js?v=63"></script>
+<script src="changeorders.js?v=64"></script>
 <script src="equipment.js?v=43"></script>
 <script src="compliance.js?v=43"></script>
 <script src="defects.js?v=43"></script>
 <script src="tasks.js?v=43"></script>
-<script src="notifications.js?v=43"></script>
-<script src="report.js?v=59"></script>
+<script src="notifications.js?v=62"></script>
+<script src="report.js?v=67"></script>
 
 <!-- PDF generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -295,19 +295,19 @@ window.addEventListener('appinstalled', () => {
   <!-- Tab navigation -->
   <div class="tab-scroll">
     <div class="tab-group">
-      <button id="tab_labor" class="tab-btn tab-active" onclick="switchTab('labor')" data-role-visible="apm,boss">&#x1F477; Labor</button>
-      <button id="tab_materials" class="tab-btn" onclick="switchTab('materials')" data-role-visible="apm,boss">&#x1F4E6; Materials</button>
-      <button id="tab_billing" class="tab-btn" onclick="switchTab('billing')" data-role-visible="apm,boss">&#x1F4B0; Billing</button>
-      <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')" data-role-visible="apm,boss">&#x1F4D2; Site Log</button>
+      <button id="tab_labor" class="tab-btn tab-active" onclick="switchTab('labor')" data-role-visible="apm,pm,boss,owner,admin">&#x1F477; Labor</button>
+      <button id="tab_materials" class="tab-btn" onclick="switchTab('materials')" data-role-visible="apm,pm,boss,owner,admin">&#x1F4E6; Materials</button>
+      <button id="tab_billing" class="tab-btn" onclick="switchTab('billing')" data-role-visible="financial">&#x1F4B0; Billing</button>
+      <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')" data-role-visible="apm,pm,boss,owner,admin,foreman,safety,viewer">&#x1F4D2; Site Log</button>
       <button id="extrasToggleBtn" class="tab-btn" onclick="toggleExtraTabs()" data-role-visible="apm,boss">&#x1F527; Extras</button>
-      <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F4CB; Change Orders</button>
-      <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F3EA; Suppliers</button>
+      <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F4CB; Change Orders</button>
+      <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F3EA; Suppliers</button>
       <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')" data-role-visible="apm,boss" data-feature-visible="extras">&#x2611; Tasks</button>
       <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F6A7; Equipment</button>
       <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
       <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
       <button id="tab_admin" class="tab-btn hidden" onclick="switchTab('admin')" data-role-visible="none">&#x1F465; Admin</button>
-      <button id="tab_reports" class="tab-btn" onclick="switchTab('reports')" data-role-visible="boss">&#x1F4CA; Reports</button>
+      <button id="tab_reports" class="tab-btn" onclick="switchTab('reports')" data-role-visible="financial">&#x1F4CA; Reports</button>
     </div>
   </div>
 

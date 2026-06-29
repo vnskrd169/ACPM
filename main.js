@@ -811,7 +811,7 @@ async function requestProjectLifecycleChange(pid, requestType) {
   const notifications = [];
   bossSnap.forEach(c => {
     const recipient = c.val() || {};
-    if (recipient.role === 'boss' && typeof sendNotification === 'function') {
+    if ((typeof isBoss === 'function' ? isBoss(recipient.role) : recipient.role === 'boss') && typeof sendNotification === 'function') {
       notifications.push(sendNotification({
         to: c.key,
         type: 'alert',

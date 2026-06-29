@@ -49,6 +49,10 @@ function reportAmount(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function reportObjectRows(obj = {}) {
+  return Object.entries(obj || {}).map(([id, value]) => ({ id, ...(value || {}) }));
+}
+
 function reportUserId() {
   return window._currentUser?.uid || firebase.auth().currentUser?.uid || 'system';
 }
@@ -134,6 +138,118 @@ async function rebuildProjectReportRollup(projectId) {
   return summary;
 }
 
+async function getProjectReportSource(projectId) {
+  if (!projectId) throw new Error('Project ID is required.');
+  const snap = await firebase.database().ref(`projects/${projectId}`).once('value');
+  if (!snap.exists()) throw new Error('Project not found.');
+  return { id: projectId, ...(snap.val() || {}) };
+}
+
+function calculateLaborSummaryFromProject(project = {}) {
+  const payrollLogs = reportObjectRows(project.payrollLogs);
+  const activeLogs = payrollLogs.filter(log => !['voided', 'cancelled', 'rejected'].includes(String(log.status || '').toLowerCase()));
+  const grossPayroll = activeLogs.reduce((sum, log) => sum + reportAmount(log.grossPayroll ?? log.gross ?? log.totalGross), 0);
+  const netPayroll = activeLogs.reduce((sum, log) => sum + reportAmount(log.netPayroll ?? log.net ?? log.totalNet), 0);
+  const deductions = activeLogs.reduce((sum, log) => {
+    const cashAdvances = reportAmount(log.cashAdvanceDeductions ?? log.cashAdvancesDeductedTotal);
+    const other = reportAmount(log.otherDeductions ?? log.additionalDeductions);
+    return sum + cashAdvances + other;
+  }, 0);
+  return {
+    payrollWeeks: activeLogs.length,
+    grossPayroll,
+    netPayroll,
+    deductions,
+    laborCost: reportAmount(project.billingRollups?.laborCost ?? project.laborSpent ?? grossPayroll),
+    lastPayrollWeek: activeLogs.map(log => log.weekKey || log.weekStart || '').filter(Boolean).sort().pop() || ''
+  };
+}
+
+function calculateMaterialsSummaryFromProject(project = {}) {
+  const movements = reportObjectRows(project.materialMovements).filter(m => String(m.status || 'posted').toLowerCase() !== 'voided');
+  const purchaseOrders = reportObjectRows(project.purchaseOrders);
+  const deliveries = reportObjectRows(project.deliveries);
+  const issuances = reportObjectRows(project.materialIssuances).filter(i => String(i.status || 'posted').toLowerCase() !== 'voided');
+  const receivingCost = movements
+    .filter(m => ['receive', 'receiving', 'delivery_receive'].includes(String(m.type || '').toLowerCase()))
+    .reduce((sum, m) => sum + reportAmount(m.totalCost ?? m.amount ?? m.total), 0);
+  const issuedQty = movements
+    .filter(m => ['issue', 'issuance'].includes(String(m.type || '').toLowerCase()))
+    .reduce((sum, m) => sum + reportAmount(Math.abs(reportAmount(m.qty ?? m.quantity))), 0);
+  return {
+    purchaseOrders: purchaseOrders.length,
+    deliveries: deliveries.length,
+    issuances: issuances.length,
+    movementRows: movements.length,
+    receivingCost,
+    materialCost: reportAmount(project.billingRollups?.materialCost ?? project.materialSpent ?? receivingCost),
+    issuedQty,
+    lastMovementAt: movements.map(m => reportAmount(m.createdAt || m.date)).sort((a, b) => a - b).pop() || 0
+  };
+}
+
+function calculateBillingSummaryFromProject(project = {}) {
+  const rollup = project.billingRollups || {};
+  return {
+    contractAmount: reportAmount(rollup.contractAmount),
+    approvedChangeOrders: reportAmount(rollup.approvedChangeOrders),
+    adjustedContractAmount: reportAmount(rollup.adjustedContractAmount),
+    totalBilled: reportAmount(rollup.totalBilled ?? rollup.totalGrossBilled),
+    totalCollected: reportAmount(rollup.totalCollected ?? rollup.totalRevenueCollected),
+    receivable: reportAmount(rollup.receivable ?? rollup.totalReceivable),
+    retentionReceivable: reportAmount(rollup.retentionReceivable),
+    billingCount: reportObjectRows(project.billings).length,
+    collectionCount: reportObjectRows(project.collections).filter(c => String(c.status || 'posted').toLowerCase() !== 'voided').length
+  };
+}
+
+function calculateChangeOrderSummaryFromProject(project = {}) {
+  const rollup = project.changeOrderRollups || {};
+  return {
+    pendingCount: reportAmount(rollup.pendingCount),
+    approvedCount: reportAmount(rollup.approvedCount),
+    rejectedCount: reportAmount(rollup.rejectedCount),
+    voidedCount: reportAmount(rollup.voidedCount),
+    approvedContractImpact: reportAmount(rollup.approvedContractImpact),
+    pendingValue: reportAmount(rollup.pendingValue),
+    approvedValue: reportAmount(rollup.approvedValue)
+  };
+}
+
+function calculateSiteLogSummaryFromProject(project = {}) {
+  const rollup = project.siteLogRollups || {};
+  return {
+    totalLogs: reportAmount(rollup.totalLogs),
+    logsThisWeek: reportAmount(rollup.logsThisWeek),
+    logsWithGps: reportAmount(rollup.logsWithGps),
+    logsWithMedia: reportAmount(rollup.logsWithMedia),
+    openIssues: reportAmount(rollup.openIssues),
+    openDelays: reportAmount(rollup.openDelays),
+    safetyIncidents: reportAmount(rollup.safetyIncidents),
+    lastLogDate: rollup.lastLogDate || ''
+  };
+}
+
+async function calculateLaborSummary(projectId) {
+  return calculateLaborSummaryFromProject(await getProjectReportSource(projectId));
+}
+
+async function calculateMaterialsSummary(projectId) {
+  return calculateMaterialsSummaryFromProject(await getProjectReportSource(projectId));
+}
+
+async function calculateBillingSummary(projectId) {
+  return calculateBillingSummaryFromProject(await getProjectReportSource(projectId));
+}
+
+async function calculateChangeOrderSummary(projectId) {
+  return calculateChangeOrderSummaryFromProject(await getProjectReportSource(projectId));
+}
+
+async function calculateSiteLogSummary(projectId) {
+  return calculateSiteLogSummaryFromProject(await getProjectReportSource(projectId));
+}
+
 async function listProjectReportRollups(filters = {}) {
   const snap = await firebase.database().ref('projects').once('value');
   const rows = [];
@@ -177,7 +293,17 @@ async function calculateProfitAnalysis(projectId) {
 
 async function generateReportSnapshot(projectId, type = 'project_summary', period = {}) {
   if (!projectId) throw new Error('Project ID is required.');
-  const projectSummary = await rebuildProjectReportRollup(projectId);
+  const sourceProject = await getProjectReportSource(projectId);
+  const projectSummary = projectReportSummary(projectId, sourceProject);
+  await firebase.database().ref(`projects/${projectId}/reportRollups/projectSummary`).set({
+    ...projectSummary,
+    updatedBy: reportUserId()
+  });
+  const laborSummary = calculateLaborSummaryFromProject(sourceProject);
+  const materialSummary = calculateMaterialsSummaryFromProject(sourceProject);
+  const billingSummary = calculateBillingSummaryFromProject(sourceProject);
+  const changeOrderSummary = calculateChangeOrderSummaryFromProject(sourceProject);
+  const siteLogSummary = calculateSiteLogSummaryFromProject(sourceProject);
   const cashFlow = {
     projectId,
     cashIn: projectSummary.totalCollected,
@@ -208,13 +334,12 @@ async function generateReportSnapshot(projectId, type = 'project_summary', perio
     snapshot: {
       projectSummary,
       billingSummary: {
-        contractAmount: projectSummary.contractAmount,
-        approvedChangeOrders: projectSummary.approvedChangeOrders,
-        totalBilled: projectSummary.totalBilled,
-        totalCollected: projectSummary.totalCollected,
-        receivable: projectSummary.receivable,
-        retentionReceivable: projectSummary.retentionReceivable
+        ...billingSummary
       },
+      laborSummary,
+      materialSummary,
+      changeOrderSummary,
+      siteLogSummary,
       costSummary: {
         laborCost: projectSummary.laborCost,
         materialCost: projectSummary.materialCost,
@@ -293,7 +418,7 @@ function auditActorHtml(row) {
 }
 function initAuditLog() {
   const user = window._currentUser;
-  if (!user || user.role !== 'boss') {
+  if (!user || !(typeof isBoss === 'function' ? isBoss(user.role) : user.role === 'boss')) {
     const el = $('auditLogFeed');
     if (el) el.innerHTML = '<p class="empty-hint">Audit log is available for admins only.</p>';
     return;
@@ -392,7 +517,7 @@ function initSystemStatus() {
 }
 
 function initTeamAdmin() {
-  if (window._currentUser?.role !== 'boss') {
+  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
     const el = $('teamAdminList');
     if (el) el.innerHTML = '<p class="empty-hint">Team admin is available for admins only.</p>';
     return;
@@ -534,7 +659,7 @@ function closeProjectAssignModal() {
 }
 
 async function saveProjectAssignments() {
-  if (window._currentUser?.role !== 'boss') {
+  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
     showToast('You do not have permission to manage users.', 'error');
     return;
   }
@@ -593,8 +718,22 @@ function refreshTeamAdmin() {
 }
 
 function normalizeTeamRole(role) {
-  const r = String(role || 'apm').trim().toLowerCase();
-  return r === 'boss' ? 'boss' : 'apm';
+  return typeof normalizeRole === 'function'
+    ? normalizeRole(role)
+    : String(role || 'apm').trim().toLowerCase();
+}
+
+function teamRoleOptions(selectedRole) {
+  const roles = [
+    ['boss', 'Boss / Owner'],
+    ['admin', 'Admin'],
+    ['pm', 'Project Manager'],
+    ['apm', 'Assoc. Project Manager'],
+    ['foreman', 'Foreman'],
+    ['safety', 'Safety'],
+    ['viewer', 'Viewer']
+  ];
+  return roles.map(([value, label]) => `<option value="${value}" ${selectedRole === value ? 'selected' : ''}>${label}</option>`).join('');
 }
 
 function teamStatusBadge(user) {
@@ -605,7 +744,7 @@ function teamStatusBadge(user) {
 }
 
 async function updateUserRole(uid, role) {
-  if (window._currentUser?.role !== 'boss') {
+  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
     showToast('You do not have permission to manage users.', 'error');
     return;
   }
@@ -648,7 +787,7 @@ function lifecycleRequestTypeLabel(type) {
 }
 
 function initLifecycleRequests() {
-  if (window._currentUser?.role !== 'boss') {
+  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
     const el = $('lifecycleRequestList');
     if (el) el.innerHTML = '<p class="empty-hint">Lifecycle requests are available for admins only.</p>';
     return;
@@ -726,7 +865,7 @@ function renderLifecycleRequests(rows = _lifecycleRequestsCache) {
 }
 
 async function approveLifecycleRequest(projectId, requestId, type) {
-  if (window._currentUser?.role !== 'boss') {
+  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
     showToast('Admin access required.', 'error');
     return;
   }
@@ -777,7 +916,7 @@ async function approveLifecycleRequest(projectId, requestId, type) {
 }
 
 async function rejectLifecycleRequest(projectId, requestId, type) {
-  if (window._currentUser?.role !== 'boss') {
+  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
     showToast('Admin access required.', 'error');
     return;
   }
@@ -812,7 +951,7 @@ function renderTeamAdmin(users) {
   const el = $('teamAdminList');
   if (!el) return;
   const counts = {
-    boss: users.filter(u => normalizeTeamRole(u.role) === 'boss').length,
+    boss: users.filter(u => typeof isBoss === 'function' ? isBoss(u.role) : normalizeTeamRole(u.role) === 'boss').length,
     apm: users.filter(u => normalizeTeamRole(u.role) === 'apm').length,
   };
   setText('teamUserCount', users.length);
@@ -844,8 +983,7 @@ function renderTeamAdmin(users) {
           <td>
             <div style="display:flex;flex-direction:column;gap:10px;min-width:220px">
               <select onchange="updateUserRole('${user.uid}', this.value)" ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
-                <option value="apm" ${role === 'apm' ? 'selected' : ''}>Assoc. Project Manager</option>
-                <option value="boss" ${role === 'boss' ? 'selected' : ''}>Admin / Boss / Project Manager</option>
+                ${teamRoleOptions(role)}
               </select>
               <div class="team-project-line">
                 <span class="team-project-pill">${projectCount ? `${projectCount} project${projectCount === 1 ? '' : 's'}` : 'No projects'}</span>
@@ -873,7 +1011,7 @@ function detachReportsListeners() {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function renderExecutiveDashboard() {
   const user = window._currentUser;
-  if (!user || user.role !== 'boss') {
+  if (!user || !(typeof isBoss === 'function' ? isBoss(user.role) : user.role === 'boss')) {
     const el = $('executiveDashboard');
     if (el) el.innerHTML = '<p class="empty-hint">Executive dashboard available for admins only.</p>';
     return;
@@ -1176,7 +1314,7 @@ async function generateWeeklyReport() {
     });
 
   // Filter for APM's projects
-  const myProjects = user.role === 'boss'
+  const myProjects = (typeof isBoss === 'function' ? isBoss(user.role) : user.role === 'boss')
     ? projects
     : projects.filter(p => user.projects?.includes(p.id));
 
@@ -1228,6 +1366,11 @@ window.rebuildWeeklyReportRollup = rebuildWeeklyReportRollup;
 window.rebuildMonthlyReportRollup = rebuildMonthlyReportRollup;
 window.listProjectReportRollups = listProjectReportRollups;
 window.generateReportSnapshot = generateReportSnapshot;
+window.calculateLaborSummary = calculateLaborSummary;
+window.calculateMaterialsSummary = calculateMaterialsSummary;
+window.calculateBillingSummary = calculateBillingSummary;
+window.calculateChangeOrderSummary = calculateChangeOrderSummary;
+window.calculateSiteLogSummary = calculateSiteLogSummary;
 window.calculateCashFlow = calculateCashFlow;
 window.calculateProfitAnalysis = calculateProfitAnalysis;
 window.exportReport = exportReport;

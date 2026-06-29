@@ -21,27 +21,59 @@ const EMAIL_DOMAIN = '@acpm.local';
 let _currentAuthUser = null;
 let _profileListener = null;
 
+const ROLE_DEFINITIONS = {
+  boss: { label: 'Boss / Owner', admin: true, financial: true, projectEdit: true, field: false, readOnly: false },
+  owner: { label: 'Boss / Owner', admin: true, financial: true, projectEdit: true, field: false, readOnly: false },
+  admin: { label: 'Admin', admin: true, financial: true, projectEdit: true, field: false, readOnly: false },
+  pm: { label: 'Project Manager', admin: false, financial: true, projectEdit: true, field: false, readOnly: false },
+  apm: { label: 'Assoc. Project Manager', admin: false, financial: false, projectEdit: true, field: false, readOnly: false },
+  foreman: { label: 'Foreman', admin: false, financial: false, projectEdit: false, field: true, readOnly: false },
+  safety: { label: 'Safety', admin: false, financial: false, projectEdit: false, field: true, readOnly: false },
+  viewer: { label: 'Viewer', admin: false, financial: false, projectEdit: false, field: false, readOnly: true }
+};
+
 function inferRoleFromIdentity(uid, email, data = {}) {
   const explicitRole = String(data.role || '').trim().toLowerCase();
-  if (explicitRole === 'boss' || explicitRole === 'apm') {
+  if (ROLE_DEFINITIONS[explicitRole]) {
     return explicitRole;
   }
-  if (explicitRole === 'viewer') return 'apm';
   if ((data.bossOf || []).length > 0) return 'boss';
   return 'apm';
 }
 
 function normalizeRole(role) {
   const normalized = String(role || 'apm').trim().toLowerCase();
-  return normalized === 'boss' ? 'boss' : 'apm';
+  return ROLE_DEFINITIONS[normalized] ? normalized : 'apm';
 }
 
 function isBoss(role) {
-  return normalizeRole(role) === 'boss';
+  const normalized = normalizeRole(role);
+  return !!ROLE_DEFINITIONS[normalized]?.admin;
+}
+
+function canSeeFinancials(role) {
+  const normalized = normalizeRole(role);
+  return !!ROLE_DEFINITIONS[normalized]?.financial;
+}
+
+function canEditAssignedProject(role) {
+  const normalized = normalizeRole(role);
+  return !!ROLE_DEFINITIONS[normalized]?.projectEdit;
+}
+
+function isFieldRole(role) {
+  const normalized = normalizeRole(role);
+  return !!ROLE_DEFINITIONS[normalized]?.field;
+}
+
+function isViewerRole(role) {
+  const normalized = normalizeRole(role);
+  return !!ROLE_DEFINITIONS[normalized]?.readOnly;
 }
 
 function roleLabel(role) {
-  return isBoss(role) ? 'Admin / Boss / Project Manager' : 'Assoc. Project Manager';
+  const normalized = normalizeRole(role);
+  return ROLE_DEFINITIONS[normalized]?.label || ROLE_DEFINITIONS.apm.label;
 }
 
 function teamRoleLabel(role) {
@@ -426,7 +458,7 @@ async function saveAccessRequest(user, details = {}, provider = 'password') {
   const existingSnap = await ref.once('value');
   if (existingSnap.exists()) {
     const existing = existingSnap.val() || {};
-    if (existing.status === 'active' || existing.role === 'boss' || (existing.projects || []).length) {
+    if (existing.status === 'active' || isBoss(existing.role) || (existing.projects || []).length) {
       return existing;
     }
   }
@@ -564,12 +596,9 @@ async function initAppForUser() {
   const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false;
 
   // Role-based CSS classes
-  document.body.classList.remove('role-boss', 'role-apm', 'role-viewer');
-  if (role === 'boss') {
-    document.body.classList.add('role-boss');
-  } else {
-    document.body.classList.add('role-apm');
-  }
+  document.body.classList.remove('role-boss', 'role-owner', 'role-admin', 'role-pm', 'role-apm', 'role-foreman', 'role-safety', 'role-viewer');
+  document.body.classList.add(`role-${role}`);
+  document.body.classList.toggle('role-boss', isBoss(role));
 
   // Filter projects based on assignment
   filterProjectsByRole();
@@ -590,7 +619,7 @@ async function initAppForUser() {
       return;
     }
     const allowed = visible.split(',').map(v => v.trim()).filter(Boolean);
-    el.style.display = allowed.includes(role) || (allowed.includes('boss') && isBoss(role)) ? '' : 'none';
+    el.style.display = allowed.includes(role) || (allowed.includes('boss') && isBoss(role)) || (allowed.includes('financial') && canSeeFinancials(role)) ? '' : 'none';
   });
 
   document.querySelectorAll('[data-feature-visible="extras"]').forEach(el => {
@@ -604,9 +633,9 @@ async function initAppForUser() {
     extrasToggle.title = extrasEnabled ? 'Hide optional tabs' : 'Show optional tabs';
   }
 
-  const preferredTab = isBoss(role) ? '#tab_reports' : '#tab_labor';
+  const preferredTab = canSeeFinancials(role) ? '#tab_reports' : (isFieldRole(role) || isViewerRole(role)) ? '#tab_sitelog' : '#tab_labor';
   const activeWorkspaceTab = document.querySelector('.tab-btn.tab-active:not(#tab_admin)');
-  if (!activeWorkspaceTab || activeWorkspaceTab.style.display === 'none' || !activeWorkspaceTab.id || (isBoss(role) && activeWorkspaceTab.id !== 'tab_reports')) {
+  if (!activeWorkspaceTab || activeWorkspaceTab.style.display === 'none' || !activeWorkspaceTab.id || (canSeeFinancials(role) && activeWorkspaceTab.id !== 'tab_reports')) {
     const fallback = document.querySelector(preferredTab);
     if (fallback && fallback.style.display !== 'none') fallback.click();
   }
@@ -672,7 +701,16 @@ function canEditProject(pid) {
   if (!user) return false;
   if (isBoss(user.role)) return true;
   if (user.bossOf && user.bossOf.includes(pid)) return true;
+  if (!canEditAssignedProject(user.role)) return false;
   return (user.projects || []).includes(pid);
+}
+
+function canWriteFieldLog(pid) {
+  const user = _currentAuthUser;
+  if (!user) return false;
+  if (isBoss(user.role)) return true;
+  if (isViewerRole(user.role)) return false;
+  return (user.projects || []).includes(pid) || (user.bossOf || []).includes(pid);
 }
 
 // ── Expose ──────────────────────────────────────────────────
@@ -689,5 +727,10 @@ window.canEditProject    = canEditProject;
 window.getCurrentUser    = () => _currentAuthUser;
 window.normalizeRole     = normalizeRole;
 window.isBoss            = isBoss;
+window.canSeeFinancials  = canSeeFinancials;
+window.canEditAssignedProject = canEditAssignedProject;
+window.isFieldRole       = isFieldRole;
+window.isViewerRole      = isViewerRole;
+window.canWriteFieldLog  = canWriteFieldLog;
 window.roleLabel         = roleLabel;
 window.teamRoleLabel     = teamRoleLabel;

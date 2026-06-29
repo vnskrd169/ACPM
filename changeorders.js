@@ -216,6 +216,7 @@ function watchChangeOrders(pid) {
     if (!snap.exists()) {
       container.innerHTML = '<p class="empty-hint">No change orders yet. Create one above.</p>';
       renderCOSummary([], {});
+      finalizeChangeOrderFinancials(pid, { changeOrdersSnap: snap }).catch(err => console.warn('Change order rollup rebuild failed', err));
       return;
     }
 
@@ -292,10 +293,7 @@ function watchChangeOrders(pid) {
 
     container.appendChild(fragment);
     renderCOSummary(orders, { totalApproved, totalPending, totalLabor, totalMaterials });
-    rebuildChangeOrderRollups(pid, { changeOrdersSnap: snap }).catch(err => console.warn('Change order rollup rebuild failed', err));
-    if (typeof scheduleBillingRollupRebuild === 'function') {
-      scheduleBillingRollupRebuild(pid, { changeOrdersSnap: snap });
-    }
+    finalizeChangeOrderFinancials(pid, { changeOrdersSnap: snap }).catch(err => console.warn('Change order rollup rebuild failed', err));
   });
 }
 
@@ -597,6 +595,10 @@ function approveChangeOrder(projectId, changeOrderId) {
   return updateChangeOrderStatus(projectId, changeOrderId, CHANGE_ORDER_STATUSES.approved);
 }
 
+function reviewChangeOrder(projectId, changeOrderId, notes = '') {
+  return updateChangeOrderStatus(projectId, changeOrderId, CHANGE_ORDER_STATUSES.reviewed, notes);
+}
+
 function rejectChangeOrder(projectId, changeOrderId, reason = '') {
   return updateChangeOrderStatus(projectId, changeOrderId, CHANGE_ORDER_STATUSES.rejected, reason);
 }
@@ -607,17 +609,41 @@ function voidChangeOrder(projectId, changeOrderId, reason = '') {
 
 async function linkChangeOrderBilling(projectId, changeOrderId, billingId) {
   if (!projectId || !changeOrderId || !billingId) throw new Error('Project, change order, and billing ID are required.');
+  const [coSnap, billingSnap] = await Promise.all([
+    coProjectRef(projectId, `changeOrders/${changeOrderId}`).once('value'),
+    coProjectRef(projectId, `billings/${billingId}`).once('value')
+  ]);
+  if (!coSnap.exists()) throw new Error('Change order not found.');
+  if (!billingSnap.exists()) throw new Error('Billing record not found.');
+  const co = coSnap.val() || {};
   const now = Date.now();
   const eventRef = coProjectRef(projectId, 'changeOrderEvents').push();
+  const notificationRef = coProjectRef(projectId, 'notificationEvents').push();
   const updates = {};
   updates[`projects/${projectId}/changeOrders/${changeOrderId}/billingId`] = billingId;
   updates[`projects/${projectId}/changeOrders/${changeOrderId}/billingStatus`] = 'linked';
   updates[`projects/${projectId}/changeOrders/${changeOrderId}/billingLinkedAt`] = now;
   updates[`projects/${projectId}/changeOrders/${changeOrderId}/billingLinkedBy`] = coUserId();
+  updates[`projects/${projectId}/billings/${billingId}/changeOrderIds/${changeOrderId}`] = true;
   updates[`projects/${projectId}/changeOrderEvents/${eventRef.key}`] = {
     type: 'billing_linked',
     changeOrderId,
     billingId,
+    amount: coTotalImpact(co),
+    createdAt: now,
+    createdBy: coUserId(),
+    createdByName: coUserName()
+  };
+  updates[`projects/${projectId}/notificationEvents/${notificationRef.key}`] = {
+    module: 'changeOrders',
+    type: 'change_order_billing_linked',
+    status: 'pending',
+    consumed: false,
+    projectId,
+    changeOrderId,
+    billingId,
+    coNo: co.coNo || `CO-${String(co.seq || '?').padStart(3, '0')}`,
+    amount: coTotalImpact(co),
     createdAt: now,
     createdBy: coUserId(),
     createdByName: coUserName()
@@ -712,6 +738,7 @@ window.listChangeOrders = listChangeOrders;
 window.rebuildChangeOrderRollups = rebuildChangeOrderRollups;
 window.syncProjectBudgetDeltasFromChangeOrders = syncProjectBudgetDeltasFromChangeOrders;
 window.updateChangeOrderStatus = updateChangeOrderStatus;
+window.reviewChangeOrder = reviewChangeOrder;
 window.approveChangeOrder = approveChangeOrder;
 window.rejectChangeOrder = rejectChangeOrder;
 window.voidChangeOrder = voidChangeOrder;

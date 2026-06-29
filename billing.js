@@ -209,6 +209,12 @@ function effectiveAllocationRows(collections = [], allocations = []) {
 }
 
 function retentionReleaseRows(collections = [], retentionLedger = []) {
+  const ledgerRows = (retentionLedger || []).filter(r =>
+    billingActive(r) &&
+    billingRecordApproved(r) &&
+    String(r.type || '').toLowerCase() === 'release'
+  );
+  const ledgerCollectionIds = new Set(ledgerRows.map(r => r.collectionId).filter(Boolean));
   const collectionRows = (collections || []).filter(billingActive).map(c => ({
     id: `collection_${c.id}`,
     billingId: c.billingId || '',
@@ -216,12 +222,7 @@ function retentionReleaseRows(collections = [], retentionLedger = []) {
     amount: billingAmount(c.retentionReleased),
     type: 'release',
     status: c.status || 'posted'
-  })).filter(r => r.amount > 0);
-  const ledgerRows = (retentionLedger || []).filter(r =>
-    billingActive(r) &&
-    billingRecordApproved(r) &&
-    String(r.type || '').toLowerCase() === 'release'
-  );
+  })).filter(r => r.amount > 0 && !ledgerCollectionIds.has(r.collectionId));
   return [...collectionRows, ...ledgerRows].map(r => ({
     ...r,
     amount: billingAmount(r.amount)
@@ -509,11 +510,14 @@ async function calculateCollectionUnapplied(pid, collectionId) {
   const allocated = allocations
     .filter(a => billingActive(a) && a.collectionId === collectionId)
     .reduce((sum, a) => sum + billingAmount(a.amount), 0);
+  const retentionApplied = billingAmount(collection.retentionReleased);
+  const applied = allocated + Math.min(retentionApplied, collectionNet(collection));
   return {
     collectionId,
     amount: collectionNet(collection),
     allocated,
-    unappliedAmount: Math.max(0, collectionNet(collection) - allocated)
+    retentionApplied,
+    unappliedAmount: Math.max(0, collectionNet(collection) - applied)
   };
 }
 
@@ -646,10 +650,14 @@ async function recordCollection(pid, input = {}) {
   const withholdingTax = billingAmount(input.withholdingTax);
   const otherDeductions = billingAmount(input.otherDeductions);
   const netCashReceived = Math.max(0, amountReceived - withholdingTax - otherDeductions);
+  const allocatableCash = Math.max(0, netCashReceived - retentionReleased);
   if (input.billingId) {
     const balance = await calculateBillingReceivable(pid, input.billingId);
-    if (netCashReceived > balance.currentReceivable + 0.0001) {
+    if (allocatableCash > balance.currentReceivable + 0.0001) {
       throw new Error(`Collection exceeds billing receivable (${peso(balance.currentReceivable)}).`);
+    }
+    if (retentionReleased > balance.retentionReceivable + 0.0001) {
+      throw new Error(`Retention collection exceeds outstanding retention (${peso(balance.retentionReceivable)}).`);
     }
   }
   const ref = billingProjectRef(pid, 'collections').push();
@@ -682,13 +690,15 @@ async function recordCollection(pid, input = {}) {
 
   await safeDb(() => ref.set(payload), 'Failed to record collection');
 
-  if (payload.billingId) {
-    await allocateCollectionToBilling(pid, collectionId, payload.billingId, netCashReceived, {
+  if (payload.billingId && allocatableCash > 0) {
+    await allocateCollectionToBilling(pid, collectionId, payload.billingId, allocatableCash, {
       allocationType: input.allocationType || 'manual',
       skipRebuild: true
     });
   } else if (input.allocateToOldest !== false) {
-    await allocateCollectionToOldestBillings(pid, collectionId, netCashReceived);
+    await allocateCollectionToOldestBillings(pid, collectionId, allocatableCash);
+  } else {
+    await syncCollectionDerivedFields(pid, collectionId);
   }
 
   await createBillingEvent(pid, {
@@ -890,14 +900,17 @@ async function generateBillingOutputSnapshot(pid, options = {}) {
   const selectedBillings = billings.filter(b => sourceBillingIds.includes(b.id));
   if (!selectedBillings.length) throw new Error('Selected billing not found.');
   const selectedBillingIdSet = new Set(selectedBillings.map(b => b.id));
-  const sourceCollectionIds = new Set(
-    effectiveAllocationRows(collections, allocations)
-      .filter(a => selectedBillingIdSet.has(a.billingId))
-      .map(a => a.collectionId)
-  );
+  const selectedAllocationRows = effectiveAllocationRows(collections, allocations)
+    .filter(a => selectedBillingIdSet.has(a.billingId));
+  const selectedRetentionRows = retentionReleaseRows(collections, retentionLedger)
+    .filter(r => !r.billingId || selectedBillingIdSet.has(r.billingId));
+  const sourceCollectionIds = new Set([
+    ...selectedAllocationRows.map(a => a.collectionId),
+    ...selectedRetentionRows.map(r => r.collectionId).filter(Boolean)
+  ]);
   const selectedCollections = collections.filter(c => sourceCollectionIds.has(c.id));
   const selectedAdjustments = adjustments.filter(a => !a.billingId || selectedBillingIdSet.has(a.billingId));
-  const selectedRetention = retentionLedger.filter(r => selectedBillingIdSet.has(r.billingId));
+  const selectedRetention = selectedRetentionRows;
   const totals = selectedBillings.reduce((acc, b) => {
     const gross = billingGross(b);
     const deductions = billingDeductionTotal(b);
@@ -909,7 +922,10 @@ async function generateBillingOutputSnapshot(pid, options = {}) {
     acc.netBillable += collectible;
     return acc;
   }, { gross: 0, deductions: 0, retention: 0, netBillable: 0 });
-  totals.collected = selectedCollections.reduce((sum, c) => sum + collectionNet(c), 0);
+  totals.collected = selectedAllocationRows.reduce((sum, a) => sum + billingAmount(a.amount), 0)
+    + selectedRetentionRows
+      .filter(r => r.collectionId)
+      .reduce((sum, r) => sum + billingAmount(r.amount), 0);
   totals.receivable = Math.max(0, totals.netBillable - totals.collected);
 
   const seq = options.seq || await nextBillingSeq(pid, 'nextOutputNo');

@@ -10,6 +10,7 @@ const SITE_LOG_STATUSES = {
 };
 
 function canTouchSiteLogProject() {
+  if (typeof canWriteFieldLog === 'function') return canWriteFieldLog(_slpid);
   return typeof requireEdit === 'function'
     ? requireEdit(_slpid)
     : !!_slpid && typeof canEditProject === 'function' && canEditProject(_slpid);
@@ -54,7 +55,10 @@ function siteLogActive(entry) {
 function siteLogRows(snap) {
   const rows = [];
   if (!snap || !snap.exists()) return rows;
-  snap.forEach(child => rows.push({ id: child.key, ...normalizeSiteLog(child.val()) }));
+  snap.forEach(child => {
+    rows.push({ id: child.key, ...normalizeSiteLog(child.val()) });
+    return false;
+  });
   return rows;
 }
 
@@ -280,7 +284,17 @@ async function createSiteLog(projectId, data = {}) {
     createdBy: slUserId(),
     createdByName: slUserName(),
     updatedAt: now,
-    updatedBy: slUserId()
+    updatedBy: slUserId(),
+    statusHistory: {
+      [`${now}_posted`]: {
+        fromStatus: '',
+        toStatus: SITE_LOG_STATUSES.posted,
+        notes: data.notes || data.workAccomplished || '',
+        createdAt: now,
+        createdBy: slUserId(),
+        createdByName: slUserName()
+      }
+    }
   };
 
   const updates = {};
@@ -314,19 +328,36 @@ async function createSiteLog(projectId, data = {}) {
 
 async function updateSiteLog(projectId, logId, data = {}) {
   if (!projectId || !logId) throw new Error('Project and log ID are required.');
+  const snap = await siteLogProjectRef(projectId, `siteLogs/${logId}`).once('value');
+  if (!snap.exists()) throw new Error('Site log not found.');
+  const existing = normalizeSiteLog(snap.val());
   const now = Date.now();
+  const nextStatus = data.status || SITE_LOG_STATUSES.revised;
   await siteLogProjectRef(projectId, `siteLogs/${logId}`).update({
     ...data,
-    status: data.status || SITE_LOG_STATUSES.revised,
+    status: nextStatus,
     updatedAt: now,
     updatedBy: slUserId(),
-    updatedByName: slUserName()
+    updatedByName: slUserName(),
+    [`statusHistory/${now}_${nextStatus}`]: {
+      fromStatus: siteLogStatus(existing),
+      toStatus: nextStatus,
+      notes: data.notes || 'Site log revised',
+      createdAt: now,
+      createdBy: slUserId(),
+      createdByName: slUserName()
+    }
   });
   await createSiteLogEvent(projectId, {
     type: 'revised',
     logId,
     date: data.date || '',
     description: data.notes || 'Site log revised'
+  });
+  await createSiteLogNotificationEvent(projectId, 'site_log_revised', {
+    logId,
+    logNo: existing.logNo || '',
+    date: data.date || existing.date || ''
   });
   await rebuildSiteLogRollups(projectId);
   return true;
@@ -349,6 +380,14 @@ async function voidSiteLog(projectId, logId, reason = '') {
   updates[`projects/${projectId}/siteLogs/${logId}/voidReason`] = reason.trim();
   updates[`projects/${projectId}/siteLogs/${logId}/updatedAt`] = now;
   updates[`projects/${projectId}/siteLogs/${logId}/updatedBy`] = slUserId();
+  updates[`projects/${projectId}/siteLogs/${logId}/statusHistory/${now}_voided`] = {
+    fromStatus: siteLogStatus(log),
+    toStatus: SITE_LOG_STATUSES.voided,
+    notes: reason.trim(),
+    createdAt: now,
+    createdBy: slUserId(),
+    createdByName: slUserName()
+  };
   updates[`projects/${projectId}/siteLogEvents/${eventRef.key}`] = {
     type: 'voided',
     logId,

@@ -21,7 +21,7 @@ Result: PASS STATIC / PENDING REAL FIREBASE QA
 
 ## Labor Summary
 
-- [ ] Verify report reads payroll logs/history.
+- [x] Helper `calculateLaborSummary(projectId)` reads payroll log history where present.
 - [ ] Verify archived weeks remain readable.
 - [ ] Verify current week does not overwrite archived weeks.
 - [ ] Verify APM/Boss permissions still apply.
@@ -30,7 +30,7 @@ Result: PENDING IMPLEMENTATION QA
 
 ## Material Summary
 
-- [ ] Verify report reads purchase/delivery/issuance history.
+- [x] Helper `calculateMaterialsSummary(projectId)` reads purchase/delivery/issuance/movement history where present.
 - [ ] Verify material spent is based on receiving cost only.
 - [ ] Verify issuance does not double-count budget.
 - [ ] Verify inventory movement history is readable.
@@ -39,7 +39,7 @@ Result: PENDING IMPLEMENTATION QA
 
 ## Billing Summary
 
-- [ ] Verify report reads `billingRollups`.
+- [x] Helper `calculateBillingSummary(projectId)` reads `billingRollups`.
 - [ ] Verify linked collections and allocations are reflected.
 - [ ] Verify retention receivable is shown separately.
 - [ ] Verify deductions reduce receivable correctly.
@@ -62,6 +62,7 @@ Result: PENDING IMPLEMENTATION QA
 - [x] Generate monthly report snapshot helper exists.
 - [x] Generate executive/project summary snapshot helper exists.
 - [x] Snapshot writes immutable JSON under `reportSnapshots`.
+- [x] Snapshot includes project, labor, material, billing, change order, site log, cash flow, and profit summary blocks.
 - [ ] Verify reports read archived records, not only current UI state.
 
 Result: PASS STATIC / PENDING REAL FIREBASE SNAPSHOT QA
@@ -86,6 +87,7 @@ Result: PENDING IMPLEMENTATION QA
 - [x] `node --check report.js`
 - [x] Firebase rules JSON parse
 - [x] Browser smoke test after cache v59: `report.js?v=59` loaded and Reports panel existed.
+- [ ] Browser smoke test after cache v67
 - [ ] Browser console clean after deployed Firebase rules: current live smoke still shows known audit-log permission warnings.
 - [ ] Real Firebase rollup/snapshot test in QA project
 

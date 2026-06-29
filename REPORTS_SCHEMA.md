@@ -177,6 +177,11 @@ Implemented helper functions in `report.js`:
 - `rebuildMonthlyReportRollup(projectId, monthKey)`
 - `listProjectReportRollups(filters)`
 - `generateReportSnapshot(projectId, type, period)`
+- `calculateLaborSummary(projectId)`
+- `calculateMaterialsSummary(projectId)`
+- `calculateBillingSummary(projectId)`
+- `calculateChangeOrderSummary(projectId)`
+- `calculateSiteLogSummary(projectId)`
 - `calculateCashFlow(projectId)`
 - `calculateProfitAnalysis(projectId)`
 - `exportReport(projectId, type)`
@@ -194,7 +199,7 @@ Implemented helper functions in `report.js`:
 
 ## Known Limitations
 
-- Existing on-screen report widgets still need to be rewired to the new report data helpers.
+- Existing on-screen report widgets still need deeper UI wiring to the new report data helpers.
 - Cross-project reporting can become read-heavy if it scans full project records.
 - Formal accounting reports are outside v1; this is operational construction reporting.
 - Manual Firebase QA is pending because report snapshots create permanent archive records.

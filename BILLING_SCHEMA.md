@@ -820,8 +820,11 @@ Phase 2 implementation notes:
 - `billingAllocations` mirrors collection allocation data so allocation history remains reportable even if the collection display changes.
 - Billing deductions are stored under `billings/{billingId}/deductions` and only approved deductions affect rollups.
 - Retention releases are stored under `retentionLedger`; released retention is not counted as collected cash unless a collection exists.
+- Retention-release cash on a collection is separated from ordinary billing allocation so it does not overpay the current receivable.
+- If a retention ledger release and collection retention release reference the same `collectionId`, rollups de-duplicate the release to prevent double-counting.
 - `billingOutputs` snapshots copy project/client/contract/billing/collection/deduction/retention/totals at generation time.
-- PWA cache and script version were bumped to `acpm-v54` / `billing.js?v=54`.
+- `billingOutputs` collected totals use selected allocation amounts, not the full collection amount, when one collection is split across multiple billings.
+- PWA cache and script version were bumped to `acpm-v63` / `billing.js?v=63` after Phase 2 retention/output snapshot fixes.
 
 ### Phase 2 Rollup Changes
 

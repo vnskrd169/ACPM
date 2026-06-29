@@ -1,6 +1,6 @@
 # ACPM Billing v1 Phase 1 QA Checklist
 
-Status: PHASE 1 STABLE - ROLLUP REBUILD QA PASSED; PHASE 2 ARCHITECTURE QA PLAN READY
+Status: PHASE 1 STABLE - ROLLUP REBUILD QA PASSED; PHASE 2 DATA FOUNDATION IMPLEMENTED - REAL FIREBASE QA PENDING
 
 ## Rollup Rebuild Fix QA Results - 2026-06-28
 
@@ -72,13 +72,13 @@ STABLE as of 2026-06-28.
 Full Billing v1 is not yet complete; remaining items are Phase 2+ workflow/UI/reporting work.
 ```
 
-## Phase 2 QA Plan - Architecture Ready
+## Phase 2 Implementation QA Plan
 
 Scope:
 
 - No UI redesign.
 - No Labor or Materials changes.
-- No Phase 2 implementation until this plan is accepted and implementation begins.
+- Phase 2 helper/data foundation is implemented in `billing.js`.
 - All rollup checks must use `rebuildBillingRollups(projectId)` and verify dashboard/report values read `billingRollups`.
 
 Firebase paths to verify when Phase 2 implementation begins:
@@ -108,7 +108,7 @@ projects/{projectId}/billingRollups
 - [ ] Verify voided billings and voided collections cannot receive new allocations.
 - [ ] Verify unallocated collections remain visible as unapplied cash and do not reduce a specific billing receivable until allocated.
 
-Result: PENDING PHASE 2 IMPLEMENTATION QA
+Result: PENDING REAL FIREBASE QA
 
 ### Downpayment / Mobilization Billing
 
@@ -122,7 +122,7 @@ Result: PENDING PHASE 2 IMPLEMENTATION QA
 - [ ] Create a `mobilization` billing if required by workflow.
 - [ ] Verify mobilization billing follows the same revenue, receivable, and collection rules.
 
-Result: PENDING PHASE 2 IMPLEMENTATION QA
+Result: PENDING REAL FIREBASE QA
 
 ### Retention
 
@@ -137,8 +137,10 @@ Result: PENDING PHASE 2 IMPLEMENTATION QA
 - [ ] Verify retention receivable decreases only by approved release amount.
 - [ ] Record collection for released retention.
 - [ ] Verify collected revenue increases only when the collection is posted.
+- [x] Static fix: retention-release cash is no longer forced into ordinary collection allocation.
+- [x] Static fix: collection-linked and ledger-linked retention releases are de-duplicated by `collectionId`.
 
-Result: PENDING PHASE 2 IMPLEMENTATION QA
+Result: PASS STATIC / PENDING REAL FIREBASE QA
 
 ### Deductions
 
@@ -164,8 +166,9 @@ Result: PENDING PHASE 2 IMPLEMENTATION QA
 - [ ] Verify the historical output remains unchanged.
 - [ ] Verify output snapshot is not recalculated during rollup rebuild.
 - [ ] Verify voiding/revising a billing creates a new corrected output instead of mutating the old output.
+- [x] Static fix: output snapshots now count selected allocation amounts instead of the full collection amount when a collection is split across billings.
 
-Result: PENDING PHASE 2 IMPLEMENTATION QA
+Result: PASS STATIC / PENDING REAL FIREBASE QA
 
 ### Phase 2 Rollups
 
@@ -240,7 +243,18 @@ Billing Phase 2 can pass when:
 - [ ] Dashboard and reports read `billingRollups`, not live-calculated totals.
 - [ ] Real Firebase QA passes after refresh and app restart.
 
-Result: NOT STARTED - ARCHITECTURE ONLY
+Result: IMPLEMENTED - REAL FIREBASE QA PENDING
+
+## Phase 2 Static QA Results - 2026-06-29
+
+- [x] `node --check billing.js`
+- [x] Firebase rules JSON parse
+- [x] Retention collection allocation logic reviewed and corrected.
+- [x] Retention release de-duplication reviewed and corrected.
+- [x] Billing output collection totals reviewed and corrected.
+- [x] Browser smoke loaded `workspace.html?projectId=-Ow60wuOtFmGmXo1cBOp&v=63-billing` with `billing.js?v=63` and no console warnings/errors.
+
+Result: PASS STATIC / WARNING - real Firebase workflow QA still pending
 
 ## Historical Failed QA Results - 2026-06-27
 
@@ -503,7 +517,7 @@ Result: PENDING MANUAL QA
 - Existing status dropdown still allows status-only changes; revenue and receivable rollups still rely on collection records, not status labels.
 - Downpayment/mobilization billing is schema/helper-ready but not fully exposed as a dedicated UI workflow.
 - Retention and deductions are supported by fields/helpers but need Phase 2 UI.
-- Invoice/RFP output archive path is indexed but not generated yet.
+- Invoice/RFP output archive helper exists, but the UI is still minimal and real Firebase output reopen QA is pending.
 - Firebase Realtime Database rules cannot fully enforce accounting immutability without Cloud Functions; app code preserves history by voiding records instead of deleting them.
 - Phase 2 overpayment prevention will be app-enforced first; concurrent allocation races may need Cloud Functions later if many office users post collections at the same time.
 - Phase 2 billing output snapshots are operational archives, not tax-certified invoice documents unless separately reviewed.

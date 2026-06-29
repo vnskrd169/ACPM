@@ -39,6 +39,7 @@ Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 - [ ] Create pending change order.
 - [ ] Approve it.
 - [x] Verify approved event write path exists.
+- [x] Review helper exists and writes the `reviewed` status through the same status history path.
 - [ ] Verify approved CO affects adjusted contract amount.
 - [ ] Verify approved CO affects budget deltas if `affectsBudget = true`.
 - [ ] Reject a separate change order.
@@ -57,6 +58,7 @@ Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 - [x] Verify `laborBudgetDelta` and `materialBudgetDelta` match approved history in code.
 - [x] Run `rebuildBillingRollups(projectId)` after status changes.
 - [x] Verify `approvedChangeOrders` reads approved CO history using `totalImpact`/fallback signed impact.
+- [x] Watcher rebuilds rollups and project budget deltas from history, including empty-list reset.
 - [ ] Refresh workspace and verify values remain correct.
 
 Result: PASS STATIC / PENDING BROWSER REFRESH QA
@@ -67,6 +69,8 @@ Result: PASS STATIC / PENDING BROWSER REFRESH QA
 - [ ] Create Billing record with `type = change_order`.
 - [ ] Link billing to change order.
 - [ ] Verify change order shows billing reference.
+- [x] Static verification: `linkChangeOrderBilling()` validates both records and mirrors the link under the Billing record.
+- [x] Static verification: billing linkage writes a `change_order_billing_linked` notification event.
 - [ ] Verify Billing receivable comes from Billing record, not from CO approval alone.
 - [ ] Verify collection against CO billing affects revenue only.
 
@@ -103,6 +107,8 @@ Result: PASS STATIC
 - [x] `node --check billing.js`
 - [x] Firebase rules JSON parse
 - [x] Browser smoke test after cache v56: workspace loaded, `changeorders.js?v=56` present, console had no errors/warnings.
+- [ ] Browser smoke test after cache v64
+  - WARNING 2026-06-29: static assets returned HTTP 200 and syntax checks passed, but the in-app browser automation timed out during navigation before DOM verification. Treat as unresolved browser smoke QA, not a module pass.
 - [ ] Browser click-through workflow QA: automation saw Change Order controls in the DOM, but the visible tab locator was not reachable in the current app state.
 - [ ] Real Firebase create/approve/reject/void test in QA project
 
