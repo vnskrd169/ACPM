@@ -1,63 +1,63 @@
 # ACPM Site Log v1 QA Checklist
 
-Status: ARCHITECTURE READY - IMPLEMENTATION PENDING
+Status: DATA FOUNDATION IMPLEMENTED - MANUAL FIREBASE QA PENDING
 
 Scope:
 
-- Architecture first.
-- No UI redesign yet.
+- Data foundation and minimal functional UI wiring.
+- No visual redesign yet.
 - Do not touch stable Labor or Materials.
 
 ## Existing Behavior to Preserve
 
-- [ ] Save log with date, notes, and weather.
-- [ ] Automatic current time is stored.
-- [ ] GPS is requested when browser permission allows.
-- [ ] Log appears grouped by month and date.
-- [ ] Summary counts total logs, GPS logs, and current-week logs.
-- [ ] Text export works.
-- [ ] Listener detaches when switching projects.
+- [x] Save helper supports date, notes, work accomplished, weather, manpower, equipment, visitors, issues, delays, safety, photo URLs.
+- [x] Automatic current time is stored.
+- [x] GPS is requested when browser permission allows.
+- [x] Log appears grouped by month and date through existing listener.
+- [x] Summary counts total logs, GPS logs, and current-week logs.
+- [x] Text export reads active historical logs.
+- [x] Listener detaches when switching projects.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 
 ## Historical Integrity
 
-- [ ] Delete action is replaced by void action.
-- [ ] Voided log remains under `siteLogs`.
-- [ ] Voided log includes:
+- [x] Delete action is replaced by void action.
+- [x] Voided log remains under `siteLogs`.
+- [x] Voided log includes:
   - `status = voided`
   - `voidedAt`
   - `voidedBy`
   - `voidReason`
-- [ ] Active views hide voided logs by default.
-- [ ] Export/report can include voided logs when requested.
+- [x] Active views hide voided logs by default.
+- [x] Helper `listSiteLogs(projectId, { includeVoided: true })` can read voided logs when requested.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 
 ## Structured Daily Log
 
-- [ ] Save weather summary.
-- [ ] Save manpower entries by trade/foreman.
-- [ ] Save visitor entries.
-- [ ] Save equipment entries.
-- [ ] Save issues.
-- [ ] Save delays.
-- [ ] Save safety notes/incidents.
+- [x] Save weather summary.
+- [x] Save manpower notes into structured entries.
+- [x] Save visitor notes into structured entries.
+- [x] Save equipment notes into structured entries.
+- [x] Save issues.
+- [x] Save delays.
+- [x] Save safety notes/incidents.
 - [ ] Save comments.
 - [ ] Reopen saved log and verify all sections load correctly.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / PENDING MANUAL REOPEN QA
 
 ## Photo / Video Upload
 
 - [ ] Upload photo to Firebase Storage.
-- [ ] Verify metadata is written under `siteLogs/{logId}/media`.
+- [x] Verify URL metadata can be written under `siteLogs/{logId}/media`.
 - [ ] Verify media URL opens.
 - [ ] Upload video if enabled.
 - [ ] Verify failed upload does not corrupt the log.
 - [ ] Verify media remains attached after refresh.
 
-Result: PENDING IMPLEMENTATION QA
+Result: WARNING - URL metadata supported, Firebase Storage upload not implemented
 
 ## GPS / Time
 
@@ -82,8 +82,8 @@ Result: PENDING IMPLEMENTATION QA
 
 ## Rollups / Reports
 
-- [ ] Run `rebuildSiteLogRollups(projectId)`.
-- [ ] Verify:
+- [x] Run `rebuildSiteLogRollups(projectId)` helper exists and writes `siteLogRollups`.
+- [x] Verify code calculates:
   - total logs
   - logs this week
   - logs with GPS
@@ -95,11 +95,11 @@ Result: PENDING IMPLEMENTATION QA
 - [ ] Export weekly report.
 - [ ] Verify reports read historical records.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / PENDING REAL FIREBASE QA
 
 ## Firebase Rules / Index QA
 
-- [ ] Add/verify indexes for:
+- [x] Add/verify indexes for:
   - `siteLogs.date`
   - `siteLogs.status`
   - `siteLogs.savedAt`
@@ -107,17 +107,24 @@ Result: PENDING IMPLEMENTATION QA
   - `siteLogEvents.type`
   - `siteLogEvents.logId`
   - `siteLogEvents.createdAt`
-- [ ] Verify project permissions protect Site Log paths.
+- [x] Verify project permissions protect Site Log paths through project-level rules.
 - [ ] Verify media upload permissions if Firebase Storage is enabled.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC
 
 ## Known Limitations
 
-- Current UI is simple notes/weather only.
-- Current implementation permanently deletes logs and must be refactored before v1 stable.
-- Firebase Storage rules are not documented yet.
+- UI is functional but not polished.
+- Firebase Storage rules are not documented because upload is not implemented.
 - Offline media upload needs a separate queue from database writes.
+- Manual Firebase QA is pending because posted/voided records create permanent history.
+
+## Static QA Results
+
+- [x] `node --check sitelog.js`
+- [x] Firebase rules JSON parse after Site Log rule update
+- [x] Browser smoke test after cache v57: `sitelog.js?v=57` loaded, structured fields existed, console had no errors/warnings.
+- [ ] Real Firebase save/void/reopen test in QA project
 
 ## Stability Gate
 

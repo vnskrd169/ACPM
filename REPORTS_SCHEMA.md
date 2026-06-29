@@ -1,6 +1,6 @@
 # ACPM Reports v1 Workflow and Rollup Architecture
 
-Status: ARCHITECTURE DOCUMENTED - IMPLEMENTATION PENDING
+Status: DATA FOUNDATION IMPLEMENTED - MANUAL QA PENDING
 
 Reports v1 centralizes project, cost, revenue, cash flow, and executive reporting. Reports must read historical records and module rollups wherever practical instead of recalculating business totals ad hoc in the UI.
 
@@ -27,9 +27,9 @@ Current reporting behavior:
 
 Production gaps:
 
-- Reports still calculate too much directly from live project fields.
-- Reports need to read Labor, Materials, Billing, and Change Order history/rollups consistently.
-- Weekly/monthly reports need archived snapshots.
+- Existing visual reports still calculate some values directly from project fields.
+- Report data helpers now read Billing, Change Order, Site Log, Labor, and Materials rollup-compatible sources.
+- Weekly/monthly report snapshots can now be archived as immutable JSON records.
 
 ## Target Reports
 
@@ -170,6 +170,17 @@ netCashFlow = cashIn - cashOut
 | `calculateProfitAnalysis(projectId, period)` | Calculates revenue, costs, receivable, and margin. |
 | `exportReport(projectId, type, options)` | Exports report from snapshot or rollup. |
 
+Implemented helper functions in `report.js`:
+
+- `rebuildProjectReportRollup(projectId)`
+- `rebuildWeeklyReportRollup(projectId, weekKey)`
+- `rebuildMonthlyReportRollup(projectId, monthKey)`
+- `listProjectReportRollups(filters)`
+- `generateReportSnapshot(projectId, type, period)`
+- `calculateCashFlow(projectId)`
+- `calculateProfitAnalysis(projectId)`
+- `exportReport(projectId, type)`
+
 ## Firebase Indexes Needed
 
 ```json
@@ -183,10 +194,10 @@ netCashFlow = cashIn - cashOut
 
 ## Known Limitations
 
-- Current reports still calculate many values from live project fields.
-- Report snapshots are not implemented yet.
+- Existing on-screen report widgets still need to be rewired to the new report data helpers.
 - Cross-project reporting can become read-heavy if it scans full project records.
 - Formal accounting reports are outside v1; this is operational construction reporting.
+- Manual Firebase QA is pending because report snapshots create permanent archive records.
 
 ## Completion Definition
 

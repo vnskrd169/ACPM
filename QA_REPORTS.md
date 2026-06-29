@@ -1,6 +1,6 @@
 # ACPM Reports v1 QA Checklist
 
-Status: ARCHITECTURE READY - IMPLEMENTATION PENDING
+Status: DATA FOUNDATION IMPLEMENTED - MANUAL FIREBASE QA PENDING
 
 Scope:
 
@@ -9,15 +9,15 @@ Scope:
 
 ## Project Summary
 
-- [ ] Rebuild project report rollup.
-- [ ] Verify project name/status come from project metadata.
-- [ ] Verify contract amount and approved change orders come from Billing/Change Order history.
-- [ ] Verify labor cost comes from Labor rollups/history.
-- [ ] Verify material cost comes from Materials receiving/history.
-- [ ] Verify total billed, collected, and receivable come from `billingRollups`.
-- [ ] Verify estimated profit and margin are calculated from collected revenue minus costs.
+- [x] Rebuild project report rollup helper exists.
+- [x] Verify project name/status come from project metadata.
+- [x] Verify contract amount and approved change orders come from Billing/Change Order rollup-compatible sources.
+- [x] Verify labor cost comes from Billing rollup laborCost or legacy project laborSpent fallback.
+- [x] Verify material cost comes from Billing rollup materialCost or legacy project materialSpent fallback.
+- [x] Verify total billed, collected, and receivable come from `billingRollups`.
+- [x] Verify estimated profit and margin are calculated from collected revenue minus costs.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / PENDING REAL FIREBASE QA
 
 ## Labor Summary
 
@@ -58,28 +58,36 @@ Result: PENDING IMPLEMENTATION QA
 
 ## Weekly / Monthly / Executive Reports
 
-- [ ] Generate weekly report snapshot.
-- [ ] Generate monthly report snapshot.
-- [ ] Generate executive summary.
-- [ ] Verify snapshots do not change after project settings change.
+- [x] Generate weekly report snapshot helper exists.
+- [x] Generate monthly report snapshot helper exists.
+- [x] Generate executive/project summary snapshot helper exists.
+- [x] Snapshot writes immutable JSON under `reportSnapshots`.
 - [ ] Verify reports read archived records, not only current UI state.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / PENDING REAL FIREBASE SNAPSHOT QA
 
 ## Firebase / Performance
 
 - [ ] Verify reports avoid scanning full histories where rollups are available.
 - [ ] Verify report listeners detach when leaving project.
 - [ ] Verify cross-project boss report does not create duplicate listeners.
-- [ ] Verify report paths are indexed.
+- [x] Verify report paths are indexed.
 
 Result: PENDING IMPLEMENTATION QA
 
 ## Known Limitations
 
 - Existing report UI is still snapshot/project-field driven.
-- Report snapshots and centralized report rollups are not implemented yet.
+- Existing report UI is still partially project-field driven and needs UI wiring to the new helper layer.
 - Full accounting/tax reports are outside v1.
+
+## Static QA Results
+
+- [x] `node --check report.js`
+- [x] Firebase rules JSON parse
+- [x] Browser smoke test after cache v59: `report.js?v=59` loaded and Reports panel existed.
+- [ ] Browser console clean after deployed Firebase rules: current live smoke still shows known audit-log permission warnings.
+- [ ] Real Firebase rollup/snapshot test in QA project
 
 ## Stability Gate
 

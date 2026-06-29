@@ -43,6 +43,208 @@ function reportRoleLabel(role) {
     ? 'Admin / Boss / Project Manager'
     : 'Assoc. Project Manager';
 }
+
+function reportAmount(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function reportUserId() {
+  return window._currentUser?.uid || firebase.auth().currentUser?.uid || 'system';
+}
+
+function reportUserName() {
+  const authUser = firebase.auth().currentUser;
+  return window._currentUser?.name || window._currentUser?.displayName || authUser?.displayName || authUser?.email || 'System';
+}
+
+function reportEffectiveBudget(project = {}) {
+  const laborBudget = reportAmount(project.laborBudget) + reportAmount(project.laborBudgetDelta);
+  const materialBudget = reportAmount(project.materialBudget) + reportAmount(project.materialBudgetDelta);
+  const otherBudget = Math.max(0, reportAmount(project.totalBudget || project.budget) - laborBudget - materialBudget);
+  return {
+    laborBudget,
+    materialBudget,
+    otherBudget,
+    totalBudget: laborBudget + materialBudget + otherBudget
+  };
+}
+
+function projectReportSummary(projectId, project = {}) {
+  const billing = project.billingRollups || {};
+  const coRollup = project.changeOrderRollups || {};
+  const siteLogRollup = project.siteLogRollups || {};
+  const budgets = reportEffectiveBudget(project);
+  const laborCost = reportAmount(billing.laborCost || project.laborSpent);
+  const materialCost = reportAmount(billing.materialCost || project.materialSpent);
+  const otherCost = reportAmount(project.otherSpent);
+  const totalCost = laborCost + materialCost + otherCost;
+  const contractAmount = reportAmount(billing.contractAmount || project.contractAmount || project.contract?.amount || project.contract?.originalAmount);
+  const approvedChangeOrders = reportAmount(billing.approvedChangeOrders || coRollup.approvedContractImpact);
+  const adjustedContractAmount = reportAmount(billing.adjustedContractAmount || (contractAmount + approvedChangeOrders));
+  const totalBilled = reportAmount(billing.totalBilled || billing.totalBilledGross);
+  const totalCollected = reportAmount(billing.totalCollected || billing.totalRevenueCollected);
+  const receivable = reportAmount(billing.receivable || billing.totalReceivable);
+  const retentionReceivable = reportAmount(billing.retentionReceivable);
+  const estimatedProfit = totalCollected - totalCost;
+  const projectedProfit = adjustedContractAmount - totalCost;
+  const margin = totalCollected > 0 ? estimatedProfit / totalCollected : 0;
+  const budgetUsedPct = budgets.totalBudget > 0 ? Math.round((totalCost / budgets.totalBudget) * 100) : 0;
+  const budgetStatus = budgetUsedPct >= 100 ? 'over_budget' : budgetUsedPct >= 85 ? 'warning' : 'healthy';
+  return {
+    projectId,
+    projectName: project.name || projectId,
+    status: project.status || 'active',
+    contractAmount,
+    approvedChangeOrders,
+    adjustedContractAmount,
+    laborBudget: budgets.laborBudget,
+    materialBudget: budgets.materialBudget,
+    otherBudget: budgets.otherBudget,
+    totalBudget: budgets.totalBudget,
+    laborCost,
+    materialCost,
+    otherCost,
+    totalCost,
+    totalBilled,
+    totalCollected,
+    receivable,
+    retentionReceivable,
+    estimatedProfit,
+    projectedProfit,
+    margin,
+    budgetUsedPct,
+    budgetStatus,
+    siteLogsTotal: reportAmount(siteLogRollup.totalLogs),
+    openIssues: reportAmount(siteLogRollup.openIssues),
+    openDelays: reportAmount(siteLogRollup.openDelays),
+    lastUpdatedAt: Date.now()
+  };
+}
+
+async function rebuildProjectReportRollup(projectId) {
+  if (!projectId) throw new Error('Project ID is required.');
+  const snap = await firebase.database().ref(`projects/${projectId}`).once('value');
+  if (!snap.exists()) throw new Error('Project not found.');
+  const summary = projectReportSummary(projectId, snap.val() || {});
+  await firebase.database().ref(`projects/${projectId}/reportRollups/projectSummary`).set({
+    ...summary,
+    updatedBy: reportUserId()
+  });
+  return summary;
+}
+
+async function listProjectReportRollups(filters = {}) {
+  const snap = await firebase.database().ref('projects').once('value');
+  const rows = [];
+  snap.forEach(projectSnap => {
+    const project = projectSnap.val() || {};
+    const rollup = project.reportRollups?.projectSummary;
+    const summary = rollup || projectReportSummary(projectSnap.key, project);
+    if (filters.status && summary.status !== filters.status) return;
+    rows.push(summary);
+  });
+  return rows.sort((a, b) => String(a.projectName || '').localeCompare(String(b.projectName || '')));
+}
+
+async function calculateCashFlow(projectId) {
+  const summary = await rebuildProjectReportRollup(projectId);
+  const cashIn = summary.totalCollected;
+  const cashOut = summary.laborCost + summary.materialCost + summary.otherCost;
+  return {
+    projectId,
+    cashIn,
+    cashOut,
+    netCashFlow: cashIn - cashOut,
+    generatedAt: Date.now()
+  };
+}
+
+async function calculateProfitAnalysis(projectId) {
+  const summary = await rebuildProjectReportRollup(projectId);
+  return {
+    projectId,
+    revenueCollected: summary.totalCollected,
+    adjustedContractAmount: summary.adjustedContractAmount,
+    totalCost: summary.totalCost,
+    estimatedProfit: summary.estimatedProfit,
+    projectedProfit: summary.projectedProfit,
+    margin: summary.margin,
+    receivable: summary.receivable,
+    generatedAt: Date.now()
+  };
+}
+
+async function generateReportSnapshot(projectId, type = 'project_summary', period = {}) {
+  if (!projectId) throw new Error('Project ID is required.');
+  const projectSummary = await rebuildProjectReportRollup(projectId);
+  const cashFlow = {
+    projectId,
+    cashIn: projectSummary.totalCollected,
+    cashOut: projectSummary.totalCost,
+    netCashFlow: projectSummary.totalCollected - projectSummary.totalCost,
+    generatedAt: Date.now()
+  };
+  const profitAnalysis = {
+    projectId,
+    revenueCollected: projectSummary.totalCollected,
+    adjustedContractAmount: projectSummary.adjustedContractAmount,
+    totalCost: projectSummary.totalCost,
+    estimatedProfit: projectSummary.estimatedProfit,
+    projectedProfit: projectSummary.projectedProfit,
+    margin: projectSummary.margin,
+    receivable: projectSummary.receivable,
+    generatedAt: Date.now()
+  };
+  const now = Date.now();
+  const periodKey = period.periodKey || period.weekKey || period.monthKey || new Date(now).toISOString().slice(0, 10);
+  const payload = {
+    type,
+    periodKey,
+    generatedAt: now,
+    generatedBy: reportUserId(),
+    generatedByName: reportUserName(),
+    sourceRollupVersion: 'reports-v1',
+    snapshot: {
+      projectSummary,
+      billingSummary: {
+        contractAmount: projectSummary.contractAmount,
+        approvedChangeOrders: projectSummary.approvedChangeOrders,
+        totalBilled: projectSummary.totalBilled,
+        totalCollected: projectSummary.totalCollected,
+        receivable: projectSummary.receivable,
+        retentionReceivable: projectSummary.retentionReceivable
+      },
+      costSummary: {
+        laborCost: projectSummary.laborCost,
+        materialCost: projectSummary.materialCost,
+        totalCost: projectSummary.totalCost
+      },
+      cashFlow,
+      profitAnalysis,
+      notes: period.notes || ''
+    }
+  };
+  const ref = firebase.database().ref(`projects/${projectId}/reportSnapshots`).push();
+  await ref.set(payload);
+  return { id: ref.key, ...payload };
+}
+
+function rebuildWeeklyReportRollup(projectId, weekKey) {
+  return generateReportSnapshot(projectId, 'weekly', { weekKey, periodKey: weekKey });
+}
+
+function rebuildMonthlyReportRollup(projectId, monthKey) {
+  return generateReportSnapshot(projectId, 'monthly', { monthKey, periodKey: monthKey });
+}
+
+function exportReport(projectId, type = 'project_summary') {
+  return generateReportSnapshot(projectId, type).then(snapshot => {
+    downloadTextFile(`Report_${projectId}_${type}_${snapshot.periodKey}.json`, JSON.stringify(snapshot, null, 2), 'application/json');
+    return snapshot;
+  });
+}
+
 function formatProjectLabel(projectId) {
   const project = _projectCache.find(p => p.id === projectId);
   if (project?.name) return project.name;
@@ -1021,5 +1223,13 @@ window.refreshTeamAdmin = refreshTeamAdmin;
 window.filterTeamUsers = filterTeamUsers;
 window.updateUserRole = updateUserRole;
 window.detachReportsListeners = detachReportsListeners;
+window.rebuildProjectReportRollup = rebuildProjectReportRollup;
+window.rebuildWeeklyReportRollup = rebuildWeeklyReportRollup;
+window.rebuildMonthlyReportRollup = rebuildMonthlyReportRollup;
+window.listProjectReportRollups = listProjectReportRollups;
+window.generateReportSnapshot = generateReportSnapshot;
+window.calculateCashFlow = calculateCashFlow;
+window.calculateProfitAnalysis = calculateProfitAnalysis;
+window.exportReport = exportReport;
 window.calculateProjectHealth = calculateProjectHealth;
 window.generateWeeklyReport = generateWeeklyReport;

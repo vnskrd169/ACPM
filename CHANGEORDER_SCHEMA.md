@@ -1,6 +1,6 @@
 # ACPM Change Orders v1 Workflow and Firebase Schema
 
-Status: ARCHITECTURE DOCUMENTED - IMPLEMENTATION PENDING
+Status: DATA FOUNDATION IMPLEMENTED - MANUAL QA PENDING
 
 Labor v1 and Materials v1 are frozen. Billing Phase 2 data foundation is implemented but still needs real Firebase QA. Change Orders v1 must preserve the current working UI while moving the workflow toward historical integrity and rebuild-based financial rollups.
 
@@ -30,17 +30,20 @@ projects/{projectId}/laborBudgetDelta
 projects/{projectId}/materialBudgetDelta
 ```
 
-Existing behavior:
+Legacy behavior before v1 refactor:
 
 - A change order can be created with description, requester, date, labor impact, materials impact, and notes.
 - Status can move between `pending`, `approved`, and `rejected`.
 - Approved status updates `laborBudgetDelta` and `materialBudgetDelta`.
 - Billing rollups are rebuilt after status changes.
-- Current delete action permanently removes a change order.
+- Delete action permanently removed a change order.
 
-Main production gap:
+Production gap fixed in v1 data foundation:
 
-- Deletion must become void/archive. Approved/rejected change orders should remain historical records.
+- Deletion now becomes `status = voided`. Approved/rejected/voided change orders remain historical records.
+- Approved project budget deltas are rebuilt from change-order history instead of increment/decrement math.
+- `changeOrderEvents` and `notificationEvents` rows are created for submitted, approved, rejected, voided, and billing-linked actions.
+- `changeOrderRollups` is rebuilt from `projects/{projectId}/changeOrders`.
 
 ## Target Workflow
 
@@ -205,6 +208,24 @@ Approved change orders can improve expected contract value, but profit remains b
 | `linkChangeOrderBilling(projectId, changeOrderId, billingId)` | Links billed change order to Billing history. |
 | `createChangeOrderEvent(projectId, event)` | Appends immutable event trail. |
 
+Implemented helper functions in `changeorders.js`:
+
+- `createChangeOrder(projectId, data)`
+- `listChangeOrders(projectId)`
+- `approveChangeOrder(projectId, changeOrderId)`
+- `rejectChangeOrder(projectId, changeOrderId, reason)`
+- `voidChangeOrder(projectId, changeOrderId, reason)`
+- `rebuildChangeOrderRollups(projectId)`
+- `syncProjectBudgetDeltasFromChangeOrders(projectId)`
+- `linkChangeOrderBilling(projectId, changeOrderId, billingId)`
+- `createChangeOrderEvent(projectId, event)`
+
+Browser/UI compatibility functions are still exported:
+
+- `addChangeOrder()`
+- `approveRejectCO(key, newStatus)`
+- `deleteCO(key, status)` now voids instead of deleting.
+
 ## Firebase Indexes Needed
 
 ```json
@@ -242,11 +263,11 @@ Existing permanent delete behavior must be replaced with `status = voided`.
 
 ## Known Limitations
 
-- Current UI still exposes delete language; v1 implementation should rename behavior to Void.
-- Existing approved budget deltas are stored as mutable fields and should be rebuilt from history in v1.
+- Current button icon still uses an `X`, but its aria label/title and behavior are void, not delete.
 - Attachments are architecture-ready but not implemented.
 - Change-order billing should be linked to Billing v1 records, but dedicated UI can come after data integrity is stable.
 - Contract/legal approval details vary by client and may require custom printed output later.
+- Manual Firebase QA for creating, approving, rejecting, voiding, and billing-linking a safe test change order is still pending to avoid polluting live project records without a QA project.
 
 ## Completion Definition
 

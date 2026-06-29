@@ -1,6 +1,6 @@
 # ACPM Site Log v1 Workflow and Firebase Schema
 
-Status: ARCHITECTURE DOCUMENTED - IMPLEMENTATION PENDING
+Status: DATA FOUNDATION IMPLEMENTED - MANUAL QA PENDING
 
 Site Log v1 must support real daily construction documentation while staying future-ready for offline use and media upload.
 
@@ -21,13 +21,17 @@ Existing behavior:
 - Saves date, notes, weather, automatic time, saved date, saved user, and optional GPS coordinates.
 - Lists logs grouped by month and date.
 - Exports text report.
-- Current delete action permanently removes a log.
+- Delete action now voids a log instead of permanently removing it.
 - Photos can be rendered if a `photos` array exists, but upload flow is not implemented.
 
-Production gaps:
+Production gaps fixed in v1 data foundation:
 
-- Delete must become void/archive.
-- Site log needs structured sections beyond notes.
+- Site logs now support structured work, manpower, visitors, equipment, issues, delays, safety, media URL metadata, GPS, events, notification hooks, and rollups.
+- `siteLogEvents` records posted/revised/voided events.
+- `siteLogRollups` rebuilds from historical `siteLogs`.
+
+Remaining production gaps:
+
 - Media upload needs a stable metadata model.
 - Offline queueing should be considered before heavy UI work.
 
@@ -217,6 +221,22 @@ Site Log should be designed for field use:
 | `rebuildSiteLogRollups(projectId)` | Rebuilds summary counts from history. |
 | `exportSiteLogReport(projectId, filters)` | Exports daily/weekly/monthly log history. |
 
+Implemented helper functions in `sitelog.js`:
+
+- `createSiteLog(projectId, data)`
+- `listSiteLogs(projectId, filters)`
+- `updateSiteLog(projectId, logId, data)`
+- `voidSiteLog(projectId, logId, reason)`
+- `createSiteLogEvent(projectId, event)`
+- `rebuildSiteLogRollups(projectId)`
+
+Existing UI functions preserved:
+
+- `saveLog()`
+- `deleteLog(key)` now voids instead of deleting.
+- `exportSiteLogs()`
+- `filterLogs(query)`
+
 ## Firebase Indexes Needed
 
 ```json
@@ -251,11 +271,12 @@ Existing permanent delete behavior must be replaced by `status = voided`.
 
 ## Known Limitations
 
-- Current implementation only has simple notes/weather/GPS fields.
-- Media upload is architecture-ready but not implemented.
+- Site Log now has structured text fields, but not a full dedicated editor for each nested item.
+- Media metadata can be stored through photo URLs, but Firebase Storage upload is not implemented.
 - Offline log queue is not implemented yet.
 - Weather is manually entered; no weather API integration is planned for v1.
 - GPS availability depends on browser/device permission.
+- Manual Firebase QA is pending because posted/voided site logs are permanent history records.
 
 ## Completion Definition
 

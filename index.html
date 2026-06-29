@@ -19,25 +19,25 @@
 <!-- ReCapcha anti bot lol-->
 <script src="https://www.google.com/recaptcha/enterprise.js?render=6LcZsi0tAAAAAIsQaR686BvIDAjZVDyzdw4afHoW"></script>
 <!-- Utilities (DOM helpers, formatting, safeDb, etc.) -->
-<script src="utils.js?v=43"></script>
+<script src="utils.js?v=58"></script>
 
 <!-- Auth (must load before main.js — main.js calls canAccessProject/canEditProject) -->
 <script src="auth.js?v=43"></script>
 
 <!-- Core modules -->
-<script src="main.js?v=43"></script>
+<script src="main.js?v=60"></script>
 <script src="labor.js?v=55"></script>
 <script src="materials.js?v=47"></script>
-<script src="sitelog.js?v=43"></script>
-<script src="suppliers.js?v=43"></script>
+<script src="sitelog.js?v=57"></script>
+<script src="suppliers.js?v=58"></script>
 <script src="billing.js?v=54"></script>
-<script src="changeorders.js?v=51"></script>
+<script src="changeorders.js?v=56"></script>
 <script src="equipment.js?v=43"></script>
 <script src="compliance.js?v=43"></script>
 <script src="defects.js?v=43"></script>
 <script src="tasks.js?v=43"></script>
 <script src="notifications.js?v=43"></script>
-<script src="report.js?v=43"></script>
+<script src="report.js?v=59"></script>
 
 <!-- PDF generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -789,8 +789,25 @@ window.addEventListener('appinstalled', () => {
           <input id="logDate" type="date">
           <textarea id="logNotes" rows="3" placeholder="What happened on site today? Notes, progress, issues, deliveries..."></textarea>
         </div>
+        <div class="task-form-row">
+          <textarea id="logWork" rows="2" placeholder="Work accomplished"></textarea>
+          <textarea id="logManpower" rows="2" placeholder="Manpower / trades / foremen"></textarea>
+        </div>
+        <div class="task-form-row">
+          <textarea id="logEquipment" rows="2" placeholder="Equipment used"></textarea>
+          <textarea id="logVisitors" rows="2" placeholder="Visitors"></textarea>
+        </div>
+        <div class="task-form-row">
+          <textarea id="logIssues" rows="2" placeholder="Issues, one per line"></textarea>
+          <textarea id="logDelays" rows="2" placeholder="Delays, one per line"></textarea>
+        </div>
+        <div class="task-form-row">
+          <textarea id="logSafety" rows="2" placeholder="Safety notes"></textarea>
+          <textarea id="logSafetyIncidents" rows="2" placeholder="Safety incidents"></textarea>
+        </div>
         <div class="log-actions-row">
           <input id="logWeather" type="text" placeholder="Weather (e.g., Sunny 32&#xB0;C)" style="flex:1">
+          <textarea id="logPhotos" rows="2" placeholder="Photo URLs, one per line" style="flex:1"></textarea>
           <button class="btn-add-sm" onclick="saveLog()">+ Save Entry</button>
           <button class="btn-ws-secondary" onclick="exportSiteLogs()">&#x2B07;&#xFE0F; Export</button>
         </div>

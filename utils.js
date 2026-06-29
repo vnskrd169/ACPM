@@ -328,7 +328,10 @@ function refreshSupplierDropdown(snap) {
   if (snap && snap.exists()) {
     const suppliers = [];
     snap.forEach(c => {
-      suppliers.push({ key: c.key, ...c.val() });
+      const supplier = { key: c.key, ...c.val() };
+      if ((supplier.status || 'active') !== 'archived' && (supplier.status || 'active') !== 'disabled') {
+        suppliers.push(supplier);
+      }
     });
     suppliers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     suppliers.forEach(s => {

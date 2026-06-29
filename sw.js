@@ -7,7 +7,7 @@
 // ════════════════════════════════════════════════════════════
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v55';
+const CACHE_NAME = 'acpm-v60';
 
 const ASSETS = [
   './',
@@ -16,21 +16,21 @@ const ASSETS = [
   './dashboard.html',
   './workspace.html',
   './style.css',
-  './utils.js?v=43',
+  './utils.js?v=58',
   './auth.js?v=43',
-  './main.js?v=43',
+  './main.js?v=60',
   './labor.js?v=55',
   './materials.js?v=47',
   './billing.js?v=54',
-  './changeorders.js?v=51',
-  './sitelog.js?v=43',
-  './suppliers.js?v=43',
+  './changeorders.js?v=56',
+  './sitelog.js?v=57',
+  './suppliers.js?v=58',
   './equipment.js?v=43',
   './compliance.js?v=43',
   './defects.js?v=43',
   './tasks.js?v=43',
   './notifications.js?v=43',
-  './report.js?v=43',
+  './report.js?v=59',
   './manifest.json'
   // CDN assets (Firebase, jsPDF, html2canvas) are not cached — let browser handle
 ];

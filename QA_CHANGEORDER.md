@@ -1,66 +1,65 @@
 # ACPM Change Orders v1 QA Checklist
 
-Status: ARCHITECTURE READY - IMPLEMENTATION PENDING
+Status: DATA FOUNDATION IMPLEMENTED - MANUAL FIREBASE QA PENDING
 
 Scope:
 
-- Architecture first.
 - No UI redesign.
 - Do not touch stable Labor or Materials.
-- Preserve current working Change Orders behavior until v1 implementation begins.
+- Preserve current working Change Orders UI while replacing dangerous delete/incremental math paths.
 
 ## Existing Behavior to Preserve
 
-- [ ] Create change order with description, requested by, date, labor impact, materials impact, and notes.
-- [ ] Pending change order appears in list.
-- [ ] Approving a change order updates project budget deltas.
-- [ ] Rejecting a change order keeps the row visible.
-- [ ] Billing rollups rebuild after status change.
-- [ ] Export CSV still works.
+- [x] Create change order helper accepts description, requested by, date, labor impact, materials impact, and notes.
+- [x] Pending change order appears through existing listener/render path.
+- [x] Approving a change order rebuilds project budget deltas from history.
+- [x] Rejecting a change order keeps the row visible.
+- [x] Billing rollups rebuild after status change.
+- [x] Export CSV path remains present.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 
 ## V1 Historical Integrity
 
-- [ ] Delete action is replaced by void action.
-- [ ] Voided change order row remains under `changeOrders`.
-- [ ] Voided row has:
+- [x] Delete action is replaced by void action.
+- [x] Voided change order row remains under `changeOrders`.
+- [x] Voided row has:
   - `status = voided`
   - `voidedAt`
   - `voidedBy`
   - `voidReason`
-- [ ] Rejected change orders remain archived.
-- [ ] Approved change orders remain archived.
-- [ ] No approved/rejected/voided row is permanently deleted during normal UI use.
+- [x] Rejected change orders remain archived.
+- [x] Approved change orders remain archived.
+- [x] No approved/rejected/voided row is permanently deleted during normal UI use.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 
 ## Approval / Rejection Workflow
 
 - [ ] Create pending change order.
 - [ ] Approve it.
-- [ ] Verify approved event is written.
+- [x] Verify approved event write path exists.
 - [ ] Verify approved CO affects adjusted contract amount.
 - [ ] Verify approved CO affects budget deltas if `affectsBudget = true`.
 - [ ] Reject a separate change order.
-- [ ] Verify rejected event is written.
+- [x] Verify rejected event write path exists.
 - [ ] Verify rejected CO does not affect approved totals.
 - [ ] Revert/supersede behavior is documented and does not corrupt deltas.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 
 ## Rollup Rebuild
 
-- [ ] Run `rebuildChangeOrderRollups(projectId)`.
-- [ ] Verify approved totals are rebuilt from active approved history.
-- [ ] Verify rejected/voided rows are ignored by approved totals.
-- [ ] Run `syncProjectBudgetDeltasFromChangeOrders(projectId)`.
-- [ ] Verify `laborBudgetDelta` and `materialBudgetDelta` match approved history.
-- [ ] Run `rebuildBillingRollups(projectId)`.
-- [ ] Verify `approvedChangeOrders` matches approved CO history.
+- [x] Run `rebuildChangeOrderRollups(projectId)` helper exists and writes `changeOrderRollups`.
+- [x] Verify approved totals are rebuilt from active approved history in code.
+- [x] Verify rejected/voided rows are ignored by approved totals in code.
+- [x] Run `syncProjectBudgetDeltasFromChangeOrders(projectId)` helper exists.
+- [x] Verify `laborBudgetDelta` and `materialBudgetDelta` match approved history in code.
+- [x] Run `rebuildBillingRollups(projectId)` after status changes.
+- [x] Verify `approvedChangeOrders` reads approved CO history using `totalImpact`/fallback signed impact.
 - [ ] Refresh workspace and verify values remain correct.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / PENDING BROWSER REFRESH QA
 
 ## Billing Linkage
 
@@ -75,7 +74,7 @@ Result: PENDING IMPLEMENTATION QA
 
 ## Firebase Rules / Index QA
 
-- [ ] Add/verify indexes for:
+- [x] Add/verify indexes for:
   - `changeOrders.seq`
   - `changeOrders.coNo`
   - `changeOrders.status`
@@ -86,17 +85,26 @@ Result: PENDING IMPLEMENTATION QA
   - `changeOrderEvents.type`
   - `changeOrderEvents.changeOrderId`
   - `changeOrderEvents.createdAt`
-- [ ] Verify project permissions still protect Change Orders.
-- [ ] Verify event rows require `type`, `createdAt`, and `createdBy`.
+- [x] Verify project permissions still protect Change Orders through project-level rules.
+- [x] Verify event rows require `type`, `createdAt`, and `createdBy`.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC
 
 ## Known Limitations
 
-- Current implementation still has permanent delete behavior and must be refactored before v1 stable.
 - Dedicated printed change-order approval output is not implemented.
 - Attachments are not implemented.
 - Billing linkage is architecture-defined but not yet wired as a full UI workflow.
+- Manual Firebase QA is pending because creating, approving, rejecting, and voiding records creates permanent project history.
+
+## Static QA Results
+
+- [x] `node --check changeorders.js`
+- [x] `node --check billing.js`
+- [x] Firebase rules JSON parse
+- [x] Browser smoke test after cache v56: workspace loaded, `changeorders.js?v=56` present, console had no errors/warnings.
+- [ ] Browser click-through workflow QA: automation saw Change Order controls in the DOM, but the visible tab locator was not reachable in the current app state.
+- [ ] Real Firebase create/approve/reject/void test in QA project
 
 ## Stability Gate
 

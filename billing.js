@@ -1022,7 +1022,7 @@ async function rebuildBillingRollups(pid, sources = {}) {
   const billingsById = activeBillingMap(allBillings);
   const collections = billingSnapRows(collectionsSnap).filter(billingActive);
   const adjustments = billingSnapRows(adjustmentsSnap).filter(a => billingActive(a) && (a.status || '') === 'approved');
-  const changeOrders = billingSnapRows(changeOrdersSnap).filter(co => (co.status || '') === 'approved');
+  const changeOrders = billingSnapRows(changeOrdersSnap).filter(co => (co.status || '') === 'approved' && co.affectsContract !== false);
   const allocationRows = effectiveAllocationRows(collections, billingSnapRows(allocationsSnap))
     .filter(a => billingsById[a.billingId]);
   const retentionRows = retentionReleaseRows(collections, billingSnapRows(retentionSnap))
@@ -1030,7 +1030,8 @@ async function rebuildBillingRollups(pid, sources = {}) {
 
   const contractAmount = billingAmount(contract.originalAmount ?? contract.amount);
   const approvedChangeOrders = changeOrders.reduce((sum, co) => {
-    return sum + Math.max(0, billingAmount(co.laborImpact) + billingAmount(co.materialsImpact) + billingAmount(co.amount));
+    if (co.totalImpact !== undefined) return sum + billingAmount(co.totalImpact);
+    return sum + billingAmount(co.laborImpact) + billingAmount(co.materialsImpact) + billingAmount(co.otherImpact) + billingAmount(co.amount);
   }, 0);
   const adjustedContractAmount = contractAmount + approvedChangeOrders;
   const receivableAdjustments = adjustments.filter(a => a.affectsReceivable !== false);

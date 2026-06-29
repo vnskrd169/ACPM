@@ -1,5 +1,11 @@
 let _supListener = null;
 
+const SUPPLIER_STATUSES = {
+  active: 'active',
+  archived: 'archived',
+  disabled: 'disabled'
+};
+
 function canManageSuppliers() {
   const user = window._currentUser;
   if (!user || user.role !== 'boss') {
@@ -22,6 +28,212 @@ function detachSupplierListeners() {
   if (_supListener) { _supListener.off(); _supListener = null; }
 }
 
+function supplierUserId() {
+  return window._currentUser?.uid || firebase.auth().currentUser?.uid || 'system';
+}
+
+function supplierUserName() {
+  const authUser = firebase.auth().currentUser;
+  return window._currentUser?.name || window._currentUser?.displayName || authUser?.displayName || authUser?.email || 'System';
+}
+
+function supplierStatus(supplier) {
+  const status = String(supplier?.status || SUPPLIER_STATUSES.active).toLowerCase();
+  return SUPPLIER_STATUSES[status] ? status : SUPPLIER_STATUSES.active;
+}
+
+function supplierActive(supplier) {
+  return supplierStatus(supplier) === SUPPLIER_STATUSES.active;
+}
+
+function supplierRows(snap, options = {}) {
+  const rows = [];
+  if (!snap || !snap.exists()) return rows;
+  snap.forEach(c => {
+    const row = { key: c.key, ...c.val() };
+    row.status = supplierStatus(row);
+    if (options.includeArchived || supplierActive(row)) rows.push(row);
+  });
+  return rows;
+}
+
+async function createSupplierEvent(event = {}) {
+  if (!event.type) return null;
+  const now = Date.now();
+  const ref = firebase.database().ref('supplierEvents').push();
+  await ref.set({
+    ...event,
+    createdAt: event.createdAt || now,
+    createdBy: event.createdBy || supplierUserId(),
+    createdByName: event.createdByName || supplierUserName()
+  });
+  return ref.key;
+}
+
+async function createSupplierNotificationEvent(type, payload = {}) {
+  if (!type) return null;
+  const ref = firebase.database().ref('globalNotificationEvents').push();
+  await ref.set({
+    module: 'suppliers',
+    type,
+    status: 'pending',
+    consumed: false,
+    createdAt: Date.now(),
+    createdBy: supplierUserId(),
+    createdByName: supplierUserName(),
+    ...payload
+  });
+  return ref.key;
+}
+
+async function listSuppliers(options = {}) {
+  const snap = await firebase.database().ref('suppliers').once('value');
+  return supplierRows(snap, options).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+
+async function listSupplierTransactions(supplierIdOrName) {
+  const needle = String(supplierIdOrName || '').trim().toLowerCase();
+  if (!needle) return [];
+  const projectsSnap = await firebase.database().ref('projects').once('value');
+  const rows = [];
+  projectsSnap.forEach(projectSnap => {
+    const projectId = projectSnap.key;
+    const project = projectSnap.val() || {};
+    const pos = project.purchaseOrders || {};
+    Object.entries(pos).forEach(([poId, po]) => {
+      const supplierId = String(po?.supplierId || '').toLowerCase();
+      const supplierName = String(po?.supplierName || po?.supplier || '').toLowerCase();
+      if (supplierId === needle || supplierName === needle) {
+        rows.push({
+          type: 'purchaseOrder',
+          projectId,
+          projectName: project.name || projectId,
+          poId,
+          poNo: po.poNo || '',
+          status: po.status || '',
+          deliveryStatus: po.deliveryStatus || '',
+          total: parseFloat(po.total || po.totalCost) || 0,
+          date: po.date || '',
+          createdAt: po.createdAt || 0
+        });
+      }
+    });
+  });
+  return rows.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+async function rebuildSupplierRollup(supplierId) {
+  if (!supplierId) return null;
+  const supplierSnap = await firebase.database().ref(`suppliers/${supplierId}`).once('value');
+  const supplier = supplierSnap.val() || {};
+  const transactions = await listSupplierTransactions(supplierId);
+  const supplierNameTransactions = supplier.name ? await listSupplierTransactions(supplier.name) : [];
+  const merged = [...transactions, ...supplierNameTransactions]
+    .filter((row, index, arr) => arr.findIndex(x => x.projectId === row.projectId && x.poId === row.poId) === index);
+  const totalPOAmount = merged.reduce((sum, row) => sum + (parseFloat(row.total) || 0), 0);
+  const outstandingDeliveries = merged.filter(row => !['fully_delivered', 'closed'].includes(String(row.deliveryStatus || '').toLowerCase())).length;
+  const rollup = {
+    supplierId,
+    supplierName: supplier.name || '',
+    totalPurchaseOrders: merged.length,
+    totalPOAmount,
+    outstandingDeliveries,
+    lastPODate: merged.map(row => row.date).filter(Boolean).sort().pop() || '',
+    lastUpdatedAt: Date.now(),
+    updatedBy: supplierUserId()
+  };
+  await firebase.database().ref(`supplierRollups/${supplierId}`).set(rollup);
+  return rollup;
+}
+
+async function createSupplier(data = {}) {
+  const name = String(data.name || '').trim();
+  if (!name) throw new Error('Supplier name is required.');
+  const now = Date.now();
+  const ref = firebase.database().ref('suppliers').push();
+  const eventRef = firebase.database().ref('supplierEvents').push();
+  const payload = {
+    name,
+    contact: data.contact || '',
+    specialty: data.specialty || '',
+    bankName: data.bankName || '',
+    accNum: data.accNum || '',
+    accName: data.accName || '',
+    notes: data.notes || '',
+    status: SUPPLIER_STATUSES.active,
+    addedAt: now,
+    addedBy: supplierUserId(),
+    addedByName: supplierUserName(),
+    createdAt: now,
+    createdBy: supplierUserId(),
+    createdByName: supplierUserName(),
+    updatedAt: now,
+    updatedBy: supplierUserId()
+  };
+  const updates = {};
+  updates[`suppliers/${ref.key}`] = payload;
+  updates[`supplierEvents/${eventRef.key}`] = {
+    type: 'created',
+    supplierId: ref.key,
+    supplierName: name,
+    createdAt: now,
+    createdBy: supplierUserId(),
+    createdByName: supplierUserName()
+  };
+  await firebase.database().ref().update(updates);
+  await rebuildSupplierRollup(ref.key);
+  return { key: ref.key, ...payload };
+}
+
+async function updateSupplier(key, data = {}) {
+  if (!key) throw new Error('Supplier ID is required.');
+  const now = Date.now();
+  const updates = {
+    ...data,
+    updatedAt: now,
+    updatedBy: supplierUserId(),
+    updatedByName: supplierUserName()
+  };
+  await firebase.database().ref(`suppliers/${key}`).update(updates);
+  await createSupplierEvent({
+    type: 'updated',
+    supplierId: key,
+    supplierName: data.name || '',
+    createdAt: now
+  });
+  await rebuildSupplierRollup(key);
+  return true;
+}
+
+async function archiveSupplier(key, reason = '') {
+  if (!key) throw new Error('Supplier ID is required.');
+  if (!reason.trim()) throw new Error('Archive reason is required.');
+  const snap = await firebase.database().ref(`suppliers/${key}`).once('value');
+  const supplier = snap.val() || {};
+  const now = Date.now();
+  const updates = {};
+  updates[`suppliers/${key}/status`] = SUPPLIER_STATUSES.archived;
+  updates[`suppliers/${key}/archivedAt`] = now;
+  updates[`suppliers/${key}/archivedBy`] = supplierUserId();
+  updates[`suppliers/${key}/archivedByName`] = supplierUserName();
+  updates[`suppliers/${key}/archiveReason`] = reason.trim();
+  updates[`suppliers/${key}/updatedAt`] = now;
+  updates[`suppliers/${key}/updatedBy`] = supplierUserId();
+  const eventRef = firebase.database().ref('supplierEvents').push();
+  updates[`supplierEvents/${eventRef.key}`] = {
+    type: 'archived',
+    supplierId: key,
+    supplierName: supplier.name || '',
+    description: reason.trim(),
+    createdAt: now,
+    createdBy: supplierUserId(),
+    createdByName: supplierUserName()
+  };
+  await firebase.database().ref().update(updates);
+  await rebuildSupplierRollup(key);
+  return { key, ...supplier, status: SUPPLIER_STATUSES.archived };
+}
+
 function watchGlobalSuppliers() {
   _supListener = firebase.database().ref('suppliers');
   _supListener.on('value', snap => {
@@ -35,10 +247,7 @@ function watchGlobalSuppliers() {
       return;
     }
 
-    const suppliers = [];
-    snap.forEach(c => {
-      suppliers.push({ key: c.key, ...c.val() });
-    });
+    const suppliers = supplierRows(snap);
     suppliers.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     const fragment = document.createDocumentFragment();
@@ -60,13 +269,13 @@ function watchGlobalSuppliers() {
           ${bankLine}
         </div>
         <div class="supplier-actions">
-          <button class="btn-use-supplier" data-name="${escapeHtml(s.name).replace(/'/g, "\\'")}">Use in PO</button>
+          <button class="btn-use-supplier" data-key="${s.key}" data-name="${escapeHtml(s.name).replace(/'/g, "\\'")}">Use in PO</button>
           <button class="btn-edit-supplier" data-key="${s.key}">\u270E Edit</button>
           <button class="btn-del-supplier" data-key="${s.key}" data-name="${escapeHtml(s.name).replace(/'/g, "\\'")}">\u2715</button>
         </div>
       `;
 
-      card.querySelector('.btn-use-supplier').addEventListener('click', (e) => useSupplierInPO(e.target.dataset.name));
+      card.querySelector('.btn-use-supplier').addEventListener('click', (e) => useSupplierInPO(e.target.dataset.name, e.target.dataset.key));
       card.querySelector('.btn-edit-supplier').addEventListener('click', (e) => openEditSupplier(e.target.dataset.key));
       card.querySelector('.btn-del-supplier').addEventListener('click', (e) => deleteSupplier(e.target.dataset.key, e.target.dataset.name));
 
@@ -93,14 +302,14 @@ async function addSupplier() {
   const dupSnap = await firebase.database().ref('suppliers').orderByChild('name').equalTo(name).once('value');
   if (dupSnap.exists()) { showToast(`Supplier "${name}" already exists.`, 'error'); return; }
 
-  await safeDb(() => firebase.database().ref('suppliers').push({
-    name, contact, specialty: spec, bankName: bank, accNum, accName, addedAt: Date.now(), addedBy: window._currentUser.uid
+  const created = await safeDb(() => createSupplier({
+    name, contact, specialty: spec, bankName: bank, accNum, accName
   }), 'Failed to add supplier');
 
   ['supName', 'supContact', 'supSpecialty', 'supBank', 'supAccNum', 'supAccName'].forEach(id => {
     const e = $(id); if (e) e.value = '';
   });
-  auditLog('create', 'supplier', null, { name });
+  auditLog('create', 'supplier', created.key, { name });
   showToast(`\u2705 ${name} added`);
 }
 
@@ -135,8 +344,8 @@ async function saveEditSupplier() {
   if (!name) { showToast('Name required.', 'error'); return; }
   if (name.length > 50) { showToast('Name too long.', 'error'); return; }
 
-  await safeDb(() => firebase.database().ref(`suppliers/${key}`).update({
-    name, contact, specialty: spec, bankName: bank, accNum, accName, updatedAt: Date.now(), updatedBy: window._currentUser.uid
+  await safeDb(() => updateSupplier(key, {
+    name, contact, specialty: spec, bankName: bank, accNum, accName
   }), 'Failed to update supplier');
 
   closeEditSupplier();
@@ -146,20 +355,22 @@ async function saveEditSupplier() {
 
 async function deleteSupplier(key, name) {
   if (!canManageSuppliers()) return;
-  if (!confirm(`Delete supplier "${name}" from the entire system?`)) return;
-  const confirmText = prompt('Type DELETE SUPPLIER to confirm permanent deletion:');
-  if (confirmText !== 'DELETE SUPPLIER') {
-    showToast('Deletion cancelled.', 'warn');
+  if (!confirm(`Archive supplier "${name}"? Historical POs and deliveries will remain linked.`)) return;
+  const reason = prompt('Reason for archiving this supplier:');
+  if (!reason || !reason.trim()) {
+    showToast('Archive cancelled. A reason is required.', 'warn');
     return;
   }
-  await safeDb(() => firebase.database().ref(`suppliers/${key}`).remove(), 'Failed to delete supplier');
-  auditLog('delete', 'supplier', key, { name });
-  showToast(`${name} removed`, 'warn');
+  await safeDb(() => archiveSupplier(key, reason.trim()), 'Failed to archive supplier');
+  auditLog('archive', 'supplier', key, { name, reason: reason.trim() });
+  showToast(`${name} archived`, 'warn');
 }
 
-function useSupplierInPO(name) {
+function useSupplierInPO(name, key = '') {
   switchTab('materials');
   const inp = $('poSupplier');
+  const idInput = $('poSupplierId');
+  if (idInput) idInput.value = key || '';
   if (inp) { inp.value = name; inp.focus(); }
   showToast(`${name} selected for PO`);
 }
@@ -174,13 +385,12 @@ function filterSuppliers(query) {
 }
 
 async function exportSuppliersCSV() {
-  const snap = await firebase.database().ref('suppliers').once('value');
-  if (!snap.exists()) { showToast('No suppliers to export.', 'warn'); return; }
+  const suppliers = await listSuppliers({ includeArchived: true });
+  if (!suppliers.length) { showToast('No suppliers to export.', 'warn'); return; }
 
-  let csv = 'Name,Contact,Specialty,Bank Name,Account Number,Account Name\n';
-  snap.forEach(c => {
-    const s = c.val();
-    csv += `${escapeCsv(s.name || '')},${escapeCsv(s.contact || '')},${escapeCsv(s.specialty || '')},${escapeCsv(s.bankName || '')},${escapeCsv(s.accNum || '')},${escapeCsv(s.accName || '')}\n`;
+  let csv = 'Name,Status,Contact,Specialty,Bank Name,Account Number,Account Name,Archived At,Archive Reason\n';
+  suppliers.forEach(s => {
+    csv += `${escapeCsv(s.name || '')},${escapeCsv(s.status || 'active')},${escapeCsv(s.contact || '')},${escapeCsv(s.specialty || '')},${escapeCsv(s.bankName || '')},${escapeCsv(s.accNum || '')},${escapeCsv(s.accName || '')},${s.archivedAt || ''},${escapeCsv(s.archiveReason || '')}\n`;
   });
 
   downloadTextFile(`Suppliers_${new Date().toISOString().slice(0,10)}.csv`, csv, 'text/csv');
@@ -190,6 +400,13 @@ async function exportSuppliersCSV() {
 // ── Expose to global scope ────────────────────────────────────
 window.initSuppliers = initSuppliers;
 window.detachSupplierListeners = detachSupplierListeners;
+window.createSupplier = createSupplier;
+window.updateSupplier = updateSupplier;
+window.archiveSupplier = archiveSupplier;
+window.listSuppliers = listSuppliers;
+window.listSupplierTransactions = listSupplierTransactions;
+window.rebuildSupplierRollup = rebuildSupplierRollup;
+window.createSupplierEvent = createSupplierEvent;
 window.addSupplier = addSupplier;
 window.openEditSupplier = openEditSupplier;
 window.closeEditSupplier = closeEditSupplier;

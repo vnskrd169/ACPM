@@ -73,7 +73,15 @@
         },
         "billingRollups": { ".indexOn": ["lastUpdatedAt"] 
         },
-        "changeOrders": { ".indexOn": ["seq", "status"] 
+        "changeOrders": { ".indexOn": ["seq", "coNo", "status", "date", "createdAt", "requestedBy", "billingId"] 
+        },
+        "changeOrderEvents": {
+          ".indexOn": ["type", "changeOrderId", "date", "createdAt", "toStatus"],
+          "$eventId": {
+            ".validate": "newData.hasChildren(['type', 'createdAt', 'createdBy'])"
+          }
+        },
+        "changeOrderRollups": { ".indexOn": ["lastUpdatedAt"] 
         },
         "purchaseRequests": { ".indexOn": ["requestNo", "status", "requestedAt", "neededBy"] 
         },
@@ -121,7 +129,19 @@
         },
         "payrollLogs": { ".indexOn": ["savedAt", "weekKey"]
         },
-        "siteLogs": { ".indexOn": "savedAt" 
+        "siteLogs": { ".indexOn": ["date", "status", "savedAt", "savedBy"] 
+        },
+        "siteLogEvents": {
+          ".indexOn": ["type", "logId", "date", "createdAt"],
+          "$eventId": {
+            ".validate": "newData.hasChildren(['type', 'createdAt', 'createdBy'])"
+          }
+        },
+        "siteLogRollups": { ".indexOn": ["lastUpdatedAt"] 
+        },
+        "reportRollups": { ".indexOn": ["lastUpdatedAt"] 
+        },
+        "reportSnapshots": { ".indexOn": ["type", "periodKey", "generatedAt", "generatedBy"] 
         }
       }
     },
@@ -129,7 +149,31 @@
     "suppliers": {
       ".read": "auth != null",
       ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
-      ".indexOn": ["name", "specialty", "updatedAt"]
+      ".indexOn": ["name", "specialty", "status", "updatedAt", "archivedAt"]
+    },
+
+    "supplierEvents": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
+      ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
+      ".indexOn": ["type", "supplierId", "createdAt"],
+      "$eventId": {
+        ".validate": "newData.hasChildren(['type', 'createdAt', 'createdBy'])"
+      }
+    },
+
+    "supplierRollups": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
+      ".indexOn": ["supplierId", "lastUpdatedAt", "outstandingDeliveries"]
+    },
+
+    "globalNotificationEvents": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
+      ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'boss'",
+      ".indexOn": ["module", "type", "status", "consumed", "createdAt"],
+      "$eventId": {
+        ".validate": "newData.hasChildren(['module', 'type', 'status', 'consumed', 'createdAt'])"
+      }
     },
 
     "auditLogs": {

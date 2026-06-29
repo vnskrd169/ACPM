@@ -116,6 +116,30 @@ function effectiveBudget(p) {
   };
 }
 
+function dashboardRollup(p) {
+  return p?.reportRollups?.projectSummary || p?.billingRollups || {};
+}
+
+function dashboardLaborSpent(p) {
+  const rollup = dashboardRollup(p);
+  return parseFloat(rollup.laborCost ?? p.laborSpent) || 0;
+}
+
+function dashboardMaterialSpent(p) {
+  const rollup = dashboardRollup(p);
+  return parseFloat(rollup.materialCost ?? p.materialSpent) || 0;
+}
+
+function dashboardOtherSpent(p) {
+  const rollup = dashboardRollup(p);
+  return parseFloat(rollup.otherCost ?? p.otherSpent) || 0;
+}
+
+function dashboardTotalSpent(p) {
+  const rollup = dashboardRollup(p);
+  return parseFloat(rollup.totalCost ?? NaN) || (dashboardLaborSpent(p) + dashboardMaterialSpent(p) + dashboardOtherSpent(p));
+}
+
 // ════════════════════════════════════════════════════════════
 //  HUB — Project Dashboard
 // ════════════════════════════════════════════════════════════
@@ -407,11 +431,11 @@ function buildProjectCard(p) {
   div.setAttribute('data-pid', p.id);
 
   const eff = effectiveBudget(p);
-  const laborSpent = parseFloat(p.laborSpent) || 0;
-  const matSpent = parseFloat(p.materialSpent) || 0;
+  const laborSpent = dashboardLaborSpent(p);
+  const matSpent = dashboardMaterialSpent(p);
   const otherBudget = Math.max(0, eff.total - eff.labor - eff.material);
-  const otherSpent = parseFloat(p.otherSpent) || 0;
-  const totalSpent = laborSpent + matSpent + otherSpent;
+  const otherSpent = dashboardOtherSpent(p);
+  const totalSpent = dashboardTotalSpent(p);
   const remaining = eff.total - totalSpent;
   const pctUsed = pct(totalSpent, eff.total);
   const isWarning = pctUsed >= 80 && pctUsed < 95;
@@ -423,6 +447,15 @@ function buildProjectCard(p) {
   const healthColor = health.score >= 80 ? 'var(--green)' : health.score >= 60 ? 'var(--amber)' : 'var(--red)';
   const budgetHealth = budgetHealthLabel(pctUsed);
   const hasDelta = (parseFloat(p.laborBudgetDelta) || 0) || (parseFloat(p.materialBudgetDelta) || 0);
+  const rollup = dashboardRollup(p);
+  const hasFinancialRollup = ['contractAmount', 'adjustedContractAmount', 'totalBilled', 'totalCollected', 'receivable', 'estimatedProfit'].some(key => rollup[key] !== undefined);
+  const financialLine = hasFinancialRollup ? `
+    <div class="budget-sub budget-note">
+      Contract ${peso(parseFloat(rollup.adjustedContractAmount ?? rollup.contractAmount) || 0)}
+      &nbsp;|&nbsp; Billed ${peso(parseFloat(rollup.totalBilled ?? rollup.totalBilledGross) || 0)}
+      &nbsp;|&nbsp; Collected ${peso(parseFloat(rollup.totalCollected ?? rollup.totalRevenueCollected) || 0)}
+      &nbsp;|&nbsp; Receivable ${peso(parseFloat(rollup.receivable ?? rollup.totalReceivable) || 0)}
+    </div>` : '';
   const canLifecycle = canManageProjectLifecycle(p.id);
   const budgetRows = [
     budgetMetricRow('Labor Budget', eff.labor, laborSpent),
@@ -461,6 +494,7 @@ function buildProjectCard(p) {
         <span class="budget-health ${budgetHealth.className}">${budgetHealth.text}</span>
         <span>${pctUsed}% used</span>
       </div>
+      ${financialLine}
       ${hasDelta ? '<div class="budget-sub budget-note">Includes approved change orders</div>' : ''}
       ${budgetRows}
     </div>
@@ -500,20 +534,19 @@ function renderDashboardSummary(projects, context = '') {
   const active = projects.filter(p => p.status === 'active').length;
   const completed = projects.filter(p => p.status === 'completed').length;
   const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
-  const totalSpent = projects.reduce((s, p) =>
-    s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
+  const totalSpent = projects.reduce((s, p) => s + dashboardTotalSpent(p), 0);
   const remaining = totalBudget - totalSpent;
   const overallPct = pct(totalSpent, totalBudget);
 
   const critical = projects.filter(p => {
     const eff = effectiveBudget(p);
-    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    const spent = dashboardTotalSpent(p);
     return pct(spent, eff.total) >= 95;
   }).length;
 
   const warning = projects.filter(p => {
     const eff = effectiveBudget(p);
-    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    const spent = dashboardTotalSpent(p);
     const pUsed = pct(spent, eff.total);
     return pUsed >= 80 && pUsed < 95;
   }).length;
@@ -575,7 +608,7 @@ function renderComparison(projects, targetId = 'comparisonView') {
 
   el.innerHTML = projects.map((p, i) => {
     const eff = effectiveBudget(p);
-    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    const spent = dashboardTotalSpent(p);
     const pUsed = pct(spent, eff.total);
     const remaining = eff.total - spent;
     const health = budgetHealthLabel(pUsed);
@@ -1228,21 +1261,20 @@ function renderDashboardAlerts(projects) {
 
   const critical = projects.filter(p => {
     const eff = effectiveBudget(p);
-    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    const spent = dashboardTotalSpent(p);
     return pct(spent, eff.total) >= 95;
   }).length;
 
   const warning = projects.filter(p => {
     const eff = effectiveBudget(p);
-    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    const spent = dashboardTotalSpent(p);
     const pUsed = pct(spent, eff.total);
     return pUsed >= 80 && pUsed < 95;
   }).length;
 
   const active = projects.filter(p => p.status === 'active').length;
   const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
-  const totalSpent = projects.reduce((s, p) =>
-    s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
+  const totalSpent = projects.reduce((s, p) => s + dashboardTotalSpent(p), 0);
 
   if (critical > 0) {
     el.className = 'dashboard-alerts warn-critical';
@@ -1266,8 +1298,7 @@ function renderCompletedSummary(projects) {
   const count = projects.length;
   setText('dsCompCount', count);
   const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
-  const totalSpent = projects.reduce((s, p) =>
-    s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
+  const totalSpent = projects.reduce((s, p) => s + dashboardTotalSpent(p), 0);
   setText('dsCompBudget', peso(totalBudget));
   setText('dsCompSpent', peso(totalSpent));
   const remEl = $('dsCompRemaining');
@@ -1297,9 +1328,9 @@ async function exportHubCSV() {
     let csv = 'Project Name,Status,Created Date,Labor Budget,Material Budget,Total Budget,Labor Spent,Material Spent,Total Spent,Remaining,% Used,Health Score\\n';
     projects.forEach(p => {
       const eff = effectiveBudget(p);
-      const laborSpent = parseFloat(p.laborSpent) || 0;
-      const matSpent = parseFloat(p.materialSpent) || 0;
-      const totalSpent = laborSpent + matSpent;
+      const laborSpent = dashboardLaborSpent(p);
+      const matSpent = dashboardMaterialSpent(p);
+      const totalSpent = dashboardTotalSpent(p);
       const remaining = eff.total - totalSpent;
       const pctUsed = pct(totalSpent, eff.total);
       const health = typeof calculateProjectHealth === 'function' ? calculateProjectHealth(p).score : 100;
