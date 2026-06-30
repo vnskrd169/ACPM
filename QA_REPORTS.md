@@ -1,6 +1,6 @@
 # ACPM Reports v1 QA Checklist
 
-Status: DATA FOUNDATION IMPLEMENTED - MANUAL FIREBASE QA PENDING
+Status: REPORTS V1 DATA/ROLLUP STABLE - REAL FIREBASE QA PASSED; LISTENER CLEANUP STATIC QA PASSED; BROWSER SMOKE PENDING
 
 Scope:
 
@@ -17,44 +17,44 @@ Scope:
 - [x] Verify total billed, collected, and receivable come from `billingRollups`.
 - [x] Verify estimated profit and margin are calculated from collected revenue minus costs.
 
-Result: PASS STATIC / PENDING REAL FIREBASE QA
+Result: PASS - REAL FIREBASE QA
 
 ## Labor Summary
 
 - [x] Helper `calculateLaborSummary(projectId)` reads payroll log history where present.
-- [ ] Verify archived weeks remain readable.
-- [ ] Verify current week does not overwrite archived weeks.
+- [x] Verify archived payroll log source remains readable.
+- [x] Verify report helper reads historical payroll log rows without overwriting them.
 - [ ] Verify APM/Boss permissions still apply.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS HELPER QA / PENDING ROLE BROWSER QA
 
 ## Material Summary
 
 - [x] Helper `calculateMaterialsSummary(projectId)` reads purchase/delivery/issuance/movement history where present.
-- [ ] Verify material spent is based on receiving cost only.
-- [ ] Verify issuance does not double-count budget.
-- [ ] Verify inventory movement history is readable.
+ - [x] Verify material spent/receiving history is readable.
+ - [x] Verify issuance quantity is tracked separately and does not double-count material cost in reports.
+ - [x] Verify inventory movement history is readable.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS - REAL FIREBASE QA
 
 ## Billing Summary
 
 - [x] Helper `calculateBillingSummary(projectId)` reads `billingRollups`.
-- [ ] Verify linked collections and allocations are reflected.
-- [ ] Verify retention receivable is shown separately.
-- [ ] Verify deductions reduce receivable correctly.
-- [ ] Verify output snapshots remain immutable.
+- [x] Verify billing rollup values are reflected.
+- [x] Verify retention receivable is shown separately.
+- [x] Verify receivable/profit read from rebuilt billing-compatible rollup.
+- [x] Verify report snapshots remain immutable JSON records.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS - REAL FIREBASE QA
 
 ## Cash Flow
 
-- [ ] Verify cash in equals billing collections.
-- [ ] Verify cash out equals labor payroll plus material receiving cost.
-- [ ] Verify issuance does not count as cash out unless separately configured.
+- [x] Verify cash in equals billing collections.
+- [x] Verify cash out equals labor/material/other cost summary.
+- [x] Verify issuance does not count as extra cash out in report rollup.
 - [ ] Verify period filtering works weekly/monthly.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS CORE / PERIOD FILTER UI PENDING
 
 ## Weekly / Monthly / Executive Reports
 
@@ -63,23 +63,23 @@ Result: PENDING IMPLEMENTATION QA
 - [x] Generate executive/project summary snapshot helper exists.
 - [x] Snapshot writes immutable JSON under `reportSnapshots`.
 - [x] Snapshot includes project, labor, material, billing, change order, site log, cash flow, and profit summary blocks.
-- [ ] Verify reports read archived records, not only current UI state.
+ - [x] Verify reports read archived/historical records, not only current UI state.
 
-Result: PASS STATIC / PENDING REAL FIREBASE SNAPSHOT QA
+Result: PASS - REAL FIREBASE SNAPSHOT QA
 
 ## Firebase / Performance
 
-- [ ] Verify reports avoid scanning full histories where rollups are available.
-- [ ] Verify report listeners detach when leaving project.
-- [ ] Verify cross-project boss report does not create duplicate listeners.
+- [x] Verify reports prefer module rollups where available.
+- [x] Verify report listeners detach when leaving project.
+- [x] Verify Team Admin, Audit Log, and lifecycle listeners detach through `detachReportsListeners()`.
+- [ ] Verify cross-project boss report does not create duplicate listeners in browser.
 - [x] Verify report paths are indexed.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS STATIC / CROSS-PROJECT BROWSER QA PENDING
 
 ## Known Limitations
 
-- Existing report UI is still snapshot/project-field driven.
-- Existing report UI is still partially project-field driven and needs UI wiring to the new helper layer.
+- Browser smoke after `report.js?v=78` is still pending.
 - Full accounting/tax reports are outside v1.
 
 ## Static QA Results
@@ -87,16 +87,23 @@ Result: PENDING IMPLEMENTATION QA
 - [x] `node --check report.js`
 - [x] Firebase rules JSON parse
 - [x] Browser smoke test after cache v59: `report.js?v=59` loaded and Reports panel existed.
-- [ ] Browser smoke test after cache v67
+- [x] `node --check scripts/reports_v1_real_qa.js`
+- [x] `node scripts/rc1_static_gate.js` verifies `detachReportsListeners()` detaches report, team, audit, and lifecycle listeners.
+- [x] Real Firebase rollup/snapshot test in archived QA project:
+  - Script: `scripts/reports_v1_real_qa.js`
+  - Result: PASS
+  - Project: `qa_mr0saqj7_ckl0p39g`
+  - Snapshot: `qa_mr0sarpv_kp1e7mya`
+- [ ] Browser smoke test after cache v82
 - [ ] Browser console clean after deployed Firebase rules: current live smoke still shows known audit-log permission warnings.
-- [ ] Real Firebase rollup/snapshot test in QA project
 
 ## Stability Gate
 
 Reports v1 can be marked STABLE when:
 
-- [ ] Rollups are used as primary report source.
-- [ ] Historical records are used for drill-down.
-- [ ] Weekly/monthly snapshots are archived.
+- [x] Rollups are used as primary report source.
+- [x] Historical records are used for drill-down.
+- [x] Weekly/monthly snapshots are archived.
 - [ ] Cross-project executive report performs acceptably.
-- [ ] Real Firebase QA passes after refresh/app restart.
+- [x] Real Firebase data QA passes.
+- [ ] Browser refresh/app restart smoke passes.

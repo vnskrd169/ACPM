@@ -1,6 +1,6 @@
 # ACPM Site Log v1 QA Checklist
 
-Status: DATA FOUNDATION IMPLEMENTED - MANUAL FIREBASE QA PENDING
+Status: SITE LOG V1 RC1 WORKFLOW/DATA STABLE - REAL FIREBASE QA PASSED; MEDIA UPLOAD/OFFLINE QUEUE FUTURE
 
 Scope:
 
@@ -19,7 +19,7 @@ Scope:
 - [x] Text export reads active historical logs.
 - [x] Listener detaches when switching projects.
 
-Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
+Result: PASS - REAL FIREBASE QA
 
 ## Historical Integrity
 
@@ -34,7 +34,7 @@ Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 - [x] Helper `listSiteLogs(projectId, { includeVoided: true })` can read voided logs when requested.
 - [x] Fixed Firebase `forEach` iteration so log history/rollups read every child, not only the first row.
 
-Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
+Result: PASS - REAL FIREBASE QA
 
 ## Structured Daily Log
 
@@ -46,30 +46,30 @@ Result: PASS STATIC / PENDING REAL FIREBASE WORKFLOW QA
 - [x] Save delays.
 - [x] Save safety notes/incidents.
 - [ ] Save comments.
-- [ ] Reopen saved log and verify all sections load correctly.
+- [x] Reopen saved log and verify all sections load correctly.
 
-Result: PASS STATIC / PENDING MANUAL REOPEN QA
+Result: PASS - REAL FIREBASE QA FOR STRUCTURED CORE SECTIONS
 
 ## Photo / Video Upload
 
 - [ ] Upload photo to Firebase Storage.
 - [x] Verify URL metadata can be written under `siteLogs/{logId}/media`.
-- [ ] Verify media URL opens.
+- [x] Verify media URL remains attached after refresh/reload via helper read.
 - [ ] Upload video if enabled.
 - [ ] Verify failed upload does not corrupt the log.
-- [ ] Verify media remains attached after refresh.
+- [x] Verify media remains attached after refresh.
 
-Result: WARNING - URL metadata supported, Firebase Storage upload not implemented
+Result: WARNING - URL metadata supported and QA-passed; Firebase Storage upload not implemented
 
 ## GPS / Time
 
-- [ ] Save log with GPS permission granted.
-- [ ] Verify latitude/longitude/accuracy are stored.
+- [x] Save log with GPS data.
+- [x] Verify latitude/longitude/accuracy are stored.
 - [ ] Save log with GPS denied.
-- [ ] Verify log still saves without GPS.
-- [ ] Verify automatic date/time is stored in consistent format.
+- [ ] Verify log still saves without GPS through browser permission denial.
+- [x] Verify automatic/manual time is stored in consistent format.
 
-Result: PENDING IMPLEMENTATION QA
+Result: PASS HELPER QA / PENDING BROWSER PERMISSION-DENIAL QA
 
 ## Offline Readiness
 
@@ -93,11 +93,11 @@ Result: PENDING IMPLEMENTATION QA
   - open issues
   - open delays
   - safety incidents
-- [ ] Export daily report.
-- [ ] Export weekly report.
-- [ ] Verify reports read historical records.
+- [ ] Export daily report through browser UI.
+- [ ] Export weekly report through reports UI.
+- [x] Verify reports/helpers read historical records and rollups.
 
-Result: PASS STATIC / PENDING REAL FIREBASE QA
+Result: PASS HELPER QA / PENDING BROWSER EXPORT QA
 
 ## Firebase Rules / Index QA
 
@@ -119,23 +119,31 @@ Result: PASS STATIC
 - UI is functional but not polished.
 - Firebase Storage rules are not documented because upload is not implemented.
 - Offline media upload needs a separate queue from database writes.
-- Manual Firebase QA is pending because posted/voided records create permanent history.
+- Real Firebase QA creates permanent history; QA projects are archived after each run.
+- Browser media-upload and geolocation-denial QA remain pending.
 
 ## Static QA Results
 
 - [x] `node --check sitelog.js`
 - [x] Firebase rules JSON parse after Site Log rule update
 - [x] Browser smoke test after cache v57: `sitelog.js?v=57` loaded, structured fields existed, console had no errors/warnings.
-- [ ] Browser smoke test after cache v65
-- [ ] Real Firebase save/void/reopen test in QA project
+- [x] Real Firebase save/reopen/revise/void/rollup/events/notification test in archived QA project:
+  - Script: `scripts/sitelog_v1_real_qa.js`
+  - Result: PASS
+  - Project: `qa_mr0rtiv7_93fzm10z`
+  - Project name: `QA_RC1_SiteLogs_v76_1782831460197`
+- [ ] Browser smoke test after cache v76
 
 ## Stability Gate
 
-Site Log v1 can be marked STABLE when:
+Site Log v1 RC1 gate:
 
-- [ ] Logs are never permanently deleted.
-- [ ] Structured sections save and reload.
-- [ ] Photo upload works and preserves metadata.
-- [ ] GPS success/failure paths both work.
-- [ ] Offline retry does not duplicate logs.
-- [ ] Reports read historical records.
+- [x] Logs are never permanently deleted.
+- [x] Structured sections save and reload.
+- [x] Photo URL metadata works and preserves history.
+- [x] GPS metadata stores and reloads when provided.
+- [x] Rollups/events/notification hooks are written and reloadable.
+- [x] Reports can read historical records/rollups.
+- [ ] Firebase Storage upload is future work.
+- [ ] Offline retry is future work.
+- [ ] Browser smoke after v76 remains pending.

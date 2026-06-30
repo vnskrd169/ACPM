@@ -1,6 +1,6 @@
 # ACPM Audit Logs v1
 
-Status: DATA FOUNDATION IMPLEMENTED - DEPLOYED RULE QA PENDING
+Status: PROJECT/SUPPLIER FALLBACK AUDIT WORKING - GLOBAL AUDIT PATH DEPLOYED-RULE WARNING
 
 Audit logs preserve important user actions across ACPM.
 
@@ -24,6 +24,13 @@ auditLogs/{logId}/
   projectId
   timestamp
   date
+```
+
+Fallback paths used when the global audit path is denied:
+
+```text
+projects/{projectId}/auditLogs/{logId}
+suppliers/{supplierId}/auditLogs/{logId}
 ```
 
 ## Required Actions
@@ -60,5 +67,26 @@ The helper is fire-and-forget and must never break the calling workflow. It writ
 ## Known Limitations
 
 - Audit logs are append-only by convention, but boss/admin pruning is allowed.
-- Live Firebase rules must be deployed before browser warnings can be considered fixed.
+- Live Firebase rules must be deployed before canonical global audit writes can pass real Firebase QA.
+- Project and supplier fallback audit paths preserve records when the global audit path is denied.
 - Some modules still pass rich status details inside `details`; the helper now mirrors common status keys to top-level fields.
+
+## Real Firebase QA Evidence
+
+Script:
+
+```text
+scripts/audit_notifications_v1_real_qa.js
+```
+
+2026-06-30 result: WARNING
+
+- User inbox notification: PASS
+- Project-scoped notification event: PASS
+- Audit helper shape/user metadata: PASS
+- Project fallback audit write: PASS
+- Deployed global Firebase audit write: WARNING, denied by live rules
+- QA project: `qa_mr0tbje7_rll3rizt`, archived after run
+- Audit fallback path: `projects/qa_mr0tbje7_rll3rizt/auditLogs`
+
+Local `database.rules.json` contains the intended global audit rules. Publish current rules and rerun the QA script before marking the canonical global audit path stable.

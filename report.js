@@ -9,6 +9,9 @@ let _teamAdminListener = null;
 let _teamUsersCache = [];
 let _auditListener = null;
 let _auditRowsCache = [];
+let _auditGlobalRowsCache = [];
+let _auditFallbackRowsCache = [];
+let _auditFallbackListeners = [];
 let _auditUsersCache = {};
 let _projectCache = [];
 let _lifecycleRequestListener = null;
@@ -124,6 +127,10 @@ function projectReportSummary(projectId, project = {}) {
     openDelays: reportAmount(siteLogRollup.openDelays),
     lastUpdatedAt: Date.now()
   };
+}
+
+function reportSummaryForProject(project = {}) {
+  return project.reportRollups?.projectSummary || projectReportSummary(project.id || project.projectId || '', project);
 }
 
 async function rebuildProjectReportRollup(projectId) {
@@ -416,6 +423,82 @@ function auditActorHtml(row) {
     .join(' | ');
   return `<div class="audit-actor-name">${escapeHtml(actor.name)}</div>${secondary ? `<div class="audit-actor-sub">${escapeHtml(secondary)}</div>` : ''}`;
 }
+
+function auditRowFingerprint(row = {}) {
+  return [
+    row.action || '',
+    row.entityType || row.module || '',
+    row.entityId || row.recordId || '',
+    row.userId || row.uid || '',
+    row.timestamp || '',
+    row.projectId || ''
+  ].join('|');
+}
+
+function auditMergeRows() {
+  const seen = new Set();
+  _auditRowsCache = [..._auditGlobalRowsCache, ..._auditFallbackRowsCache]
+    .filter(row => {
+      const key = auditRowFingerprint(row);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  syncAuditProjectFilter();
+  renderAuditLog(_auditRowsCache);
+}
+
+function syncAuditProjectFilter() {
+  const projectSel = $('auditFilterProject');
+  if (!projectSel) return;
+  const previous = projectSel.value || '';
+  const projects = [...new Set(_auditRowsCache.map(r => r.projectId).filter(Boolean))].sort();
+  projectSel.innerHTML = '<option value="">All projects</option>' + projects.map(pid => `<option value="${escapeHtml(pid)}">${escapeHtml(formatProjectLabel(pid))}</option>`).join('');
+  if (previous && projects.includes(previous)) projectSel.value = previous;
+  projectSel.dataset.loaded = '1';
+}
+
+function detachAuditFallbackListeners() {
+  _auditFallbackListeners.forEach(ref => ref.off());
+  _auditFallbackListeners = [];
+}
+
+function collectProjectFallbackAuditRows(snap) {
+  const rows = [];
+  snap.forEach(projectSnap => {
+    const projectId = projectSnap.key;
+    const project = projectSnap.val() || {};
+    Object.entries(project.auditLogs || {}).forEach(([id, row]) => {
+      rows.push({
+        id,
+        sourcePath: `projects/${projectId}/auditLogs/${id}`,
+        projectId: row?.projectId || projectId,
+        ...(row || {})
+      });
+    });
+  });
+  return rows;
+}
+
+function collectSupplierFallbackAuditRows(snap) {
+  const rows = [];
+  snap.forEach(supplierSnap => {
+    const supplierId = supplierSnap.key;
+    const supplier = supplierSnap.val() || {};
+    Object.entries(supplier.auditLogs || {}).forEach(([id, row]) => {
+      rows.push({
+        id,
+        sourcePath: `suppliers/${supplierId}/auditLogs/${id}`,
+        entityType: row?.entityType || 'supplier',
+        entityId: row?.entityId || supplierId,
+        ...(row || {})
+      });
+    });
+  });
+  return rows;
+}
+
 function initAuditLog() {
   const user = window._currentUser;
   if (!user || !(typeof isBoss === 'function' ? isBoss(user.role) : user.role === 'boss')) {
@@ -427,6 +510,7 @@ function initAuditLog() {
     _auditListener.off();
     _auditListener = null;
   }
+  detachAuditFallbackListeners();
   firebase.database().ref('users').once('value')
     .then(snap => {
       const users = {};
@@ -445,17 +529,28 @@ function initAuditLog() {
     if (!el) return;
     const rows = [];
     snap.forEach(c => {
-      rows.push({ id: c.key, ...c.val() });
+      rows.push({ id: c.key, sourcePath: `auditLogs/${c.key}`, ...c.val() });
     });
-    rows.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-    _auditRowsCache = rows;
-    const projectSel = $('auditFilterProject');
-    if (projectSel && !projectSel.dataset.loaded) {
-      const projects = [...new Set(rows.map(r => r.projectId).filter(Boolean))].sort();
-      projectSel.innerHTML = '<option value="">All projects</option>' + projects.map(pid => `<option value="${escapeHtml(pid)}">${escapeHtml(formatProjectLabel(pid))}</option>`).join('');
-      projectSel.dataset.loaded = '1';
-    }
-    renderAuditLog(rows);
+    _auditGlobalRowsCache = rows;
+    auditMergeRows();
+  });
+
+  const projectAuditRef = firebase.database().ref('projects');
+  const supplierAuditRef = firebase.database().ref('suppliers');
+  _auditFallbackListeners = [projectAuditRef, supplierAuditRef];
+  projectAuditRef.on('value', snap => {
+    _auditFallbackRowsCache = [
+      ...collectProjectFallbackAuditRows(snap),
+      ..._auditFallbackRowsCache.filter(row => !String(row.sourcePath || '').startsWith('projects/'))
+    ];
+    auditMergeRows();
+  });
+  supplierAuditRef.on('value', snap => {
+    _auditFallbackRowsCache = [
+      ..._auditFallbackRowsCache.filter(row => !String(row.sourcePath || '').startsWith('suppliers/')),
+      ...collectSupplierFallbackAuditRows(snap)
+    ];
+    auditMergeRows();
   });
 }
 
@@ -728,10 +823,7 @@ function teamRoleOptions(selectedRole) {
     ['boss', 'Boss / Owner'],
     ['admin', 'Admin'],
     ['pm', 'Project Manager'],
-    ['apm', 'Assoc. Project Manager'],
-    ['foreman', 'Foreman'],
-    ['safety', 'Safety'],
-    ['viewer', 'Viewer']
+    ['apm', 'Assoc. Project Manager']
   ];
   return roles.map(([value, label]) => `<option value="${value}" ${selectedRole === value ? 'selected' : ''}>${label}</option>`).join('');
 }
@@ -749,6 +841,13 @@ async function updateUserRole(uid, role) {
     return;
   }
   const nextRole = normalizeTeamRole(role);
+  const rc1Allowed = typeof isRc1ActiveRole === 'function'
+    ? isRc1ActiveRole(nextRole)
+    : ['boss', 'owner', 'admin', 'pm', 'apm'].includes(nextRole);
+  if (!rc1Allowed) {
+    showToast('Foreman, Safety, and Viewer roles are deferred until the field-user security model is ready.', 'error');
+    return;
+  }
   const target = _teamUsersCache.find(u => u.uid === uid);
   if (!target) return;
   if (uid === window._currentUser?.uid && nextRole !== 'boss') {
@@ -1003,6 +1102,15 @@ function renderTeamAdmin(users) {
 function detachReportsListeners() {
   _reportsListeners.forEach(ref => ref.off());
   _reportsListeners = [];
+  if (_teamAdminListener) {
+    _teamAdminListener.off();
+    _teamAdminListener = null;
+  }
+  if (_auditListener) {
+    _auditListener.off();
+    _auditListener = null;
+  }
+  detachAuditFallbackListeners();
   if (_lifecycleRequestListener) {
     _lifecycleRequestListener.off();
     _lifecycleRequestListener = null;
@@ -1028,6 +1136,7 @@ function renderExecutiveDashboard() {
     // Health scores
     const healthData = projects.map(p => ({
       ...p,
+      summary: reportSummaryForProject(p),
       health: calculateProjectHealth(p)
     }));
 
@@ -1071,11 +1180,11 @@ function renderExecutiveDashboard() {
 
     // Summary stats
     const active = projects.filter(p => p.status === 'active').length;
-    const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
-    const totalSpent = projects.reduce((s, p) =>
-      s + (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0), 0);
-    const laborBudgetTotal = projects.reduce((s, p) => s + (parseFloat(p.laborBudget) || 0), 0);
-    const materialBudgetTotal = projects.reduce((s, p) => s + (parseFloat(p.materialBudget) || 0), 0);
+    const summaries = healthData.map(p => p.summary || reportSummaryForProject(p));
+    const totalBudget = summaries.reduce((s, p) => s + reportAmount(p.totalBudget), 0);
+    const totalSpent = summaries.reduce((s, p) => s + reportAmount(p.totalCost), 0);
+    const laborBudgetTotal = summaries.reduce((s, p) => s + reportAmount(p.laborBudget), 0);
+    const materialBudgetTotal = summaries.reduce((s, p) => s + reportAmount(p.materialBudget), 0);
     const remaining = Math.max(0, totalBudget - totalSpent);
     const spentPct = totalBudget ? Math.min(100, (totalSpent / totalBudget) * 100) : 0;
     const avgHealth = healthData.length ? Math.round(healthData.reduce((s, p) => s + p.health.score, 0) / healthData.length) : 0;
@@ -1108,11 +1217,9 @@ function renderExecutiveDashboard() {
 //  PROJECT HEALTH ALGORITHM
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function calculateProjectHealth(p) {
-  const eff = effectiveBudget(p);
-  const laborSpent = parseFloat(p.laborSpent) || 0;
-  const matSpent = parseFloat(p.materialSpent) || 0;
-  const totalSpent = laborSpent + matSpent;
-  const budgetPct = eff.total ? Math.round((totalSpent / eff.total) * 100) : 0;
+  const summary = reportSummaryForProject(p);
+  const totalSpent = reportAmount(summary.totalCost);
+  const budgetPct = summary.totalBudget ? Math.round((totalSpent / summary.totalBudget) * 100) : 0;
 
   // Budget health (lower is better, but 0% is also bad = no activity)
   let budgetScore = 100;
@@ -1146,9 +1253,9 @@ function calculateProjectHealth(p) {
 
   // Labor health
   let laborScore = 100;
-  const laborBudget = eff.labor;
+  const laborBudget = reportAmount(summary.laborBudget);
   if (laborBudget) {
-    const laborPct = Math.round((laborSpent / laborBudget) * 100);
+    const laborPct = Math.round((reportAmount(summary.laborCost) / laborBudget) * 100);
     if (laborPct > 95) { laborScore = 40; warnings.push('Labor budget critical'); }
     else if (laborPct > 85) { laborScore = 65; warnings.push('Labor budget warning'); }
   }
@@ -1248,19 +1355,19 @@ function renderBudgetVariance() {
     const rows = [];
     snap.forEach(c => {
       const p = c.val();
-      const eff = effectiveBudget(p);
-      const laborSpent = parseFloat(p.laborSpent) || 0;
-      const matSpent = parseFloat(p.materialSpent) || 0;
-      const totalSpent = laborSpent + matSpent;
-      const laborVar = eff.labor - laborSpent;
-      const matVar = eff.material - matSpent;
-      const totalVar = eff.total - totalSpent;
+      const summary = reportSummaryForProject({ id: c.key, ...p });
+      const laborSpent = reportAmount(summary.laborCost);
+      const matSpent = reportAmount(summary.materialCost);
+      const totalSpent = reportAmount(summary.totalCost);
+      const laborVar = reportAmount(summary.laborBudget) - laborSpent;
+      const matVar = reportAmount(summary.materialBudget) - matSpent;
+      const totalVar = reportAmount(summary.totalBudget) - totalSpent;
 
       rows.push({
         name: p.name || 'Untitled',
-        laborBudget: eff.labor, laborSpent, laborVar,
-        matBudget: eff.material, matSpent, matVar,
-        totalBudget: eff.total, totalSpent, totalVar
+        laborBudget: reportAmount(summary.laborBudget), laborSpent, laborVar,
+        matBudget: reportAmount(summary.materialBudget), matSpent, matVar,
+        totalBudget: reportAmount(summary.totalBudget), totalSpent, totalVar
       });
     });
 
@@ -1325,13 +1432,12 @@ async function generateWeeklyReport() {
   let report = `WEEKLY PROJECT REPORT\\nGenerated: ${new Date().toLocaleDateString('en-PH')}\\nReporter: ${user.name} (${reportRoleLabel(user.role)})\\n${'='.repeat(60)}\\n\\n`;
 
   myProjects.forEach(p => {
-    const eff = effectiveBudget(p);
-    const spent = (parseFloat(p.laborSpent) || 0) + (parseFloat(p.materialSpent) || 0);
+    const summary = reportSummaryForProject(p);
     const health = calculateProjectHealth(p);
 
     report += `PROJECT: ${p.name || 'Untitled'}\\n`;
     report += `Status: ${p.status || 'active'} | Health: ${health.score}/100\\n`;
-    report += `Budget: ${peso(spent)} / ${peso(eff.total)} (${pct(spent, eff.total)}%)\\n`;
+    report += `Budget: ${peso(summary.totalCost)} / ${peso(summary.totalBudget)} (${pct(summary.totalCost, summary.totalBudget)}%)\\n`;
     if (health.warnings.length) {
       report += `Alerts: ${health.warnings.join(', ')}\\n`;
     }

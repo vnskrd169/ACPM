@@ -616,6 +616,18 @@ async function linkChangeOrderBilling(projectId, changeOrderId, billingId) {
   if (!coSnap.exists()) throw new Error('Change order not found.');
   if (!billingSnap.exists()) throw new Error('Billing record not found.');
   const co = coSnap.val() || {};
+  const billing = billingSnap.val() || {};
+  if (coStatus(co) !== CHANGE_ORDER_STATUSES.approved || coIsVoided(co)) {
+    throw new Error('Only approved active change orders can be linked to billing.');
+  }
+  const billingStatus = String(billing.status || '').toLowerCase();
+  if (['voided', 'cancelled', 'rejected'].includes(billingStatus)) {
+    throw new Error('Voided, cancelled, or rejected billings cannot be linked to change orders.');
+  }
+  const billingType = String(billing.type || 'change_order').toLowerCase();
+  if (billingType !== 'change_order') {
+    throw new Error('Change orders must be linked to a change_order billing record.');
+  }
   const now = Date.now();
   const eventRef = coProjectRef(projectId, 'changeOrderEvents').push();
   const notificationRef = coProjectRef(projectId, 'notificationEvents').push();

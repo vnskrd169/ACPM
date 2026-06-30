@@ -1,6 +1,6 @@
 # ACPM Roles and Permissions v1
 
-Status: RC1 MANAGEMENT ROLES ONLY - BROWSER/DEPLOYED QA PENDING
+Status: RC1 MANAGEMENT ROLES LOCKED - BOSS BROWSER SMOKE PASSED; FIELD-ROLE DEPLOYED DENY QA PENDING
 
 ACPM preserves legacy `boss` and `apm` roles while locking RC1 access to management users only.
 
@@ -15,7 +15,7 @@ ACPM preserves legacy `boss` and `apm` roles while locking RC1 access to managem
 
 ## Future Roles - Disabled For RC1
 
-These role names remain documented for roadmap planning, but they are not active in RC1 and must not access workspace/project data:
+These role names remain documented for roadmap planning, but they are not active in RC1, are not available in Team Admin role assignment, and must not access workspace/project data:
 
 | Future Role | Canonical Value | Planned Purpose |
 | --- | --- | --- |
@@ -64,10 +64,10 @@ Workspace tab visibility:
 
 ## Firebase Rules
 
-Rules still validate future role names so historical/planned user records do not require a destructive migration:
+Rules validate only RC1 active role assignments:
 
 ```text
-boss owner admin pm apm foreman safety viewer
+boss owner admin pm apm
 ```
 
 Admin-rule checks accept:
@@ -76,7 +76,7 @@ Admin-rule checks accept:
 boss owner admin
 ```
 
-Project write fallback is limited to assigned `pm` and `apm`. Field roles receive explicit write access for Site Log paths only.
+Project write fallback is limited to assigned `pm` and `apm`.
 Foreman/Safety/Viewer have no active project read/write access in RC1.
 
 ## RC1 Firebase Access
@@ -99,10 +99,13 @@ Before activating field-user roles, implement and QA a secure child-level Fireba
 - field-safe notifications
 - no billing/collections/profit/budget access
 
+Roadmap item: build a child-level Firebase read refactor before enabling Foreman/Safety/Viewer. The future model must avoid parent project `.read` grants and expose only field-safe child paths.
+
 ## Known Limitations
 
 - Firebase rules are improved but still need full emulator/deployed-rule QA.
 - Field-user roles are deferred for RC1.
 - PM financial visibility is enabled because PM is a management role in the RC1 directive.
 - Existing data may still store `boss`; this remains valid and is intentionally preserved.
+- Existing historical user records with future role names are not deleted, but new/updated RC1 role assignments must use Boss/Admin/PM/APM values.
 - Child-level Firebase read refactor is a future roadmap item before Foreman/Safety/Viewer activation.

@@ -1,6 +1,6 @@
 # ACPM Billing v1 Workflow and Firebase Schema
 
-Status: PHASE 1 STABLE - ROLLUP REBUILD QA PASSED; PHASE 2 REAL FIREBASE HELPER QA + BROWSER UI SMOKE PASSED - DASHBOARD RESTART QA PENDING
+Status: BILLING V1 PHASE 2 STABLE - REAL FIREBASE QA + BROWSER UI/DASHBOARD SMOKE PASSED
 
 Labor v1 and Materials v1 are frozen. Billing v1 must track project revenue, billings, collections, receivables, and profit reporting without changing Labor or Materials.
 
@@ -838,6 +838,14 @@ Phase 2 minimal UI wiring:
 - Collections can record a retention release amount and reference number.
 - Billing rows display type, gross amount, receivable, status, and actions for deduction, retention release, output snapshot, and void.
 - Billing output archive lists immutable output snapshots from `billingOutputs`.
+
+Phase 2 stabilization evidence:
+
+- Final real Firebase QA project: `qa_mr0fje94_un0q8n4t`, archived with `qaRunResult = PASS`.
+- Browser Billing tab smoke passed with no console errors.
+- Dashboard browser smoke verified project cards read persisted `billingRollups`.
+- Local syntax checks and `database.rules.json` parse passed.
+- Labor and Materials files were not modified for Billing Phase 2.
 
 ### Phase 2 Rollup Changes
 

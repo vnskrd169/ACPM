@@ -61,19 +61,39 @@ async function createSupplierEvent(event = {}) {
   if (!event.type) return null;
   const now = Date.now();
   const ref = firebase.database().ref('supplierEvents').push();
-  await ref.set({
+  const payload = {
     ...event,
     createdAt: event.createdAt || now,
     createdBy: event.createdBy || supplierUserId(),
     createdByName: event.createdByName || supplierUserName()
-  });
-  return ref.key;
+  };
+  try {
+    await ref.set(payload);
+    return { id: ref.key, path: `supplierEvents/${ref.key}`, ...payload };
+  } catch (e) {
+    if (!event.supplierId) {
+      console.warn('supplier event skipped:', e?.code || e?.message || e);
+      return null;
+    }
+    const fallbackRef = firebase.database().ref(`suppliers/${event.supplierId}/events/${ref.key}`);
+    try {
+      await fallbackRef.set({
+        ...payload,
+        globalPathDenied: true,
+        fallbackPath: true
+      });
+      return { id: ref.key, path: `suppliers/${event.supplierId}/events/${ref.key}`, ...payload };
+    } catch (fallbackError) {
+      console.warn('supplier event skipped:', fallbackError?.code || fallbackError?.message || fallbackError);
+      return null;
+    }
+  }
 }
 
 async function createSupplierNotificationEvent(type, payload = {}) {
   if (!type) return null;
   const ref = firebase.database().ref('globalNotificationEvents').push();
-  await ref.set({
+  const event = {
     module: 'suppliers',
     type,
     status: 'pending',
@@ -82,8 +102,28 @@ async function createSupplierNotificationEvent(type, payload = {}) {
     createdBy: supplierUserId(),
     createdByName: supplierUserName(),
     ...payload
-  });
-  return ref.key;
+  };
+  try {
+    await ref.set(event);
+    return { id: ref.key, path: `globalNotificationEvents/${ref.key}`, ...event };
+  } catch (e) {
+    if (!payload.supplierId) {
+      console.warn('supplier notification event skipped:', e?.code || e?.message || e);
+      return null;
+    }
+    const fallbackRef = firebase.database().ref(`suppliers/${payload.supplierId}/notificationEvents/${ref.key}`);
+    try {
+      await fallbackRef.set({
+        ...event,
+        globalPathDenied: true,
+        fallbackPath: true
+      });
+      return { id: ref.key, path: `suppliers/${payload.supplierId}/notificationEvents/${ref.key}`, ...event };
+    } catch (fallbackError) {
+      console.warn('supplier notification event skipped:', fallbackError?.code || fallbackError?.message || fallbackError);
+      return null;
+    }
+  }
 }
 
 async function listSuppliers(options = {}) {
@@ -168,7 +208,20 @@ async function rebuildSupplierRollup(supplierId) {
     lastUpdatedAt: Date.now(),
     updatedBy: supplierUserId()
   };
-  await firebase.database().ref(`supplierRollups/${supplierId}`).set(rollup);
+  try {
+    await firebase.database().ref(`supplierRollups/${supplierId}`).set(rollup);
+  } catch (e) {
+    try {
+      await firebase.database().ref(`suppliers/${supplierId}/rollup`).set({
+        ...rollup,
+        globalPathDenied: true,
+        fallbackPath: true
+      });
+      rollup.fallbackPath = `suppliers/${supplierId}/rollup`;
+    } catch (fallbackError) {
+      console.warn('supplier rollup write skipped:', fallbackError?.code || fallbackError?.message || fallbackError);
+    }
+  }
   return rollup;
 }
 
@@ -177,8 +230,6 @@ async function createSupplier(data = {}) {
   if (!name) throw new Error('Supplier name is required.');
   const now = Date.now();
   const ref = firebase.database().ref('suppliers').push();
-  const eventRef = firebase.database().ref('supplierEvents').push();
-  const notificationRef = firebase.database().ref('globalNotificationEvents').push();
   const payload = {
     name,
     contact: data.contact || '',
@@ -207,29 +258,20 @@ async function createSupplier(data = {}) {
       }
     }
   };
-  const updates = {};
-  updates[`suppliers/${ref.key}`] = payload;
-  updates[`supplierEvents/${eventRef.key}`] = {
+  await ref.set(payload);
+  await createSupplierEvent({
     type: 'created',
     supplierId: ref.key,
     supplierName: name,
     createdAt: now,
     createdBy: supplierUserId(),
     createdByName: supplierUserName()
-  };
-  updates[`globalNotificationEvents/${notificationRef.key}`] = {
-    module: 'suppliers',
-    type: 'supplier_created',
-    status: 'pending',
-    consumed: false,
+  }).catch(e => console.warn('supplier create event skipped:', e?.code || e?.message || e));
+  await createSupplierNotificationEvent('supplier_created', {
     supplierId: ref.key,
-    supplierName: name,
-    createdAt: now,
-    createdBy: supplierUserId(),
-    createdByName: supplierUserName()
-  };
-  await firebase.database().ref().update(updates);
-  await rebuildSupplierRollup(ref.key);
+    supplierName: name
+  }).catch(e => console.warn('supplier create notification skipped:', e?.code || e?.message || e));
+  await rebuildSupplierRollup(ref.key).catch(e => console.warn('supplier rollup rebuild skipped:', e?.code || e?.message || e));
   return { key: ref.key, ...payload };
 }
 
@@ -258,12 +300,12 @@ async function updateSupplier(key, data = {}) {
     supplierId: key,
     supplierName: data.name || '',
     createdAt: now
-  });
+  }).catch(e => console.warn('supplier update event skipped:', e?.code || e?.message || e));
   await createSupplierNotificationEvent('supplier_updated', {
     supplierId: key,
     supplierName: data.name || (snap.val() || {}).name || ''
-  });
-  await rebuildSupplierRollup(key);
+  }).catch(e => console.warn('supplier update notification skipped:', e?.code || e?.message || e));
+  await rebuildSupplierRollup(key).catch(e => console.warn('supplier rollup rebuild skipped:', e?.code || e?.message || e));
   return true;
 }
 
@@ -290,9 +332,8 @@ async function archiveSupplier(key, reason = '') {
     createdBy: supplierUserId(),
     createdByName: supplierUserName()
   };
-  const eventRef = firebase.database().ref('supplierEvents').push();
-  const notificationRef = firebase.database().ref('globalNotificationEvents').push();
-  updates[`supplierEvents/${eventRef.key}`] = {
+  await firebase.database().ref().update(updates);
+  await createSupplierEvent({
     type: 'archived',
     supplierId: key,
     supplierName: supplier.name || '',
@@ -300,21 +341,13 @@ async function archiveSupplier(key, reason = '') {
     createdAt: now,
     createdBy: supplierUserId(),
     createdByName: supplierUserName()
-  };
-  updates[`globalNotificationEvents/${notificationRef.key}`] = {
-    module: 'suppliers',
-    type: 'supplier_archived',
-    status: 'pending',
-    consumed: false,
+  }).catch(e => console.warn('supplier archive event skipped:', e?.code || e?.message || e));
+  await createSupplierNotificationEvent('supplier_archived', {
     supplierId: key,
     supplierName: supplier.name || '',
-    reason: reason.trim(),
-    createdAt: now,
-    createdBy: supplierUserId(),
-    createdByName: supplierUserName()
-  };
-  await firebase.database().ref().update(updates);
-  await rebuildSupplierRollup(key);
+    reason: reason.trim()
+  }).catch(e => console.warn('supplier archive notification skipped:', e?.code || e?.message || e));
+  await rebuildSupplierRollup(key).catch(e => console.warn('supplier rollup rebuild skipped:', e?.code || e?.message || e));
   return { key, ...supplier, status: SUPPLIER_STATUSES.archived };
 }
 

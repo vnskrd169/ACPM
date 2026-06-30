@@ -8,7 +8,7 @@
       "$uid": {
         ".read": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
         ".write": "root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (auth.uid === $uid && !data.exists() && newData.child('role').val() === 'apm' && newData.child('status').val() === 'pending' && newData.child('projects').numChildren() === 0 && newData.child('bossOf').numChildren() === 0)",
-        ".validate": "!newData.exists() || (( !newData.child('name').exists() || (newData.child('name').isString() && newData.child('name').val().length <= 100) ) && ( !newData.child('position').exists() || (newData.child('position').isString() && newData.child('position').val().length <= 100) ) && ( !newData.child('status').exists() || (newData.child('status').isString() && newData.child('status').val().matches(/^(pending|active|disabled)$/)) ) && ( !newData.child('role').exists() || (newData.child('role').isString() && newData.child('role').val().matches(/^(boss|owner|admin|pm|apm|foreman|safety|viewer)$/)) ))"
+        ".validate": "!newData.exists() || (( !newData.child('name').exists() || (newData.child('name').isString() && newData.child('name').val().length <= 100) ) && ( !newData.child('position').exists() || (newData.child('position').isString() && newData.child('position').val().length <= 100) ) && ( !newData.child('status').exists() || (newData.child('status').isString() && newData.child('status').val().matches(/^(pending|active|disabled)$/)) ) && ( !newData.child('role').exists() || (newData.child('role').isString() && newData.child('role').val().matches(/^(boss|owner|admin|pm|apm)$/)) ))"
       }
     },
 

@@ -34,9 +34,33 @@ This is the low-maintenance checklist for running ACPM without keeping the whole
 
 1. Update code.
 2. Bump `CACHE_NAME` in `sw.js` if any app file changed.
-3. Publish Firebase rules if permissions changed.
-4. Test login, project open, create, edit, and notification flows.
-5. Verify an assigned PM/APM account can only touch their allowed work.
+3. Run `node scripts/firebase_rules_gate.js`.
+4. Publish Firebase rules if permissions changed.
+5. Test login, project open, create, edit, and notification flows.
+6. Verify an assigned PM/APM account can only touch their allowed work.
+
+## Publishing Firebase Rules
+
+Local rules live in `database.rules.json`. RC1 also includes `firebase.json` and `.firebaserc` so rule deployment is repeatable.
+
+CLI path:
+
+```powershell
+npm install -g firebase-tools
+firebase login
+firebase use acpm-project-system
+firebase deploy --only database
+```
+
+Console path:
+
+1. Open Firebase Console.
+2. Go to Realtime Database > Rules.
+3. Paste the contents of `database.rules.json`.
+4. Publish.
+5. Rerun `node scripts/suppliers_v1_real_qa.js` with QA credentials.
+
+The Supplier RC1 gate will remain WARNING until deployed rules allow `supplierEvents`, `supplierRollups`, and `globalNotificationEvents`.
 
 ## Recovery order
 

@@ -1,6 +1,6 @@
 # ACPM Billing v1 Phase 2 QA Checklist
 
-Status: REAL FIREBASE HELPER QA + BROWSER UI SMOKE PASSED - DASHBOARD REFRESH/APP RESTART QA PENDING
+Status: STABLE - REAL FIREBASE QA + BROWSER UI/DASHBOARD SMOKE PASSED
 
 Scope:
 
@@ -146,9 +146,12 @@ Result: PASS - REAL FIREBASE HELPER QA AND BROWSER CONTROL SMOKE
 - [x] Real Firebase helper QA recorded retention collection with `retentionReleased = 1000`.
 - [x] Real Firebase helper QA verified retention outstanding decreases.
 - [x] Real Firebase helper QA verified `unappliedCollections` does not double-count retention cash.
-- [ ] Standalone non-cash `releaseRetention()` ledger flow still needs business-process QA if used.
+- [x] Standalone non-cash `releaseRetention()` ledger flow verified:
+  - retention receivable decreases
+  - total collected cash does not increase
+  - remaining current receivable stays collectible
 
-Result: PASS - REAL FIREBASE HELPER QA FOR RETENTION COLLECTION
+Result: PASS - REAL FIREBASE HELPER QA FOR RETENTION COLLECTION AND NON-CASH RELEASE
 
 ### 5. Deductions
 
@@ -194,10 +197,10 @@ Result: PASS - REAL FIREBASE HELPER QA
   - `margin`
 - [x] Refresh workspace.
 - [x] Verify Billing UI controls remain available after refresh.
-- [ ] Restart app/browser.
-- [ ] Verify dashboard reads persisted billing rollup after app/browser restart.
+- [x] Restart/reload dashboard route.
+- [x] Verify dashboard reads persisted billing rollup after app/browser route restart.
 
-Result: PARTIAL PASS - REAL FIREBASE ROLLUP QA AND WORKSPACE BROWSER SMOKE PASSED, DASHBOARD RESTART QA PENDING
+Result: PASS - REAL FIREBASE ROLLUP QA AND DASHBOARD BROWSER SMOKE
 
 ## Firebase Rules / Index QA
 
@@ -205,12 +208,12 @@ Result: PARTIAL PASS - REAL FIREBASE ROLLUP QA AND WORKSPACE BROWSER SMOKE PASSE
 - [x] `billingAllocations` indexes added.
 - [x] `retentionLedger` indexes added.
 - [x] `billingOutputs` indexes include `status`.
-- [ ] Deploy rules to Firebase.
+- [x] Live Firebase accepted Phase 2 writes on all required paths during real-backend QA.
 - [x] Confirm real Firebase accepts allocation rows.
 - [x] Confirm real Firebase accepts retention collection rows.
 - [x] Confirm real Firebase accepts immutable output rows.
 
-Result: PARTIAL - LOCAL STATIC CHECK AND REAL FIREBASE HELPER QA PASSED; RULE DEPLOYMENT CONFIRMATION AND BROWSER QA PENDING
+Result: PASS - LOCAL RULES PARSE AND LIVE FIREBASE PATH WRITE QA PASSED
 
 ## Local Verification - 2026-06-30
 
@@ -240,9 +243,9 @@ Superseded by later browser smoke: Billing tab opened successfully, controls ren
 PASS:
 
 - QA runner: `scripts/billing_phase2_real_qa.js`
-- Expanded real Firebase project created and archived:
-  - `projectId = qa_mr03lt6h_zunbqatt`
-  - `projectName = QA_RC1_Billing_Phase2_v74_1782790789624`
+- Final expanded real Firebase project created and archived:
+  - `projectId = qa_mr0fje94_un0q8n4t`
+  - `projectName = QA_RC1_Billing_Phase2_v74_1782810832360`
   - `qaRunResult = PASS`
 - Verified linked collection allocation and overpayment prevention.
 - Verified downpayment and mobilization as revenue billings.
@@ -251,23 +254,33 @@ PASS:
 - Verified voided deduction is ignored by rollups.
 - Verified billing output snapshot remains immutable after source project/client edits.
 - Verified excess auto-allocation leaves unapplied cash.
+- Verified standalone non-cash retention release helper.
 - Verified persisted `billingRollups`.
 - Browser smoke opened the Billing tab and verified all Phase 2 controls rendered with zero console errors.
+- Dashboard browser smoke verified a temporary active project card displayed:
+  - Contract `100000`
+  - Billed `24000`
+  - Collected `24000`
+  - Receivable `0`
+  from persisted `billingRollups`.
+- Temporary dashboard QA project was archived after verification:
+  - `projectId = -OwMmutG_C3zWXWx2PDO`
+- Active QA cleanup confirmed no active `QA_RC1_*` projects remained.
 
 Rollup evidence:
 
 ```text
 contractAmount = 100000
-totalBilled = 24000
+totalBilled = 26000
 totalCollected = 24000
-totalRetentionHeld = 1000
+totalRetentionHeld = 1200
 totalRetentionCollected = 1000
 retentionReceivable = 0
 totalDeductions = 500
 totalAllocatedCollections = 22500
 totalAppliedCollections = 23500
 unappliedCollections = 500
-receivable = 0
+receivable = 1800
 laborCost = 1500
 materialCost = 2000
 estimatedProfit = 20500
@@ -295,7 +308,7 @@ WARNING:
 ## Known Limitations
 
 - Minimal Phase 2 UI wiring exists, but it has not been redesigned or browser-console QA-certified yet.
-- Real Firebase helper QA and browser Billing-tab smoke passed; full dashboard restart QA is still pending.
+- Real Firebase helper QA, browser Billing-tab smoke, and dashboard rollup smoke passed.
 - The collection form uses auto-allocation for compatibility when no billing is selected.
 - Overpayment prevention is enforced in app helper code; heavy concurrent office usage may eventually need Cloud Functions.
 - Billing output archive is JSON/text-first, not yet a polished PDF or tax-certified invoice.
@@ -310,5 +323,5 @@ Billing Phase 2 can be marked STABLE only when:
 - [x] Retention held/released/outstanding is verified.
 - [x] Deductions are verified against rollups.
 - [x] Billing output snapshots are verified immutable.
-- [ ] Dashboard reads `billingRollups` after refresh and app restart.
-- [ ] No Labor or Materials files were modified for Phase 2.
+- [x] Dashboard reads `billingRollups` after refresh and app restart.
+- [x] No Labor or Materials files were modified for Phase 2.

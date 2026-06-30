@@ -143,10 +143,34 @@ function auditLog(action, entityType, entityId, details = {}) {
   try {
     if (typeof firebase !== 'undefined' && firebase.database) {
       firebase.database().ref('auditLogs').push(logEntry, error => {
-        if (error) console.warn('auditLog skipped:', error.code || error.message || error);
+        if (error) {
+          console.warn('auditLog global write skipped:', error.code || error.message || error);
+          persistAuditFallback(logEntry);
+        }
       });
     }
   } catch (e) { /* never let audit logging break the calling action */ }
+}
+
+function persistAuditFallback(logEntry) {
+  try {
+    if (typeof firebase === 'undefined' || !firebase.database || !logEntry) return;
+    const projectId = logEntry.projectId || logEntry.details?.projectId || '';
+    let fallbackPath = '';
+    if (projectId) {
+      fallbackPath = `projects/${projectId}/auditLogs`;
+    } else if (logEntry.entityType === 'supplier' && logEntry.entityId) {
+      fallbackPath = `suppliers/${logEntry.entityId}/auditLogs`;
+    }
+    if (!fallbackPath) return;
+    firebase.database().ref(fallbackPath).push({
+      ...logEntry,
+      globalPathDenied: true,
+      fallbackPath: true
+    }, fallbackError => {
+      if (fallbackError) console.warn('auditLog fallback skipped:', fallbackError.code || fallbackError.message || fallbackError);
+    });
+  } catch (e) { /* audit fallback is also fire-and-forget */ }
 }
 
 // Trim old audit entries to stay inside the free-tier DB size limit.

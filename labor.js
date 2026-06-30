@@ -535,7 +535,12 @@ async function createCashAdvanceEvent(pid, wid, advanceId, type, details = {}) {
     createdBy: window._currentUser?.uid || 'unknown',
     createdByName: currentLaborUserLabel()
   };
-  await safeDb(() => ref.set(payload), 'Failed to write cash advance event');
+  try {
+    await safeDb(() => ref.set(payload), 'Failed to write cash advance event');
+  } catch (error) {
+    console.warn('Cash advance event hook failed; primary workflow already continues.', error);
+    return null;
+  }
   return { id: ref.key, ...payload };
 }
 
@@ -552,7 +557,12 @@ async function createLaborNotificationEvent(pid, type, payload = {}) {
     createdBy: window._currentUser?.uid || null,
     createdByName: currentLaborUserLabel()
   };
-  await safeDb(() => ref.set(event), 'Failed to write notification event');
+  try {
+    await safeDb(() => ref.set(event), 'Failed to write notification event');
+  } catch (error) {
+    console.warn('Labor notification hook failed; primary workflow already continues.', error);
+    return null;
+  }
   return { id: ref.key, ...event };
 }
 

@@ -1,6 +1,6 @@
 # ACPM Reports v1 Workflow and Rollup Architecture
 
-Status: DATA FOUNDATION IMPLEMENTED - MANUAL QA PENDING
+Status: REPORTS V1 DATA/ROLLUP STABLE - REAL FIREBASE QA PASSED; LISTENER CLEANUP STATIC QA PASSED; BROWSER SMOKE PENDING
 
 Reports v1 centralizes project, cost, revenue, cash flow, and executive reporting. Reports must read historical records and module rollups wherever practical instead of recalculating business totals ad hoc in the UI.
 
@@ -25,9 +25,9 @@ Current reporting behavior:
 - Weekly report is generated from current project snapshots.
 - Audit/team/admin reports are mixed into `report.js`.
 
-Production gaps:
+Production updates:
 
-- Existing visual reports still calculate some values directly from project fields.
+- Visible executive dashboard, budget variance, project health, and weekly text report now use rollup-aware project summaries instead of raw `laborSpent/materialSpent` direct totals.
 - Report data helpers now read Billing, Change Order, Site Log, Labor, and Materials rollup-compatible sources.
 - Weekly/monthly report snapshots can now be archived as immutable JSON records.
 
@@ -186,6 +186,21 @@ Implemented helper functions in `report.js`:
 - `calculateProfitAnalysis(projectId)`
 - `exportReport(projectId, type)`
 
+Real Firebase QA helper:
+
+- `scripts/reports_v1_real_qa.js`
+
+Real Firebase QA evidence, 2026-06-30:
+
+- Result: PASS
+- QA project: `qa_mr0saqj7_ckl0p39g`
+- Project name: `QA_RC1_Reports_v78_1782832263376`
+- Snapshot: `qa_mr0sarpv_kp1e7mya`
+- Verified persisted `reportRollups/projectSummary`.
+- Verified immutable `reportSnapshots/{snapshotId}`.
+- Verified project, labor, material, billing, change order, site log, cash flow, and profit summaries.
+- QA project was archived after the run.
+
 ## Firebase Indexes Needed
 
 ```json
@@ -199,17 +214,19 @@ Implemented helper functions in `report.js`:
 
 ## Known Limitations
 
-- Existing on-screen report widgets still need deeper UI wiring to the new report data helpers.
+- Browser visual smoke after `report.js?v=78` is still pending.
 - Cross-project reporting can become read-heavy if it scans full project records.
 - Formal accounting reports are outside v1; this is operational construction reporting.
-- Manual Firebase QA is pending because report snapshots create permanent archive records.
+- Real Firebase QA creates permanent archived QA records.
 
 ## Completion Definition
 
-Reports v1 can be marked STABLE when:
+Reports v1 RC1 gate:
 
-- Project reports read module rollups and historical records.
-- Weekly/monthly report snapshots can be regenerated and archived.
-- Dashboard summary reads rollups, not complex live calculations.
-- Revenue and cost remain separated.
-- Reports remain correct after refresh and app restart.
+- [x] Project reports read module rollups and historical records.
+- [x] Weekly/monthly report snapshots can be regenerated and archived.
+- [x] Visible report widgets use rollup-aware project summaries.
+- [x] Revenue and cost remain separated.
+- [x] Real Firebase rollup/snapshot QA passed.
+- [ ] Browser smoke after `report.js?v=78`.
+- [ ] App restart/refresh visual QA.

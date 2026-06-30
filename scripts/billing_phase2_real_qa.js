@@ -465,26 +465,50 @@ async function main() {
   const excessCollectionSnap = await makeFirebaseAdapter(rest).database().ref(`projects/${projectId}/collections/${excessCollection.id}`).once('value');
   assertClose(excessCollectionSnap.val().unappliedAmount, 500, 'Excess collection unapplied amount');
 
+  activeStep = 'create retention release billing C';
+  const billingC = await runtime.createBilling(projectId, {
+    date: today,
+    description: 'QA Retention Release Billing C',
+    amount: 2000,
+    type: 'progress',
+    status: 'submitted',
+    retentionPct: 10
+  });
+  await runtime.approveBilling(projectId, billingC.id);
+  let billingCReceivable = await runtime.calculateBillingReceivable(projectId, billingC.id);
+  assertClose(billingCReceivable.retentionReceivable, 200, 'Billing C retention before non-cash release');
+
+  activeStep = 'release retention non-cash ledger';
+  const retentionRelease = await runtime.releaseRetention(projectId, billingC.id, {
+    amount: 200,
+    notes: 'QA non-cash retention release',
+    status: 'approved'
+  });
+  assertTruthy(retentionRelease.id, 'Retention release ledger id');
+  billingCReceivable = await runtime.calculateBillingReceivable(projectId, billingC.id);
+  assertClose(billingCReceivable.retentionReceivable, 0, 'Billing C retention after non-cash release');
+  assertClose(billingCReceivable.totalReceivable, 1800, 'Billing C current receivable after non-cash release');
+
   activeStep = 'rebuild and verify rollup';
   const rollup = await runtime.rebuildBillingRollups(projectId);
   assertClose(rollup.contractAmount, 100000, 'Rollup contractAmount');
-  assertClose(rollup.totalBilled, 24000, 'Rollup totalBilled');
+  assertClose(rollup.totalBilled, 26000, 'Rollup totalBilled');
   assertClose(rollup.totalCollected, 24000, 'Rollup totalCollected');
-  assertClose(rollup.totalRetentionHeld, 1000, 'Rollup totalRetentionHeld');
+  assertClose(rollup.totalRetentionHeld, 1200, 'Rollup totalRetentionHeld');
   assertClose(rollup.totalRetentionCollected, 1000, 'Rollup totalRetentionCollected');
   assertClose(rollup.retentionReceivable, 0, 'Rollup retentionReceivable');
   assertClose(rollup.totalDeductions, 500, 'Rollup totalDeductions');
   assertClose(rollup.totalAllocatedCollections, 22500, 'Rollup totalAllocatedCollections');
   assertClose(rollup.totalAppliedCollections, 23500, 'Rollup totalAppliedCollections');
   assertClose(rollup.unappliedCollections, 500, 'Rollup unappliedCollections');
-  assertClose(rollup.receivable, 0, 'Rollup receivable');
+  assertClose(rollup.receivable, 1800, 'Rollup receivable');
   assertClose(rollup.laborCost, 1500, 'Rollup laborCost');
   assertClose(rollup.materialCost, 2000, 'Rollup materialCost');
   assertClose(rollup.estimatedProfit, 20500, 'Rollup estimatedProfit');
 
   activeStep = 'verify persisted rollup';
   const persistedRollup = await rest.get(`projects/${projectId}/billingRollups`);
-  assertClose(persistedRollup.receivable, 0, 'Persisted rollup receivable');
+  assertClose(persistedRollup.receivable, 1800, 'Persisted rollup receivable');
 
   activeStep = 'archive QA project';
   await rest.update(`projects/${projectId}`, {
@@ -506,9 +530,11 @@ async function main() {
       downpayment: downpayment.id,
       mobilization: mobilization.id,
       billingB: billingB.id,
+      billingC: billingC.id,
       collection1: collection1.id,
       autoCollection: autoCollection.id,
       excessCollection: excessCollection.id,
+      retentionRelease: retentionRelease.id,
       billingOutput: output.id
     },
     rollup: {

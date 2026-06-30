@@ -186,8 +186,13 @@ async function createNotificationEvent({ projectId = '', module = 'general', typ
     ? 'globalNotificationEvents'
     : `projects/${projectId}/notificationEvents`;
   const ref = firebase.database().ref(path).push();
-  await safeDb(() => ref.set(event), 'Failed to create notification event');
-  return { id: ref.key, path, ...event };
+  try {
+    await ref.set(event);
+    return { id: ref.key, path, ...event };
+  } catch (e) {
+    console.warn('notification event skipped:', e?.code || e?.message || e);
+    return null;
+  }
 }
 
 // ══════════════════════════════════════════════════════

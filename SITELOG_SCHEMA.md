@@ -1,6 +1,6 @@
 # ACPM Site Log v1 Workflow and Firebase Schema
 
-Status: DATA FOUNDATION IMPLEMENTED - MANUAL QA PENDING
+Status: SITE LOG V1 RC1 WORKFLOW/DATA STABLE - REAL FIREBASE QA PASSED; MEDIA UPLOAD/OFFLINE QUEUE FUTURE
 
 Site Log v1 must support real daily construction documentation while staying future-ready for offline use and media upload.
 
@@ -31,10 +31,10 @@ Production gaps fixed in v1 data foundation:
 - `statusHistory` records posted/revised/voided transitions on the log itself.
 - `siteLogRollups` rebuilds from historical `siteLogs`.
 
-Remaining production gaps:
+Remaining RC1 limitations:
 
-- Media upload needs a stable metadata model.
-- Offline queueing should be considered before heavy UI work.
+- Firebase Storage upload is not implemented; RC1 supports photo/media URL metadata only.
+- Offline Site Log queueing is not implemented; generic PWA caching remains separate from field-entry retry.
 
 ## Target Workflow
 
@@ -237,6 +237,18 @@ Implemented helper functions in `sitelog.js`:
 - `createSiteLogEvent(projectId, event)`
 - `rebuildSiteLogRollups(projectId)`
 
+Real Firebase QA helper:
+
+- `scripts/sitelog_v1_real_qa.js`
+
+Real Firebase QA evidence, 2026-06-30:
+
+- Result: PASS
+- QA project: `qa_mr0rtiv7_93fzm10z`
+- Project name: `QA_RC1_SiteLogs_v76_1782831460197`
+- Created structured log, reopened/listed it, revised it, voided it, rebuilt rollups, verified event history and notification hooks.
+- QA project was archived after the run.
+
 Existing UI functions preserved:
 
 - `saveLog()`
@@ -279,19 +291,22 @@ Existing permanent delete behavior must be replaced by `status = voided`.
 ## Known Limitations
 
 - Site Log now has structured text fields, but not a full dedicated editor for each nested item.
-- Media metadata can be stored through photo URLs, but Firebase Storage upload is not implemented.
-- Offline log queue is not implemented yet.
+- Media metadata can be stored through photo URLs, but Firebase Storage upload is not implemented in RC1.
+- Offline log queue is not implemented in RC1.
 - Weather is manually entered; no weather API integration is planned for v1.
 - GPS availability depends on browser/device permission.
-- Manual Firebase QA is pending because posted/voided site logs are permanent history records.
+- Real Firebase QA creates permanent historical QA records, so QA projects are archived after each run.
 
 ## Completion Definition
 
-Site Log v1 can be marked STABLE when:
+Site Log v1 RC1 gate:
 
-- Logs are never permanently deleted.
-- Daily log entries preserve date/time/user/GPS history.
-- Structured sections can be saved and re-opened.
-- Photo upload writes media metadata and keeps history.
-- Offline pending logs do not duplicate after sync.
-- Reports read historical logs, not only current rendered entries.
+- [x] Logs are never permanently deleted.
+- [x] Daily log entries preserve date/time/user/GPS history.
+- [x] Structured sections can be saved and re-opened.
+- [x] Photo URL metadata writes under `media` and remains historical.
+- [x] Events and notification hooks are written for posted/revised/voided.
+- [x] Rollups rebuild from historical logs and exclude voided logs from active totals.
+- [x] Reports can read historical `siteLogs` and `siteLogRollups`.
+- [ ] Firebase Storage upload is future work before media-heavy field deployment.
+- [ ] Offline pending-log queue is future work before offline field deployment.

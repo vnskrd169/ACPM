@@ -1,8 +1,37 @@
 # Labor v1 Final QA
 
-Status: STABLE BASELINE; CASH ADVANCE APPROVAL WORKFLOW UPDATED - MANUAL QA REQUIRED BEFORE RC1
+Status: STABLE - REAL FIREBASE CASH ADVANCE QA PASSED
 
-Labor v1 baseline was stable before Materials v1. Cash Advance approval workflow was later redesigned for production integrity and now requires focused manual QA before ACPM Release Candidate 1.
+Labor v1 baseline was stable before Materials v1. Cash Advance approval workflow was later redesigned for production integrity and verified against the real Firebase backend for ACPM Release Candidate 1.
+
+## RC1 Real Firebase QA - 2026-06-30
+
+PASS:
+
+- QA runner: `scripts/labor_v1_cash_advance_real_qa.js`
+- Real Firebase project created and archived:
+  - `projectId = qa_mr0su95p_uhl84j7m`
+  - `projectName = QA_RC1_LaborCashAdvance_1782833173981`
+  - `payrollLogId = qa_mr0su95p_my097b13`
+- Verified trade-specific foremen were archived under payroll `byTrade`.
+- Verified pending, approved-but-unreleased, and rejected cash advances remained historical and were not deducted.
+- Verified released cash advances deducted only from the correct worker and trade.
+- Verified full deduction closed the advance.
+- Verified partial deduction remained `deducted` with remaining balance.
+- Verified `statusHistory`, `cashAdvanceEvents`, and `notificationEvents` were written.
+- Verified archived attendance and payroll stayed readable after the QA project was archived.
+
+Deductions verified:
+
+```text
+Carpenter released advance deducted = 1000
+Electrical released advance deducted = 560
+Total cash advance deduction = 1560
+```
+
+Bugs found and fixed before user QA:
+
+- Cash advance event hooks and Labor notification hooks could make the UI report failure if a future/deployed hook rule drifted. They are now best-effort, so the primary cash advance workflow continues even if an event hook is denied.
 
 ## Scope
 
@@ -117,7 +146,7 @@ Verified code paths:
 
 ## Release Decision
 
-Labor v1 can be marked STABLE when:
+Labor v1 is marked STABLE when:
 
 - All required pass checks are complete.
 - Known limitations remain acceptable.
@@ -137,6 +166,6 @@ Labor v1 can be marked STABLE when:
 
 Labor v1 baseline: STABLE
 
-Cash Advance approval workflow: IMPLEMENTED, MANUAL QA REQUIRED
+Cash Advance approval workflow: STABLE - REAL FIREBASE QA PASSED
 
 Ready for: Materials v1

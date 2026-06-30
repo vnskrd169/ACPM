@@ -1,5 +1,7 @@
 # ACPM Labor v1 Schema
 
+Status: STABLE - REAL FIREBASE CASH ADVANCE QA PASSED
+
 This document is the production contract for the Labor module. Labor v1 keeps active work simple and archives compiled payroll permanently.
 
 Final QA checklist: see `QA_LABOR.md`.

@@ -1,6 +1,8 @@
 # ACPM Billing v1 Phase 1 QA Checklist
 
-Status: PHASE 1 STABLE - ROLLUP REBUILD QA PASSED; PHASE 2 DATA FOUNDATION IMPLEMENTED - REAL FIREBASE QA PENDING
+Status: BILLING V1 PHASE 2 STABLE - REAL FIREBASE QA + BROWSER UI/DASHBOARD SMOKE PASSED
+
+Current authoritative Phase 2 QA evidence is maintained in `QA_BILLING_PHASE2.md`. This Phase 1 checklist remains as historical rollup-rebuild evidence.
 
 ## Rollup Rebuild Fix QA Results - 2026-06-28
 

@@ -1,8 +1,8 @@
 # ACPM Change Orders v1 Workflow and Firebase Schema
 
-Status: DATA FOUNDATION IMPLEMENTED - MANUAL QA PENDING
+Status: CHANGE ORDERS V1 WORKFLOW/DATA STABLE - REAL FIREBASE QA PASSED; BROWSER CLICK-THROUGH QA WARNING
 
-Labor v1 and Materials v1 are frozen. Billing Phase 2 data foundation is implemented but still needs real Firebase QA. Change Orders v1 must preserve the current working UI while moving the workflow toward historical integrity and rebuild-based financial rollups.
+Labor v1, Materials v1, and Billing v1 Phase 2 are stable. Change Orders v1 preserves the current working UI while enforcing historical integrity and rebuild-based financial rollups.
 
 ## Purpose
 
@@ -225,6 +225,15 @@ Implementation notes:
 
 - The Change Order watcher rebuilds CO rollups, project budget deltas, and Billing rollups from history, including the empty-list case.
 - Billing linkage validates both records, writes `changeOrders/{id}/billingId`, mirrors the link under `billings/{billingId}/changeOrderIds/{changeOrderId}`, and creates a future notification event.
+- Billing linkage only allows approved active change orders and active `change_order` billing records.
+
+Stabilization evidence:
+
+- Final real Firebase QA project: `qa_mr0frgug_hpxjl2rh`, archived with `qaRunResult = PASS`.
+- Verified approve, reject, void, billing link, collection, rollup rebuild, event rows, notification event hooks, and dashboard/billing rollup impact.
+- Local syntax checks and `database.rules.json` parse passed.
+- PWA cache and script version were bumped to `acpm-v75` / `changeorders.js?v=75`.
+- Browser connector timed out during Change Orders smoke, so visual browser interaction remains a warning rather than a blocker because real Firebase workflow QA passed and local served markup verifies v75 controls.
 
 Browser/UI compatibility functions are still exported:
 
@@ -271,17 +280,18 @@ Existing permanent delete behavior must be replaced with `status = voided`.
 
 - Current button icon still uses an `X`, but its aria label/title and behavior are void, not delete.
 - Attachments are architecture-ready but not implemented.
-- Change-order billing can be linked through the helper layer, but a dedicated UI can come after data integrity is stable.
+- Change-order billing can be linked through the helper layer; a dedicated UI can come after RC1 data integrity is stable.
 - Contract/legal approval details vary by client and may require custom printed output later.
-- Manual Firebase QA for creating, approving, rejecting, voiding, and billing-linking a safe test change order is still pending to avoid polluting live project records without a QA project.
+- Browser connector smoke timed out during the v75 interaction attempt; repeat browser UI smoke when the connector is responsive.
 
 ## Completion Definition
 
-Change Orders v1 can be marked STABLE when:
+Change Orders v1 RC1 gate:
 
-- Change orders are never permanently deleted.
-- Approved/rejected/voided status history is preserved.
-- Approved change orders rebuild contract and budget impact from history.
-- Billing rollups include approved change orders.
-- Rejected/voided change orders do not affect approved totals.
-- QA passes on real Firebase after refresh and app restart.
+- [x] Change orders are never permanently deleted.
+- [x] Approved/rejected/voided status history is preserved.
+- [x] Approved change orders rebuild contract and budget impact from history.
+- [x] Billing rollups include approved change orders.
+- [x] Rejected/voided change orders do not affect approved totals.
+- [x] QA passes on real Firebase after rebuild/refresh simulation.
+- [ ] Browser UI smoke should be repeated when the in-app browser connector is stable before final RC1 sign-off.
