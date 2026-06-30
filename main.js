@@ -140,6 +140,64 @@ function dashboardTotalSpent(p) {
   return parseFloat(rollup.totalCost ?? NaN) || (dashboardLaborSpent(p) + dashboardMaterialSpent(p) + dashboardOtherSpent(p));
 }
 
+function dashboardPendingApprovalItems(projects = []) {
+  const items = [];
+  projects.forEach(p => {
+    Object.entries(p.lifecycleRequests || {}).forEach(([id, req]) => {
+      if (String(req.status || 'pending').toLowerCase() === 'pending') {
+        items.push({
+          id,
+          projectId: p.id,
+          projectName: p.name || p.id,
+          label: req.type === 'reopen' ? 'Reopen request' : req.type === 'complete' ? 'Completion request' : 'Lifecycle request',
+          type: req.type || 'lifecycle_request',
+          createdAt: parseFloat(req.requestedAt || req.createdAt) || 0
+        });
+      }
+    });
+    Object.entries(p.notificationEvents || {}).forEach(([id, event]) => {
+      if (String(event.status || 'pending').toLowerCase() === 'pending' && event.consumed !== true) {
+        items.push({
+          id,
+          projectId: p.id,
+          projectName: p.name || p.id,
+          label: String(event.type || 'Notification').replace(/_/g, ' '),
+          type: event.type || 'notification_event',
+          module: event.module || '',
+          createdAt: parseFloat(event.createdAt) || 0
+        });
+      }
+    });
+  });
+  return items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+function dashboardRecentItems(projects = []) {
+  const items = [];
+  projects.forEach(p => {
+    const projectName = p.name || p.id;
+    const projectStatus = p.status === 'completed' ? 'Completed' : p.status === 'archived' ? 'Archived' : 'Active';
+    items.push({
+      projectId: p.id,
+      projectName,
+      label: projectStatus,
+      createdAt: p.completedAt || p.archivedAt || p.updatedAt || p.createdAt || 0
+    });
+    Object.entries(p.notificationEvents || {}).forEach(([id, event]) => {
+      items.push({
+        id,
+        projectId: p.id,
+        projectName,
+        label: String(event.type || event.module || 'Project event').replace(/_/g, ' '),
+        createdAt: parseFloat(event.createdAt) || 0
+      });
+    });
+  });
+  return items
+    .filter(item => item.createdAt || item.projectName)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
 // ════════════════════════════════════════════════════════════
 //  HUB — Project Dashboard
 // ════════════════════════════════════════════════════════════
@@ -257,6 +315,18 @@ function assignedProjectIds(user = window._currentUser || {}) {
   ].filter(Boolean)));
 }
 
+function canReadProjectSnapshot(pid) {
+  return typeof canReadFullProject === 'function'
+    ? canReadFullProject(pid)
+    : canAccessProject(pid);
+}
+
+async function loadProjectForCurrentRole(pid) {
+  if (!canReadProjectSnapshot(pid)) return null;
+  const snap = await db.ref(`projects/${pid}`).once('value');
+  return snap.exists() ? { id: pid, ...snap.val() } : null;
+}
+
 function projectMatchesHubTab(project, tab, isAll) {
   if ((project.status || 'active') === 'archived') {
     return isAll && canListAllProjects(window._currentUser || {});
@@ -327,6 +397,11 @@ function watchAssignedProjects(user, gridId, tab, isAll) {
   const render = () => renderProjectHubList(Array.from(projectMap.values()), gridId, tab, isAll);
 
   ids.forEach(pid => {
+    const onError = error => {
+      console.error('Firebase project load error:', error);
+      if (grid) grid.innerHTML = '<p class="hub-empty">Error loading assigned projects. Check console.</p>';
+      showToast('Error loading assigned projects: ' + error.message, 'error');
+    };
     const projectRef = db.ref(`projects/${pid}`);
     projectRef.on('value', snap => {
       if (snap.exists()) {
@@ -335,11 +410,7 @@ function watchAssignedProjects(user, gridId, tab, isAll) {
         projectMap.delete(pid);
       }
       render();
-    }, error => {
-      console.error('Firebase project load error:', error);
-      if (grid) grid.innerHTML = '<p class="hub-empty">Error loading assigned projects. Check console.</p>';
-      showToast('Error loading assigned projects: ' + error.message, 'error');
-    });
+    }, onError);
     _hubListeners.push(projectRef);
   });
 }
@@ -355,9 +426,9 @@ async function fetchAccessibleProjectsOnce(statusFilter = null) {
     });
   } else {
     const ids = assignedProjectIds(user);
-    const snaps = await Promise.all(ids.map(pid => db.ref(`projects/${pid}`).once('value').then(snap => ({ pid, snap }))));
-    snaps.forEach(({ pid, snap }) => {
-      if (snap.exists()) projects.push({ id: pid, ...snap.val() });
+    const loadedProjects = await Promise.all(ids.map(pid => loadProjectForCurrentRole(pid)));
+    loadedProjects.forEach(project => {
+      if (project) projects.push(project);
     });
   }
 
@@ -632,9 +703,21 @@ function renderComparison(projects, targetId = 'comparisonView') {
 function renderRecentActivity(projects, targetId = 'recentActivityView') {
   const el = $(targetId);
   if (!el) return;
-  const items = sortProjectsNewest([...projects])
+  const items = dashboardRecentItems(projects)
     .slice(0, 5)
     .map(p => {
+      if (p.label) {
+        const time = p.createdAt || null;
+        const date = time ? new Date(time).toLocaleDateString('en-PH') : '-';
+        return `
+        <div class="activity-row">
+          <div>
+            <strong>${escapeHtml(p.projectName || 'Untitled')}</strong>
+            <span>${escapeHtml(p.label)} - ${escapeHtml(date)}</span>
+          </div>
+          <button class="btn-equip-action" onclick="openProjectFromHub('${escapeHtml(p.projectId)}')">Open</button>
+        </div>`;
+      }
       const status = p.status === 'completed' ? 'Completed' : p.status === 'archived' ? 'Archived' : 'Active';
       const time = p.completedAt || p.archivedAt || p.updatedAt || p.createdAt || null;
       const date = time ? new Date(time).toLocaleDateString('en-PH') : (p.createdDate || '-');
@@ -642,7 +725,7 @@ function renderRecentActivity(projects, targetId = 'recentActivityView') {
         <div class="activity-row">
           <div>
             <strong>${escapeHtml(p.name || 'Untitled')}</strong>
-            <span>${status} · ${escapeHtml(date)}</span>
+            <span>${status} - ${escapeHtml(date)}</span>
           </div>
           <button class="btn-equip-action" onclick="openProjectFromHub('${escapeHtml(p.id)}')">Open</button>
         </div>`;
@@ -921,8 +1004,7 @@ async function enterProject(pid) {
     return false;
   }
 
-  const snap = await db.ref(`projects/${pid}`).once('value');
-  const p = snap.val();
+  const p = await loadProjectForCurrentRole(pid);
   if (!p) { showToast('Project not found.', 'error'); return false; }
 
   window._currentPid = pid;
@@ -935,7 +1017,6 @@ async function enterProject(pid) {
   $('lockedBanner')?.classList.toggle('hidden', !window._isReadOnly);
   document.querySelectorAll('.panel').forEach(pn => pn.classList.toggle('read-only', window._isReadOnly));
 
-  // Init all modules
   initLabor(pid);
   initMaterials(pid);
   initBilling(pid);
@@ -947,11 +1028,10 @@ async function enterProject(pid) {
   initCompliance(pid);
   initDefects(pid);
   initNotifications();
-
-  // Load project notes
   loadProjectNotes(pid);
+  const role = typeof normalizeRole === 'function' ? normalizeRole(window._currentUser?.role || 'apm') : (window._currentUser?.role || 'apm');
+  switchTab(typeof canSeeFinancials === 'function' && canSeeFinancials(role) ? 'reports' : 'labor');
 
-  switchTab('labor');
   auditLog('enter', 'project', pid, { name: p.name });
   return true;
 }
@@ -1000,8 +1080,14 @@ function toggleExtraTabs(forceValue) {
     : !(typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false);
   if (typeof setFeatureFlag === 'function') setFeatureFlag('extras', next);
 
+  const role = typeof normalizeRole === 'function'
+    ? normalizeRole(window._currentUser?.role || 'apm')
+    : (window._currentUser?.role || 'apm');
   document.querySelectorAll('[data-feature-visible="extras"]').forEach(el => {
-    el.style.display = next ? '' : 'none';
+    const roleAllowed = typeof elementAllowsRole === 'function'
+      ? elementAllowsRole(el, role)
+      : true;
+    el.style.display = next && roleAllowed ? '' : 'none';
   });
 
   const extrasToggle = document.getElementById('extrasToggleBtn');
@@ -1156,7 +1242,7 @@ window.addEventListener('keydown', e => {
   }
   if (e.ctrlKey && e.key === 's') {
     e.preventDefault();
-    showToast('Auto-saved to Firebase \u2601\uFE0F;', 'success');
+    showToast('Auto-saved to Firebase', 'success');
   }
 });
 
@@ -1275,16 +1361,20 @@ function renderDashboardAlerts(projects) {
   const active = projects.filter(p => p.status === 'active').length;
   const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
   const totalSpent = projects.reduce((s, p) => s + dashboardTotalSpent(p), 0);
+  const pendingApprovals = dashboardPendingApprovalItems(projects).length;
+  const openIssues = projects.reduce((sum, p) => sum + (parseFloat(dashboardRollup(p).openIssues ?? p.siteLogRollups?.openIssues) || 0), 0);
+  const openDelays = projects.reduce((sum, p) => sum + (parseFloat(dashboardRollup(p).openDelays ?? p.siteLogRollups?.openDelays) || 0), 0);
+  const opsLine = ` &nbsp;|&nbsp; Pending: ${pendingApprovals} &nbsp;|&nbsp; Issues: ${openIssues} &nbsp;|&nbsp; Delays: ${openDelays}`;
 
   if (critical > 0) {
     el.className = 'dashboard-alerts warn-critical';
-    el.innerHTML = `<strong>${critical} project${critical !== 1 ? 's' : ''}</strong> over budget &nbsp;|&nbsp; ${warning} warning &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+    el.innerHTML = `<strong>${critical} project${critical !== 1 ? 's' : ''}</strong> over budget &nbsp;|&nbsp; ${warning} warning &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}${opsLine}`;
   } else if (warning > 0) {
     el.className = 'dashboard-alerts warn-high';
-    el.innerHTML = `<strong>${warning} project${warning !== 1 ? 's' : ''}</strong> approaching budget limit &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+    el.innerHTML = `<strong>${warning} project${warning !== 1 ? 's' : ''}</strong> approaching budget limit &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}${opsLine}`;
   } else if (projects.length) {
-    el.className = 'dashboard-alerts warn-ok';
-    el.innerHTML = `All ${active} active project${active !== 1 ? 's' : ''} within budget &nbsp;|&nbsp; Total: ${peso(totalSpent)} / ${peso(totalBudget)}`;
+    el.className = (pendingApprovals || openIssues || openDelays) ? 'dashboard-alerts warn-high' : 'dashboard-alerts warn-ok';
+    el.innerHTML = `All ${active} active project${active !== 1 ? 's' : ''} within budget &nbsp;|&nbsp; Total: ${peso(totalSpent)} / ${peso(totalBudget)}${opsLine}`;
   } else {
     el.className = 'dashboard-alerts';
     el.innerHTML = '';
@@ -1386,3 +1476,5 @@ window.saveProjectNotes = saveProjectNotes;
 window.exportHubCSV = exportHubCSV;
 window.refreshHub = refreshHub;
 window.renderDashboardAlerts = renderDashboardAlerts;
+window.dashboardPendingApprovalItems = dashboardPendingApprovalItems;
+window.dashboardRecentItems = dashboardRecentItems;

@@ -41,6 +41,7 @@ Result: PASS STATIC / PENDING REAL FIREBASE QA
 - [x] No push notifications implemented.
 - [x] No service worker push subscription implemented.
 - [x] No event consumer implemented yet.
+- [x] Notification feed icons use stable ASCII labels instead of malformed Unicode escapes.
 
 Result: PASS
 
@@ -49,6 +50,8 @@ Result: PASS
 - [x] `node --check notifications.js`
 - [x] Firebase rules JSON parse
 - [x] Browser smoke after cache v62 had no console warnings/errors in the local signed-in Boss session.
+- [x] Local HTTP smoke after cache v72 confirmed updated shared files serve.
+- [ ] Browser smoke after cache v71 timed out in automation and still needs manual verification.
 
 ## Stability Gate
 

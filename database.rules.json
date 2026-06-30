@@ -16,14 +16,32 @@
       ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
       ".indexOn": ["status", "name", "createdAt"],
       "$pid": {
-        ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))",
+        ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
         ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (newData.exists() && data.child('status').val() === 'active' && newData.child('status').val() === data.child('status').val() && root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
         ".validate": "newData.hasChildren(['name', 'status', 'createdAt']) || !data.exists()",
-        "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" 
+        "name": {
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" 
         },
         "status": { 
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
           ".validate": "newData.isString() && newData.val().matches(/^(active|completed|archived)$/)",
           ".write": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)"
+        },
+        "createdDate": {
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))"
+        },
+        "updatedAt": {
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))"
+        },
+        "completedAt": {
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))"
+        },
+        "archivedAt": {
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))"
+        },
+        "previousStatus": {
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))"
         },
         "laborBudget": { ".validate": "newData.isNumber() && newData.val() >= 0" 
         },
@@ -37,11 +55,12 @@
         },
         "materialBudgetDelta": { ".validate": "newData.isNumber()" 
         },
-        "createdAt": { 
+        "createdAt": {
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
           ".validate": "newData.isNumber()" 
         },
         "lifecycleRequests": {
-          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))"
+          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))"
         },
         "billingConfig": { ".indexOn": ["nextBillingNo", "nextCollectionNo", "nextAdjustmentNo"] 
         },
@@ -120,7 +139,7 @@
           }
         },
         "notificationEvents": {
-          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm|foreman|safety)$/) && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid)))",
+          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid)))",
           ".indexOn": ["module", "type", "status", "consumed", "createdAt"],
           "$eventId": {
             ".validate": "newData.hasChildren(['module', 'type', 'status', 'consumed', 'createdAt'])"
@@ -131,18 +150,21 @@
         "payrollLogs": { ".indexOn": ["savedAt", "weekKey"]
         },
         "siteLogs": {
-          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm|foreman|safety)$/) && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid)))",
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
+          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid)))",
           ".indexOn": ["date", "status", "savedAt", "savedBy"] 
         },
         "siteLogEvents": {
-          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm|foreman|safety)$/) && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid)))",
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
+          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid)))",
           ".indexOn": ["type", "logId", "date", "createdAt"],
           "$eventId": {
             ".validate": "newData.hasChildren(['type', 'createdAt', 'createdBy'])"
           }
         },
         "siteLogRollups": {
-          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm|foreman|safety)$/) && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid)))",
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
+          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid)))",
           ".indexOn": ["lastUpdatedAt"] 
         },
         "reportRollups": { ".indexOn": ["lastUpdatedAt"] 

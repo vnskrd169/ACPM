@@ -138,7 +138,7 @@ function auditLog(action, entityType, entityId, details = {}) {
     date: new Date().toLocaleDateString('en-PH'),
     projectId: pid
   };
-  console.log('\u1F4DD AUDIT:', logEntry);
+  console.log('AUDIT:', logEntry);
 
   try {
     if (typeof firebase !== 'undefined' && firebase.database) {

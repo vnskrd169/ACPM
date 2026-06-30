@@ -20,6 +20,7 @@ Status: DATA FOUNDATION IMPLEMENTED - DEPLOYED RULE QA PENDING
   - `newStatus`
   - `notes`
 - [x] Audit helper is fire-and-forget and does not break workflow if write fails.
+- [x] Console audit prefix uses stable ASCII text.
 
 Result: PASS STATIC
 
@@ -50,6 +51,8 @@ Result: PASS STATIC / PENDING REAL FIREBASE QA
 - [x] `node --check utils.js`
 - [x] Firebase rules JSON parse
 - [x] Browser smoke after cache v62 had no console warnings/errors in the local signed-in Boss session.
+- [x] Local HTTP smoke after cache v72 confirmed updated shared files serve.
+- [ ] Browser smoke after cache v71 timed out in automation and still needs manual verification.
 - [ ] Browser smoke after deployed rules
 
 ## Known Limitations

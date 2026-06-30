@@ -427,7 +427,9 @@ function watchSiteLog(pid) {
     if (!snap.exists()) {
       el.innerHTML = '<p class="empty-hint">No logs yet. Add your first log above.</p>';
       renderSiteLogSummary([]);
-      rebuildSiteLogRollups(pid, { siteLogsSnap: snap }).catch(err => console.warn('Site log rollup rebuild failed', err));
+      if (canTouchSiteLogProject()) {
+        rebuildSiteLogRollups(pid, { siteLogsSnap: snap }).catch(err => console.warn('Site log rollup rebuild failed', err));
+      }
       return;
     }
 
@@ -505,6 +507,7 @@ function watchSiteLog(pid) {
           const div = document.createElement('div');
           div.className = 'log-entry';
           div.setAttribute('data-id', e.id);
+          const canVoid = canTouchSiteLogProject();
           div.innerHTML = `
             <div class="log-entry-hdr">
               <span class="log-date">${e.date || '\u2014'}</span>
@@ -512,13 +515,13 @@ function watchSiteLog(pid) {
               ${weatherHTML}
               ${locHTML}
               <span class="log-saved">${e.savedDate || ''}</span>
-              <button class="del-log" aria-label="Void log" title="Void log" data-lid="${e.id}">\u2715</button>
+              ${canVoid ? `<button class="del-log" aria-label="Void log" title="Void log" data-lid="${e.id}">\u2715</button>` : ''}
             </div>
             <p class="log-notes">${escapeHtml(e.notes || '').replace(/\n/g, '<br>')}</p>
             ${structuredBits.length ? `<div class="log-structured">${structuredBits.join('<br>')}</div>` : ''}
             ${e.photos ? `<div class="log-photos">${e.photos.map(p => `<img src="${p}" class="log-photo" onclick="window.open('${p}','_blank')">`).join('')}</div>` : ''}`;
 
-          div.querySelector('[data-lid]').addEventListener('click', () => deleteLog(e.id));
+          div.querySelector('[data-lid]')?.addEventListener('click', () => deleteLog(e.id));
           dayGroup.appendChild(div);
         });
 
@@ -530,7 +533,9 @@ function watchSiteLog(pid) {
     });
 
     renderSiteLogSummary(entries);
-    rebuildSiteLogRollups(pid, { siteLogsSnap: snap }).catch(err => console.warn('Site log rollup rebuild failed', err));
+    if (canTouchSiteLogProject()) {
+      rebuildSiteLogRollups(pid, { siteLogsSnap: snap }).catch(err => console.warn('Site log rollup rebuild failed', err));
+    }
   }, error => {
     console.error('Firebase error in watchSiteLog:', error);
     showToast('Error loading site logs: ' + error.message, 'error');

@@ -32,6 +32,8 @@ const ROLE_DEFINITIONS = {
   viewer: { label: 'Viewer', admin: false, financial: false, projectEdit: false, field: false, readOnly: true }
 };
 
+const RC1_ACTIVE_ROLES = new Set(['boss', 'owner', 'admin', 'pm', 'apm']);
+
 function inferRoleFromIdentity(uid, email, data = {}) {
   const explicitRole = String(data.role || '').trim().toLowerCase();
   if (ROLE_DEFINITIONS[explicitRole]) {
@@ -51,6 +53,10 @@ function isBoss(role) {
   return !!ROLE_DEFINITIONS[normalized]?.admin;
 }
 
+function isRc1ActiveRole(role) {
+  return RC1_ACTIVE_ROLES.has(normalizeRole(role));
+}
+
 function canSeeFinancials(role) {
   const normalized = normalizeRole(role);
   return !!ROLE_DEFINITIONS[normalized]?.financial;
@@ -59,6 +65,11 @@ function canSeeFinancials(role) {
 function canEditAssignedProject(role) {
   const normalized = normalizeRole(role);
   return !!ROLE_DEFINITIONS[normalized]?.projectEdit;
+}
+
+function canReadFullAssignedProject(role) {
+  const normalized = normalizeRole(role);
+  return isBoss(normalized) || normalized === 'pm' || normalized === 'apm';
 }
 
 function isFieldRole(role) {
@@ -78,6 +89,17 @@ function roleLabel(role) {
 
 function teamRoleLabel(role) {
   return roleLabel(role);
+}
+
+function elementAllowsRole(el, role) {
+  const visible = String(el?.dataset?.roleVisible || '').trim().toLowerCase();
+  if (!visible || visible === 'all') return true;
+  if (visible === 'none') return false;
+  const normalized = normalizeRole(role);
+  const allowed = visible.split(',').map(v => v.trim()).filter(Boolean);
+  return allowed.includes(normalized) ||
+    (allowed.includes('boss') && isBoss(normalized)) ||
+    (allowed.includes('financial') && canSeeFinancials(normalized));
 }
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -193,6 +215,14 @@ function applyProfile(profile) {
     const role = normalizeRole(profile?.role);
     badge.textContent = `${profile?.name || 'User'} - ${roleLabel(role)}`;
     badge.title = `Signed in as ${profile?.name || 'User'} (${profile?.uid || 'unknown'})`;
+  }
+  if (!isRc1ActiveRole(profile?.role)) {
+    showPendingAccessScreen({
+      ...profile,
+      status: 'pending',
+      pendingReason: 'This role is planned for a future field-user release and is not active in RC1.'
+    });
+    return;
   }
   if (profile?.status && profile.status !== 'active' && !isBoss(profile.role)) {
     showPendingAccessScreen(profile);
@@ -609,21 +639,11 @@ async function initAppForUser() {
   });
 
   document.querySelectorAll('[data-role-visible]').forEach(el => {
-    const visible = String(el.dataset.roleVisible || '').trim().toLowerCase();
-    if (!visible || visible === 'all') {
-      el.style.display = '';
-      return;
-    }
-    if (visible === 'none') {
-      el.style.display = 'none';
-      return;
-    }
-    const allowed = visible.split(',').map(v => v.trim()).filter(Boolean);
-    el.style.display = allowed.includes(role) || (allowed.includes('boss') && isBoss(role)) || (allowed.includes('financial') && canSeeFinancials(role)) ? '' : 'none';
+    el.style.display = elementAllowsRole(el, role) ? '' : 'none';
   });
 
   document.querySelectorAll('[data-feature-visible="extras"]').forEach(el => {
-    el.style.display = extrasEnabled ? '' : 'none';
+    el.style.display = extrasEnabled && elementAllowsRole(el, role) ? '' : 'none';
   });
 
   const extrasToggle = document.getElementById('extrasToggleBtn');
@@ -691,6 +711,7 @@ function filterProjectsByRole() {
 function canAccessProject(pid) {
   const user = _currentAuthUser;
   if (!user) return false;
+  if (!isRc1ActiveRole(user.role)) return false;
   if (isBoss(user.role)) return true;
   if (user.bossOf && user.bossOf.includes(pid)) return true;
   return (user.projects || []).includes(pid);
@@ -699,15 +720,26 @@ function canAccessProject(pid) {
 function canEditProject(pid) {
   const user = _currentAuthUser;
   if (!user) return false;
+  if (!isRc1ActiveRole(user.role)) return false;
   if (isBoss(user.role)) return true;
   if (user.bossOf && user.bossOf.includes(pid)) return true;
   if (!canEditAssignedProject(user.role)) return false;
   return (user.projects || []).includes(pid);
 }
 
+function canReadFullProject(pid) {
+  const user = _currentAuthUser;
+  if (!user) return false;
+  if (!isRc1ActiveRole(user.role)) return false;
+  if (isBoss(user.role)) return true;
+  if (!canReadFullAssignedProject(user.role)) return false;
+  return (user.projects || []).includes(pid) || (user.bossOf || []).includes(pid);
+}
+
 function canWriteFieldLog(pid) {
   const user = _currentAuthUser;
   if (!user) return false;
+  if (!isRc1ActiveRole(user.role)) return false;
   if (isBoss(user.role)) return true;
   if (isViewerRole(user.role)) return false;
   return (user.projects || []).includes(pid) || (user.bossOf || []).includes(pid);
@@ -727,10 +759,14 @@ window.canEditProject    = canEditProject;
 window.getCurrentUser    = () => _currentAuthUser;
 window.normalizeRole     = normalizeRole;
 window.isBoss            = isBoss;
+window.isRc1ActiveRole   = isRc1ActiveRole;
 window.canSeeFinancials  = canSeeFinancials;
 window.canEditAssignedProject = canEditAssignedProject;
+window.canReadFullAssignedProject = canReadFullAssignedProject;
+window.canReadFullProject = canReadFullProject;
 window.isFieldRole       = isFieldRole;
 window.isViewerRole      = isViewerRole;
 window.canWriteFieldLog  = canWriteFieldLog;
+window.elementAllowsRole = elementAllowsRole;
 window.roleLabel         = roleLabel;
 window.teamRoleLabel     = teamRoleLabel;

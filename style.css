@@ -4145,12 +4145,13 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 }
 
 #billingPanel .billing-form-grid {
-  grid-template-columns: minmax(220px, 2fr) minmax(148px, .75fr) minmax(150px, .85fr) auto;
+  grid-template-columns: minmax(170px, 1.1fr) minmax(220px, 1.8fr) minmax(148px, .8fr) minmax(140px, .8fr) minmax(140px, .8fr) auto;
   gap: 8px;
   align-items: stretch;
 }
 
 #billingPanel .billing-form-grid input,
+#billingPanel .billing-form-grid select,
 #billingPanel .billing-form-grid button {
   min-width: 0;
 }
@@ -4166,7 +4167,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
 }
 
 #billingPanel .hist-table {
-  min-width: 760px;
+  min-width: 980px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -4184,7 +4185,7 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   vertical-align: middle;
 }
 
-#billingPanel #billingsBody .b-cell:nth-child(3),
+#billingPanel #billingsBody .b-cell:nth-child(4),
 #billingPanel #collectionsBody .b-cell:nth-child(2) {
   max-width: 360px;
   overflow: hidden;
@@ -4230,6 +4231,30 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   justify-content: center;
   width: 30px;
   height: 30px;
+}
+
+#billingPanel .billing-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+#billingPanel .billing-mini-btn {
+  min-height: 28px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+}
+
+#billingPanel .billing-mini-btn:hover {
+  border-color: var(--purple);
+  color: var(--purple-xl);
 }
 
 #editContractModal .contract-form-grid {

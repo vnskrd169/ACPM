@@ -1,10 +1,10 @@
 # ACPM Roles and Permissions v1
 
-Status: DATA FOUNDATION IMPLEMENTED - MANUAL QA PENDING
+Status: RC1 MANAGEMENT ROLES ONLY - BROWSER/DEPLOYED QA PENDING
 
-ACPM preserves legacy `boss` and `apm` roles while adding a production-ready role model for field and management users.
+ACPM preserves legacy `boss` and `apm` roles while locking RC1 access to management users only.
 
-## Roles
+## RC1 Active Roles
 
 | Role | Canonical Value | Purpose |
 | --- | --- | --- |
@@ -12,9 +12,16 @@ ACPM preserves legacy `boss` and `apm` roles while adding a production-ready rol
 | Admin | `admin` | Full admin access except identity ownership decisions remain business controlled. |
 | Project Manager | `pm` | Assigned project management with financial/report visibility. |
 | Assoc. Project Manager | `apm` | Assigned project operations without full profit/collection visibility by default. |
-| Foreman | `foreman` | Field site log access only. No profit, billing, collections, or admin settings. |
-| Safety | `safety` | Field safety/site log access only. No profit, billing, collections, or admin settings. |
-| Viewer | `viewer` | Read-only assigned project access. |
+
+## Future Roles - Disabled For RC1
+
+These role names remain documented for roadmap planning, but they are not active in RC1 and must not access workspace/project data:
+
+| Future Role | Canonical Value | Planned Purpose |
+| --- | --- | --- |
+| Foreman | `foreman` | Field site log access after secure child-level reads are implemented. |
+| Safety | `safety` | Field safety/site log access after secure child-level reads are implemented. |
+| Viewer | `viewer` | Read-only project view after secure child-level reads are implemented. |
 
 ## Compatibility
 
@@ -35,6 +42,7 @@ Implemented in `auth.js`:
 - `isBoss(role)`
 - `canSeeFinancials(role)`
 - `canEditAssignedProject(role)`
+- `isRc1ActiveRole(role)`
 - `isFieldRole(role)`
 - `isViewerRole(role)`
 - `canWriteFieldLog(projectId)`
@@ -47,15 +55,16 @@ Workspace tab visibility:
 - Labor: `boss`, `owner`, `admin`, `pm`, `apm`
 - Materials: `boss`, `owner`, `admin`, `pm`, `apm`
 - Billing: financial roles only
-- Site Log: management plus `foreman`, `safety`, and read-only `viewer`
+- Site Log: `boss`, `owner`, `admin`, `pm`, `apm`
 - Change Orders: management/APM roles
 - Suppliers: management/APM roles
+- Extras toggle: management/APM roles so Change Orders and Suppliers are reachable
 - Reports: financial roles only
 - Admin/Team/Audit: admin roles only
 
 ## Firebase Rules
 
-Rules now accept:
+Rules still validate future role names so historical/planned user records do not require a destructive migration:
 
 ```text
 boss owner admin pm apm foreman safety viewer
@@ -68,10 +77,32 @@ boss owner admin
 ```
 
 Project write fallback is limited to assigned `pm` and `apm`. Field roles receive explicit write access for Site Log paths only.
+Foreman/Safety/Viewer have no active project read/write access in RC1.
+
+## RC1 Firebase Access
+
+Project reads/writes are limited to:
+
+```text
+boss owner admin pm apm
+```
+
+Foreman/Safety/Viewer are blocked by app helpers and do not receive project data access in RC1.
+
+## Future Roadmap
+
+Before activating field-user roles, implement and QA a secure child-level Firebase read model for:
+
+- project shell metadata
+- Site Logs
+- field-safe attachments/photos
+- field-safe notifications
+- no billing/collections/profit/budget access
 
 ## Known Limitations
 
 - Firebase rules are improved but still need full emulator/deployed-rule QA.
-- Field-role access is focused on Site Logs for RC1. Viewer lands on Site Log as a read-only assigned-project area. Dedicated Foreman/Safety dashboards can come after RC1.
+- Field-user roles are deferred for RC1.
 - PM financial visibility is enabled because PM is a management role in the RC1 directive.
 - Existing data may still store `boss`; this remains valid and is intentionally preserved.
+- Child-level Firebase read refactor is a future roadmap item before Foreman/Safety/Viewer activation.

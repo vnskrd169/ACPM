@@ -6,6 +6,7 @@ let _billingAdjustmentsListener = null;
 let _billingAllocationsListener = null;
 let _retentionLedgerListener = null;
 let _billingRollupListener = null;
+let _billingOutputsListener = null;
 let _billingRollupRebuildTimer = null;
 let _billingRollupRebuildSources = {};
 
@@ -25,6 +26,7 @@ function initBilling(pid) {
   watchBillingAdjustments(pid);
   watchBillingAllocations(pid);
   watchRetentionLedger(pid);
+  watchBillingOutputs(pid);
 }
 
 function detachBillingListeners() {
@@ -35,6 +37,7 @@ function detachBillingListeners() {
   if (_billingAllocationsListener) { _billingAllocationsListener.off(); _billingAllocationsListener = null; }
   if (_retentionLedgerListener) { _retentionLedgerListener.off(); _retentionLedgerListener = null; }
   if (_billingRollupListener) { _billingRollupListener.off(); _billingRollupListener = null; }
+  if (_billingOutputsListener) { _billingOutputsListener.off(); _billingOutputsListener = null; }
   if (_billingRollupRebuildTimer) { clearTimeout(_billingRollupRebuildTimer); _billingRollupRebuildTimer = null; }
 }
 
@@ -117,10 +120,13 @@ function billingRecordApproved(record) {
 
 function billingDeductionTotal(record) {
   if (!record) return 0;
-  const nested = billingChildRows(record.deductions)
+  const deductionRows = billingChildRows(record.deductions);
+  if (deductionRows.length) {
+    return deductionRows
     .filter(d => billingActive(d) && billingRecordApproved(d))
     .reduce((sum, d) => sum + billingAmount(d.amount), 0);
-  return nested || billingAmount(record.deductionTotal);
+  }
+  return billingAmount(record.deductionTotal);
 }
 
 function calculateBillingRetentionAmount(record, gross = billingGross(record), deductions = billingDeductionTotal(record)) {
@@ -190,7 +196,7 @@ function effectiveAllocationRows(collections = [], allocations = []) {
       });
       return;
     }
-    if (!col.billingId || mirroredCollectionIds.has(col.id)) return;
+    if (!col.billingId || mirroredCollectionIds.has(col.id) || col.allocationMode === 'phase2') return;
     legacy.push({
       id: `legacy_${col.id}`,
       collectionId: col.id,
@@ -675,6 +681,7 @@ async function recordCollection(pid, input = {}) {
     netCashReceived,
     allocatedAmount: 0,
     unappliedAmount: netCashReceived,
+    allocationMode: input.allocationMode || 'phase2',
     paymentMethod: input.paymentMethod || '',
     referenceNo: input.referenceNo || '',
     paidBy: input.paidBy || '',
@@ -1067,11 +1074,18 @@ async function rebuildBillingRollups(pid, sources = {}) {
     totalRetentionHeldRaw,
     retentionRows.reduce((sum, r) => sum + billingAmount(r.amount), 0)
   );
+  const totalRetentionCollected = Math.min(
+    totalRetentionHeldRaw,
+    retentionRows
+      .filter(r => r.collectionId)
+      .reduce((sum, r) => sum + billingAmount(r.amount), 0)
+  );
   const retentionReceivable = Math.max(0, totalRetentionHeldRaw - totalRetentionReleased);
   const totalCurrentCollectible = Math.max(0, totalBilledGross - totalApprovedDeductions - totalRetentionHeldRaw);
   const totalAllocatedCollections = allocationRows.reduce((sum, a) => sum + billingAmount(a.amount), 0);
   const totalRevenueCollected = collections.reduce((sum, c) => sum + collectionNet(c), 0);
-  const unappliedCollections = Math.max(0, totalRevenueCollected - totalAllocatedCollections);
+  const totalAppliedCollections = totalAllocatedCollections + totalRetentionCollected;
+  const unappliedCollections = Math.max(0, totalRevenueCollected - totalAppliedCollections);
   const currentReceivable = Math.max(0, totalCurrentCollectible - totalAllocatedCollections);
   const totalReceivable = currentReceivable + retentionReceivable;
   const laborCost = billingAmount(laborCostSnap.val());
@@ -1093,12 +1107,14 @@ async function rebuildBillingRollups(pid, sources = {}) {
     totalGrossBilled: totalBilledGross,
     totalRetentionHeld: totalRetentionHeldRaw,
     totalRetentionReleased,
+    totalRetentionCollected,
     retentionReceivable,
     totalDeductions: totalApprovedDeductions,
     totalApprovedDeductions,
     totalNetBillable: totalCurrentCollectible,
     totalCurrentCollectible,
     totalAllocatedCollections,
+    totalAppliedCollections,
     unappliedCollections,
     totalCollected: totalRevenueCollected,
     totalRevenueCollected,
@@ -1332,6 +1348,81 @@ function applyBillingDashboardRollup(rollup = {}) {
 // ══════════════════════════════════════════════════════
 //  BILLING REQUESTS
 // ══════════════════════════════════════════════════════
+function billingTypeLabel(type) {
+  const labels = {
+    progress: 'Progress',
+    downpayment: 'Downpayment',
+    mobilization: 'Mobilization'
+  };
+  return labels[String(type || 'progress').toLowerCase()] || 'Progress';
+}
+
+function billingDisplayNo(record, fallbackIndex = 0) {
+  return record.billingNo || `BILL-${String(record.seq || fallbackIndex || 0).padStart(4, '0')}`;
+}
+
+function billingReceivableDisplay(record) {
+  const current = record.currentReceivable !== undefined
+    ? billingAmount(record.currentReceivable)
+    : billingAmount(record.receivableBalance ?? billingCurrentCollectible(record));
+  return current + billingAmount(record.retentionReceivable);
+}
+
+function renderBillingSelectOptions(rows = []) {
+  const targets = [$('colBillingId'), $('outputBillingId')].filter(Boolean);
+  if (!targets.length) return;
+  const eligible = rows
+    .filter(b => billingActive(b) && billingApproved(b))
+    .sort((a, b) => (a.seq || 0) - (b.seq || 0));
+
+  targets.forEach(select => {
+    const previous = select.value;
+    const isCollectionTarget = select.id === 'colBillingId';
+    select.innerHTML = isCollectionTarget
+      ? '<option value="">Auto-allocate to oldest approved billing</option>'
+      : '<option value="">Select approved billing</option>';
+
+    eligible.forEach((billing, idx) => {
+      const option = document.createElement('option');
+      option.value = billing.id;
+      option.dataset.billingNo = billingDisplayNo(billing, idx + 1);
+      option.textContent = `${option.dataset.billingNo} - ${billingTypeLabel(billing.type)} - ${peso(billingReceivableDisplay(billing))} receivable`;
+      select.appendChild(option);
+    });
+
+    if ([...select.options].some(option => option.value === previous)) {
+      select.value = previous;
+    }
+  });
+}
+
+function billingActionHtml(record) {
+  const active = billingActive(record);
+  const approved = active && billingApproved(record);
+  const retentionBalance = billingAmount(record.retentionReceivable);
+  return `
+    <span class="billing-actions">
+      ${active ? `<button class="billing-mini-btn" data-action="deduct" data-bid="${record.id}">Deduct</button>` : ''}
+      ${active && retentionBalance > 0 ? `<button class="billing-mini-btn" data-action="retention" data-bid="${record.id}">Release</button>` : ''}
+      ${approved ? `<button class="billing-mini-btn" data-action="snapshot" data-bid="${record.id}">Snapshot</button>` : ''}
+      ${active ? `<button class="del-item-btn" aria-label="Void billing" data-action="void" data-bid="${record.id}">\u2715</button>` : '<span style="font-size:10px;color:var(--muted)">VOID</span>'}
+    </span>
+  `;
+}
+
+function bindBillingRowActions(tr) {
+  tr.querySelectorAll('[data-action][data-bid]').forEach(button => {
+    const id = button.getAttribute('data-bid');
+    const action = button.getAttribute('data-action');
+    button.addEventListener('click', () => {
+      if (action === 'deduct') addBillingDeductionFromUI(id);
+      if (action === 'retention') releaseRetentionFromUI(id);
+      if (action === 'snapshot') generateBillingOutputForBilling(id);
+      if (action === 'void') deleteBilling(id);
+    });
+  });
+}
+
 function watchBillings(pid) {
   _billingsListener = firebase.database().ref(`projects/${pid}/billings`);
   _billingsListener.on('value', snap => {
@@ -1340,7 +1431,8 @@ function watchBillings(pid) {
     let seq = 1;
 
     if (!snap.exists()) {
-      tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">No billing requests yet.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="empty-cell">No billing requests yet.</td></tr>`;
+      renderBillingSelectOptions([]);
       scheduleBillingRollupRebuild(pid, { billingsSnap: snap });
       return;
     }
@@ -1350,6 +1442,7 @@ function watchBillings(pid) {
       rows.unshift({ id: c.key, ...c.val() });
     });
     rows.sort((a, b) => (a.seq || 0) - (b.seq || 0));
+    renderBillingSelectOptions(rows);
 
     const fragment = document.createDocumentFragment();
     rows.forEach(b => {
@@ -1368,10 +1461,12 @@ function watchBillings(pid) {
       tr.className = 'bill-row';
       tr.setAttribute('data-status', b.status);
       tr.innerHTML = `
-        <td class="b-cell">Billing #${b.seq || seq++}</td>
+        <td class="b-cell">${escapeHtml(billingDisplayNo(b, seq++))}</td>
+        <td class="b-cell">${escapeHtml(billingTypeLabel(b.type))}</td>
         <td class="b-cell">${b.date || '\u2014'}</td>
         <td class="b-cell">${escapeHtml(b.description || '\u2014')}</td>
-        <td class="b-cell b-right b-bold">${peso(b.amount)}</td>
+        <td class="b-cell b-right b-bold">${peso(billingGross(b))}</td>
+        <td class="b-cell b-right b-bold">${peso(billingReceivableDisplay(b))}</td>
         <td class="b-cell">
           <select class="status-sel ${statusClass}" onchange="updateBillingStatus('${b.id}',this.value)">
             <option value="pending" ${b.status === 'pending' ? 'selected' : ''}>Pending</option>
@@ -1385,10 +1480,10 @@ function watchBillings(pid) {
           </select>
         </td>
         <td class="b-cell b-center">
-          <button class="del-item-btn" aria-label="Delete billing" data-bid="${b.id}">\u2715</button>
+          ${billingActionHtml(b)}
         </td>
       `;
-      tr.querySelector('[data-bid]').addEventListener('click', () => deleteBilling(b.id));
+      bindBillingRowActions(tr);
       fragment.appendChild(tr);
     });
     tbody.appendChild(fragment);
@@ -1405,9 +1500,14 @@ async function addBillingRequest() {
   const date = $('billDate').value;
   const desc = $('billDesc').value.trim();
   const amount = parseFloat($('billAmount').value) || 0;
+  const type = ($('billType') && $('billType').value) || 'progress';
+  const retentionPct = parseFloat(($('billRetentionPct') && $('billRetentionPct').value) || '') || 0;
+  const deductionTotal = parseFloat(($('billDeduction') && $('billDeduction').value) || '') || 0;
   if (!date) { showToast('Enter billing date.', 'error'); return; }
   if (!desc) { showToast('Enter description.', 'error'); return; }
   if (amount <= 0) { showToast('Enter billing amount.', 'error'); return; }
+  if (retentionPct < 0 || retentionPct > 100) { showToast('Retention must be from 0% to 100%.', 'error'); return; }
+  if (deductionTotal < 0 || deductionTotal >= amount) { showToast('Deduction must be lower than billing amount.', 'error'); return; }
   if (desc.length > 200) { showToast('Description too long (max 200).', 'error'); return; }
 
   // Validate date not in future
@@ -1416,16 +1516,25 @@ async function addBillingRequest() {
   if (inputDate > today) { showToast('Billing date cannot be in the future.', 'error'); return; }
 
   try {
-    const billing = await createBilling(_bpid, {
+    const payload = {
       date,
       description: desc,
       amount,
-      type: 'progress',
-      status: 'submitted'
-    });
+      type,
+      status: 'submitted',
+      deductionTotal,
+      retentionPct
+    };
+    const billing = type === 'downpayment'
+      ? await createDownpaymentBilling(_bpid, payload)
+      : type === 'mobilization'
+        ? await createMobilizationBilling(_bpid, payload)
+        : await createBilling(_bpid, payload);
     $('billDate').value = ''; $('billDesc').value = ''; $('billAmount').value = '';
+    if ($('billRetentionPct')) $('billRetentionPct').value = '';
+    if ($('billDeduction')) $('billDeduction').value = '';
     auditLog('create', 'billing', billing.id, { seq: billing.seq, amount, projectId: _bpid });
-    showToast(`Billing #${billing.seq} added`);
+    showToast(`${billingTypeLabel(type)} ${billingDisplayNo(billing)} added`);
   } catch (e) {
     console.error(e);
     showToast(e.message || 'Failed to add billing.', 'error');
@@ -1500,7 +1609,7 @@ function watchCollections(pid) {
     let grand = 0;
 
     if (!snap.exists()) {
-      tbody.innerHTML = `<tr><td colspan="4" class="empty-cell">No collections yet.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">No collections yet.</td></tr>`;
       setText('collectionGrand', peso(0));
       scheduleBillingRollupRebuild(pid, { collectionsSnap: snap });
       return;
@@ -1520,7 +1629,9 @@ function watchCollections(pid) {
       tr.innerHTML = `
         <td class="b-cell">${col.date || '\u2014'}</td>
         <td class="b-cell">${escapeHtml(col.description || '\u2014')}</td>
+        <td class="b-cell">${escapeHtml(col.billingNo || (col.billingId ? col.billingId.slice(-8) : 'Auto / Unallocated'))}</td>
         <td class="b-cell b-right b-bold" style="color:var(--green)">${peso(collectionNet(col))}</td>
+        <td class="b-cell b-right">${peso(col.unappliedAmount)}</td>
         <td class="b-cell b-center">
           ${col.status !== 'voided' ? `<button class="del-item-btn" aria-label="Void collection" data-cid="${col.id}">\u2715</button>` : '<span style="font-size:10px;color:var(--muted)">VOID</span>'}
         </td>
@@ -1534,9 +1645,9 @@ function watchCollections(pid) {
     const totalTr = document.createElement('tr');
     totalTr.className = 'hist-total-row';
     totalTr.innerHTML = `
-      <td class="b-cell" colspan="2">Total Collected</td>
+      <td class="b-cell" colspan="3">Total Collected</td>
       <td class="b-cell b-right" style="color:var(--green);font-weight:800">${peso(grand)}</td>
-      <td></td>
+      <td></td><td></td>
     `;
     fragment.appendChild(totalTr);
     tbody.appendChild(fragment);
@@ -1558,9 +1669,17 @@ async function addCollection() {
   const date = $('colDate').value;
   const desc = $('colDesc').value.trim();
   const amount = parseFloat($('colAmount').value) || 0;
+  const billingSelect = $('colBillingId');
+  const billingId = billingSelect ? billingSelect.value : '';
+  const billingNo = billingSelect && billingSelect.selectedOptions[0]
+    ? billingSelect.selectedOptions[0].dataset.billingNo || ''
+    : '';
+  const retentionReleased = parseFloat(($('colRetentionReleased') && $('colRetentionReleased').value) || '') || 0;
+  const referenceNo = (($('colReference') && $('colReference').value) || '').trim();
   if (!date) { showToast('Enter date received.', 'error'); return; }
   if (!desc) { showToast('Enter description.', 'error'); return; }
   if (amount <= 0) { showToast('Enter amount received.', 'error'); return; }
+  if (retentionReleased < 0 || retentionReleased > amount) { showToast('Retention release cannot exceed collection amount.', 'error'); return; }
   if (desc.length > 200) { showToast('Description too long.', 'error'); return; }
 
   // Validate date not in future
@@ -1573,9 +1692,15 @@ async function addCollection() {
       date,
       description: desc,
       amount,
+      billingId,
+      billingNo,
+      retentionReleased,
+      referenceNo,
       type: 'collection'
     });
     $('colDate').value = ''; $('colDesc').value = ''; $('colAmount').value = '';
+    if ($('colRetentionReleased')) $('colRetentionReleased').value = '';
+    if ($('colReference')) $('colReference').value = '';
     auditLog('create', 'collection', collection.id, { amount, projectId: _bpid });
     showToast(`Collection of ${peso(amount)} recorded`);
   } catch (e) {
@@ -1611,6 +1736,138 @@ async function deleteCollection(key) {
   await rebuildBillingRollups(_bpid);
   auditLog('void', 'collection', key, { projectId: _bpid });
   showToast('Collection voided', 'warn');
+}
+
+async function addBillingDeductionFromUI(billingId) {
+  if (!_bpid || !billingId) return;
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  const amount = parseFloat(prompt('Deduction amount:') || '0') || 0;
+  if (amount <= 0) {
+    showToast('Deduction cancelled.', 'warn');
+    return;
+  }
+  const reason = (prompt('Deduction reason:') || 'Billing deduction').trim();
+  if (!reason) {
+    showToast('Deduction reason is required.', 'error');
+    return;
+  }
+  try {
+    const deduction = await createBillingDeduction(_bpid, billingId, {
+      amount,
+      reason,
+      description: reason,
+      status: 'approved'
+    });
+    auditLog('create', 'billingDeduction', deduction.id, { billingId, amount, projectId: _bpid });
+    showToast(`Deduction ${peso(amount)} applied`);
+  } catch (e) {
+    console.error(e);
+    showToast(e.message || 'Failed to apply deduction.', 'error');
+  }
+}
+
+async function releaseRetentionFromUI(billingId) {
+  if (!_bpid || !billingId) return;
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  const amount = parseFloat(prompt('Retention collection amount:') || '0') || 0;
+  if (amount <= 0) {
+    showToast('Retention collection cancelled.', 'warn');
+    return;
+  }
+  const notes = (prompt('Retention collection notes:') || 'Retention released and collected').trim();
+  try {
+    const billingSnap = await billingProjectRef(_bpid, `billings/${billingId}`).once('value');
+    const billing = { id: billingId, ...(billingSnap.val() || {}) };
+    const collection = await recordCollection(_bpid, {
+      amount,
+      amountReceived: amount,
+      retentionReleased: amount,
+      billingId,
+      billingNo: billingDisplayNo(billing),
+      date: new Date().toISOString().slice(0, 10),
+      description: notes,
+      referenceNo: 'retention-release',
+      type: 'retention_release_collection',
+      status: 'posted',
+      allocateToOldest: false
+    });
+    auditLog('collect', 'billingRetention', collection.id, { billingId, amount, projectId: _bpid });
+    showToast(`Retention ${peso(amount)} collected`);
+  } catch (e) {
+    console.error(e);
+    showToast(e.message || 'Failed to collect retention.', 'error');
+  }
+}
+
+async function generateBillingOutputForBilling(billingId, title = '') {
+  if (!_bpid || !billingId) return null;
+  if (!canTouchBillingProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return null;
+  }
+  try {
+    const output = await generateBillingOutputSnapshot(_bpid, {
+      billingId,
+      title: title || 'Billing Output'
+    });
+    auditLog('archive', 'billingOutput', output.id, { billingId, projectId: _bpid });
+    showToast(`${output.outputNo} archived`);
+    return output;
+  } catch (e) {
+    console.error(e);
+    showToast(e.message || 'Failed to archive billing output.', 'error');
+    return null;
+  }
+}
+
+async function generateBillingOutputFromUI() {
+  const select = $('outputBillingId');
+  const billingId = select ? select.value : '';
+  const title = (($('outputTitle') && $('outputTitle').value) || '').trim();
+  if (!billingId) {
+    showToast('Select an approved billing first.', 'error');
+    return;
+  }
+  const output = await generateBillingOutputForBilling(billingId, title);
+  if (output && $('outputTitle')) $('outputTitle').value = '';
+}
+
+function watchBillingOutputs(pid) {
+  _billingOutputsListener = billingProjectRef(pid, 'billingOutputs');
+  _billingOutputsListener.on('value', snap => {
+    const tbody = $('billingOutputsBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!snap.exists()) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">No archived billing outputs yet.</td></tr>`;
+      return;
+    }
+    const rows = billingSnapRows(snap)
+      .sort((a, b) => (b.generatedAt || 0) - (a.generatedAt || 0));
+    const fragment = document.createDocumentFragment();
+    rows.forEach(output => {
+      const totals = (output.snapshot && output.snapshot.totals) || {};
+      const billingIds = Object.keys(output.sourceBillingIds || {});
+      const tr = document.createElement('tr');
+      tr.className = 'bill-row';
+      tr.innerHTML = `
+        <td class="b-cell">${escapeHtml(output.outputNo || output.id.slice(-8))}</td>
+        <td class="b-cell">${output.generatedAt ? new Date(output.generatedAt).toLocaleDateString() : '\u2014'}</td>
+        <td class="b-cell">${escapeHtml(output.title || 'Billing Output')}</td>
+        <td class="b-cell">${escapeHtml(billingIds.length ? `${billingIds.length} billing(s)` : (output.billingId || '\u2014'))}</td>
+        <td class="b-cell b-right b-bold">${peso(totals.netBillable)}</td>
+        <td class="b-cell">${escapeHtml(output.status || 'archived')}</td>
+      `;
+      fragment.appendChild(tr);
+    });
+    tbody.appendChild(fragment);
+  });
 }
 
 // Export billing summary
@@ -1689,4 +1946,8 @@ window.deleteBilling = deleteBilling;
 window.filterBillings = filterBillings;
 window.addCollection = addCollection;
 window.deleteCollection = deleteCollection;
+window.addBillingDeductionFromUI = addBillingDeductionFromUI;
+window.releaseRetentionFromUI = releaseRetentionFromUI;
+window.generateBillingOutputForBilling = generateBillingOutputForBilling;
+window.generateBillingOutputFromUI = generateBillingOutputFromUI;
 window.exportBillingSummary = exportBillingSummary;

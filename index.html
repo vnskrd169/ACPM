@@ -19,24 +19,24 @@
 <!-- ReCapcha anti bot lol-->
 <script src="https://www.google.com/recaptcha/enterprise.js?render=6LcZsi0tAAAAAIsQaR686BvIDAjZVDyzdw4afHoW"></script>
 <!-- Utilities (DOM helpers, formatting, safeDb, etc.) -->
-<script src="utils.js?v=62"></script>
+<script src="utils.js?v=71"></script>
 
 <!-- Auth (must load before main.js — main.js calls canAccessProject/canEditProject) -->
-<script src="auth.js?v=62"></script>
+<script src="auth.js?v=73"></script>
 
 <!-- Core modules -->
-<script src="main.js?v=62"></script>
+<script src="main.js?v=73"></script>
 <script src="labor.js?v=55"></script>
 <script src="materials.js?v=47"></script>
-<script src="sitelog.js?v=65"></script>
+<script src="sitelog.js?v=72"></script>
 <script src="suppliers.js?v=66"></script>
-<script src="billing.js?v=63"></script>
+<script src="billing.js?v=74"></script>
 <script src="changeorders.js?v=64"></script>
 <script src="equipment.js?v=43"></script>
 <script src="compliance.js?v=43"></script>
 <script src="defects.js?v=43"></script>
 <script src="tasks.js?v=43"></script>
-<script src="notifications.js?v=62"></script>
+<script src="notifications.js?v=71"></script>
 <script src="report.js?v=67"></script>
 
 <!-- PDF generation -->
@@ -298,8 +298,8 @@ window.addEventListener('appinstalled', () => {
       <button id="tab_labor" class="tab-btn tab-active" onclick="switchTab('labor')" data-role-visible="apm,pm,boss,owner,admin">&#x1F477; Labor</button>
       <button id="tab_materials" class="tab-btn" onclick="switchTab('materials')" data-role-visible="apm,pm,boss,owner,admin">&#x1F4E6; Materials</button>
       <button id="tab_billing" class="tab-btn" onclick="switchTab('billing')" data-role-visible="financial">&#x1F4B0; Billing</button>
-      <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')" data-role-visible="apm,pm,boss,owner,admin,foreman,safety,viewer">&#x1F4D2; Site Log</button>
-      <button id="extrasToggleBtn" class="tab-btn" onclick="toggleExtraTabs()" data-role-visible="apm,boss">&#x1F527; Extras</button>
+      <button id="tab_sitelog" class="tab-btn" onclick="switchTab('sitelog')" data-role-visible="apm,pm,boss,owner,admin">&#x1F4D2; Site Log</button>
+      <button id="extrasToggleBtn" class="tab-btn" onclick="toggleExtraTabs()" data-role-visible="apm,pm,boss,owner,admin">&#x1F527; Extras</button>
       <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F4CB; Change Orders</button>
       <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F3EA; Suppliers</button>
       <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')" data-role-visible="apm,boss" data-feature-visible="extras">&#x2611; Tasks</button>
@@ -677,18 +677,25 @@ window.addEventListener('appinstalled', () => {
       <div class="card gap">
         <div class="card-title"><span class="ct-icon" style="background:rgba(59,130,246,.1)">&#x1F4E4;</span> Billing Requests</div>
         <div class="billing-form-grid">
+          <select id="billType" aria-label="Billing type">
+            <option value="progress">Progress Billing</option>
+            <option value="downpayment">Downpayment</option>
+            <option value="mobilization">Mobilization</option>
+          </select>
           <input id="billDesc" type="text" placeholder="Description (e.g. 2nd tranche — roofing complete)">
           <input id="billDate" type="date">
           <input id="billAmount" type="number" placeholder="Amount (&#x20B1;)" inputmode="decimal">
+          <input id="billRetentionPct" type="number" placeholder="Retention %" inputmode="decimal">
+          <input id="billDeduction" type="number" placeholder="Deduction (&#x20B1;)" inputmode="decimal">
           <button class="btn-add-sm" onclick="addBillingRequest()">+ Add</button>
         </div>
         <div class="overflow-scroll">
           <table class="hist-table">
             <thead><tr>
-              <th>Billing #</th><th>Date</th><th>Description</th>
-              <th style="text-align:right">Amount</th><th>Status</th><th style="text-align:center">Del</th>
+              <th>Billing #</th><th>Type</th><th>Date</th><th>Description</th>
+              <th style="text-align:right">Amount</th><th style="text-align:right">Receivable</th><th>Status</th><th style="text-align:center">Actions</th>
             </tr></thead>
-            <tbody id="billingsBody"><tr><td colspan="6" class="empty-cell">No billing requests yet.</td></tr></tbody>
+            <tbody id="billingsBody"><tr><td colspan="8" class="empty-cell">No billing requests yet.</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -696,17 +703,41 @@ window.addEventListener('appinstalled', () => {
       <div class="card gap">
         <div class="card-title"><span class="ct-icon" style="background:rgba(16,185,129,.1)">&#x1F4E5;</span> Collections Received</div>
         <div class="billing-form-grid">
+          <select id="colBillingId" aria-label="Apply collection to billing">
+            <option value="">Auto-allocate to oldest approved billing</option>
+          </select>
           <input id="colDesc" type="text" placeholder="Description (e.g. 2nd tranche payment received)">
           <input id="colDate" type="date">
           <input id="colAmount" type="number" placeholder="Amount received (&#x20B1;)" inputmode="decimal">
+          <input id="colRetentionReleased" type="number" placeholder="Retention released (&#x20B1;)" inputmode="decimal">
+          <input id="colReference" type="text" placeholder="Reference #">
           <button class="btn-add-sm" onclick="addCollection()">+ Record</button>
         </div>
         <div class="overflow-scroll">
           <table class="hist-table">
             <thead><tr>
-              <th>Date</th><th>Description</th><th style="text-align:right">Amount</th><th style="text-align:center">Del</th>
+              <th>Date</th><th>Description</th><th>Linked Billing</th><th style="text-align:right">Amount</th><th style="text-align:right">Unapplied</th><th style="text-align:center">Actions</th>
             </tr></thead>
-            <tbody id="collectionsBody"><tr><td colspan="4" class="empty-cell">No collections yet.</td></tr></tbody>
+            <tbody id="collectionsBody"><tr><td colspan="6" class="empty-cell">No collections yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card gap">
+        <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.12)">&#x1F9FE;</span> Billing Output Archive</div>
+        <div class="billing-form-grid">
+          <select id="outputBillingId" aria-label="Billing output source">
+            <option value="">Select approved billing</option>
+          </select>
+          <input id="outputTitle" type="text" placeholder="Output title">
+          <button class="btn-add-sm" onclick="generateBillingOutputFromUI()">Archive Output</button>
+        </div>
+        <div class="overflow-scroll">
+          <table class="hist-table">
+            <thead><tr>
+              <th>Output #</th><th>Date</th><th>Title</th><th>Billing</th><th style="text-align:right">Net</th><th>Status</th>
+            </tr></thead>
+            <tbody id="billingOutputsBody"><tr><td colspan="6" class="empty-cell">No archived billing outputs yet.</td></tr></tbody>
           </table>
         </div>
       </div>

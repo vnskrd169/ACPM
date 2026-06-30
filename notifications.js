@@ -62,12 +62,12 @@ function renderNotificationFeed(snap) {
 
   el.innerHTML = items.map(n => {
     const iconMap = {
-      task: '\u2705', payroll: '\u1F4B0', billing: '\u1F4C4',
-      delivery: '\u1F4E6', alert: '\u26A0', mention: '\u0040'
+      task: 'OK', payroll: 'PHP', billing: 'BILL',
+      delivery: 'PO', alert: '!', mention: '@'
     };
     return `
       <div class="notif-item ${n.read ? 'notif-read' : 'notif-unread'}" data-nid="${n.id}">
-        <span class="notif-icon">${iconMap[n.type] || '\u1F4AC'}</span>
+        <span class="notif-icon">${iconMap[n.type] || 'MSG'}</span>
         <div class="notif-body">
           <div class="notif-text">${escapeHtml(n.message)}</div>
           <div class="notif-meta">${n.projectName || ''} \u00B7 ${timeAgo(n.createdAt)}</div>

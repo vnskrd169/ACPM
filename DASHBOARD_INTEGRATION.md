@@ -21,6 +21,8 @@ In `main.js`:
 - `dashboardMaterialSpent(project)`
 - `dashboardOtherSpent(project)`
 - `dashboardTotalSpent(project)`
+- `dashboardPendingApprovalItems(projects)`
+- `dashboardRecentItems(projects)`
 
 ## Displayed Fields
 
@@ -42,9 +44,15 @@ When billing/report rollups exist, project cards also show:
 - total collected
 - receivable
 
+Dashboard alert/recent activity helpers also read:
+
+- pending `lifecycleRequests`
+- pending project `notificationEvents`
+- open Site Log issues/delays from report/site-log rollups
+
 ## Known Limitations
 
-- Dashboard does not yet show a dedicated pending approvals panel.
+- Dashboard shows pending lifecycle/notification event counts in the alerts bar, but does not yet have a dedicated approvals panel.
 - Dashboard still relies on project snapshots loaded through the existing hub listener.
-- Full cross-module alert aggregation is not implemented yet.
+- Full cross-module alert drill-down is not implemented yet.
 - Manual Firebase QA is pending after rollups are rebuilt on a QA project.

@@ -1,6 +1,6 @@
 # ACPM Billing v1 Workflow and Firebase Schema
 
-Status: PHASE 1 STABLE - ROLLUP REBUILD QA PASSED; PHASE 2 DATA FOUNDATION IMPLEMENTED - QA PENDING
+Status: PHASE 1 STABLE - ROLLUP REBUILD QA PASSED; PHASE 2 REAL FIREBASE HELPER QA + BROWSER UI SMOKE PASSED - DASHBOARD RESTART QA PENDING
 
 Labor v1 and Materials v1 are frozen. Billing v1 must track project revenue, billings, collections, receivables, and profit reporting without changing Labor or Materials.
 
@@ -589,6 +589,7 @@ projects/{projectId}/
     netCashReceived
     unappliedAmount
     billingId
+    allocationMode
     allocations/{allocationId}/
       billingId
       billingNo
@@ -815,6 +816,7 @@ Implemented in `billing.js`:
 Phase 2 implementation notes:
 
 - `recordCollection()` now writes historical collection rows and allocation rows instead of incrementing stored billing totals.
+- New helper-created collections write `allocationMode = phase2`, so the legacy compatibility reader does not count `collection.billingId` as an allocation before the explicit `billingAllocations` row is written.
 - If `billingId` is supplied, collection allocation is validated against that billing's current receivable before writing.
 - If no `billingId` is supplied, the current simple UI stays compatible by auto-allocating against oldest approved receivables where possible; any excess remains `unappliedAmount`.
 - `billingAllocations` mirrors collection allocation data so allocation history remains reportable even if the collection display changes.
@@ -822,9 +824,20 @@ Phase 2 implementation notes:
 - Retention releases are stored under `retentionLedger`; released retention is not counted as collected cash unless a collection exists.
 - Retention-release cash on a collection is separated from ordinary billing allocation so it does not overpay the current receivable.
 - If a retention ledger release and collection retention release reference the same `collectionId`, rollups de-duplicate the release to prevent double-counting.
+- Rollup `unappliedCollections` subtracts both ordinary billing allocations and retention cash collections through `totalAppliedCollections`.
+- Existing billing deduction child rows are authoritative over stale stored `deductionTotal`; voided/rejected deduction rows remain historical but are ignored by rollups.
 - `billingOutputs` snapshots copy project/client/contract/billing/collection/deduction/retention/totals at generation time.
 - `billingOutputs` collected totals use selected allocation amounts, not the full collection amount, when one collection is split across multiple billings.
-- PWA cache and script version were bumped to `acpm-v63` / `billing.js?v=63` after Phase 2 retention/output snapshot fixes.
+- PWA cache and script version were bumped to `acpm-v74` / `billing.js?v=74` after Phase 2 minimal UI wiring.
+
+Phase 2 minimal UI wiring:
+
+- Billing request form now supports progress, downpayment, and mobilization billing types.
+- Billing creation can include retention percentage and a direct deduction amount.
+- Collections can optionally link to an approved billing or auto-allocate to oldest approved billing.
+- Collections can record a retention release amount and reference number.
+- Billing rows display type, gross amount, receivable, status, and actions for deduction, retention release, output snapshot, and void.
+- Billing output archive lists immutable output snapshots from `billingOutputs`.
 
 ### Phase 2 Rollup Changes
 
@@ -837,9 +850,11 @@ totalGrossBilled
 totalApprovedDeductions
 totalRetentionHeld
 totalRetentionReleased
+totalRetentionCollected
 retentionReceivable
 totalCurrentCollectible
 totalAllocatedCollections
+totalAppliedCollections
 unappliedCollections
 currentReceivable
 totalReceivable
@@ -852,11 +867,13 @@ Recommended definitions:
 totalGrossBilled = approved non-void billing gross amounts
 totalApprovedDeductions = approved non-void billing deductions and receivable-affecting approved adjustments
 totalRetentionHeld = approved retention held from billings
-totalRetentionReleased = approved retention release ledger amount
+totalRetentionReleased = approved retention release ledger amount plus retention cash collection rows, de-duplicated by collectionId
+totalRetentionCollected = retention release amount tied to active collection rows
 retentionReceivable = totalRetentionHeld - totalRetentionReleased
 totalCurrentCollectible = totalGrossBilled - totalApprovedDeductions - totalRetentionHeld
 totalAllocatedCollections = active allocations applied to active billings
-unappliedCollections = active collection amount not allocated to billings
+totalAppliedCollections = totalAllocatedCollections + totalRetentionCollected
+unappliedCollections = active collection amount not allocated to billings or retention collection
 currentReceivable = totalCurrentCollectible - totalAllocatedCollections
 totalReceivable = currentReceivable + retentionReceivable
 totalRevenueCollected = posted non-void net cash received
@@ -922,11 +939,11 @@ Existing downpayment collection should become a `downpayment` or `mobilization` 
 1. Add `BILLING_SCHEMA.md`. Done.
 2. Add Firebase indexes for Billing paths. Done in Phase 1.
 3. Add Billing helper layer. Done in Phase 1 for contract, billings, collections, adjustments, events, rollups, receivable, and revenue-vs-cost.
-4. Refactor current UI to use helpers without redesigning UI. Partially done in Phase 1 for contract save, billing create, collection create, status update, and void actions.
-5. Add downpayment/mobilization billing support. Helper/data foundation implemented in Phase 2; dedicated UI pending.
-6. Add partial collection linkage to billing records. Implemented through `billingAllocations`; dedicated UI pending.
-7. Add retention and deduction calculations. Helper/data foundation implemented in Phase 2; dedicated UI pending.
-8. Add billing output archive. Immutable JSON snapshot helper implemented in Phase 2; polished output UI/PDF pending.
+4. Refactor current UI to use helpers without redesigning UI. Minimal Phase 2 wiring implemented for billing type, linked collections, retention release, deductions, and output archive.
+5. Add downpayment/mobilization billing support. Helper/data foundation and minimal UI selector implemented in Phase 2.
+6. Add partial collection linkage to billing records. Implemented through `billingAllocations` and wired through the collection billing selector.
+7. Add retention and deduction calculations. Helper/data foundation implemented; minimal UI supports direct billing deduction and retention release actions.
+8. Add billing output archive. Immutable JSON snapshot helper and minimal archive list/generate UI implemented; polished PDF/tax invoice output pending.
 9. Add dashboard/report integration. Rollups exist; full dashboard/report wiring is pending.
 10. Run Billing v1 manual QA. Phase 1 checklist added in `QA_BILLING.md`.
 
