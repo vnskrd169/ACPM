@@ -20,8 +20,8 @@ Billing script: billing.js?v=74
 ```text
 billing.js
 database.rules.json
-BILLING_SCHEMA.md
-QA_BILLING_PHASE2.md
+docs/schema/BILLING_SCHEMA.md
+docs/qa/QA_BILLING_PHASE2.md
 workspace.html
 dashboard.html
 index.html

@@ -17,7 +17,7 @@
 
 2. **Publish hardened rules**
    - Firebase Console → Realtime Database → Rules
-   - Copy contents from `database.rules.json` (updated version in this folder)
+   - Copy contents from `database.rules.json` in the repository root
    - Click Publish
    - Test: Log in as boss → create a test project → log in as APM → confirm they can only see assigned projects
 
@@ -88,7 +88,7 @@ Use Chrome's Incognito mode to test multiple accounts simultaneously.
 
 ### Day 1-2 — Write the Pitch (1 hour)
 
-Use `COMPANY_PITCH.md` (included in this folder). Customize:
+Use [`COMPANY_PITCH.md`](../product/COMPANY_PITCH.md). Customize:
 - Company name (LeBuild)
 - Current pain points (spreadsheets, lost receipts, delayed payroll)
 - Expected savings (time, errors, money)
@@ -119,7 +119,7 @@ Create their Firebase Auth accounts:
 
 ### Day 5 — Print the Cheat Sheet (15 min)
 
-Print `ONBOARDING_CHEAT_SHEET.md` (1 page per person). Give it to pilot users.
+Print [`ONBOARDING_CHEAT_SHEET.md`](../product/ONBOARDING_CHEAT_SHEET.md) (1 page per person). Give it to pilot users.
 
 ---
 

@@ -50,9 +50,9 @@ function hasAnyRoleCredentials() {
 }
 
 function main() {
-  const readiness = read('RC1_READINESS.md');
-  const postDeploy = read('RC1_POST_DEPLOY_QA.md');
-  const qaChangeOrder = read('QA_CHANGEORDER.md');
+  const readiness = read('docs/release/RC1_READINESS.md');
+  const postDeploy = read('docs/release/RC1_POST_DEPLOY_QA.md');
+  const qaChangeOrder = read('docs/qa/QA_CHANGEORDER.md');
   const warnings = [];
   const failures = [];
   const evidence = [];

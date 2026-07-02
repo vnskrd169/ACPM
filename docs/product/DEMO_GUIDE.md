@@ -177,7 +177,7 @@ A: *"Hindi pa ngayon. Pero pwedeng i-implement in the future."* (Be honest.)
 ## After the Demo
 
 1. Ask: *"May tanong pa ba?"*
-2. Give them the cheat sheet (`ONBOARDING_CHEAT_SHEET.md`)
+2. Give them the cheat sheet ([`ONBOARDING_CHEAT_SHEET.md`](ONBOARDING_CHEAT_SHEET.md))
 3. Send them the app link
 4. Create their account if they want to try
 5. Follow up in 3 days: *"Nag-try mo na?"*

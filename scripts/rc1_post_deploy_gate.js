@@ -117,7 +117,7 @@ function main() {
     realQaSkippedReason,
     nextStep: realQaSkippedReason
       ? 'For live backend verification, set RUN_REAL_QA=1 plus ACPM_QA_EMAIL/ACPM_QA_PASSWORD. For deployed PM/APM rules verification, also set ACPM_ROLE_QA_ACCOUNTS or PM/APM role credentials.'
-      : 'Review script outputs and update RC1_READINESS.md with deployed-rule QA evidence.'
+      : 'Review script outputs and update docs/release/RC1_READINESS.md with deployed-rule QA evidence.'
   };
 
   console.log(JSON.stringify(payload, null, 2));
