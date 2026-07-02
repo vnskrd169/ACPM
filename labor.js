@@ -232,6 +232,7 @@ function renderTradeChips(snap) {
   el.innerHTML = '';
   _tradeMetaByName = {};
   if (!snap.exists()) { el.innerHTML = '<p class="empty-hint">No trades yet.</p>'; return; }
+  let activeCount = 0;
   snap.forEach(c => {
     const t = c.val();
     const tradeName = normalizeTradeName(t.name);
@@ -242,6 +243,8 @@ function renderTradeChips(snap) {
       paymentMethod: t.paymentMethod || _projectSettings.payMethod || 'Bank',
       notes: t.notes || ''
     };
+    if (t.status === 'archived') return;
+    activeCount++;
     const chip = document.createElement('div');
     chip.className = 'trade-chip trade-scope-card';
     chip.innerHTML = `
@@ -274,6 +277,7 @@ function renderTradeChips(snap) {
 
     el.appendChild(chip);
   });
+  if (!activeCount) el.innerHTML = '<p class="empty-hint">No active trades yet.</p>';
 }
 
 async function addTrade() {
@@ -321,10 +325,15 @@ async function deleteTrade(key, name) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  if (!confirm(`Delete trade "${name}"?\n\nWorkers with this trade will keep it.`)) return;
-  await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades/${key}`).remove(), 'Failed to delete trade');
-  auditLog('delete', 'trade', key, { name });
-  showToast(`Trade "${name}" deleted`, 'warn');
+  if (!confirm(`Archive trade "${name}"?\n\nWorkers and payroll history will keep this trade name.`)) return;
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/trades/${key}`).update({
+    status: 'archived',
+    archivedAt: Date.now(),
+    archivedBy: window._currentUser?.uid || null,
+    archivedByName: currentLaborUserLabel()
+  }), 'Failed to archive trade');
+  auditLog('archive', 'trade', key, { name, projectId: _lpid });
+  showToast(`Trade "${name}" archived`, 'warn');
 }
 
 function populateTradeSelect(snap) {
@@ -332,6 +341,7 @@ function populateTradeSelect(snap) {
   const prev = sel.value;
   sel.innerHTML = '<option value="">\u2014 Select Trade \u2014</option>';
   snap?.forEach(c => {
+    if (c.val().status === 'archived') return;
     const opt = document.createElement('option');
     opt.value = c.val().name;
     opt.textContent = c.val().name;
@@ -364,13 +374,24 @@ function renderLaborWorkspaceViews() {
   if (_attendanceSnap) buildGrid(_lpid, _workersSnap, _attendanceSnap);
 }
 
+function workerIsActive(worker) {
+  return worker?.active !== false && worker?.status !== 'inactive' && worker?.status !== 'archived';
+}
+
+function workerHasAttendanceForDays(workerAttendance = {}, days = []) {
+  return days.some(day => !!workerAttendance[day.iso]);
+}
+
 function renderRoster(wSnap, pid, allAdvSnap) {
   const el = $('rosterList'); if (!el) return;
   el.innerHTML = '';
   if (!wSnap.exists()) { el.innerHTML = '<p class="empty-hint">No workers yet.</p>'; return; }
 
+  let activeCount = 0;
   wSnap.forEach(c => {
     const w = c.val();
+    if (!workerIsActive(w)) return;
+    activeCount++;
     const wid = c.key;
 
     let pending = 0;
@@ -404,6 +425,7 @@ function renderRoster(wSnap, pid, allAdvSnap) {
 
     el.appendChild(div);
   });
+  if (!activeCount) el.innerHTML = '<p class="empty-hint">No active workers yet.</p>';
 }
 
 async function addWorker() {
@@ -429,7 +451,7 @@ async function addWorker() {
     if (!confirm(`Daily rate ${peso(rate)} seems very high. Continue?`)) return;
   }
 
-  const workerData = { name, trade, dailyRate: rate, addedAt: Date.now(), addedBy: window._currentUser.uid };
+  const workerData = { name, trade, dailyRate: rate, active: true, status: 'active', addedAt: Date.now(), addedBy: window._currentUser.uid };
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/workers`).push(workerData), 'Failed to add worker');
   $('workerName').value = ''; $('workerRate').value = '';
   auditLog('create', 'worker', null, { name, trade, rate, projectId: _lpid });
@@ -442,28 +464,35 @@ async function removeWorker(wid) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  if (!confirm('Remove this worker and ALL their attendance and advance records?\n\nThis cannot be undone.')) return;
-  const confirmText = prompt('Type REMOVE WORKER to confirm permanent removal:');
-  if (confirmText !== 'REMOVE WORKER') {
-    showToast('Removal cancelled.', 'warn');
+  const workerSnap = await firebase.database().ref(`projects/${_lpid}/workers/${wid}`).once('value');
+  const worker = workerSnap.val();
+  if (!worker) return;
+  if (!workerIsActive(worker)) {
+    showToast('Worker is already inactive.', 'warn');
     return;
   }
-
-  // Atomic multi-path delete
-  const attSnap = await firebase.database().ref(`projects/${_lpid}/attendance/${wid}`).once('value');
-  const advSnap = await firebase.database().ref(`projects/${_lpid}/advances/${wid}`).once('value');
-  const updates = {};
-  updates[`projects/${_lpid}/workers/${wid}`] = null;
-  attSnap.forEach(c => {
-    updates[`projects/${_lpid}/attendance/${wid}/${c.key}`] = null;
-  });
-  advSnap.forEach(c => {
-    updates[`projects/${_lpid}/advances/${wid}/${c.key}`] = null;
-  });
-
-  await safeDb(() => firebase.database().ref().update(updates), 'Failed to remove worker');
-  auditLog('delete', 'worker', wid, { projectId: _lpid });
-  showToast('Worker removed');
+  if (!confirm(`Deactivate ${worker.name || 'this worker'}?\n\nAttendance, payroll, and cash advance history will remain in Firebase.`)) return;
+  const reason = prompt('Reason for deactivating this worker:') || '';
+  const now = Date.now();
+  const statusKey = firebase.database().ref().push().key;
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/workers/${wid}`).update({
+    active: false,
+    status: 'inactive',
+    inactiveAt: now,
+    inactiveBy: window._currentUser?.uid || null,
+    inactiveByName: currentLaborUserLabel(),
+    inactiveReason: reason.trim(),
+    [`statusHistory/${statusKey}`]: {
+      fromStatus: worker.status || 'active',
+      toStatus: 'inactive',
+      notes: reason.trim(),
+      at: now,
+      by: window._currentUser?.uid || null,
+      byName: currentLaborUserLabel()
+    }
+  }), 'Failed to deactivate worker');
+  auditLog('archive', 'worker', wid, { projectId: _lpid, workerName: worker.name || '', reason: reason.trim() });
+  showToast('Worker deactivated. History preserved.', 'warn');
 }
 
 // ══════════════════════════════════════════════════════
@@ -919,11 +948,12 @@ function buildGrid(pid, wSnap, attSnap) {
   const byTrade = {};
   wSnap.forEach(c => {
     const w = { id: c.key, ...c.val() };
+    if (!workerIsActive(w) && !workerHasAttendanceForDays(attendance[w.id], days)) return;
     if (!byTrade[w.trade]) byTrade[w.trade] = [];
     byTrade[w.trade].push(w);
   });
 
-  if (!wSnap.exists()) {
+  if (!wSnap.exists() || !Object.keys(byTrade).length) {
     container.innerHTML = '<p class="empty-hint" style="padding:20px">Add workers to the roster first.</p>';
     updateAttendanceSummary({});
     return;
@@ -1165,7 +1195,7 @@ function renderPeriodIndicator() {
   const fmt = iso => new Date(iso + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
   const dayCount = Math.round((new Date(we + 'T12:00:00') - new Date(ws + 'T12:00:00')) / 86400000) + 1;
   el.innerHTML = `<div class="period-indicator">
-    <span class="period-indicator-badge">\u1F4C5 ${fmt(ws)} \u2014 ${fmt(we)}</span>
+    <span class="period-indicator-badge">${fmt(ws)} \u2014 ${fmt(we)}</span>
     <span class="period-indicator-range">${dayCount} day${dayCount === 1 ? '' : 's'} selected</span>
   </div>`;
 }
@@ -1785,7 +1815,7 @@ function appendHistoryCard(el, e, workers) {
   div.innerHTML = `
     <div class="tc-history-hdr" data-key="${e.key}">
       <div class="tc-history-left">
-        <span class="tc-history-period">\u1F4C5 ${escapeHtml(e.period || '\u2014')}</span>
+        <span class="tc-history-period">${escapeHtml(e.period || '\u2014')}</span>
         <span class="tc-history-meta">${e.tcCount} entries \u00B7 ${e.savedAt ? new Date(e.savedAt).toLocaleDateString('en-PH') : '\u2014'}</span>
       </div>
       <span class="tc-history-toggle" id="tcToggle_${e.key}">\u25BC</span>
@@ -2077,7 +2107,7 @@ function watchPayrollLogs(pid) {
         <div class="payroll-log-entry">
           <div class="payroll-log-hdr" onclick="togglePayrollLog('${e.id}')">
             <div class="payroll-log-left">
-              <span class="payroll-log-period">\u1F4C5 ${escapeHtml(e.period || '\u2014')}</span>
+              <span class="payroll-log-period">${escapeHtml(e.period || '\u2014')}</span>
               <span class="payroll-log-meta">Saved ${escapeHtml(e.savedDate || '\u2014')} \u00B7 ${workerCount} workers \u00B7 ${trades.length} trades</span>
             </div>
             <div class="payroll-log-right">

@@ -277,11 +277,11 @@ function watchChangeOrders(pid) {
           ${co.notes ? `<p class="co-notes">${escapeHtml(co.notes)}</p>` : ''}
           <div class="co-impact-row">
             <div class="co-impact-item">
-              <span class="co-impact-label">\u1F477 Labor Impact</span>
+              <span class="co-impact-label">Labor Impact</span>
               <span class="co-impact-val ${laborImpact >= 0 ? 'pos' : 'neg'}">${laborImpact >= 0 ? '+' : ''}${peso(laborImpact)}</span>
             </div>
             <div class="co-impact-item">
-              <span class="co-impact-label">\u1F4E6 Materials Impact</span>
+              <span class="co-impact-label">Materials Impact</span>
               <span class="co-impact-val ${materialsImpact >= 0 ? 'pos' : 'neg'}">${materialsImpact >= 0 ? '+' : ''}${peso(materialsImpact)}</span>
             </div>
           </div>
@@ -498,13 +498,13 @@ async function legacyDeleteCO(key, status) {
     return;
   }
   if (status === 'approved') {
-    if (!confirm('\u26A0\uFE0F This CO is APPROVED. Deleting it will NOT revert the budget change.\n\nTo revert the budget, first revert the CO to pending, then delete it.\n\nContinue anyway?')) return;
+    if (!confirm('\u26A0\uFE0F This CO is APPROVED. Voiding it will NOT revert the budget change.\n\nTo revert the budget, first revert the CO to pending, then void it.\n\nContinue anyway?')) return;
   } else {
-    if (!confirm('Delete this change order?')) return;
+    if (!confirm('Void this change order?')) return;
   }
-  const confirmText = prompt('Type DELETE CO to confirm permanent deletion:');
-  if (confirmText !== 'DELETE CO') {
-    showToast('Deletion cancelled.', 'warn');
+  const confirmText = prompt('Type VOID CO to confirm voiding:');
+  if (confirmText !== 'VOID CO') {
+    showToast('Void cancelled.', 'warn');
     return;
   }
   await safeDb(() => firebase.database().ref(`projects/${_copid}/changeOrders/${key}`).update({
@@ -671,10 +671,15 @@ async function approveRejectCO(key, newStatus) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  let notes = '';
   if (newStatus === CHANGE_ORDER_STATUSES.rejected) {
-    notes = prompt('Reason for rejection (optional):') || '';
+    openRejectChangeOrderModal(key);
+    return;
   }
+  await commitChangeOrderStatus(key, newStatus, '');
+}
+
+async function commitChangeOrderStatus(key, newStatus, notes = '') {
+  if (!_copid) return;
   try {
     const updated = await safeDb(() => updateChangeOrderStatus(_copid, key, newStatus, notes), 'Failed to update CO status');
     auditLog('update', 'changeOrder', key, { oldStatus: updated.oldStatus, newStatus, projectId: _copid });
@@ -683,6 +688,40 @@ async function approveRejectCO(key, newStatus) {
   } catch (e) {
     console.error(e);
   }
+}
+
+function openRejectChangeOrderModal(key) {
+  const modal = $('coRejectModal');
+  const input = $('coRejectReason');
+  const target = $('coRejectTarget');
+  if (!modal || !input || !target) {
+    commitChangeOrderStatus(key, CHANGE_ORDER_STATUSES.rejected, '');
+    return;
+  }
+  target.value = key;
+  input.value = '';
+  modal.classList.remove('hidden');
+  setTimeout(() => input.focus(), 0);
+}
+
+function closeRejectChangeOrderModal() {
+  const modal = $('coRejectModal');
+  const input = $('coRejectReason');
+  const target = $('coRejectTarget');
+  if (modal) modal.classList.add('hidden');
+  if (input) input.value = '';
+  if (target) target.value = '';
+}
+
+async function confirmRejectChangeOrder() {
+  const key = $('coRejectTarget')?.value || '';
+  const notes = $('coRejectReason')?.value.trim() || '';
+  if (!key) {
+    showToast('No change order selected.', 'error');
+    return;
+  }
+  await commitChangeOrderStatus(key, CHANGE_ORDER_STATUSES.rejected, notes);
+  closeRejectChangeOrderModal();
 }
 
 async function deleteCO(key, status) {
@@ -757,6 +796,9 @@ window.voidChangeOrder = voidChangeOrder;
 window.linkChangeOrderBilling = linkChangeOrderBilling;
 window.createChangeOrderEvent = createChangeOrderEvent;
 window.approveRejectCO = approveRejectCO;
+window.openRejectChangeOrderModal = openRejectChangeOrderModal;
+window.closeRejectChangeOrderModal = closeRejectChangeOrderModal;
+window.confirmRejectChangeOrder = confirmRejectChangeOrder;
 window.deleteCO = deleteCO;
 window.filterCOs = filterCOs;
 window.exportCOsCSV = exportCOsCSV;

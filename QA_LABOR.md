@@ -32,6 +32,8 @@ Total cash advance deduction = 1560
 Bugs found and fixed before user QA:
 
 - Cash advance event hooks and Labor notification hooks could make the UI report failure if a future/deployed hook rule drifted. They are now best-effort, so the primary cash advance workflow continues even if an event hook is denied.
+- Worker removal was still a permanent multi-path delete of worker, attendance, and advance rows. This was fixed for RC1: `removeWorker()` now marks the worker inactive, writes status history, and preserves attendance/cash-advance/payroll history.
+- Trade removal was still a permanent delete of trade settings. This was fixed for RC1: `deleteTrade()` now archives the trade settings while hiding the trade from new worker assignment.
 
 ## Scope
 
@@ -156,16 +158,24 @@ Labor v1 is marked STABLE when:
 ## Known Limitations
 
 - Workers still store `trade` by name, not `tradeId`.
+- Inactive workers are hidden from the active roster, but remain visible in the attendance grid for a selected week if they already have attendance in that week.
 - Payroll archive is one log per compile with nested `byTrade`, not separate Firebase nodes per trade.
 - RFP is generated from selected week live attendance/current trade settings, not from a stored archived RFP node.
 - Payroll math is client-side; no backend payroll validator exists yet.
 - Cash advance approval/release permissions are enforced in client helpers, not server-side Cloud Functions.
 - Firebase rules indexes must be deployed/imported before production use.
 
+## RC1 UI Label Polish
+
+- [x] `labor.js?v=94` removes invalid `\u1Fxxx` date glyph escapes from payroll period/history labels.
+- [x] Browser label sweep after cache v94 opened Labor and found no broken glyphs.
+
 ## Final Mark
 
 Labor v1 baseline: STABLE
 
 Cash Advance approval workflow: STABLE - REAL FIREBASE QA PASSED
+
+RC1 critical historical-safety patch: PASS STATIC - `scripts/historical_integrity_static_qa.js`
 
 Ready for: Materials v1

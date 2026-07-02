@@ -464,7 +464,7 @@ function watchSiteLog(pid) {
 
       const monthHeader = document.createElement('div');
       monthHeader.className = 'log-month-header';
-      monthHeader.innerHTML = `<span class="log-month-label"><span class="log-month-toggle">\u25BC</span> \u1F4C5 ${monthLabel}</span><span class="log-month-count">${monthCount} entr${monthCount !== 1 ? 'ies' : 'y'}</span>`;
+      monthHeader.innerHTML = `<span class="log-month-label"><span class="log-month-toggle">\u25BC</span> ${monthLabel}</span><span class="log-month-count">${monthCount} entr${monthCount !== 1 ? 'ies' : 'y'}</span>`;
       monthHeader.addEventListener('click', () => monthGroup.classList.toggle('collapsed'));
       monthGroup.appendChild(monthHeader);
 
@@ -483,16 +483,16 @@ function watchSiteLog(pid) {
         try {
           dayLabel = new Date(date).toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         } catch { dayLabel = date; }
-        dayHeader.innerHTML = `<span class="log-day-label">\u1F4C6 ${dayLabel}</span><span class="log-day-count">${byMonth[monthKey][date].length} entr${byMonth[monthKey][date].length !== 1 ? 'ies' : 'y'}</span>`;
+        dayHeader.innerHTML = `<span class="log-day-label">${dayLabel}</span><span class="log-day-count">${byMonth[monthKey][date].length} entr${byMonth[monthKey][date].length !== 1 ? 'ies' : 'y'}</span>`;
         dayGroup.appendChild(dayHeader);
 
         byMonth[monthKey][date].forEach(e => {
           const locHTML = e.location
-            ? `<a class="log-loc" href="https://maps.google.com/?q=${e.location}" target="_blank" rel="noopener">\u1F4CD Location</a>`
+            ? `<a class="log-loc" href="https://maps.google.com/?q=${e.location}" target="_blank" rel="noopener">Location</a>`
             : '';
           const timeHTML = e.time ? `<span class="log-time">\u23F0 ${e.time}</span>` : '';
           const weatherSummary = e.weather?.summary || '';
-          const weatherHTML = weatherSummary ? `<span class="log-weather">\u1F324\uFE0F ${escapeHtml(weatherSummary)}</span>` : '';
+          const weatherHTML = weatherSummary ? `<span class="log-weather">${escapeHtml(weatherSummary)}</span>` : '';
           const structuredBits = [];
           if (e.workAccomplished) structuredBits.push(`<strong>Work:</strong> ${escapeHtml(e.workAccomplished)}`);
           if (e.manpowerNotes) structuredBits.push(`<strong>Manpower:</strong> ${escapeHtml(e.manpowerNotes)}`);
@@ -557,9 +557,9 @@ function renderSiteLogSummary(entries) {
   if (summaryEl) {
     summaryEl.innerHTML = `
       <div class="log-summary-row">
-        <span class="log-summary-item">\u1F4DD ${total} total log${total !== 1 ? 's' : ''}</span>
-        <span class="log-summary-item">\u1F4CD ${withLocation} with location</span>
-        <span class="log-summary-item">\u1F4C5 ${thisWeek} this week</span>
+        <span class="log-summary-item">${total} total log${total !== 1 ? 's' : ''}</span>
+        <span class="log-summary-item">${withLocation} with location</span>
+        <span class="log-summary-item">${thisWeek} this week</span>
       </div>`;
   }
 }
@@ -633,7 +633,7 @@ async function saveLog() {
         };
         const saved = await doSave(logData);
         auditLog('create', 'siteLog', saved.id, { date, hasLocation: true, projectId: _slpid });
-        showToast('Log saved with location \u1F4CD');
+        showToast('Log saved with location');
       },
       async () => {
         const saved = await doSave(logData);
@@ -681,15 +681,15 @@ async function exportSiteLogs() {
   ];
 
   entries.forEach(e => {
-    lines.push(`\u1F4C5 ${e.date} ${e.time || ''}`);
+    lines.push(`${e.date} ${e.time || ''}`);
     lines.push(`   ${e.notes}`);
     if (e.workAccomplished) lines.push(`   Work: ${e.workAccomplished}`);
-    if (e.weather?.summary) lines.push(`   \u1F324\uFE0F ${e.weather.summary}`);
+    if (e.weather?.summary) lines.push(`   ${e.weather.summary}`);
     if (e.manpowerNotes) lines.push(`   Manpower: ${e.manpowerNotes}`);
     if (e.equipmentNotes) lines.push(`   Equipment: ${e.equipmentNotes}`);
     if (e.visitorNotes) lines.push(`   Visitors: ${e.visitorNotes}`);
     if (e.safety?.notes) lines.push(`   Safety: ${e.safety.notes}`);
-    if (e.location) lines.push(`   \u1F4CD ${e.location}`);
+    if (e.location) lines.push(`   ${e.location}`);
     lines.push('');
   });
 

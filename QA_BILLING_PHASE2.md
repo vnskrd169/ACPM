@@ -231,12 +231,10 @@ PASS:
 - Local served markup contains `billType`, `billRetentionPct`, `billDeduction`, `colBillingId`, `colRetentionReleased`, `outputBillingId`, and `billingOutputsBody`.
 - `sw.js` contains `acpm-v74` and caches `billing.js?v=74`.
 
-WARNING:
+Superseded warning:
 
-- In-app browser connector timed out before returning the selected tab during the smoke check, so visual/browser-console QA is still pending.
-- Real Firebase write QA for linked collections, retention collection, deductions, and output snapshots passed at helper level; browser UI workflow QA is still pending.
-
-Superseded by later browser smoke: Billing tab opened successfully, controls rendered, and console errors were empty.
+- An earlier in-app browser smoke timed out before returning the selected tab.
+- That warning is now superseded by later browser evidence: Billing tab opened successfully, Phase 2 controls rendered, dashboard rollup smoke passed, and console errors were empty.
 
 ## Real Firebase Helper QA - 2026-06-30
 
@@ -307,8 +305,7 @@ WARNING:
 
 ## Known Limitations
 
-- Minimal Phase 2 UI wiring exists, but it has not been redesigned or browser-console QA-certified yet.
-- Real Firebase helper QA, browser Billing-tab smoke, and dashboard rollup smoke passed.
+- Minimal Phase 2 UI wiring exists and browser Billing-tab/dashboard smoke passed, but it has not been visually redesigned.
 - The collection form uses auto-allocation for compatibility when no billing is selected.
 - Overpayment prevention is enforced in app helper code; heavy concurrent office usage may eventually need Cloud Functions.
 - Billing output archive is JSON/text-first, not yet a polished PDF or tax-certified invoice.

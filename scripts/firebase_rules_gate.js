@@ -27,6 +27,8 @@ const requiredRulePaths = [
   ['rules', 'supplierRollups'],
   ['rules', 'globalNotificationEvents'],
   ['rules', 'auditLogs'],
+  ['rules', 'supplierAuditLogs'],
+  ['rules', 'projects', '$pid', 'auditLogs'],
   ['rules', 'projects'],
   ['rules', 'users']
 ];
@@ -43,23 +45,13 @@ if (missing.length) {
   throw new Error(`Missing required rules paths: ${missing.map(parts => parts.join('/')).join(', ')}`);
 }
 
-if (!fs.existsSync(firebaseJsonPath)) {
-  const firebaseJson = {
-    database: {
-      rules: 'database.rules.json'
-    }
-  };
-  fs.writeFileSync(firebaseJsonPath, `${JSON.stringify(firebaseJson, null, 2)}\n`);
-}
+assert(fs.existsSync(firebaseJsonPath), 'firebase.json must exist before RC1 Firebase rules deployment.');
+assert(fs.existsSync(firebasercPath), '.firebaserc must exist before RC1 Firebase rules deployment.');
 
-if (!fs.existsSync(firebasercPath)) {
-  const firebaserc = {
-    projects: {
-      default: 'acpm-project-system'
-    }
-  };
-  fs.writeFileSync(firebasercPath, `${JSON.stringify(firebaserc, null, 2)}\n`);
-}
+const firebaseJson = readJson(firebaseJsonPath, 'firebase.json');
+const firebaserc = readJson(firebasercPath, '.firebaserc');
+assert(firebaseJson.database && firebaseJson.database.rules === 'database.rules.json', 'firebase.json must deploy database.rules.json.');
+assert(firebaserc.projects && firebaserc.projects.default === 'acpm-project-system', '.firebaserc default project must be acpm-project-system.');
 
 console.log(JSON.stringify({
   result: 'PASS',

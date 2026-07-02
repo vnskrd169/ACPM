@@ -1,6 +1,6 @@
 # ACPM Dashboard Rollup Integration
 
-Status: ROLLUP INTEGRATION DATA QA PASSED - BOSS BROWSER SMOKE PASSED; GLOBAL QA STILL PENDING
+Status: ROLLUP INTEGRATION DATA QA PASSED - BOSS BROWSER SMOKE PASSED; STATIC DASHBOARD QA PASSED
 
 The dashboard should summarize project health from module rollups where available, while preserving legacy field fallbacks for older projects.
 
@@ -59,8 +59,9 @@ Dashboard alert/recent activity helpers also read:
 
 ## Known Limitations
 
-- Dashboard shows pending lifecycle/notification event counts in the alerts bar, but does not yet have a dedicated approvals panel.
+- Dashboard shows pending lifecycle/notification event counts in the alerts bar. A dedicated approvals panel is future UI polish because Boss Lifecycle Requests remains the actionable approval view for RC1.
 - Dashboard still relies on project snapshots loaded through the existing hub listener.
 - Full cross-module alert drill-down is not implemented yet.
 - Real Firebase report rollup QA passed on archived QA project `qa_mr0saqj7_ckl0p39g`.
-- Browser dashboard smoke after `report.js?v=78` / `sw.js` cache `acpm-v78` is still pending.
+- Dashboard static QA passes through `scripts/dashboard_static_qa.js`.
+- Boss browser dashboard smoke passed; live Firebase RC1 gate passed on 2026-07-02.

@@ -1,6 +1,6 @@
 # ACPM Reports v1 Workflow and Rollup Architecture
 
-Status: REPORTS V1 DATA/ROLLUP STABLE - REAL FIREBASE QA PASSED; LISTENER CLEANUP STATIC QA PASSED; BROWSER SMOKE PENDING
+Status: REPORTS V1 DATA/ROLLUP STABLE - REAL FIREBASE QA PASSED; BOSS BROWSER SMOKE PASSED; LISTENER STATIC QA PASSED
 
 Reports v1 centralizes project, cost, revenue, cash flow, and executive reporting. Reports must read historical records and module rollups wherever practical instead of recalculating business totals ad hoc in the UI.
 
@@ -214,8 +214,8 @@ Real Firebase QA evidence, 2026-06-30:
 
 ## Known Limitations
 
-- Browser visual smoke after `report.js?v=78` is still pending.
-- Cross-project reporting can become read-heavy if it scans full project records.
+- Boss browser visual smoke passed after cache `acpm-v85` with `report.js?v=84`; app-shell reload confirmed `report.js?v=86`.
+- Cross-project reporting currently uses three tracked project listeners for Executive, Team, and Budget views. Static listener QA passes, but large-company performance profiling is future work.
 - Formal accounting reports are outside v1; this is operational construction reporting.
 - Real Firebase QA creates permanent archived QA records.
 
@@ -228,5 +228,6 @@ Reports v1 RC1 gate:
 - [x] Visible report widgets use rollup-aware project summaries.
 - [x] Revenue and cost remain separated.
 - [x] Real Firebase rollup/snapshot QA passed.
-- [ ] Browser smoke after `report.js?v=78`.
-- [ ] App restart/refresh visual QA.
+- [x] Boss browser smoke after `report.js?v=84`.
+- [x] App refresh visual QA for signed-in Boss workspace route.
+- [x] Cross-project report listener hygiene static QA.

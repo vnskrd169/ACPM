@@ -65,7 +65,8 @@ function watchCompliance(pid) {
 
     const items = [];
     snap.forEach(c => {
-      items.push({ id: c.key, ...c.val() });
+      const item = { id: c.key, ...c.val() };
+      if (item.status !== 'archived') items.push(item);
     });
     items.sort((a, b) => daysUntil(a.expiryDate) - daysUntil(b.expiryDate));
 
@@ -195,15 +196,24 @@ async function deleteCompliance(docId) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  if (!confirm('Delete this compliance record?\n\nThis cannot be undone.')) return;
-  const confirmText = prompt('Type DELETE COMPLIANCE to confirm permanent deletion:');
-  if (confirmText !== 'DELETE COMPLIANCE') {
-    showToast('Deletion cancelled.', 'warn');
+  const snap = await firebase.database().ref(`projects/${_compPid}/compliance/${docId}`).once('value');
+  const item = snap.val();
+  if (!item) return;
+  if (item.status === 'archived') {
+    showToast('Compliance record is already archived.', 'warn');
     return;
   }
-  await safeDb(() => firebase.database().ref(`projects/${_compPid}/compliance/${docId}`).remove(), 'Failed to delete');
-  auditLog('delete', 'compliance', docId, { projectId: _compPid });
-  showToast('Document deleted', 'warn');
+  if (!confirm('Archive this compliance record?\n\nThe document metadata will remain in Firebase history.')) return;
+  const reason = prompt('Reason for archiving this compliance record:') || '';
+  await safeDb(() => firebase.database().ref(`projects/${_compPid}/compliance/${docId}`).update({
+    status: 'archived',
+    archivedAt: Date.now(),
+    archivedBy: window._currentUser?.uid || 'system',
+    archivedByName: window._currentUser?.name || window._currentUser?.email || 'System',
+    archiveReason: reason.trim()
+  }), 'Failed to archive document');
+  auditLog('archive', 'compliance', docId, { projectId: _compPid, reason: reason.trim() });
+  showToast('Document archived. History preserved.', 'warn');
 }
 
 // ══════════════════════════════════════════════════════
@@ -224,6 +234,7 @@ async function scanComplianceAcrossProjects() {
     const proj = c.val();
     const compliance = proj.compliance || {};
     Object.entries(compliance).forEach(([cid, item]) => {
+      if (item.status === 'archived') return;
       const days = daysUntil(item.expiryDate);
       if (days !== null && days <= 30) {
         alerts.push({

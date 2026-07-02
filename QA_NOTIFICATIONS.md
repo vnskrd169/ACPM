@@ -1,6 +1,6 @@
 # ACPM Notification Events v1 QA Checklist
 
-Status: PROJECT EVENTS QA PASSED - SUPPLIER LOCAL FALLBACK PASSED - GLOBAL EVENTS DEPLOYED-RULE WARNING
+Status: STABLE - PROJECT AND GLOBAL EVENT HOOKS LIVE QA PASSED; PUSH IS FUTURE
 
 ## Event Paths
 
@@ -26,7 +26,7 @@ Result: PASS STATIC / PROJECT EVENTS REAL QA
 
 - [x] Helper is best-effort and returns `null` instead of blocking workflows when future event hooks are denied.
 
-Result: PASS STATIC / GLOBAL EVENT DEPLOYED-RULE WARNING
+Result: PASS STATIC + LIVE FIREBASE QA
 
 ## Module Hooks
 
@@ -35,10 +35,10 @@ Result: PASS STATIC / GLOBAL EVENT DEPLOYED-RULE WARNING
 - [x] Site Logs creates notification events.
 - [x] Suppliers creates global notification events, with supplier-local fallback when the global path is denied.
 - [x] Verify project-scoped event hook in real Firebase QA.
-- [ ] Verify global event hooks after deploying current Firebase rules.
-- [ ] Verify Billing/Materials event hooks in real Firebase QA.
+- [x] Verify global event hooks after deploying current Firebase rules.
+- [x] Verify Billing, Change Order, Site Log, Supplier, and Labor event/audit hooks in real Firebase QA.
 
-Result: PASS PROJECT-SCOPED / WARNING GLOBAL DEPLOYED RULES
+Result: PASS LIVE FIREBASE QA
 
 ## Explicit Non-Goal
 
@@ -67,6 +67,17 @@ Result: PASS
   - Script: `scripts/suppliers_v1_real_qa.js`
   - Supplier: `qa_mr0t91hn_9obvdra6`
   - Local fallback notification events: `supplier_created`, `supplier_updated`, `supplier_archived`
+- [x] Audit/notification/supplier RC1 static gate:
+  - Script: `scripts/audit_notification_supplier_static_qa.js`
+  - Verifies `createNotificationEvent()` writes project/global event paths.
+  - Verifies supplier workflows use global notification events with supplier-local fallback.
+  - Verifies local rules include required notification event paths.
+- [x] Live Firebase RC1 gate after rules update:
+  - Script: `scripts/rc1_post_deploy_gate.js`
+  - Result: PASS
+  - Included global notification event verification through `scripts/audit_notifications_v1_real_qa.js`.
+  - Included supplier global notification hooks through `scripts/suppliers_v1_real_qa.js`.
+  - Included Site Log and Change Order project notification hooks through their real QA scripts.
 
 ## Stability Gate
 
@@ -74,7 +85,7 @@ Notification Events v1 can be marked STABLE when:
 
 - [x] Real workflows create project-scoped event rows.
 - [x] Supplier workflows create supplier-local fallback event rows when global hooks are denied.
-- [ ] Real workflows create global event rows after deployed rules are updated.
-- [ ] Events remain readable after refresh.
-- [ ] Events do not create duplicate user inbox notifications.
-- [ ] Future consumer requirements remain documented.
+- [x] Real workflows create global event rows after deployed rules are updated.
+- [x] Events remain readable after refresh through real Firebase read-back QA.
+- [x] Events do not create duplicate user inbox notifications in current helper workflow QA.
+- [x] Future consumer requirements remain documented.

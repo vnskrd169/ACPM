@@ -114,9 +114,10 @@ async function safeDb(fn, errMsg) {
 }
 
 // ── Audit log ────────────────────────────────────────────────
-// Persisted to Firebase under /auditLogs (global, capped) so the 3 bosses
-// can see who-did-what across all 9 projects. Fire-and-forget: never
-// blocks or throws on the caller — logging must not break the app.
+// Attempts Firebase /auditLogs first so bosses can review cross-project
+// activity. If deployed rules deny the global path, project/supplier fallback
+// audit rows preserve the action. Fire-and-forget: logging must never break
+// the calling workflow.
 function auditLog(action, entityType, entityId, details = {}) {
   const user = (typeof window !== 'undefined' && window._currentUser) ? window._currentUser : { uid: 'anonymous', role: 'apm', name: 'System' };
   const pid = (typeof window !== 'undefined' && window._currentPid) ? window._currentPid : null;
@@ -160,7 +161,7 @@ function persistAuditFallback(logEntry) {
     if (projectId) {
       fallbackPath = `projects/${projectId}/auditLogs`;
     } else if (logEntry.entityType === 'supplier' && logEntry.entityId) {
-      fallbackPath = `suppliers/${logEntry.entityId}/auditLogs`;
+      fallbackPath = `supplierAuditLogs/${logEntry.entityId}`;
     }
     if (!fallbackPath) return;
     firebase.database().ref(fallbackPath).push({

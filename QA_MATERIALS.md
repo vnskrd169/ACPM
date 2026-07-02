@@ -181,9 +181,27 @@ This phase adds helper functions only; no UI screen is added yet.
 - Verify existing old PO records still render.
 - Verify new PO records still render in the existing PO History UI.
 
+## RC1 UI Label Polish
+
+- [x] PO action buttons use clean text labels:
+  - `Approve Invoice`
+  - `Record Delivery`
+  - `Image`
+- [x] Materials UI no longer uses invalid `\u1Fxxx` emoji escapes that rendered as broken characters in browser text.
+- [x] Static gate verifies clean Materials PO labels:
+  - Script: `scripts/rc1_static_gate.js`
+  - Result: PASS after `materials.js?v=93`.
+- [x] Browser smoke after cache v93:
+  - Signed-in Boss workspace opened Materials tab.
+  - `materials.js?v=93` loaded.
+  - Visible PO action buttons rendered cleanly as `Approve Invoice` and `Image`.
+  - Broken glyph scan for `Ὄ`, `὏`, and replacement characters returned no button matches.
+  - Console errors: none.
+
 ## Known Limitations
 
 - Realtime Database rules cannot fully enforce append-only movement history while project-level writes remain broad.
 - Issuance has backend helper support only in phase 1; full UI and reports are phase 2.
 - Old PO items may not have `itemId` until migrated or re-saved.
 - Budget rollup is now based on receiving movements for new records; old pre-movement ledger data may need a migration pass if exact historical totals must be preserved.
+- Legacy ledger delete is now a cancel/void action. Rows remain under `ledger/{ledgerId}` with `status = cancelled`, cancellation metadata, and audit trail.

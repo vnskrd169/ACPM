@@ -46,7 +46,8 @@ function watchEquipment(pid) {
 
     const items = [];
     snap.forEach(c => {
-      items.push({ id: c.key, ...c.val() });
+      const item = { id: c.key, ...c.val() };
+      if (item.status !== 'archived') items.push(item);
     });
     items.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
@@ -88,7 +89,7 @@ function watchEquipment(pid) {
         ${item.notes ? `<div class="equip-notes">${escapeHtml(item.notes)}</div>` : ''}
         <div class="equip-actions">
           <button class="btn-equip-action" onclick="logEquipHours('${item.id}')">\u23F1 Log Hours</button>
-          <button class="btn-equip-action" onclick="logEquipExpense('${item.id}')">\u1F4B0 Log Expense</button>
+          <button class="btn-equip-action" onclick="logEquipExpense('${item.id}')">Log Expense</button>
           <button class="btn-equip-action" onclick="scheduleEquipService('${item.id}')">\u2699 Service</button>
           <button class="del-item-btn" onclick="deleteEquipment('${item.id}')">\u2715</button>
         </div>
@@ -107,6 +108,7 @@ function watchEquipSummary(pid) {
     const now = new Date();
     snap.forEach(c => {
       const item = c.val();
+      if (item.status === 'archived') return;
       totalCost += parseFloat(item.totalCost) || 0;
       if (item.status === 'active') activeCount++;
       if (item.status === 'maintenance') maintenanceCount++;
@@ -239,15 +241,24 @@ async function deleteEquipment(equipId) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  if (!confirm('Delete this equipment record?\n\nThis cannot be undone.')) return;
-  const confirmText = prompt('Type DELETE EQUIPMENT to confirm permanent deletion:');
-  if (confirmText !== 'DELETE EQUIPMENT') {
-    showToast('Deletion cancelled.', 'warn');
+  const snap = await firebase.database().ref(`projects/${_epid}/equipment/${equipId}`).once('value');
+  const item = snap.val();
+  if (!item) return;
+  if (item.status === 'archived') {
+    showToast('Equipment is already archived.', 'warn');
     return;
   }
-  await safeDb(() => firebase.database().ref(`projects/${_epid}/equipment/${equipId}`).remove(), 'Failed to delete');
-  auditLog('delete', 'equipment', equipId, { projectId: _epid });
-  showToast('Equipment deleted', 'warn');
+  if (!confirm('Archive this equipment record?\n\nHistory and cost records will remain in Firebase.')) return;
+  const reason = prompt('Reason for archiving this equipment:') || '';
+  await safeDb(() => firebase.database().ref(`projects/${_epid}/equipment/${equipId}`).update({
+    status: 'archived',
+    archivedAt: Date.now(),
+    archivedBy: window._currentUser?.uid || 'system',
+    archivedByName: window._currentUser?.name || window._currentUser?.email || 'System',
+    archiveReason: reason.trim()
+  }), 'Failed to archive equipment');
+  auditLog('archive', 'equipment', equipId, { projectId: _epid, reason: reason.trim() });
+  showToast('Equipment archived. History preserved.', 'warn');
 }
 
 // ── Expose ──────────────────────────────────────────────────

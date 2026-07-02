@@ -146,6 +146,8 @@ projects/{projectId}/payrollLogs/{logId}
 
 - Trades are the payroll grouping boundary. Each trade stores its own foreman and payment method.
 - Workers keep their current trade name for v1 compatibility. Payroll archives also store worker trade, foreman, and rate so old weeks remain readable even if the live roster changes.
+- Worker removal is a soft deactivation in RC1. `workers/{workerId}` remains in Firebase with `active = false`, `status = inactive`, inactive metadata, and status history. Attendance and cash advance rows are not deleted.
+- Trade removal is a soft archive in RC1. `trades/{tradeId}` remains in Firebase with `status = archived` and archive metadata so historical trade/foreman/payment context remains recoverable.
 - Active attendance is stored by worker/date. Each record carries `weekKey`, so the selected payroll period can be reset without touching other weeks.
 - Active cash advances are stored by worker, with `weekKey`, trade, deducted amount, and paid status. This supports multiple advances per worker and running balances.
 - Cash advances follow a full lifecycle: `draft`, `submitted`, `pending_approval`, `approved`, `rejected`, `released`, `deducted`, `closed`.

@@ -951,9 +951,9 @@ Existing downpayment collection should become a `downpayment` or `mobilization` 
 5. Add downpayment/mobilization billing support. Helper/data foundation and minimal UI selector implemented in Phase 2.
 6. Add partial collection linkage to billing records. Implemented through `billingAllocations` and wired through the collection billing selector.
 7. Add retention and deduction calculations. Helper/data foundation implemented; minimal UI supports direct billing deduction and retention release actions.
-8. Add billing output archive. Immutable JSON snapshot helper and minimal archive list/generate UI implemented; polished PDF/tax invoice output pending.
-9. Add dashboard/report integration. Rollups exist; full dashboard/report wiring is pending.
-10. Run Billing v1 manual QA. Phase 1 checklist added in `QA_BILLING.md`.
+8. Add billing output archive. Immutable JSON snapshot helper and minimal archive list/generate UI implemented; polished PDF/tax invoice output remains future.
+9. Add dashboard/report integration. Dashboard and Reports read Billing rollups for RC1 summary values.
+10. Run Billing v1 manual QA. Current RC1 summary is in `QA_BILLING.md`; detailed Phase 2 real Firebase evidence is in `QA_BILLING_PHASE2.md`.
 
 ## Billing v1 QA Checklist Plan
 
@@ -1056,9 +1056,15 @@ STABLE as of 2026-06-28.
 
 Full Billing v1 can be marked stable when:
 
-- Contract, downpayment, progress billing, collections, retention, deductions, and change-order billings are historical.
+- Contract, downpayment, progress billing, collections, retention, deductions, and change-order-compatible billings are historical.
 - Partial collections update receivables correctly.
 - Billing outputs are archived.
 - Dashboard shows revenue, collected, receivable, cost, and estimated profit.
-- Reports read history, not only current totals.
-- Manual QA passes all Billing v1 scenarios on a real Firebase project.
+- Reports read history and Billing rollups, not only current UI totals.
+- Real Firebase QA passes all Billing v1 Phase 2 scenarios.
+
+Full Billing v1 RC1 status:
+
+```text
+STABLE as of 2026-06-30.
+```

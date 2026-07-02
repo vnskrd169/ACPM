@@ -54,7 +54,8 @@ function isBoss(role) {
 }
 
 function isRc1ActiveRole(role) {
-  return RC1_ACTIVE_ROLES.has(normalizeRole(role));
+  const explicitRole = String(role || '').trim().toLowerCase();
+  return RC1_ACTIVE_ROLES.has(explicitRole);
 }
 
 function canSeeFinancials(role) {

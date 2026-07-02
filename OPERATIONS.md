@@ -37,7 +37,7 @@ This is the low-maintenance checklist for running ACPM without keeping the whole
 3. Run `node scripts/firebase_rules_gate.js`.
 4. Publish Firebase rules if permissions changed.
 5. Test login, project open, create, edit, and notification flows.
-6. Verify an assigned PM/APM account can only touch their allowed work.
+6. Verify an assigned PM/APM account can only touch their allowed work with `node scripts/rc1_deployed_rules_security_qa.js`.
 
 ## Publishing Firebase Rules
 
@@ -58,9 +58,40 @@ Console path:
 2. Go to Realtime Database > Rules.
 3. Paste the contents of `database.rules.json`.
 4. Publish.
-5. Rerun `node scripts/suppliers_v1_real_qa.js` with QA credentials.
+5. Rerun the post-deploy and final readiness gates with QA credentials.
 
-The Supplier RC1 gate will remain WARNING until deployed rules allow `supplierEvents`, `supplierRollups`, and `globalNotificationEvents`.
+For RC1, run the full post-deploy gate in `RC1_POST_DEPLOY_QA.md` after publishing rules:
+
+```powershell
+node scripts/rc1_post_deploy_gate.js
+```
+
+Expected local/read-only result: `PASS_WITH_REAL_QA_SKIPPED`.
+
+Set `RUN_REAL_QA=1` and QA credentials only when you intentionally want to create archived Firebase QA records:
+
+```powershell
+$env:ACPM_QA_EMAIL="your-qa-email"
+$env:ACPM_QA_PASSWORD="your-qa-password"
+$env:RUN_REAL_QA="1"
+node scripts/rc1_post_deploy_gate.js
+```
+
+Expected real-backend result after rules deployment: `PASS`.
+
+Then run the release-decision gate:
+
+```powershell
+node scripts/rc1_final_readiness_gate.js
+```
+
+Expected current result before dedicated role credentials are supplied: `WARNING_NOT_RC1_FINAL`.
+
+Expected final RC1 result: `PASS_RC1_READY`.
+
+For a strict release job, set `ACPM_REQUIRE_RC1_FINAL=1`; the gate exits non-zero while warnings remain.
+
+The local gate also checks PWA cache consistency so `index.html`, `dashboard.html`, `workspace.html`, and `sw.js` stay on the same versioned script set. It also checks that the required schema/QA documents remain present before RC1 is claimed, that role-account QA is available, and that loaded module delete actions preserve history through archive/void/inactive states.
 
 ## Recovery order
 

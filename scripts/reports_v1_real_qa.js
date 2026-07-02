@@ -198,7 +198,9 @@ async function main() {
     name: projectName,
     status: 'active',
     createdAt: now,
-    createdDate: new Date().toLocaleDateString('en-PH'),
+    createdDate: new Date().toLocaleDateString('en-PH')
+  });
+  await projectRef.update({
     laborBudget: 10000,
     materialBudget: 20000,
     laborBudgetDelta: 1000,
@@ -260,8 +262,8 @@ async function main() {
       issue_a: { status: 'posted', createdAt: now }
     },
     materialMovements: {
-      move_receive: { type: 'receive', totalCost: 8000, qty: 80, createdAt: now },
-      move_issue: { type: 'issue', qty: -12, createdAt: now + 1 }
+      move_receive: { type: 'receive', totalCost: 8000, qty: 80, createdAt: now, createdBy: auth.localId },
+      move_issue: { type: 'issue', qty: -12, createdAt: now + 1, createdBy: auth.localId }
     },
     qaRun: {
       module: 'reports_v1',

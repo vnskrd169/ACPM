@@ -46,7 +46,8 @@ function watchTasks(pid) {
 
     const tasks = [];
     snap.forEach(c => {
-      tasks.push({ id: c.key, ...c.val() });
+      const task = { id: c.key, ...c.val() };
+      if (task.status !== 'archived') tasks.push(task);
     });
 
     // Sort: overdue first, then by due date, then priority
@@ -101,7 +102,7 @@ function watchTasks(pid) {
         card.draggable = true;
 
         const priorityBadge = {
-          critical: '<span class="task-priority critical">\u1F534 Critical</span>',
+          critical: '<span class="task-priority critical">Critical</span>',
           high: '<span class="task-priority high">\u26A0 High</span>',
           normal: '<span class="task-priority normal">\u25CB Normal</span>',
           low: '<span class="task-priority low">\u2193 Low</span>'
@@ -120,7 +121,7 @@ function watchTasks(pid) {
           <div class="task-title">${escapeHtml(t.title)}</div>
           ${t.description ? `<div class="task-desc">${escapeHtml(t.description)}</div>` : ''}
           <div class="task-meta">
-            <span class="task-assignee">\u1F464 ${escapeHtml(assignee)}</span>
+            <span class="task-assignee">${escapeHtml(assignee)}</span>
             <span class="task-due ${isOverdue ? 'overdue' : ''}">${dueText}</span>
           </div>
           ${t.budgetImpact ? `<div class="task-budget">Budget: ${peso(t.budgetImpact)}</div>` : ''}
@@ -171,6 +172,7 @@ function watchTaskSummary(pid) {
     const now = Date.now();
     snap.forEach(c => {
       const t = c.val();
+      if (t.status === 'archived') return;
       total++;
       if (t.status === 'done') done++;
       if (t.priority === 'critical') critical++;
@@ -278,15 +280,24 @@ async function deleteTask(taskId) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  if (!confirm('Delete this task?\n\nThis cannot be undone.')) return;
-  const confirmText = prompt('Type DELETE TASK to confirm permanent deletion:');
-  if (confirmText !== 'DELETE TASK') {
-    showToast('Deletion cancelled.', 'warn');
+  const snap = await firebase.database().ref(`projects/${_tpid}/tasks/${taskId}`).once('value');
+  const task = snap.val();
+  if (!task) return;
+  if (task.status === 'archived') {
+    showToast('Task is already archived.', 'warn');
     return;
   }
-  await safeDb(() => firebase.database().ref(`projects/${_tpid}/tasks/${taskId}`).remove(), 'Failed to delete task');
-  auditLog('delete', 'task', taskId, { projectId: _tpid });
-  showToast('Task deleted', 'warn');
+  if (!confirm('Archive this task?\n\nThe record will remain in Firebase history and be hidden from active boards.')) return;
+  const reason = prompt('Reason for archiving this task:') || '';
+  await safeDb(() => firebase.database().ref(`projects/${_tpid}/tasks/${taskId}`).update({
+    status: 'archived',
+    archivedAt: Date.now(),
+    archivedBy: window._currentUser?.uid || 'system',
+    archivedByName: window._currentUser?.name || window._currentUser?.email || 'System',
+    archiveReason: reason.trim()
+  }), 'Failed to archive task');
+  auditLog('archive', 'task', taskId, { projectId: _tpid, reason: reason.trim() });
+  showToast('Task archived. History preserved.', 'warn');
 }
 
 function showTaskMenu(taskId, task) {
@@ -384,7 +395,8 @@ function renderGanttView() {
 
     const tasks = [];
     snap.forEach(c => {
-      tasks.push({ id: c.key, ...c.val() });
+      const task = { id: c.key, ...c.val() };
+      if (task.status !== 'archived') tasks.push(task);
     });
 
     if (!tasks.length) {

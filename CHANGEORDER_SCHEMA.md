@@ -1,6 +1,6 @@
 # ACPM Change Orders v1 Workflow and Firebase Schema
 
-Status: CHANGE ORDERS V1 WORKFLOW/DATA STABLE - REAL FIREBASE QA PASSED; BROWSER CLICK-THROUGH QA WARNING
+Status: CHANGE ORDERS V1 WORKFLOW/DATA STABLE - REAL FIREBASE QA PASSED; STATIC WORKFLOW QA PASSED; BOSS EXTRAS SMOKE PASSED
 
 Labor v1, Materials v1, and Billing v1 Phase 2 are stable. Change Orders v1 preserves the current working UI while enforcing historical integrity and rebuild-based financial rollups.
 
@@ -233,7 +233,7 @@ Stabilization evidence:
 - Verified approve, reject, void, billing link, collection, rollup rebuild, event rows, notification event hooks, and dashboard/billing rollup impact.
 - Local syntax checks and `database.rules.json` parse passed.
 - PWA cache and script version were bumped to `acpm-v75` / `changeorders.js?v=75`.
-- Browser connector timed out during Change Orders smoke, so visual browser interaction remains a warning rather than a blocker because real Firebase workflow QA passed and local served markup verifies v75 controls.
+- Earlier browser connector timeouts were replaced by a Boss read-only Extras smoke after cache `acpm-v85`; full create/approve/reject browser click-through remains a visual workflow warning because real Firebase workflow QA already passes.
 
 Browser/UI compatibility functions are still exported:
 
@@ -282,7 +282,8 @@ Existing permanent delete behavior must be replaced with `status = voided`.
 - Attachments are architecture-ready but not implemented.
 - Change-order billing can be linked through the helper layer; a dedicated UI can come after RC1 data integrity is stable.
 - Contract/legal approval details vary by client and may require custom printed output later.
-- Browser connector smoke timed out during the v75 interaction attempt; repeat browser UI smoke when the connector is responsive.
+- Boss browser Extras smoke passed after cache `acpm-v85`; Change Order and Supplier sections rendered with no console errors.
+- Full browser create/approve/reject workflow click-through remains a visual sign-off item; static workflow QA and real Firebase helper QA pass.
 
 ## Completion Definition
 
@@ -294,4 +295,6 @@ Change Orders v1 RC1 gate:
 - [x] Billing rollups include approved change orders.
 - [x] Rejected/voided change orders do not affect approved totals.
 - [x] QA passes on real Firebase after rebuild/refresh simulation.
-- [ ] Browser UI smoke should be repeated when the in-app browser connector is stable before final RC1 sign-off.
+- [x] Boss browser read-only UI smoke passed after cache `acpm-v85`.
+- [x] Static workflow QA passes through `scripts/changeorder_static_qa.js`.
+- [ ] Full browser create/approve/reject click-through remains recommended before broad production rollout.

@@ -101,7 +101,7 @@ function renderInventoryList(snap) {
           <td class="s-cell s-center ${isLow ? 'text-red' : 'text-green'}">${item.qtyOnHand}</td>
           <td class="s-cell">${escapeHtml(item.unit)}</td>
           <td class="s-cell s-center">${item.reorderPoint || 0}</td>
-          <td class="s-cell">${isLow ? '\u1F534 LOW STOCK' : '\u2713 OK'}</td>
+          <td class="s-cell">${isLow ? 'LOW STOCK' : '\u2713 OK'}</td>
           <td class="s-cell">${item.lastReceived || '\u2014'}</td>
         </tr>`;
       }).join('')}
@@ -126,7 +126,7 @@ function renderInventoryAlerts(snap) {
   if (alerts.length) {
     const banner = document.createElement('div');
     banner.className = 'budget-warn-bar warn-critical';
-    banner.innerHTML = `\u1F534 LOW STOCK ALERT: ${alerts.join(' \u00B7 ')}`;
+    banner.innerHTML = `LOW STOCK ALERT: ${alerts.join(' \u00B7 ')}`;
     container.appendChild(banner);
   }
 }
@@ -891,7 +891,7 @@ async function submitPO() {
       type: 'billing',
       message: `PO #${String(result.seq).padStart(3, '0')} (${peso(total)} to ${supplier}) needs your approval`
     }).catch(() => {});
-    showToast(`\u1F4CB PO #${String(result.seq).padStart(3, '0')} submitted for approval`);
+    showToast(`PO #${String(result.seq).padStart(3, '0')} submitted for approval`);
   } catch (e) {
     console.error('submitPO failed:', e);
     showToast(e?.message || 'Failed to submit PO. Try again.', 'error');
@@ -1037,7 +1037,7 @@ async function confirmDelivery() {
     });
 
     closeDeliveryModal();
-    showToast(`\u1F4E6 Delivery recorded. Status: ${result.deliveryStatus.replace(/_/g, ' ')}`);
+    showToast(`Delivery recorded. Status: ${result.deliveryStatus.replace(/_/g, ' ')}`);
   } catch (e) {
     console.error('confirmDelivery failed:', e);
     showToast(e?.message || 'Failed to record delivery.', 'error');
@@ -1206,15 +1206,23 @@ async function deleteLedgerItem(key, desc) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  if (!confirm(`Delete "${desc}"?\n\nThis cannot be undone.`)) return;
-  const confirmText = prompt('Type DELETE LEDGER ITEM to confirm permanent deletion:');
-  if (confirmText !== 'DELETE LEDGER ITEM') {
-    showToast('Deletion cancelled.', 'warn');
+  const snap = await firebase.database().ref(`projects/${_mpid}/ledger/${key}`).once('value');
+  const row = snap.val() || {};
+  if (row.status === 'cancelled') {
+    showToast('Ledger item is already cancelled.', 'warn');
     return;
   }
-  await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger/${key}`).remove(), 'Failed to delete item');
-  auditLog('delete', 'ledger', key, { desc, projectId: _mpid });
-  showToast('Item deleted', 'warn');
+  if (!confirm(`Cancel "${desc}"?\n\nThe row will remain in ledger history and will be excluded from active summaries.`)) return;
+  const reason = prompt('Reason for cancelling this ledger item:') || '';
+  await safeDb(() => firebase.database().ref(`projects/${_mpid}/ledger/${key}`).update({
+    status: 'cancelled',
+    cancelledAt: Date.now(),
+    cancelledBy: window._currentUser?.uid || null,
+    cancelledByName: window._currentUser?.name || window._currentUser?.email || 'System',
+    cancelReason: reason.trim()
+  }), 'Failed to cancel item');
+  auditLog('void', 'ledger', key, { desc, projectId: _mpid, reason: reason.trim() });
+  showToast('Item cancelled. History preserved.', 'warn');
 }
 
 // ══════════════════════════════════════════════════════
@@ -1403,7 +1411,7 @@ function watchPOHistory(pid) {
 
       const monthHeader = document.createElement('div');
       monthHeader.className = 'po-month-header';
-      monthHeader.innerHTML = `<span class="po-month-label">\u1F4C5 ${monthLabel}</span><span class="po-month-count">${byMonth[monthKey].length} PO${byMonth[monthKey].length !== 1 ? 's' : ''}</span>`;
+      monthHeader.innerHTML = `<span class="po-month-label">${monthLabel}</span><span class="po-month-count">${byMonth[monthKey].length} PO${byMonth[monthKey].length !== 1 ? 's' : ''}</span>`;
       monthGroup.appendChild(monthHeader);
 
       byMonth[monthKey].forEach(po => {
@@ -1433,11 +1441,11 @@ function watchPOHistory(pid) {
         }[po.status] || '';
         const statusBadge = `<span class="po-status-badge ${statusClass}">${escapeHtml(poStatusLabel(po.status))}</span>`;
 
-        const urgencyBadge = po.urgency === 'critical' ? '<span class="urgency-badge urgency-critical">\u1F534 CRITICAL</span>' :
+        const urgencyBadge = po.urgency === 'critical' ? '<span class="urgency-badge urgency-critical">CRITICAL</span>' :
                             po.urgency === 'urgent' ? '<span class="urgency-badge urgency-urgent">\u26A0\uFE0F URGENT</span>' : '';
 
         const deliveryBadge = po.deliveryStatus === 'fully_delivered' ? '<span class="del-badge del-ok">\u2713 Delivered</span>' :
-                             po.deliveryStatus === 'partially_delivered' ? '<span class="del-badge del-partial">\u1F4E6 Partial</span>' :
+                             po.deliveryStatus === 'partially_delivered' ? '<span class="del-badge del-partial">Partial</span>' :
                              '<span class="del-badge del-none">Not Delivered</span>';
 
         const invoiceBadge = po.invoiceStatus === 'matched' ? '<span class="inv-badge inv-matched">\u2713 3-Way Matched</span>' :
@@ -1456,11 +1464,11 @@ function watchPOHistory(pid) {
           actions = `<button class="po-approve-btn" data-po="${po.id}" data-action="approve">\u2713 Approve PO</button>`;
         } else if (po.status === 'approved' || po.status === 'ordered' || po.status === 'partially_delivered') {
           actions = `
-            <button class="po-mark-btn" data-po="${po.id}" data-action="delivery">\u1F4E6 Record Delivery</button>
-            <button class="po-mark-btn po-paid-btn" data-po="${po.id}" data-action="invoice">\u1F4CB Approve Invoice</button>
+            <button class="po-mark-btn" data-po="${po.id}" data-action="delivery">Record Delivery</button>
+            <button class="po-mark-btn po-paid-btn" data-po="${po.id}" data-action="invoice">Approve Invoice</button>
           `;
         } else if (po.deliveryStatus === 'fully_delivered' && po.invoiceStatus !== 'matched') {
-          actions = `<button class="po-mark-btn po-paid-btn" data-po="${po.id}" data-action="invoice">\u1F4CB Approve Invoice</button>`;
+          actions = `<button class="po-mark-btn po-paid-btn" data-po="${po.id}" data-action="invoice">Approve Invoice</button>`;
         }
 
         poCard.innerHTML = `
@@ -1476,7 +1484,7 @@ function watchPOHistory(pid) {
               <span class="po-total">${peso(po.total)}</span>
               <div class="po-btns">
                 ${actions}
-                <button class="po-export-btn" data-po="${po.id}" data-action="export">\u1F4F7 Image</button>
+                <button class="po-export-btn" data-po="${po.id}" data-action="export">Image</button>
               </div>
             </div>
           </div>
@@ -1548,7 +1556,7 @@ async function exportPOImage(poId) {
     <div style="background:#f3f4f6;border-radius:10px;padding:12px 16px;margin-bottom:20px">
       <div style="font-size:10px;color:#6b7280;font-weight:700;margin-bottom:3px">SUPPLIER</div>
       <div style="font-size:17px;font-weight:900">${escapeHtml(po.supplier)}</div>
-      ${bankInfo ? `<div style="font-size:12px;color:#374151;margin-top:4px;font-weight:600">\u1F3E6 ${escapeHtml(bankInfo)}</div>` : ''}
+      ${bankInfo ? `<div style="font-size:12px;color:#374151;margin-top:4px;font-weight:600">${escapeHtml(bankInfo)}</div>` : ''}
       ${po.notes ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(po.notes)}</div>` : ''}
     </div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px">

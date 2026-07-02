@@ -485,11 +485,11 @@ function collectSupplierFallbackAuditRows(snap) {
   const rows = [];
   snap.forEach(supplierSnap => {
     const supplierId = supplierSnap.key;
-    const supplier = supplierSnap.val() || {};
-    Object.entries(supplier.auditLogs || {}).forEach(([id, row]) => {
+    const supplierAuditRows = supplierSnap.val() || {};
+    Object.entries(supplierAuditRows || {}).forEach(([id, row]) => {
       rows.push({
         id,
-        sourcePath: `suppliers/${supplierId}/auditLogs/${id}`,
+        sourcePath: `supplierAuditLogs/${supplierId}/${id}`,
         entityType: row?.entityType || 'supplier',
         entityId: row?.entityId || supplierId,
         ...(row || {})
@@ -511,6 +511,9 @@ function initAuditLog() {
     _auditListener = null;
   }
   detachAuditFallbackListeners();
+  _auditGlobalRowsCache = [];
+  _auditFallbackRowsCache = [];
+  _auditRowsCache = [];
   firebase.database().ref('users').once('value')
     .then(snap => {
       const users = {};
@@ -536,7 +539,7 @@ function initAuditLog() {
   });
 
   const projectAuditRef = firebase.database().ref('projects');
-  const supplierAuditRef = firebase.database().ref('suppliers');
+  const supplierAuditRef = firebase.database().ref('supplierAuditLogs');
   _auditFallbackListeners = [projectAuditRef, supplierAuditRef];
   projectAuditRef.on('value', snap => {
     _auditFallbackRowsCache = [
@@ -547,7 +550,7 @@ function initAuditLog() {
   });
   supplierAuditRef.on('value', snap => {
     _auditFallbackRowsCache = [
-      ..._auditFallbackRowsCache.filter(row => !String(row.sourcePath || '').startsWith('suppliers/')),
+      ..._auditFallbackRowsCache.filter(row => !String(row.sourcePath || '').startsWith('supplierAuditLogs/')),
       ...collectSupplierFallbackAuditRows(snap)
     ];
     auditMergeRows();
@@ -587,6 +590,7 @@ function renderAuditLog(rows = _auditRowsCache) {
           <div><strong>User:</strong> ${auditActorHtml(r)}</div>
           <div><strong>Entity:</strong> ${escapeHtml(r.entityType || '-')} ${r.entityId ? `· ${escapeHtml(r.entityId)}` : ''}</div>
           <div><strong>Project:</strong> ${escapeHtml(formatProjectLabel(r.projectId || '-'))}</div>
+          ${r.fallbackPath ? '<div><strong>Source:</strong> Local fallback audit path</div>' : ''}
           ${r.details ? `<div><strong>Details:</strong> ${escapeHtml(JSON.stringify(r.details))}</div>` : ''}
         </div>
       </div>`).join('')}
@@ -1116,6 +1120,16 @@ function detachReportsListeners() {
     _lifecycleRequestListener = null;
   }
 }
+
+function reportListenerDiagnostics() {
+  return {
+    reports: _reportsListeners.length,
+    teamAdmin: _teamAdminListener ? 1 : 0,
+    audit: _auditListener ? 1 : 0,
+    auditFallback: _auditFallbackListeners.length,
+    lifecycleRequests: _lifecycleRequestListener ? 1 : 0
+  };
+}
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function renderExecutiveDashboard() {
   const user = window._currentUser;
@@ -1467,6 +1481,7 @@ window.refreshTeamAdmin = refreshTeamAdmin;
 window.filterTeamUsers = filterTeamUsers;
 window.updateUserRole = updateUserRole;
 window.detachReportsListeners = detachReportsListeners;
+window.reportListenerDiagnostics = reportListenerDiagnostics;
 window.rebuildProjectReportRollup = rebuildProjectReportRollup;
 window.rebuildWeeklyReportRollup = rebuildWeeklyReportRollup;
 window.rebuildMonthlyReportRollup = rebuildMonthlyReportRollup;

@@ -1,6 +1,6 @@
 # ACPM Suppliers v1 QA Checklist
 
-Status: SUPPLIERS V1 STABLE WITH LOCAL FALLBACKS - GLOBAL HOOK RULE DEPLOYMENT STILL RECOMMENDED
+Status: SUPPLIERS V1 STABLE - CANONICAL LIVE FIREBASE PATHS PASSED
 
 Scope:
 
@@ -31,9 +31,9 @@ Result: PASS - REAL FIREBASE CORE WORKFLOW QA
 - [x] Export includes archived suppliers with status and archive reason.
 - [x] Supplier create/update/archive writes status history.
 - [x] Supplier create/update/archive event hooks persist in supplier-local fallback paths when global hook paths are denied.
-- [ ] Verify canonical global event paths after deployed Firebase rules are updated.
+- [x] Verify canonical global event paths after deployed Firebase rules are updated.
 
-Result: PASS - REAL FIREBASE QA WITH LOCAL FALLBACKS
+Result: PASS - REAL FIREBASE QA
 
 ## Materials Linkage
 
@@ -58,9 +58,9 @@ Result: PASS - REAL FIREBASE QA
   - last delivery date
 - [x] Verify calculated rollup against real Firebase project PO data.
 - [x] Verify persisted supplier-local fallback rollup when `supplierRollups/{supplierId}` is denied.
-- [ ] Verify canonical `supplierRollups/{supplierId}` after deploying current rules.
+- [x] Verify canonical `supplierRollups/{supplierId}` after deploying current rules.
 
-Result: PASS - CALCULATION AND FALLBACK PERSISTENCE VERIFIED
+Result: PASS - CALCULATION AND CANONICAL/FALLBACK PERSISTENCE VERIFIED
 
 ## Firebase Rules / Index QA
 
@@ -77,12 +77,12 @@ Result: PASS - CALCULATION AND FALLBACK PERSISTENCE VERIFIED
   - `supplierRollups.lastUpdatedAt`
 - [x] Supplier writes remain boss-only.
 - [x] Supplier reads remain available to authenticated users for PO selection.
-- [ ] Deploy current `database.rules.json` and verify canonical paths:
+- [x] Deploy current `database.rules.json` and verify canonical paths:
   - `supplierEvents` write/read
   - `globalNotificationEvents` write/read
   - `supplierRollups` write/read
 
-Result: PASS STATIC + FALLBACK LIVE QA / CANONICAL GLOBAL PATHS PENDING RULE DEPLOY
+Result: PASS STATIC + LIVE FIREBASE QA
 
 ## Static QA Results
 
@@ -100,12 +100,25 @@ Result: PASS STATIC + FALLBACK LIVE QA / CANONICAL GLOBAL PATHS PENDING RULE DEP
   - Rollup calculation passed.
   - Deployed rules denied `supplierEvents`, `globalNotificationEvents`, and persisted `supplierRollups`.
 - [x] QA cleanup: active QA projects `0`; leftover active QA supplier from an interrupted run archived.
-- [ ] Browser smoke test after cache v77
-- [ ] Browser console clean after deployed Firebase rules.
+- [x] Browser smoke test after cache v92:
+  - Signed-in Boss workspace route rendered through the then-current `main.js?v=90` and `style.css?v=92`.
+  - Suppliers tab opened from the visible workspace nav.
+  - Supplier Directory rendered with existing supplier rows and PO/Edit/Archive actions visible.
+  - Console errors: none.
+- [x] Label cleanup smoke after cache v94:
+  - `suppliers.js?v=94` loaded.
+  - Invalid `\u1Fxxx` escapes were removed from Supplier bank/contact labels.
+  - Browser label sweep found no broken glyphs.
+- [x] Live Firebase RC1 gate passed after deployed-rule update.
 - [x] Local rules deployment gate:
   - `node scripts/firebase_rules_gate.js`
-  - Created/verified `firebase.json` and `.firebaserc`
+  - Verified `firebase.json` and `.firebaserc` without modifying repository files
   - Confirmed local rules include `supplierEvents`, `supplierRollups`, and `globalNotificationEvents`
+- [x] Audit/notification/supplier RC1 static gate:
+  - Script: `scripts/audit_notification_supplier_static_qa.js`
+  - Confirms canonical supplier event/rollup paths and supplier-local fallback paths exist in code.
+  - Confirms supplier writes remain Boss/Owner/Admin-only in local rules.
+  - Confirms local rules do not grant Foreman/Safety/Viewer role access for RC1.
 - [x] Real Firebase fallback QA after `suppliers.js?v=81`:
   - Script: `scripts/suppliers_v1_real_qa.js`
   - Result: PASS
@@ -114,13 +127,17 @@ Result: PASS STATIC + FALLBACK LIVE QA / CANONICAL GLOBAL PATHS PENDING RULE DEP
   - Rollup path: `suppliers/qa_mr0t91hn_9obvdra6/rollup`
   - Local event types: `created`, `updated`, `archived`
   - Local notification event types: `supplier_created`, `supplier_updated`, `supplier_archived`
+- [x] Real Firebase canonical QA after live rules update:
+  - Script: `scripts/rc1_post_deploy_gate.js`
+  - Result: PASS
+  - Included `scripts/suppliers_v1_real_qa.js` PASS.
+  - Verified canonical supplier events, global notification events, and supplier rollups are accepted by live rules.
 
 ## Known Limitations
 
 - Supplier performance is a basic operational rollup, not a full vendor scorecard.
 - Materials submit was not modified because Materials v1 is frozen.
-- Canonical global supplier event/notification/rollup paths still require deployed rules to match local `database.rules.json`.
-- Supplier create/update/archive now preserves local fallback history when canonical hook paths are denied.
+- Supplier create/update/archive still preserves local fallback history if future deployed-rule drift happens again.
 
 ## Stability Gate
 
@@ -131,5 +148,5 @@ Suppliers v1 can be marked STABLE when:
 - [x] Materials POs keep supplier ID/name linkage.
 - [x] Supplier rollup calculation matches historical POs.
 - [x] Persisted supplier-local fallback rollups/events pass on current deployed rules.
-- [ ] Canonical global supplier rollups/events pass after rules deployment.
-- [ ] Refresh/logout/login/project switching does not break supplier views.
+- [x] Canonical global supplier rollups/events pass after rules deployment.
+- [x] Refresh/project switching smoke passed for supplier views in Boss browser read-only smoke.

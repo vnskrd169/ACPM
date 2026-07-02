@@ -252,7 +252,28 @@ async function syncOfflineQueue() {
 
 function initPWA() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(console.error);
+    let refreshedForNewWorker = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshedForNewWorker) return;
+      refreshedForNewWorker = true;
+      window.location.reload();
+    });
+
+    navigator.serviceWorker.register('sw.js')
+      .then(registration => {
+        registration.update().catch(console.warn);
+        registration.addEventListener('updatefound', () => {
+          const worker = registration.installing;
+          if (!worker) return;
+          worker.addEventListener('statechange', () => {
+            if (worker.state === 'installed' && navigator.serviceWorker.controller && !refreshedForNewWorker) {
+              refreshedForNewWorker = true;
+              window.location.reload();
+            }
+          });
+        });
+      })
+      .catch(console.error);
   }
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
@@ -1124,7 +1145,7 @@ function openTeamAdmin() {
 }
 
 function switchAdminSection(section) {
-  const sections = ['summary', 'team', 'audit', 'system'];
+  const sections = ['summary', 'team', 'requests', 'audit', 'system'];
   sections.forEach(name => {
     const panel = $(`adminSection_${name}`);
     const tab = $(`adminTab_${name}`);
@@ -1132,6 +1153,7 @@ function switchAdminSection(section) {
     if (tab) tab.classList.toggle('tab-active', name === section);
   });
   if (section === 'team' && typeof initTeamAdmin === 'function') initTeamAdmin();
+  if (section === 'requests' && typeof initLifecycleRequests === 'function') initLifecycleRequests();
   if (section === 'audit' && typeof initAuditLog === 'function') initAuditLog();
   if (section === 'summary' && typeof initAdminSummary === 'function') initAdminSummary();
   if (section === 'system' && typeof initSystemStatus === 'function') initSystemStatus();

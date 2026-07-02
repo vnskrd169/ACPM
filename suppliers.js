@@ -370,7 +370,7 @@ function watchGlobalSuppliers() {
     const fragment = document.createDocumentFragment();
     suppliers.forEach(s => {
       const bankLine = (s.bankName || s.accNum)
-        ? `<div class="supplier-bank">\u1F3E6 ${escapeHtml(s.bankName || '')} ${s.accNum ? '\u00B7 Acct: ' + escapeHtml(s.accNum) : ''} ${s.accName ? '\u00B7 ' + escapeHtml(s.accName) : ''}</div>`
+        ? `<div class="supplier-bank">${escapeHtml(s.bankName || '')} ${s.accNum ? '\u00B7 Acct: ' + escapeHtml(s.accNum) : ''} ${s.accName ? '\u00B7 ' + escapeHtml(s.accName) : ''}</div>`
         : '';
 
       const card = document.createElement('div');
@@ -382,7 +382,7 @@ function watchGlobalSuppliers() {
         <div class="supplier-info">
           <span class="supplier-name">${escapeHtml(s.name)}</span>
           ${s.specialty ? `<span class="supplier-specialty">${escapeHtml(s.specialty)}</span>` : ''}
-          ${s.contact ? `<span class="supplier-contact">\u1F4DE ${escapeHtml(s.contact)}</span>` : ''}
+          ${s.contact ? `<span class="supplier-contact">${escapeHtml(s.contact)}</span>` : ''}
           ${bankLine}
         </div>
         <div class="supplier-actions">

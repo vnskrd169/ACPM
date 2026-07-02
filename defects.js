@@ -50,7 +50,8 @@ function watchDefects(pid) {
 
     const items = [];
     snap.forEach(c => {
-      items.push({ id: c.key, ...c.val() });
+      const item = { id: c.key, ...c.val() };
+      if (item.status !== 'voided') items.push(item);
     });
 
     const severityRank = { critical: 0, major: 1, minor: 2 };
@@ -72,7 +73,7 @@ function watchDefects(pid) {
           </div>
           <div class="defect-desc">${escapeHtml(item.description || '')}</div>
           <div class="defect-meta">
-            ${item.location ? `\u1F4CD ${escapeHtml(item.location)} \u00B7 ` : ''}
+            ${item.location ? `${escapeHtml(item.location)} \u00B7 ` : ''}
             ${item.assignee ? `Assigned: ${escapeHtml(item.assignee)} \u00B7 ` : 'Unassigned \u00B7 '}
             Raised ${timeAgo(item.createdAt)}
           </div>
@@ -179,15 +180,24 @@ async function deleteDefect(defId) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
-  if (!confirm('Delete this punch list item?\n\nThis cannot be undone.')) return;
-  const confirmText = prompt('Type DELETE PUNCH ITEM to confirm permanent deletion:');
-  if (confirmText !== 'DELETE PUNCH ITEM') {
-    showToast('Deletion cancelled.', 'warn');
+  const snap = await firebase.database().ref(`projects/${_defPid}/punchList/${defId}`).once('value');
+  const item = snap.val();
+  if (!item) return;
+  if (item.status === 'voided') {
+    showToast('Punch list item is already voided.', 'warn');
     return;
   }
-  await safeDb(() => firebase.database().ref(`projects/${_defPid}/punchList/${defId}`).remove(), 'Failed to delete item');
-  auditLog('delete', 'defect', defId, { projectId: _defPid });
-  showToast('Item deleted', 'warn');
+  if (!confirm('Void this punch list item?\n\nThe record will remain in Firebase history and be hidden from active views.')) return;
+  const reason = prompt('Reason for voiding this punch list item:') || '';
+  await safeDb(() => firebase.database().ref(`projects/${_defPid}/punchList/${defId}`).update({
+    status: 'voided',
+    voidedAt: Date.now(),
+    voidedBy: window._currentUser?.uid || 'system',
+    voidedByName: window._currentUser?.name || window._currentUser?.email || 'System',
+    voidReason: reason.trim()
+  }), 'Failed to void item');
+  auditLog('void', 'defect', defId, { projectId: _defPid, reason: reason.trim() });
+  showToast('Item voided. History preserved.', 'warn');
 }
 
 async function exportDefectsCSV() {

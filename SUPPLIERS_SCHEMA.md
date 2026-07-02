@@ -1,6 +1,6 @@
 # ACPM Suppliers v1 Workflow and Firebase Schema
 
-Status: SUPPLIERS V1 STABLE WITH LOCAL FALLBACKS - GLOBAL HOOK RULE DEPLOYMENT STILL RECOMMENDED
+Status: SUPPLIERS V1 STABLE - CANONICAL LIVE FIREBASE PATHS PASSED
 
 Suppliers are global company records used by Materials purchase orders, deliveries, and procurement reporting.
 
@@ -74,7 +74,7 @@ globalNotificationEvents/{eventId}/
   createdBy
 ```
 
-Fallback paths used when deployed global hook rules lag behind local rules:
+Fallback paths kept for resilience if future deployed global hook rules lag behind local rules:
 
 ```text
 suppliers/{supplierId}/events/{eventId}/
@@ -121,7 +121,16 @@ Real Firebase QA helper:
 
 - `scripts/suppliers_v1_real_qa.js`
 
-Real Firebase QA evidence, 2026-06-30:
+Real Firebase QA evidence, 2026-07-02:
+
+- Result: PASS through `scripts/rc1_post_deploy_gate.js`
+- Core supplier create/update/archive passed.
+- Linked PO/delivery transaction read passed.
+- Canonical `supplierEvents` persisted.
+- Canonical `globalNotificationEvents` persisted.
+- Canonical `supplierRollups/{supplierId}` persisted.
+
+Earlier real Firebase QA evidence, 2026-06-30:
 
 - Result: WARNING
 - Supplier: `qa_mr0s3baz_mak0ptki`
@@ -144,14 +153,6 @@ Fallback stabilization QA evidence, 2026-06-30:
 - Supplier-local fallback events persisted: `created`, `updated`, `archived`.
 - Supplier-local fallback notification events persisted: `supplier_created`, `supplier_updated`, `supplier_archived`.
 
-Live deployed-rule warning:
-
-- Current deployed Firebase rules denied writes/reads for:
-  - `supplierEvents`
-  - `globalNotificationEvents`
-  - `supplierRollups`
-- Local `database.rules.json` already contains these paths. Publish/deploy the current rules before marking Suppliers v1 stable.
-
 Existing UI functions preserved:
 
 - `addSupplier()`
@@ -166,6 +167,6 @@ Existing UI functions preserved:
 - Supplier rollups rebuild from existing project POs and deliveries when supplier helpers run; Materials PO submit is not modified in this pass.
 - Supplier performance is currently basic: total POs, total PO amount, delivery count, outstanding delivery count, last PO date, and last delivery date.
 - Supplier notes/history UI is still minimal.
-- Deployed Firebase rules should still be updated so global supplier rollups/events/notification hooks persist at the canonical paths.
-- Supplier event/notification/rollup hooks use supplier-local fallbacks, so supplier history remains durable even if global event rules lag behind.
+- Supplier event/notification/rollup hooks keep supplier-local fallbacks, so supplier history remains durable if future global event rules drift.
 - Rule deployment gate helper: `scripts/firebase_rules_gate.js`.
+- RC1 static integration gate helper: `scripts/audit_notification_supplier_static_qa.js`.

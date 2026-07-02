@@ -525,6 +525,7 @@ For old PO records:
 - Derive `itemKey` using `normalizeInvKey(description, size)`.
 - Recalculate delivery status by summing all matching delivery records.
 - Do not rewrite old historical records unless a migration script is intentionally run.
+- Legacy ledger row removal is not a hard delete in RC1. `deleteLedgerItem()` now sets `status = cancelled` with cancellation metadata and audit trail, preserving the row for history.
 
 ## Implementation Order
 
