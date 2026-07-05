@@ -14,11 +14,283 @@ let _auditFallbackRowsCache = [];
 let _auditFallbackListeners = [];
 let _auditUsersCache = {};
 let _projectCache = [];
+let _systemReportsProjectsCache = [];
 let _lifecycleRequestListener = null;
 let _lifecycleRequestsCache = [];
 
 function initReports() {
   detachReportsListeners();
+  if (window._currentPid) {
+    renderProjectReports(window._currentPid);
+    return;
+  }
+  if (window._adminWorkspaceMode) {
+    openSystemReports();
+    return;
+  }
+  ensureSystemReportsView();
+  $('systemReportsView')?.classList.add('hidden');
+  $('workspaceView')?.classList.add('hidden');
+  $('pmosOfficeView')?.classList.add('hidden');
+  $('hubView')?.classList.remove('hidden');
+}
+
+function renderProjectReports(projectId) {
+  const panel = $('reportsPanel');
+  if (!panel) return;
+  $('systemReportsView')?.classList.add('hidden');
+  $('pmosOfficeView')?.classList.add('hidden');
+  $('workspaceView')?.classList.remove('hidden');
+  panel.dataset.reportMode = 'project';
+  panel.innerHTML = `
+    <div class="panel-card">
+      <div class="panel-title">Project Reports</div>
+      <div id="projectReportHeader"><p class="empty-hint">Loading project report...</p></div>
+      <div class="exec-summary-grid">
+        <div class="exec-stat"><div class="exec-stat-label">Total Budget</div><div class="exec-stat-val" id="prTotalBudget">0</div></div>
+        <div class="exec-stat"><div class="exec-stat-label">Total Cost</div><div class="exec-stat-val" id="prTotalCost">0</div></div>
+        <div class="exec-stat"><div class="exec-stat-label">Budget Used</div><div class="exec-stat-val" id="prBudgetUsed">0%</div></div>
+        <div class="exec-stat"><div class="exec-stat-label">Health</div><div class="exec-stat-val" id="prHealth">0</div></div>
+      </div>
+      <div class="task-form-row">
+        <button class="btn-ws-secondary" onclick="exportCurrentProjectReport('project_summary')">Project Summary JSON</button>
+        <button class="btn-ws-secondary" onclick="exportCurrentProjectReport('weekly')">Weekly Project JSON</button>
+        <button class="btn-ws-secondary" onclick="printCurrentProjectReport()">Printable Summary</button>
+      </div>
+    </div>
+    <div class="panel-card">
+      <div class="panel-title">Cost and Billing</div>
+      <div id="projectReportCost"><p class="empty-hint">Loading...</p></div>
+    </div>
+    <div class="panel-card">
+      <div class="panel-title">Operations</div>
+      <div id="projectReportOps"><p class="empty-hint">Loading...</p></div>
+    </div>
+    <div class="panel-card">
+      <div class="panel-title">Report Snapshots</div>
+      <div id="projectReportSnapshots"><p class="empty-hint">Loading...</p></div>
+    </div>`;
+
+  const ref = firebase.database().ref(`projects/${projectId}`);
+  _reportsListeners.push(ref);
+  ref.on('value', snap => {
+    if (!snap.exists()) {
+      setHTML('projectReportHeader', '<p class="empty-hint">Project not found.</p>');
+      return;
+    }
+    const project = { id: projectId, ...(snap.val() || {}) };
+    const summary = projectReportSummary(projectId, project);
+    const labor = calculateLaborSummaryFromProject(project);
+    const materials = calculateMaterialsSummaryFromProject(project);
+    const billing = calculateBillingSummaryFromProject(project);
+    const changeOrders = calculateChangeOrderSummaryFromProject(project);
+    const siteLog = calculateSiteLogSummaryFromProject(project);
+    const health = calculateProjectHealth(project);
+
+    setHTML('projectReportHeader', `
+      <div class="health-card">
+        <div class="health-hdr">
+          <span class="health-name">${escapeHtml(project.name || projectId)}</span>
+          <span class="badge badge-purple">${escapeHtml(project.status || 'active')}</span>
+        </div>
+        <div class="pmos-row-detail">Project-only report for the active workspace. System-wide reporting is in Hub > System Reports.</div>
+      </div>`);
+    setText('prTotalBudget', peso(summary.totalBudget));
+    setText('prTotalCost', peso(summary.totalCost));
+    setText('prBudgetUsed', `${summary.budgetUsedPct}%`);
+    setText('prHealth', health.score);
+    const healthEl = $('prHealth');
+    if (healthEl) healthEl.style.color = health.score >= 80 ? 'var(--green)' : health.score >= 60 ? 'var(--amber)' : 'var(--red)';
+
+    setHTML('projectReportCost', reportMetricTable([
+      ['Labor Budget', peso(summary.laborBudget)],
+      ['Labor Cost', peso(summary.laborCost)],
+      ['Material Budget', peso(summary.materialBudget)],
+      ['Material Cost', peso(summary.materialCost)],
+      ['Total Billed', peso(billing.totalBilled)],
+      ['Total Collected', peso(billing.totalCollected)],
+      ['Receivable', peso(billing.receivable)],
+      ['Projected Profit', peso(summary.projectedProfit)]
+    ]));
+
+    setHTML('projectReportOps', reportMetricTable([
+      ['Payroll Weeks', labor.payrollWeeks],
+      ['Purchase Orders', materials.purchaseOrders],
+      ['Deliveries', materials.deliveries],
+      ['Material Issuances', materials.issuances],
+      ['Pending Change Orders', changeOrders.pendingCount],
+      ['Approved Change Orders', changeOrders.approvedCount],
+      ['Site Logs', siteLog.totalLogs],
+      ['Open Site Issues', siteLog.openIssues],
+      ['Open Delays', siteLog.openDelays],
+      ['Last Site Log', siteLog.lastLogDate || '-']
+    ]));
+
+    renderProjectReportSnapshots(project);
+  });
+}
+
+function reportMetricTable(rows) {
+  return `<div class="summary-table-wrap"><table class="summary-table"><tbody>
+    ${rows.map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+function renderProjectReportSnapshots(project = {}) {
+  const el = $('projectReportSnapshots');
+  if (!el) return;
+  const rows = reportObjectRows(project.reportSnapshots)
+    .sort((a, b) => (b.generatedAt || 0) - (a.generatedAt || 0))
+    .slice(0, 12);
+  if (!rows.length) {
+    el.innerHTML = '<p class="empty-hint">No saved report snapshots yet.</p>';
+    return;
+  }
+  el.innerHTML = `<div class="summary-table-wrap"><table class="summary-table">
+    <thead><tr><th>Type</th><th>Period</th><th>Generated</th><th>By</th></tr></thead>
+    <tbody>${rows.map(r => `<tr>
+      <td>${escapeHtml(r.type || '-')}</td>
+      <td>${escapeHtml(r.periodKey || '-')}</td>
+      <td>${escapeHtml(r.generatedAt ? new Date(r.generatedAt).toLocaleString('en-PH') : '-')}</td>
+      <td>${escapeHtml(r.generatedByName || r.generatedBy || '-')}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+async function exportCurrentProjectReport(type = 'project_summary') {
+  if (!window._currentPid) {
+    showToast('Open a project first.', 'error');
+    return;
+  }
+  try {
+    await exportReport(window._currentPid, type);
+    showToast('Project report exported.');
+  } catch (e) {
+    console.error('Project report export failed:', e);
+    showToast('Could not export project report.', 'error');
+  }
+}
+
+async function printCurrentProjectReport() {
+  if (!window._currentPid) {
+    showToast('Open a project first.', 'error');
+    return;
+  }
+  try {
+    const project = await getProjectReportSource(window._currentPid);
+    const summary = projectReportSummary(window._currentPid, project);
+    const win = window.open('', '_blank');
+    if (!win) {
+      showToast('Popup blocked. Allow popups to print reports.', 'warn');
+      return;
+    }
+    win.document.write(`<!doctype html><html><head><title>${escapeHtml(project.name || 'Project Report')}</title><style>
+      body{font-family:Arial,sans-serif;padding:24px;color:#111} h1{font-size:22px} table{width:100%;border-collapse:collapse;font-size:12px} td,th{border:1px solid #ccc;padding:8px;text-align:left} th{background:#f3f4f6}
+    </style></head><body>
+      <h1>${escapeHtml(project.name || 'Project Report')}</h1>
+      <p>Generated ${escapeHtml(new Date().toLocaleString('en-PH'))}</p>
+      ${reportMetricTable([
+        ['Total Budget', peso(summary.totalBudget)],
+        ['Total Cost', peso(summary.totalCost)],
+        ['Budget Used', `${summary.budgetUsedPct}%`],
+        ['Total Billed', peso(summary.totalBilled)],
+        ['Total Collected', peso(summary.totalCollected)],
+        ['Receivable', peso(summary.receivable)],
+        ['Open Issues', summary.openIssues],
+        ['Open Delays', summary.openDelays]
+      ])}
+    </body></html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+  } catch (e) {
+    console.error('Project report print failed:', e);
+    showToast('Could not print project report.', 'error');
+  }
+}
+
+function systemReportsMarkup() {
+  return `
+    <section id="systemReportsView" class="view-workspace hidden">
+      <div class="workspace-head">
+        <div>
+          <div class="ws-kicker">Whole System</div>
+          <h2>System Reports</h2>
+          <p>Cross-project executive reporting for the Hub. Project-specific reports stay inside each project workspace.</p>
+        </div>
+        <div class="ws-actions">
+          <button class="btn-ws-back" type="button" onclick="closeSystemReports()">Back</button>
+        </div>
+      </div>
+      <div class="panel-card" id="executiveDashboard">
+        <div class="panel-title">Executive Dashboard</div>
+        <div class="system-report-filters">
+          <label>
+            <span>Status</span>
+            <select id="systemReportStatusFilter" onchange="renderSystemReportsFromCache()">
+              <option value="active">Current Active</option>
+              <option value="all">All History</option>
+              <option value="completed">Completed</option>
+              <option value="archived">Archived</option>
+            </select>
+          </label>
+          <label>
+            <span>Period</span>
+            <select id="systemReportPeriodFilter" onchange="renderSystemReportsFromCache()">
+              <option value="all">All Periods</option>
+            </select>
+          </label>
+          <div id="systemReportFilterNote" class="system-report-filter-note">Showing active project operations.</div>
+        </div>
+        <div class="exec-summary-grid">
+          <div class="exec-stat"><div class="exec-stat-label" id="execProjectCountLabel">Projects in View</div><div class="exec-stat-val" id="execActiveProjects">0</div></div>
+          <div class="exec-stat"><div class="exec-stat-label">Total Budget</div><div class="exec-stat-val" id="execTotalBudget">0</div></div>
+          <div class="exec-stat"><div class="exec-stat-label">Total Spent</div><div class="exec-stat-val" id="execTotalSpent">0</div></div>
+          <div class="exec-stat"><div class="exec-stat-label">Avg Health</div><div class="exec-stat-val" id="execAvgHealth">0%</div></div>
+          <button class="btn-ws-secondary" onclick="generateWeeklyReport()">Weekly Report</button>
+        </div>
+        <div class="exec-overview">
+          <div class="exec-chart-card">
+            <div class="panel-subtitle">Budget Mix</div>
+            <div id="execBudgetChart" class="exec-budget-chart"></div>
+            <div id="execBudgetLegend" class="exec-budget-legend"></div>
+          </div>
+          <div class="exec-health-card">
+            <div class="panel-subtitle">Project Health</div>
+            <div id="execProjectHealth" class="exec-health-grid"></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel-card">
+        <div class="panel-title">Team Performance</div>
+        <div id="teamPerformance"><p class="empty-hint">Loading...</p></div>
+      </div>
+      <div class="panel-card">
+        <div class="panel-title">Budget Variance</div>
+        <div id="budgetVariance"><p class="empty-hint">Loading...</p></div>
+      </div>
+    </section>`;
+}
+
+function ensureSystemReportsView() {
+  const workspaceReports = $('reportsPanel');
+  if (workspaceReports && workspaceReports.dataset.reportMode !== 'project') {
+    workspaceReports.dataset.reportMode = 'placeholder';
+    workspaceReports.innerHTML = '<div class="panel-card"><div class="panel-title">Project Reports</div><p class="empty-hint">Open this tab inside a project for project-only reports.</p></div>';
+  }
+  if (!$('systemReportsView')) {
+    document.querySelector('.main')?.insertAdjacentHTML('beforeend', systemReportsMarkup());
+  }
+}
+
+function openSystemReports() {
+  ensureSystemReportsView();
+  detachReportsListeners();
+  window._systemReportsReturnMode = window._adminWorkspaceMode
+    ? 'admin'
+    : window._currentPid
+      ? 'project'
+      : 'hub';
   if (!reportCurrentUserIsBoss()) {
     ['executiveDashboard', 'teamPerformance', 'budgetVariance'].forEach(id => {
       const el = $(id);
@@ -26,10 +298,29 @@ function initReports() {
     });
     return;
   }
+  $('hubView')?.classList.add('hidden');
+  $('workspaceView')?.classList.add('hidden');
+  $('pmosOfficeView')?.classList.add('hidden');
+  $('systemReportsView')?.classList.remove('hidden');
   renderExecutiveDashboard();
   renderTeamPerformance();
   renderBudgetVariance();
 }
+
+function closeSystemReports() {
+  detachReportsListeners();
+  $('systemReportsView')?.classList.add('hidden');
+  if (window._systemReportsReturnMode === 'admin' && typeof openTeamAdmin === 'function') {
+    openTeamAdmin();
+  } else if (window._currentPid) {
+    $('workspaceView')?.classList.remove('hidden');
+  } else {
+    $('hubView')?.classList.remove('hidden');
+  }
+  window._systemReportsReturnMode = null;
+}
+
+document.addEventListener('DOMContentLoaded', ensureSystemReportsView);
 
 function reportCurrentUserIsBoss() {
   const user = window._currentUser || {};
@@ -385,9 +676,22 @@ function formatProjectLabel(projectId) {
   return projectId || '-';
 }
 
+function reportProjectList(value) {
+  if (typeof normalizeProjectList === 'function') return normalizeProjectList(value);
+  if (Array.isArray(value)) return value.filter(Boolean).map(String);
+  if (value && typeof value === 'object') {
+    return Object.entries(value)
+      .filter(([, enabled]) => enabled !== false && enabled !== null)
+      .map(([key]) => String(key));
+  }
+  return [];
+}
+
 function initAdminSummary() {
   const el = $('accountSummary');
   const user = window._currentUser || {};
+  const projects = reportProjectList(user.projects);
+  const bossOf = reportProjectList(user.bossOf);
   if (!el) return;
   el.innerHTML = `
     <div class="summary-table-wrap">
@@ -396,8 +700,8 @@ function initAdminSummary() {
           <tr><td>Name</td><td>${escapeHtml(user.name || 'User')}</td></tr>
           <tr><td>UID</td><td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid || '-')}</td></tr>
           <tr><td>Role</td><td>${escapeHtml(reportRoleLabel(user.role))}</td></tr>
-          <tr><td>Projects</td><td>${escapeHtml((user.projects || []).map(formatProjectLabel).join(', ') || '-')}</td></tr>
-          <tr><td>Boss Of</td><td>${escapeHtml((user.bossOf || []).map(formatProjectLabel).join(', ') || '-')}</td></tr>
+          <tr><td>Projects</td><td>${escapeHtml(projects.map(formatProjectLabel).join(', ') || '-')}</td></tr>
+          <tr><td>Boss Of</td><td>${escapeHtml(bossOf.map(formatProjectLabel).join(', ') || '-')}</td></tr>
         </tbody>
       </table>
     </div>`;
@@ -670,7 +974,7 @@ function collectProjectAssignmentFallbacks() {
       status: statusText.includes('completed') ? 'completed' : 'active'
     });
   });
-  (window._currentUser?.projects || []).forEach(pid => {
+  reportProjectList(window._currentUser?.projects).forEach(pid => {
     if (pid && !map.has(pid)) map.set(pid, { id: pid, name: formatProjectLabel(pid), status: 'assigned' });
   });
   return Array.from(map.values())
@@ -740,13 +1044,14 @@ function openProjectAssignModal(uid) {
   const status = $('assignProjectStatus');
   if (title) title.textContent = user.name || 'User';
   if (holder) { holder.dataset.uid = uid; holder.textContent = uid; }
-  if (names) names.textContent = (user.projects || []).map(formatProjectLabel).join(', ') || 'None yet';
+  const userProjects = reportProjectList(user.projects);
+  if (names) names.textContent = userProjects.map(formatProjectLabel).join(', ') || 'None yet';
   if (status) status.textContent = reportRoleLabel(user.role);
   const modal = $('projectAssignModal');
   modal?.classList.remove('hidden');
 
   Promise.resolve(loadProjectsForAssignments()).then(() => {
-    const picked = new Set(user.projects || []);
+    const picked = new Set(userProjects);
     document.querySelectorAll('#assignProjectList input[type=\"checkbox\"]').forEach(cb => {
       cb.checked = picked.has(cb.value);
     });
@@ -1073,11 +1378,13 @@ function renderTeamAdmin(users) {
     <tbody>
       ${users.map(user => {
         const role = normalizeTeamRole(user.role);
-        const projectNames = (user.projects || []).map(formatProjectLabel);
+        const projects = reportProjectList(user.projects);
+        const bossOf = reportProjectList(user.bossOf);
+        const projectNames = projects.map(formatProjectLabel);
         const projectCount = projectNames.length;
         const projectPreview = projectNames.slice(0, 2).join(', ');
         const status = String(user.status || 'active').toLowerCase();
-        const search = [user.name, user.position, user.email, user.uid, role, status, ...(user.projects || []).map(formatProjectLabel), ...(user.bossOf || []).map(formatProjectLabel)].join(' ').toLowerCase();
+        const search = [user.name, user.position, user.email, user.uid, role, status, ...projectNames, ...bossOf.map(formatProjectLabel)].join(' ').toLowerCase();
         return `<tr data-team-user-row data-search="${escapeHtml(search)}">
           <td>${escapeHtml(user.name || '-')}</td>
           <td>${escapeHtml(user.position || '-')}</td>
@@ -1095,7 +1402,7 @@ function renderTeamAdmin(users) {
               </div>
             </div>
           </td>
-          <td>${escapeHtml((user.bossOf || []).map(formatProjectLabel).join(', ') || '-')}</td>
+          <td>${escapeHtml(bossOf.map(formatProjectLabel).join(', ') || '-')}</td>
         </tr>`;
       }).join('')}
     </tbody>
@@ -1146,23 +1453,81 @@ function renderExecutiveDashboard() {
     snap.forEach(c => {
       projects.push({ id: c.key, ...c.val() });
     });
+    _systemReportsProjectsCache = projects;
+    syncSystemReportPeriodOptions(projects);
+    renderSystemReportsFromCache();
+  });
+}
 
-    // Health scores
+function reportProjectDateValue(project = {}) {
+  const raw = project.completedAt || project.archivedAt || project.updatedAt || project.createdAt || project.createdDate || project.startDate || project.dateStarted;
+  if (!raw) return 0;
+  if (typeof raw === 'number') return raw;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function reportProjectPeriodKeys(project = {}) {
+  const ts = reportProjectDateValue(project);
+  if (!ts) return [];
+  const date = new Date(ts);
+  const year = date.getFullYear();
+  const quarter = Math.floor(date.getMonth() / 3) + 1;
+  return [`${year}`, `${year}-Q${quarter}`];
+}
+
+function systemReportPeriodLabel(key) {
+  if (key === 'all') return 'All Periods';
+  const match = String(key).match(/^(\d{4})-Q([1-4])$/);
+  if (match) return `Q${match[2]} ${match[1]}`;
+  return String(key);
+}
+
+function syncSystemReportPeriodOptions(projects = []) {
+  const select = $('systemReportPeriodFilter');
+  if (!select) return;
+  const previous = select.value || 'all';
+  const keys = new Set();
+  projects.forEach(project => reportProjectPeriodKeys(project).forEach(key => keys.add(key)));
+  const sorted = Array.from(keys).sort((a, b) => b.localeCompare(a));
+  select.innerHTML = `<option value="all">All Periods</option>${sorted.map(key => `<option value="${escapeHtml(key)}">${escapeHtml(systemReportPeriodLabel(key))}</option>`).join('')}`;
+  select.value = sorted.includes(previous) || previous === 'all' ? previous : 'all';
+}
+
+function filteredSystemReportProjects(projects = _systemReportsProjectsCache) {
+  const status = $('systemReportStatusFilter')?.value || 'active';
+  const period = $('systemReportPeriodFilter')?.value || 'all';
+  return projects.filter(project => {
+    const projectStatus = String(project.status || 'active').toLowerCase();
+    const statusOk = status === 'all'
+      ? projectStatus !== 'archived'
+      : projectStatus === status;
+    const periodOk = period === 'all' || reportProjectPeriodKeys(project).includes(period);
+    return statusOk && periodOk;
+  });
+}
+
+function renderSystemReportsFromCache() {
+    const projects = filteredSystemReportProjects();
+    const allProjects = _systemReportsProjectsCache || [];
+    const status = $('systemReportStatusFilter')?.value || 'active';
+    const period = $('systemReportPeriodFilter')?.value || 'all';
+    const statusLabel = status === 'all' ? 'All non-archived projects' : status === 'active' ? 'Active projects' : `${status.charAt(0).toUpperCase()}${status.slice(1)} projects`;
+    const periodLabel = systemReportPeriodLabel(period).toLowerCase();
+    setText('systemReportFilterNote', `${statusLabel}, ${periodLabel}. ${projects.length} shown / ${allProjects.length} total records.`);
+    setText('execProjectCountLabel', status === 'active' ? 'Active Projects' : 'Projects in View');
+
     const healthData = projects.map(p => ({
       ...p,
       summary: reportSummaryForProject(p),
       health: calculateProjectHealth(p)
-    }));
+    })).sort((a, b) => b.health.score - a.health.score);
 
-    healthData.sort((a, b) => b.health.score - a.health.score);
-
-    // Render health cards
     const container = $('execProjectHealth');
     if (container) {
-      container.innerHTML = healthData.map(p => {
+      container.innerHTML = healthData.length ? healthData.map(p => {
         const h = p.health;
         const color = h.score >= 80 ? 'var(--green)' : h.score >= 60 ? 'var(--amber)' : 'var(--red)';
-        const glow = h.score >= 80 ? 'var(--green-glow)' : h.score >= 60 ? 'var(--amber-glow)' : 'var(--red-glow)';
         return `
           <div class="health-card" style="border-left-color:${color}">
             <div class="health-hdr">
@@ -1170,30 +1535,16 @@ function renderExecutiveDashboard() {
               <span class="health-score" style="color:${color}">${h.score}</span>
             </div>
             <div class="health-bars">
-              <div class="health-bar-wrap">
-                <span>Budget</span>
-                <div class="health-bar"><div style="width:${h.budgetPct}%;background:${color}"></div></div>
-                <span>${h.budgetPct}%</span>
-              </div>
-              <div class="health-bar-wrap">
-                <span>Schedule</span>
-                <div class="health-bar"><div style="width:${h.schedulePct}%;background:${color}"></div></div>
-                <span>${h.schedulePct}%</span>
-              </div>
-              <div class="health-bar-wrap">
-                <span>Labor</span>
-                <div class="health-bar"><div style="width:${h.laborPct}%;background:${color}"></div></div>
-                <span>${h.laborPct}%</span>
-              </div>
+              <div class="health-bar-wrap"><span>Budget</span><div class="health-bar"><div style="width:${h.budgetPct}%;background:${color}"></div></div><span>${h.budgetPct}%</span></div>
+              <div class="health-bar-wrap"><span>Schedule</span><div class="health-bar"><div style="width:${h.schedulePct}%;background:${color}"></div></div><span>${h.schedulePct}%</span></div>
+              <div class="health-bar-wrap"><span>Labor</span><div class="health-bar"><div style="width:${h.laborPct}%;background:${color}"></div></div><span>${h.laborPct}%</span></div>
             </div>
             ${h.warnings.length ? `<div class="health-warn">${h.warnings.map(w => `\u26A0 ${w}`).join('<br>')}</div>` : '<div class="health-ok">\u2713 All clear</div>'}
           </div>
         `;
-      }).join('');
+      }).join('') : '<p class="empty-hint">No projects match this report filter.</p>';
     }
 
-    // Summary stats
-    const active = projects.filter(p => p.status === 'active').length;
     const summaries = healthData.map(p => p.summary || reportSummaryForProject(p));
     const totalBudget = summaries.reduce((s, p) => s + reportAmount(p.totalBudget), 0);
     const totalSpent = summaries.reduce((s, p) => s + reportAmount(p.totalCost), 0);
@@ -1202,7 +1553,7 @@ function renderExecutiveDashboard() {
     const remaining = Math.max(0, totalBudget - totalSpent);
     const spentPct = totalBudget ? Math.min(100, (totalSpent / totalBudget) * 100) : 0;
     const avgHealth = healthData.length ? Math.round(healthData.reduce((s, p) => s + p.health.score, 0) / healthData.length) : 0;
-    setText('execActiveProjects', active);
+    setText('execActiveProjects', projects.length);
     setText('execTotalBudget', peso(totalBudget));
     setText('execTotalSpent', peso(totalSpent));
     setText('execAvgHealth', avgHealth + '%');
@@ -1224,7 +1575,6 @@ function renderExecutiveDashboard() {
         '<div class="exec-legend-row"><span><i class="exec-legend-swatch" style="background:var(--green)"></i>Material Budget</span><strong>' + peso(materialBudgetTotal) + '</strong></div>' +
         '<div class="exec-legend-row"><span><i class="exec-legend-swatch" style="background:var(--amber)"></i>Remaining</span><strong>' + peso(remaining) + '</strong></div>';
     }
-  });
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -1334,7 +1684,20 @@ function renderTeamPerformance() {
       return;
     }
 
-    el.innerHTML = `<div style="overflow-x:auto">
+    const activeWorkers = workers.filter(w => w.totalDays > 0).length;
+    const tradeCount = new Set(workers.map(w => w.trade).filter(Boolean)).size;
+    const totalDays = workers.reduce((sum, w) => sum + reportAmount(w.totalDays), 0);
+    const topWorker = workers[0];
+
+    el.innerHTML = `
+    <div class="team-performance-summary">
+      <div><span>Total Workers</span><strong>${workers.length}</strong></div>
+      <div><span>Active Workers</span><strong>${activeWorkers}</strong></div>
+      <div><span>Trades</span><strong>${tradeCount}</strong></div>
+      <div><span>Total Days</span><strong>${totalDays}</strong></div>
+      <div><span>Most Active</span><strong>${escapeHtml(topWorker?.name || '-')}</strong></div>
+    </div>
+    <div class="team-performance-table">
       <table class="summary-table">
         <thead><tr>
           <th>Worker</th><th>Trade</th><th style="text-align:center">Projects</th>
@@ -1390,7 +1753,20 @@ function renderBudgetVariance() {
       return;
     }
 
-    el.innerHTML = `<div style="overflow-x:auto">
+    const overBudget = rows.filter(r => r.totalVar < 0).length;
+    const totalVariance = rows.reduce((sum, r) => sum + reportAmount(r.totalVar), 0);
+    const laborVariance = rows.reduce((sum, r) => sum + reportAmount(r.laborVar), 0);
+    const materialVariance = rows.reduce((sum, r) => sum + reportAmount(r.matVar), 0);
+
+    el.innerHTML = `
+    <div class="budget-variance-summary">
+      <div><span>Projects</span><strong>${rows.length}</strong></div>
+      <div><span>Over Budget</span><strong class="${overBudget ? 'text-red' : 'text-green'}">${overBudget}</strong></div>
+      <div><span>Total Variance</span><strong class="${totalVariance < 0 ? 'text-red' : 'text-green'}">${peso(totalVariance)}</strong></div>
+      <div><span>Labor Variance</span><strong class="${laborVariance < 0 ? 'text-red' : 'text-green'}">${peso(laborVariance)}</strong></div>
+      <div><span>Material Variance</span><strong class="${materialVariance < 0 ? 'text-red' : 'text-green'}">${peso(materialVariance)}</strong></div>
+    </div>
+    <div class="budget-variance-table">
       <table class="summary-table">
         <thead><tr>
           <th>Project</th>
@@ -1437,7 +1813,7 @@ async function generateWeeklyReport() {
   // Filter for APM's projects
   const myProjects = (typeof isBoss === 'function' ? isBoss(user.role) : user.role === 'boss')
     ? projects
-    : projects.filter(p => user.projects?.includes(p.id));
+    : projects.filter(p => reportProjectList(user.projects).includes(p.id));
 
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - 7);
@@ -1464,6 +1840,13 @@ async function generateWeeklyReport() {
 
 // â”€â”€ Expose â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.initReports = initReports;
+window.renderProjectReports = renderProjectReports;
+window.renderSystemReportsFromCache = renderSystemReportsFromCache;
+window.exportCurrentProjectReport = exportCurrentProjectReport;
+window.printCurrentProjectReport = printCurrentProjectReport;
+window.openSystemReports = openSystemReports;
+window.closeSystemReports = closeSystemReports;
+window.ensureSystemReportsView = ensureSystemReportsView;
 window.initTeamAdmin = initTeamAdmin;
 window.switchAdminSection = switchAdminSection;
 window.initAdminSummary = initAdminSummary;

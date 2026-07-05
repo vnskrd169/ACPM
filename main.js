@@ -22,8 +22,10 @@ window._db = db;
 window._currentPid = null;
 let _hubListeners = [];
 let _projectNotesListener = null;
+let _projectDashboardListener = null;
 window._isReadOnly = false;
 window._currentProjectStatus = null;
+window._adminWorkspaceMode = false;
 // Overwritten by auth.js once Firebase Auth resolves — this is only
 // a pre-auth fallback so other modules don't crash on null access.
 window._currentUser = { uid: 'anonymous', role: 'apm', name: 'System', projects: [], bossOf: [] };
@@ -33,6 +35,7 @@ function getAppPage() {
   if (window.ACPM_PAGE) return String(window.ACPM_PAGE).toLowerCase();
   const path = window.location.pathname.toLowerCase();
   if (path.endsWith('/login.html')) return 'login';
+  if (path.endsWith('/pmos.html')) return 'pmos';
   if (path.endsWith('/dashboard.html')) return 'dashboard';
   if (path.endsWith('/workspace.html')) return 'workspace';
   return 'app';
@@ -40,6 +43,7 @@ function getAppPage() {
 
 function appUrl(page, params = {}) {
   if (page === 'login') return 'login.html';
+  if (page === 'pmos') return 'pmos.html';
   if (page === 'workspace') {
     const pid = encodeURIComponent(params.projectId || '');
     return pid ? `workspace.html?projectId=${pid}` : 'workspace.html';
@@ -805,7 +809,7 @@ async function createProject(evt) {
 
     // Auto-assign to creator
     if (user && user.role === "apm") {
-      const currentProjects = Array.from(new Set(user.projects || [])).sort((a, b) => String(a).localeCompare(String(b)));
+      const currentProjects = Array.from(new Set(typeof normalizeProjectList === 'function' ? normalizeProjectList(user.projects) : (Array.isArray(user.projects) ? user.projects : []))).sort((a, b) => String(a).localeCompare(String(b)));
       const uniqueProjects = Array.from(new Set([...currentProjects, newPid])).sort((a, b) => String(a).localeCompare(String(b)));
       await db.ref(`users/${user.uid}/projects`).set(uniqueProjects);
       user.projects = uniqueProjects;
@@ -1007,6 +1011,185 @@ function detachProjectNotesListener() {
   }
 }
 
+function detachProjectDashboardListener() {
+  if (_projectDashboardListener) {
+    _projectDashboardListener.off();
+    _projectDashboardListener = null;
+  }
+}
+
+function ensureProjectDashboardUi() {
+  if (!$('tab_dashboard')) {
+    const tabs = document.querySelector('#workspaceView .tab-group');
+    tabs?.insertAdjacentHTML('afterbegin', '<button id="tab_dashboard" class="tab-btn" onclick="switchTab(\'dashboard\')" data-role-visible="apm,pm,boss,owner,admin">&#x2302; Dashboard</button>');
+  }
+  if (!$('dashboardPanel')) {
+    const laborPanel = $('laborPanel');
+    laborPanel?.insertAdjacentHTML('beforebegin', `
+      <div id="dashboardPanel" class="panel hidden">
+        <div class="project-dash-grid">
+          <section class="panel-card project-dash-hero">
+            <div>
+              <div class="panel-title">Project Dashboard</div>
+              <h2 id="pdName">Project</h2>
+              <div id="pdMeta" class="project-dash-meta">Loading project details...</div>
+            </div>
+            <div id="pdStatus" class="badge badge-purple">Active</div>
+          </section>
+
+          <section class="panel-card project-budget-card">
+            <div class="project-dash-section-head">
+              <div>
+                <div class="panel-title">Running Budget</div>
+                <p class="empty-hint">Labor + material cost against current approved budget.</p>
+              </div>
+              <strong id="pdBudgetUsed">0%</strong>
+            </div>
+            <div class="project-budget-bar"><i id="pdBudgetBar"></i></div>
+            <div class="project-dash-kpis">
+              <div><span>Total Budget</span><strong id="pdTotalBudget">0</strong></div>
+              <div><span>Total Cost</span><strong id="pdTotalCost">0</strong></div>
+              <div><span>Remaining</span><strong id="pdRemaining">0</strong></div>
+              <div><span>Committed</span><strong id="pdCommitted">0</strong></div>
+            </div>
+          </section>
+
+          <section class="panel-card">
+            <div class="panel-title">Project Profile</div>
+            <div id="pdProfile" class="project-profile-list"></div>
+          </section>
+
+          <section class="panel-card">
+            <div class="panel-title">Field Team</div>
+            <div id="pdFieldTeam" class="project-profile-list"></div>
+          </section>
+
+          <section class="panel-card project-dash-wide">
+            <div class="panel-title">Today / Operations</div>
+            <div id="pdOperations" class="project-dash-kpis"></div>
+          </section>
+
+          <section class="panel-card project-dash-wide">
+            <div class="panel-title">Quick Open</div>
+            <div class="project-dash-actions">
+              <button class="btn-ws-secondary" type="button" onclick="switchTab('labor')">Labor</button>
+              <button class="btn-ws-secondary" type="button" onclick="switchTab('materials')">Materials</button>
+              <button class="btn-ws-secondary" type="button" onclick="switchTab('sitelog')">Site Log</button>
+              <button class="btn-ws-secondary" type="button" onclick="openPmosOffice()">PMOS</button>
+              <button class="btn-ws-secondary" type="button" onclick="switchTab('reports')">Reports</button>
+            </div>
+          </section>
+        </div>
+      </div>`);
+  }
+}
+
+function projectAmount(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function projectPeso(value) {
+  return typeof peso === 'function' ? peso(value) : `PHP ${projectAmount(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function objectRows(obj = {}) {
+  return Object.entries(obj || {}).map(([id, value]) => ({ id, ...(value || {}) }));
+}
+
+function projectDateLabel(project = {}) {
+  if (project.startDate) return project.startDate;
+  if (project.dateStarted) return project.dateStarted;
+  if (project.createdDate) return project.createdDate;
+  if (project.createdAt) return new Date(project.createdAt).toLocaleDateString('en-PH');
+  return '-';
+}
+
+function renderProjectDashboard(projectId, project = {}) {
+  ensureProjectDashboardUi();
+  const trades = objectRows(project.trades).filter(t => t.active !== false && t.status !== 'inactive' && t.archived !== true);
+  const workers = objectRows(project.workers).filter(w => w.active !== false && w.status !== 'inactive' && w.status !== 'archived');
+  const foremen = Array.from(new Set(trades.map(t => t.foremanName).filter(Boolean)));
+  const siteLogs = objectRows(project.siteLogs);
+  const pmosLogs = ['pmosUpdates', 'pmosSiteLogs', 'pmosIssues', 'pmosMaterialRequests', 'pmosTasks', 'pmosMeetingNotes', 'pmosPhotoLogs']
+    .reduce((sum, key) => sum + objectRows(project[key]).length, 0);
+
+  const laborBudget = projectAmount(project.laborBudget);
+  const materialBudget = projectAmount(project.materialBudget);
+  const totalBudget = laborBudget + materialBudget;
+  const laborSpent = projectAmount(project.laborSpent);
+  const materialSpent = projectAmount(project.materialSpent);
+  const committed = projectAmount(project.materialCommitted) + projectAmount(project.laborCommitted);
+  const totalCost = laborSpent + materialSpent;
+  const remaining = totalBudget - totalCost - committed;
+  const usedPct = totalBudget ? Math.round(((totalCost + committed) / totalBudget) * 100) : 0;
+  const address = project.address || project.projectAddress || project.siteAddress || project.location || 'Not set yet';
+  const lastLog = siteLogs
+    .map(log => log.date || log.savedDate || (log.savedAt ? new Date(log.savedAt).toISOString().slice(0, 10) : ''))
+    .filter(Boolean)
+    .sort()
+    .pop() || '-';
+
+  setText('pdName', project.name || projectId || 'Project');
+  setText('pdMeta', `${address} - Started ${projectDateLabel(project)}`);
+  setText('pdStatus', project.status || 'active');
+  setText('pdBudgetUsed', `${usedPct}%`);
+  setText('pdTotalBudget', projectPeso(totalBudget));
+  setText('pdTotalCost', projectPeso(totalCost));
+  setText('pdRemaining', projectPeso(remaining));
+  setText('pdCommitted', projectPeso(committed));
+  const budgetBar = $('pdBudgetBar');
+  if (budgetBar) {
+    budgetBar.style.width = `${Math.max(0, Math.min(100, usedPct))}%`;
+    budgetBar.classList.toggle('is-over', usedPct > 100);
+  }
+
+  setHTML('pdProfile', `
+    <div><span>Project Name</span><strong>${escapeHtml(project.name || projectId || '-')}</strong></div>
+    <div><span>Project Address</span><strong>${escapeHtml(address)}</strong></div>
+    <div><span>Date Started</span><strong>${escapeHtml(projectDateLabel(project))}</strong></div>
+    <div><span>Status</span><strong>${escapeHtml(project.status || 'active')}</strong></div>
+  `);
+
+  const workerPreview = workers.slice(0, 8).map(w => w.name).filter(Boolean).join(', ') || 'No active workers yet';
+  setHTML('pdFieldTeam', `
+    <div><span>Active Workers</span><strong>${workers.length}</strong></div>
+    <div><span>Trades</span><strong>${trades.length}</strong></div>
+    <div><span>Foremen / Leaders</span><strong>${escapeHtml(foremen.join(', ') || 'Not set yet')}</strong></div>
+    <div><span>Workers</span><strong>${escapeHtml(workerPreview)}</strong></div>
+  `);
+
+  setHTML('pdOperations', `
+    <div><span>Site Logs</span><strong>${siteLogs.length}</strong></div>
+    <div><span>Last Site Log</span><strong>${escapeHtml(lastLog)}</strong></div>
+    <div><span>PMOS Records</span><strong>${pmosLogs}</strong></div>
+    <div><span>Open Items</span><strong>${countProjectOpenItems(project)}</strong></div>
+  `);
+}
+
+function countProjectOpenItems(project = {}) {
+  const rows = ['tasks', 'defects', 'pmosIssues', 'pmosTasks', 'pmosMaterialRequests']
+    .flatMap(key => objectRows(project[key]).map(item => ({ ...item, sourceKey: key })));
+  return rows.filter(item => {
+    const status = String(item.status || '').toLowerCase();
+    return !['done', 'closed', 'archived', 'delivered', 'cancelled'].includes(status);
+  }).length;
+}
+
+function initProjectDashboard(projectId = window._currentPid) {
+  ensureProjectDashboardUi();
+  detachProjectDashboardListener();
+  if (!projectId) return;
+  const ref = db.ref(`projects/${projectId}`);
+  _projectDashboardListener = ref;
+  ref.on('value', snap => {
+    renderProjectDashboard(projectId, snap.val() || {});
+  }, err => {
+    console.warn('Project dashboard listener failed:', err);
+    setHTML('pdProfile', '<p class="empty-hint">Could not load project dashboard.</p>');
+  });
+}
+
 function openProjectFromHub(pid) {
   if (getAppPage() === 'dashboard') {
     window.location.href = appUrl('workspace', { projectId: pid });
@@ -1029,8 +1212,14 @@ async function enterProject(pid) {
   if (!p) { showToast('Project not found.', 'error'); return false; }
 
   window._currentPid = pid;
+  window._adminWorkspaceMode = false;
   setText('wsName', p.name || 'Untitled');
+  setText('wsContextLabel', 'Active Site');
+  ensureProjectDashboardUi();
+  $('workspaceView')?.classList.remove('workspace-admin-mode');
   $('hubView').classList.add('hidden');
+  $('systemReportsView')?.classList.add('hidden');
+  $('pmosOfficeView')?.classList.add('hidden');
   $('workspaceView').classList.remove('hidden');
 
   window._currentProjectStatus = p.status || 'active';
@@ -1050,8 +1239,7 @@ async function enterProject(pid) {
   initDefects(pid);
   initNotifications();
   loadProjectNotes(pid);
-  const role = typeof normalizeRole === 'function' ? normalizeRole(window._currentUser?.role || 'apm') : (window._currentUser?.role || 'apm');
-  switchTab(typeof canSeeFinancials === 'function' && canSeeFinancials(role) ? 'reports' : 'labor');
+  switchTab('dashboard');
 
   auditLog('enter', 'project', pid, { name: p.name });
   return true;
@@ -1073,23 +1261,35 @@ function exitHub() {
   detachComplianceListeners();
   detachDefectListeners();
   detachProjectNotesListener();
+  detachProjectDashboardListener();
   if (typeof detachNotifications === 'function') detachNotifications();
 
   $('workspaceView').classList.add('hidden');
+  $('workspaceView')?.classList.remove('workspace-admin-mode');
+  $('systemReportsView')?.classList.add('hidden');
+  $('pmosOfficeView')?.classList.add('hidden');
   $('hubView').classList.remove('hidden');
   window._currentPid = null;
+  window._adminWorkspaceMode = false;
   window._currentProjectStatus = null;
   window._isReadOnly = false;
-  renderHub();
+  setText('wsContextLabel', 'Active Site');
+  showHubTab('active');
 }
 
 function switchTab(tab) {
+  if (window._adminWorkspaceMode && !['admin', 'reports'].includes(tab)) {
+    tab = 'admin';
+  }
+  $('systemReportsView')?.classList.add('hidden');
+  if (tab !== 'pmos') $('pmosOfficeView')?.classList.add('hidden');
   document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('tab-active'));
   $(`tab_${tab}`)?.classList.add('tab-active');
   document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
   $(`${tab}Panel`)?.classList.remove('hidden');
 
   // Trigger view-specific renders
+  if (tab === 'dashboard') initProjectDashboard();
   if (tab === 'tasks') renderGanttView();
   if (tab === 'admin' && typeof initTeamAdmin === 'function') initTeamAdmin();
   if (tab === 'reports') initReports();
@@ -1132,13 +1332,18 @@ function toggleExtraTabs(forceValue) {
 
 function openTeamAdmin() {
   $('hubView')?.classList.add('hidden');
+  $('systemReportsView')?.classList.add('hidden');
+  $('pmosOfficeView')?.classList.add('hidden');
   $('workspaceView')?.classList.remove('hidden');
-  window._currentPid = window._currentPid || null;
-  const wsName = $('wsName');
-  if (wsName) wsName.textContent = 'Team Admin';
+  $('workspaceView')?.classList.add('workspace-admin-mode');
+  window._currentPid = null;
+  window._adminWorkspaceMode = true;
+  setText('wsContextLabel', 'Admin Area');
+  setText('wsName', 'Team Admin');
   document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
   $('adminPanel')?.classList.remove('hidden');
   document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('tab-active'));
+  $('tab_admin')?.classList.remove('hidden');
   $('tab_admin')?.classList.add('tab-active');
   if (typeof initTeamAdmin === 'function') initTeamAdmin();
   if (typeof switchAdminSection === 'function') switchAdminSection('summary');

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Line17 PMOS">
+<link rel="manifest" href="./manifest.json">
+<script>window.ACPM_PAGE = 'pmos';</script>
+<title>Line17 PMOS</title>
+
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+<script src="utils.js?v=84"></script>
+<script src="auth.js?v=85"></script>
+<script src="main.js?v=95"></script>
+<script src="pmos.js?v=2"></script>
+<script src="face-attendance.js?v=1"></script>
+
+<link rel="stylesheet" href="style.css?v=92">
+</head>
+<body class="auth-checking auth-locked pmos-body">
+<div id="appLoading" class="app-loading" role="status" aria-live="polite">
+  <div class="app-loading-card">
+    <div class="auth-logo">17</div>
+    <div>
+      <div class="app-loading-title">Loading Line17 PMOS</div>
+      <div class="app-loading-sub">Checking secure session...</div>
+    </div>
+  </div>
+</div>
+
+<main id="pmosApp" class="pmos-shell">
+  <div class="pmos-loading-card">Preparing field workspace...</div>
+</main>
+</body>
+</html>

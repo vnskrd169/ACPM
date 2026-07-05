@@ -124,6 +124,16 @@
         },
         "workers": { ".indexOn": ["name", "trade", "active", "addedAt"]
         },
+        "pmosSelfieAttendance": {
+          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
+          "$date": {
+            ".indexOn": ["capturedAt", "submittedAt", "reviewStatus", "payrollStatus", "suggestedWorkerId"],
+            "$attendanceId": {
+              ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
+              ".validate": "newData.hasChildren(['attendanceId', 'projectId', 'attendanceType', 'capturedAt', 'reviewStatus', 'payrollStatus', 'source']) && newData.child('projectId').val() === $pid"
+            }
+          }
+        },
         "attendance": {
           "$workerId": { ".indexOn": ["weekKey", "date"]
           }
@@ -180,6 +190,113 @@
         "reportSnapshots": { ".indexOn": ["type", "periodKey", "generatedAt", "generatedBy"] 
         }
       }
+    },
+
+    "pmosUpdates": {
+      ".read": "auth != null",
+      ".indexOn": ["projectId", "category", "status", "priority", "dueDate", "createdAt", "source"],
+      "$recordId": {
+        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".validate": "newData.hasChildren(['projectId', 'projectName', 'category', 'note', 'priority', 'status', 'dueDate', 'createdAt', 'source'])"
+      }
+    },
+
+    "pmosSiteLogs": {
+      ".read": "auth != null",
+      ".indexOn": ["projectId", "date", "createdAt"],
+      "$recordId": {
+        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".validate": "newData.hasChildren(['projectId', 'date', 'weather', 'manpowerCount', 'accomplishment', 'remarks', 'createdAt'])"
+      }
+    },
+
+    "pmosIssues": {
+      ".read": "auth != null",
+      ".indexOn": ["projectId", "location", "assignedTo", "priority", "status", "dueDate", "createdAt"],
+      "$recordId": {
+        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".validate": "newData.hasChildren(['projectId', 'location', 'issue', 'assignedTo', 'priority', 'status', 'dueDate', 'createdAt'])"
+      }
+    },
+
+    "pmosMaterialRequests": {
+      ".read": "auth != null",
+      ".indexOn": ["projectId", "item", "status", "neededDate", "createdAt"],
+      "$recordId": {
+        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".validate": "newData.hasChildren(['projectId', 'item', 'quantity', 'unit', 'neededDate', 'purpose', 'status', 'createdAt'])"
+      }
+    },
+
+    "pmosTasks": {
+      ".read": "auth != null",
+      ".indexOn": ["projectId", "person", "priority", "status", "dueDate", "createdAt"],
+      "$recordId": {
+        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".validate": "newData.hasChildren(['projectId', 'task', 'person', 'dueDate', 'priority', 'status', 'createdAt'])"
+      }
+    },
+
+    "pmosMeetingNotes": {
+      ".read": "auth != null",
+      ".indexOn": ["projectId", "meetingTitle", "createdAt"],
+      "$recordId": {
+        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".validate": "newData.hasChildren(['projectId', 'meetingTitle', 'attendees', 'notes', 'actionItems', 'createdAt'])"
+      }
+    },
+
+    "pmosPhotoLogs": {
+      ".read": "auth != null",
+      ".indexOn": ["projectId", "location", "category", "uploadStatus", "createdAt"],
+      "$recordId": {
+        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".validate": "newData.hasChildren(['projectId', 'caption', 'location', 'category', 'createdAt'])"
+      }
+    },
+
+    "workers": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
+      "$workerId": {
+        ".write": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)",
+        ".validate": "!newData.exists() || newData.hasChildren(['workerId', 'workerName', 'consentRecorded', 'faceEnrollmentStatus'])"
+      }
+    },
+
+    "pmosSelfieAttendance": {
+      "$pid": {
+        ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))",
+        "$date": {
+          ".indexOn": ["capturedAt", "submittedAt", "reviewStatus", "payrollStatus", "suggestedWorkerId", "imageHash"],
+          "$attendanceId": {
+            ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))",
+            ".validate": "newData.hasChildren(['attendanceId', 'projectId', 'attendanceType', 'capturedAt', 'reviewStatus', 'payrollStatus', 'source']) && newData.child('projectId').val() === $pid"
+          }
+        }
+      }
+    },
+
+    "faceMatchTests": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)",
+      "$testId": {
+        ".write": "auth != null && newData.exists() && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)",
+        ".validate": "newData.hasChildren(['testId', 'faceDetected', 'matchLabel', 'reviewStatus', 'createdAt'])"
+      }
+    },
+
+    "attendanceDailyCodes": {
+      ".read": "auth != null",
+      "$pid": {
+        "$date": {
+          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))",
+          ".validate": "newData.hasChildren(['projectId', 'date', 'dailyCode', 'createdAt']) && newData.child('projectId').val() === $pid"
+        }
+      }
+    },
+
+    "faceSettings": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)"
     },
 
     "suppliers": {

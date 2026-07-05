@@ -2,13 +2,15 @@
 
 Status: RC1 READY - FINAL GATES PASSED
 
+Post-RC1 UI patch: cache `acpm-v100`, `style.css?v=94`, and `report.js?v=88` keep Hub as the default project command center. System Reports remains an explicit Hub action and no longer becomes the automatic return destination.
+
 Last updated: 2026-07-02
 
 ## Current Pass Areas
 
 | Area | Result | Evidence |
 | --- | --- | --- |
-| Authentication / routing / PWA shell | PASS | Multi-page route foundation is active; browser smoke confirms signed-in Boss dashboard/workspace loads. PWA cache static QA verifies cache v97, manifest `login.html` start URL, versioned `style.css`, current `main.js?v=95`, and synchronized app-shell script versions. |
+| Authentication / routing / PWA shell | PASS | Multi-page route foundation is active; browser smoke confirms signed-in Boss dashboard/workspace loads. PWA cache static QA verifies cache v100, manifest `login.html` start URL, versioned `style.css`, current `main.js?v=95`, and synchronized app-shell script versions. |
 | Dashboard integration | PASS | Rollup data QA, dashboard static QA, Boss browser smoke, and live Firebase RC1 gate passed. |
 | Project lifecycle | PASS | Active/completed/archive behavior previously verified; dashboard cards render active and completed actions. |
 | Labor v1 | PASS | Real Firebase cash advance/payroll archive QA passed via `scripts/labor_v1_cash_advance_real_qa.js`. |
@@ -16,7 +18,7 @@ Last updated: 2026-07-02
 | Billing v1 Phase 2 | PASS | Real Firebase helper QA plus browser UI/dashboard smoke passed. |
 | Change Orders v1 | PASS | Real Firebase workflow/data QA passed; static workflow QA passed; Boss Extras smoke passed at cache `acpm-v85`; visible create/approve and reject-modal browser workflows passed against live Firebase. |
 | Site Logs v1 | PASS with known limitation | Real Firebase workflow/data QA passed; media upload/offline queue remain future. |
-| Reports v1 data foundation | PASS | Real Firebase rollup/snapshot QA passed; listener cleanup/static listener QA passed; Boss Reports smoke passed at cache `acpm-v85`; app-shell reload confirmed `report.js?v=86`. |
+| Reports v1 data foundation | PASS | Real Firebase rollup/snapshot QA passed; listener cleanup/static listener QA passed; Boss Reports smoke passed at cache `acpm-v85`; app-shell reload confirmed `report.js?v=88`. |
 | Roles RC1 lock | PASS | Admin/PM/APM QA accounts were provisioned with owner approval. Dedicated role-account QA passes: Admin can read the project index, PM/APM cannot read the full `projects` root, and PM/APM can read assigned project data. |
 
 ## Current Warning / Blocker Areas
@@ -87,7 +89,7 @@ Browser smoke passed:
 - Dashboard route as signed-in Boss.
 - Workspace route with `projectId` preserved.
 - Team Admin role options exclude Foreman/Safety/Viewer.
-- Loaded current cache/script set includes `style.css?v=92`, `auth.js?v=85`, `main.js?v=95`, `labor.js?v=94`, `materials.js?v=93`, `changeorders.js?v=95`, `sitelog.js?v=94`, `suppliers.js?v=94`, `equipment.js?v=94`, `compliance.js?v=88`, `defects.js?v=94`, `tasks.js?v=94`, `notifications.js?v=79`, and `report.js?v=86`.
+- Loaded current cache/script set includes `style.css?v=94`, `auth.js?v=85`, `main.js?v=95`, `labor.js?v=94`, `materials.js?v=93`, `changeorders.js?v=95`, `sitelog.js?v=94`, `suppliers.js?v=94`, `equipment.js?v=94`, `compliance.js?v=88`, `defects.js?v=94`, `tasks.js?v=94`, `notifications.js?v=79`, and `report.js?v=88`.
 - Local browser smoke after PWA gate confirmed dashboard route loads cache v89 script set, auth settles to `role-boss auth-ready`, loader hides, and console errors are empty.
 - Local browser smoke after historical-safety patch confirmed `labor.js?v=87` and `materials.js?v=87` load on dashboard with no console errors.
 - Materials label polish after cache v93 removed invalid `\u1Fxxx` escapes from PO buttons and stock labels; static gate verifies clean `Approve Invoice` and `Image` labels.

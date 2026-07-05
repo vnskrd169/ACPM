@@ -39,7 +39,7 @@ function inferRoleFromIdentity(uid, email, data = {}) {
   if (ROLE_DEFINITIONS[explicitRole]) {
     return explicitRole;
   }
-  if ((data.bossOf || []).length > 0) return 'boss';
+  if (normalizeProjectList(data.bossOf).length > 0) return 'boss';
   return 'apm';
 }
 
@@ -90,6 +90,16 @@ function roleLabel(role) {
 
 function teamRoleLabel(role) {
   return roleLabel(role);
+}
+
+function normalizeProjectList(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).map(String);
+  if (value && typeof value === 'object') {
+    return Object.entries(value)
+      .filter(([, enabled]) => enabled !== false && enabled !== null)
+      .map(([key]) => String(key));
+  }
+  return [];
 }
 
 function elementAllowsRole(el, role) {
@@ -166,8 +176,8 @@ async function loadUserProfile(uid) {
         role,
         status:     data.status || 'active',
         position:   data.position || '',
-        projects:   data.projects || [],
-        bossOf:     data.bossOf || [],
+        projects:   normalizeProjectList(data.projects),
+        bossOf:     normalizeProjectList(data.bossOf),
         loginAt:    Date.now(),
         email
       };
@@ -263,6 +273,7 @@ function currentAppPage() {
   if (window.ACPM_PAGE) return String(window.ACPM_PAGE).toLowerCase();
   const path = window.location.pathname.toLowerCase();
   if (path.endsWith('/login.html')) return 'login';
+  if (path.endsWith('/pmos.html')) return 'pmos';
   if (path.endsWith('/dashboard.html')) return 'dashboard';
   if (path.endsWith('/workspace.html')) return 'workspace';
   return 'app';
@@ -274,12 +285,13 @@ function routeTo(page, params = {}) {
     return;
   }
   if (page === 'login') window.location.replace('login.html');
+  else if (page === 'pmos') window.location.replace('pmos.html');
   else if (page === 'workspace' && params.projectId) window.location.replace(`workspace.html?projectId=${encodeURIComponent(params.projectId)}`);
   else window.location.replace('dashboard.html');
 }
 
 function isProtectedPage() {
-  return ['dashboard', 'workspace'].includes(currentAppPage());
+  return ['dashboard', 'workspace', 'pmos'].includes(currentAppPage());
 }
 
 function startAuthObserver() {
@@ -489,7 +501,7 @@ async function saveAccessRequest(user, details = {}, provider = 'password') {
   const existingSnap = await ref.once('value');
   if (existingSnap.exists()) {
     const existing = existingSnap.val() || {};
-    if (existing.status === 'active' || isBoss(existing.role) || (existing.projects || []).length) {
+    if (existing.status === 'active' || isBoss(existing.role) || normalizeProjectList(existing.projects).length) {
       return existing;
     }
   }
@@ -623,6 +635,14 @@ async function initAppForUser() {
     routeTo('dashboard');
     return;
   }
+  if (page === 'pmos') {
+    document.body.classList.remove('role-boss', 'role-owner', 'role-admin', 'role-pm', 'role-apm', 'role-foreman', 'role-safety', 'role-viewer');
+    document.body.classList.add(`role-${normalizeRole(_currentAuthUser?.role || 'apm')}`);
+    filterProjectsByRole();
+    if (typeof initLine17Pmos === 'function') await initLine17Pmos();
+    unlockPrivateUi();
+    return;
+  }
   const role = normalizeRole(_currentAuthUser?.role || 'apm');
   const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false;
 
@@ -705,7 +725,7 @@ async function initAppForUser() {
 function filterProjectsByRole() {
   const user = _currentAuthUser;
   if (!user || isBoss(user.role)) return;
-  const allowed = user.projects || [];
+  const allowed = normalizeProjectList(user.projects);
   window._allowedProjects = new Set(allowed);
 }
 
@@ -714,8 +734,8 @@ function canAccessProject(pid) {
   if (!user) return false;
   if (!isRc1ActiveRole(user.role)) return false;
   if (isBoss(user.role)) return true;
-  if (user.bossOf && user.bossOf.includes(pid)) return true;
-  return (user.projects || []).includes(pid);
+  if (normalizeProjectList(user.bossOf).includes(pid)) return true;
+  return normalizeProjectList(user.projects).includes(pid);
 }
 
 function canEditProject(pid) {
@@ -723,9 +743,9 @@ function canEditProject(pid) {
   if (!user) return false;
   if (!isRc1ActiveRole(user.role)) return false;
   if (isBoss(user.role)) return true;
-  if (user.bossOf && user.bossOf.includes(pid)) return true;
+  if (normalizeProjectList(user.bossOf).includes(pid)) return true;
   if (!canEditAssignedProject(user.role)) return false;
-  return (user.projects || []).includes(pid);
+  return normalizeProjectList(user.projects).includes(pid);
 }
 
 function canReadFullProject(pid) {
@@ -734,7 +754,7 @@ function canReadFullProject(pid) {
   if (!isRc1ActiveRole(user.role)) return false;
   if (isBoss(user.role)) return true;
   if (!canReadFullAssignedProject(user.role)) return false;
-  return (user.projects || []).includes(pid) || (user.bossOf || []).includes(pid);
+  return normalizeProjectList(user.projects).includes(pid) || normalizeProjectList(user.bossOf).includes(pid);
 }
 
 function canWriteFieldLog(pid) {
@@ -743,7 +763,7 @@ function canWriteFieldLog(pid) {
   if (!isRc1ActiveRole(user.role)) return false;
   if (isBoss(user.role)) return true;
   if (isViewerRole(user.role)) return false;
-  return (user.projects || []).includes(pid) || (user.bossOf || []).includes(pid);
+  return normalizeProjectList(user.projects).includes(pid) || normalizeProjectList(user.bossOf).includes(pid);
 }
 
 // ── Expose ──────────────────────────────────────────────────
@@ -771,3 +791,4 @@ window.canWriteFieldLog  = canWriteFieldLog;
 window.elementAllowsRole = elementAllowsRole;
 window.roleLabel         = roleLabel;
 window.teamRoleLabel     = teamRoleLabel;
+window.normalizeProjectList = normalizeProjectList;

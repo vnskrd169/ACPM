@@ -15,6 +15,7 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
 <!-- ReCapcha anti bot lol-->
 <script src="https://www.google.com/recaptcha/enterprise.js?render=6LcZsi0tAAAAAIsQaR686BvIDAjZVDyzdw4afHoW"></script>
@@ -37,13 +38,15 @@
 <script src="defects.js?v=94"></script>
 <script src="tasks.js?v=94"></script>
 <script src="notifications.js?v=79"></script>
-<script src="report.js?v=86"></script>
+<script src="report.js?v=88"></script>
+<script src="pmos-office.js?v=3"></script>
+<script src="face-attendance.js?v=1"></script>
 
 <!-- PDF generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<link rel="stylesheet" href="style.css?v=92">
+<link rel="stylesheet" href="style.css?v=94">
 
 <script>
 // ── Theme Toggle ────────────────────────────────────────────
@@ -142,6 +145,7 @@ window.addEventListener('appinstalled', () => {
       <p>Track budgets, site progress, alerts, and active workspaces in one clean boss view.</p>
     </div>
     <div class="hub-command-actions">
+      <button class="btn-hub" type="button" onclick="openSystemReports()">System Reports</button>
       <button class="btn-export-hub" onclick="exportHubCSV()">Export CSV</button>
       <button class="btn-hub" onclick="refreshHub()">Refresh</button>
     </div>
@@ -265,7 +269,7 @@ window.addEventListener('appinstalled', () => {
   <div class="ws-topbar">
     <div class="ws-left">
       <div class="ws-project-badge">
-        <span class="ws-project-label">Active Site</span>
+        <span class="ws-project-label" id="wsContextLabel">Active Site</span>
         <span class="ws-project-name" id="wsName">—</span>
       </div>
     </div>
@@ -276,7 +280,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 
   <!-- Project Notes Bar -->
-  <div class="card compact-card" style="padding:12px 16px;margin-bottom:12px;">
+  <div id="projectNotesCard" class="card compact-card" style="padding:12px 16px;margin-bottom:12px;">
     <div class="compact-head">
       <div>
         <div class="sec-label" style="margin-bottom:2px;">&#x1F4DD; Project Notes</div>
