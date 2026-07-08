@@ -33,6 +33,8 @@ export function SelfieScan({ settings, modelReady, modelMessage, notify, refresh
   const eventCooldownRef = useRef<Record<string, number>>({});
   const autoDraftCooldownRef = useRef<Record<string, number>>({});
   const autoDraftEnabledRef = useRef(false);
+  const settingsRef = useRef<AppSettings>(settings);
+  const attendanceTypeRef = useRef<AttendanceType>('Time In');
   const [attendanceType, setAttendanceType] = useState<AttendanceType>('Time In');
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
@@ -60,6 +62,14 @@ export function SelfieScan({ settings, modelReady, modelMessage, notify, refresh
   useEffect(() => {
     loadRecentCameraEvents();
   }, []);
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  useEffect(() => {
+    attendanceTypeRef.current = attendanceType;
+  }, [attendanceType]);
 
   useEffect(() => {
     autoDraftEnabledRef.current = autoDraftEnabled;
@@ -148,6 +158,14 @@ export function SelfieScan({ settings, modelReady, modelMessage, notify, refresh
         audio: false
       });
       streamRef.current = stream;
+      stream.getVideoTracks().forEach(track => {
+        track.onended = () => {
+          if (streamRef.current !== stream) return;
+          setLiveStatus('Camera disconnected. Reconnect the webcam and press Start Camera again.');
+          notify('Webcam disconnected during live scanning.', 'error');
+          stopLiveCamera();
+        };
+      });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
@@ -185,15 +203,16 @@ export function SelfieScan({ settings, modelReady, modelMessage, notify, refresh
     liveLoopRef.current = window.setTimeout(async () => {
       await scanLiveFrame();
       if (streamRef.current) runLiveLoop();
-    }, settings.liveScanIntervalMs || 850);
+    }, settingsRef.current.liveScanIntervalMs || 850);
   }
 
   async function scanLiveFrame() {
+    const cfg = settingsRef.current;
     const video = videoRef.current;
     if (!video || liveBusyRef.current || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
     liveBusyRef.current = true;
     try {
-      const result = await analyzeFaceElement(video, settings.modelPath);
+      const result = await analyzeFaceElement(video, cfg.modelPath);
       setFaceDetected(result.faceDetected);
       setMultipleFacesDetected(result.multipleFacesDetected);
       setLiveBox(result.primaryBox || null);
@@ -218,14 +237,14 @@ export function SelfieScan({ settings, modelReady, modelMessage, notify, refresh
         await recordCameraEvent('Quality Hold', { qualitySummary: result.quality.summary }, true);
         return;
       }
-      const topMatches = await findTopMatches(result.descriptor, settings);
+      const topMatches = await findTopMatches(result.descriptor, cfg);
       setMatches(topMatches);
       const candidate = topMatches[0];
       const accepted = isAcceptedMatch(candidate);
       if (accepted && candidate) {
         const previous = liveCandidateRef.current;
         const streak = previous.workerId === candidate.workerId ? previous.streak + 1 : 1;
-        const requiredFrames = settings.liveStableFrameCount || 3;
+        const requiredFrames = cfg.liveStableFrameCount || 3;
         const stable = streak >= requiredFrames;
         liveCandidateRef.current = { workerId: candidate.workerId, streak };
         setLiveIdentity({
@@ -322,24 +341,26 @@ export function SelfieScan({ settings, modelReady, modelMessage, notify, refresh
   }
 
   async function createAutoAttendanceDraft(candidate: MatchCandidate, topMatches: MatchCandidate[]) {
-    const key = `${attendanceType}:${candidate.workerId}`;
+    const cfg = settingsRef.current;
+    const currentAttendanceType = attendanceTypeRef.current;
+    const key = `${currentAttendanceType}:${candidate.workerId}`;
     const now = Date.now();
-    const cooldownMs = Math.max(1, settings.liveAutoDraftCooldownMinutes || 10) * 60 * 1000;
+    const cooldownMs = Math.max(1, cfg.liveAutoDraftCooldownMinutes || 10) * 60 * 1000;
     if (autoDraftCooldownRef.current[key] && now - autoDraftCooldownRef.current[key] < cooldownMs) {
       setAutoDraftStatus(`Auto draft waiting: ${candidate.workerName} already captured recently.`);
       return;
     }
     const recentRecords = await db.attendanceRecords.where('suggestedWorkerId').equals(candidate.workerId).toArray();
-    const hasRecentDuplicate = recentRecords.some(record => record.attendanceType === attendanceType && record.createdAt >= now - cooldownMs);
+    const hasRecentDuplicate = recentRecords.some(record => record.attendanceType === currentAttendanceType && record.createdAt >= now - cooldownMs);
     if (hasRecentDuplicate) {
       autoDraftCooldownRef.current[key] = now;
-      setAutoDraftStatus(`Auto draft skipped: ${candidate.workerName} has a recent ${attendanceType} draft.`);
+      setAutoDraftStatus(`Auto draft skipped: ${candidate.workerName} has a recent ${currentAttendanceType} draft.`);
       return;
     }
     const selfieBlob = await captureVideoFrameBlob();
     const record: AttendanceRecord = {
       attendanceId: crypto.randomUUID(),
-      attendanceType,
+      attendanceType: currentAttendanceType,
       selfieBlob,
       faceDetected: true,
       multipleFacesDetected,
@@ -354,15 +375,15 @@ export function SelfieScan({ settings, modelReady, modelMessage, notify, refresh
     };
     await db.attendanceRecords.add(record);
     await audit('live_auto_attendance_draft_created', 'attendance', record.attendanceId, {
-      attendanceType,
+      attendanceType: currentAttendanceType,
       workerId: candidate.workerId,
       matchDistance: candidate.distance,
-      cooldownMinutes: settings.liveAutoDraftCooldownMinutes
+      cooldownMinutes: cfg.liveAutoDraftCooldownMinutes
     });
     autoDraftCooldownRef.current[key] = now;
     setCompressedSelfie(selfieBlob);
     refreshData();
-    setAutoDraftStatus(`Auto draft saved for ${candidate.workerName} (${attendanceType}).`);
+    setAutoDraftStatus(`Auto draft saved for ${candidate.workerName} (${currentAttendanceType}).`);
   }
 
   async function saveDraft(reviewStatus: AttendanceRecord['reviewStatus'] = 'For Review') {

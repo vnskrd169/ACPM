@@ -101,8 +101,14 @@ export async function exportBackup(): Promise<Record<string, unknown>> {
 }
 
 export async function importBackup(payload: any): Promise<void> {
-  if (!payload || payload.app !== 'Line17 Face Attendance') {
+  if (!payload || typeof payload !== 'object' || payload.app !== 'Line17 Face Attendance') {
     throw new Error('This is not a Line17 Face Attendance backup.');
+  }
+  const arrayFields: Array<keyof typeof payload> = ['workers', 'faceDescriptors', 'referencePhotos', 'attendanceRecords', 'cameraEvents', 'auditLogs'];
+  for (const field of arrayFields) {
+    if (payload[field] !== undefined && !Array.isArray(payload[field])) {
+      throw new Error(`Backup file is malformed: "${String(field)}" should be a list.`);
+    }
   }
   const referencePhotos: ReferencePhoto[] = await Promise.all((payload.referencePhotos || []).map(async (photo: any) => ({
     ...photo,

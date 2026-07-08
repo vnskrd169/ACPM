@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Shell } from './components/Shell';
 import { Dashboard } from './pages/Dashboard';
 import { EnrollWorker } from './pages/EnrollWorker';
@@ -47,9 +48,17 @@ export default function App() {
     }
   }, [settings.modelPath]);
 
+  const [initError, setInitError] = useState('');
+
   useEffect(() => {
-    refreshSettings().then(next => loadFaceModels(next.modelPath));
-  }, [loadFaceModels, refreshSettings]);
+    refreshSettings()
+      .then(next => loadFaceModels(next.modelPath))
+      .catch(error => {
+        const message = error instanceof Error ? error.message : String(error);
+        setInitError(message);
+        notify(`Could not initialize local database: ${message}`, 'error');
+      });
+  }, [loadFaceModels, notify, refreshSettings]);
 
   const pageProps = useMemo(() => ({
     settings,
@@ -64,14 +73,22 @@ export default function App() {
   }), [settings, modelStatus, modelMessage, notify, refreshData, refreshSettings, loadFaceModels, dataVersion]);
 
   return (
-    <Shell activePage={page} modelStatus={modelStatus} modelMessage={modelMessage} toasts={toasts} onNavigate={setPage}>
-      {page === 'dashboard' && <Dashboard {...pageProps} onNavigate={setPage} />}
-      {page === 'enroll' && <EnrollWorker {...pageProps} />}
-      {page === 'scan' && <SelfieScan {...pageProps} />}
-      {page === 'monitor' && <CameraMonitor {...pageProps} />}
-      {page === 'attendance' && <AttendanceRecords {...pageProps} />}
-      {page === 'workers' && <Workers {...pageProps} />}
-      {page === 'settings' && <Settings {...pageProps} />}
-    </Shell>
+    <ErrorBoundary>
+      <Shell activePage={page} modelStatus={modelStatus} modelMessage={modelMessage} toasts={toasts} onNavigate={setPage}>
+        {initError && (
+          <div className="warning-card">
+            <strong>Local database did not start correctly</strong>
+            <span>{initError} Try reloading the app. If this persists, check that this browser profile allows IndexedDB storage (not in a fully locked-down private mode).</span>
+          </div>
+        )}
+        {page === 'dashboard' && <Dashboard {...pageProps} onNavigate={setPage} />}
+        {page === 'enroll' && <EnrollWorker {...pageProps} />}
+        {page === 'scan' && <SelfieScan {...pageProps} />}
+        {page === 'monitor' && <CameraMonitor {...pageProps} />}
+        {page === 'attendance' && <AttendanceRecords {...pageProps} />}
+        {page === 'workers' && <Workers {...pageProps} />}
+        {page === 'settings' && <Settings {...pageProps} />}
+      </Shell>
+    </ErrorBoundary>
   );
 }

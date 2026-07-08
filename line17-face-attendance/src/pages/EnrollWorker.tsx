@@ -96,6 +96,29 @@ export function EnrollWorker({ settings, modelReady, modelMessage, notify, refre
       return;
     }
 
+    if (selectedWorkerId) {
+      const existingCount = await db.faceDescriptors.where('workerId').equals(selectedWorkerId).count();
+      if (existingCount > 0 && !window.confirm(
+        `${selectedWorker?.workerName || 'This worker'} already has ${existingCount} saved face sample${existingCount === 1 ? '' : 's'}. ` +
+        'Processing new photos replaces all of them. Continue?'
+      )) {
+        return;
+      }
+    } else {
+      const trimmedName = workerName.trim().toLowerCase();
+      const trimmedCode = workerCode.trim().toLowerCase();
+      const possibleDuplicate = workers.find(worker =>
+        worker.workerName.trim().toLowerCase() === trimmedName ||
+        (trimmedCode && worker.workerCode?.trim().toLowerCase() === trimmedCode)
+      );
+      if (possibleDuplicate && !window.confirm(
+        `A worker named "${possibleDuplicate.workerName}"${possibleDuplicate.workerCode ? ` (code ${possibleDuplicate.workerCode})` : ''} already exists. ` +
+        'Creating a new profile instead of editing that one will split their attendance history across two records. Continue anyway?'
+      )) {
+        return;
+      }
+    }
+
     setBusy(true);
     try {
       const now = Date.now();

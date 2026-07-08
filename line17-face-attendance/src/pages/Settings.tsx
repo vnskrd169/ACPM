@@ -52,19 +52,33 @@ export function Settings({ settings, modelStatus, modelMessage, notify, refreshD
   }
 
   async function exportJson() {
-    const payload = await exportBackup();
-    downloadJson(`line17-face-attendance-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
-    await audit('backup_exported', 'settings', 'default', {});
+    try {
+      const payload = await exportBackup();
+      downloadJson(`line17-face-attendance-backup-${new Date().toISOString().slice(0, 10)}.json`, payload);
+      await audit('backup_exported', 'settings', 'default', {});
+      notify('Backup exported.', 'success');
+    } catch (error) {
+      notify(error instanceof Error ? `Export failed: ${error.message}` : 'Export failed.', 'error');
+    }
   }
 
   async function importJson(file?: File) {
     if (!file) return;
-    const text = await file.text();
-    await importBackup(JSON.parse(text));
-    await audit('backup_imported', 'settings', 'default', { fileName: file.name });
-    await refreshSettings();
-    refreshData();
-    notify('Backup imported.', 'success');
+    if (!window.confirm(
+      'Importing a backup replaces ALL current local data (workers, face samples, attendance records, camera events, settings, and audit logs). ' +
+      'This cannot be undone. Continue?'
+    )) return;
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      await importBackup(payload);
+      await audit('backup_imported', 'settings', 'default', { fileName: file.name });
+      await refreshSettings();
+      refreshData();
+      notify('Backup imported.', 'success');
+    } catch (error) {
+      notify(error instanceof Error ? `Import failed: ${error.message}` : 'Import failed. The file may be corrupted or not a valid backup.', 'error');
+    }
   }
 
   async function clearData() {
