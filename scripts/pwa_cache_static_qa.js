@@ -50,12 +50,12 @@ function main() {
   const assetSet = new Set(serviceWorkerAssets(sw));
 
   assert(manifest.start_url === './login.html', 'PWA manifest start_url must open login.html');
-  assert(JSON.stringify(localStyles(loginHtml)) === JSON.stringify(['style.css?v=94']), 'login.html must include versioned style.css?v=94');
+  assert(JSON.stringify(localStyles(loginHtml)) === JSON.stringify(['style.css?v=103']), 'login.html must include versioned style.css?v=103');
   assert(mainJs.includes("navigator.serviceWorker.register('sw.js')"), 'main.js must register sw.js');
   assert(mainJs.includes('registration.update()'), 'main.js must actively check for service worker updates');
   assert(mainJs.includes("addEventListener('controllerchange'"), 'main.js must reload when a new service worker controls the page');
-  assert(JSON.stringify(localScripts(loginHtml)) === JSON.stringify(['utils.js?v=84', 'auth.js?v=85', 'main.js?v=95']), 'login.html must include current auth shell scripts');
-  assert(sw.includes("const CACHE_NAME = 'acpm-v100'"), 'service worker cache must be acpm-v100');
+  assert(JSON.stringify(localScripts(loginHtml)) === JSON.stringify(['utils.js?v=84', 'auth.js?v=95', 'main.js?v=101']), 'login.html must include current auth shell scripts');
+  assert(sw.includes("const CACHE_NAME = 'acpm-v124'"), 'service worker cache must be acpm-v124');
   assert(sw.includes('caches.delete(k)'), 'service worker must purge stale caches on activate');
   assert(sw.includes('self.clients.claim()'), 'service worker must claim clients after activation');
 
@@ -69,7 +69,7 @@ function main() {
   const baseline = localScripts(pages[htmlFiles[0]]);
   const baselineStyles = localStyles(pages[htmlFiles[0]]);
   assert(baseline.length >= 10, 'index.html must include local app scripts with versions');
-  assert(JSON.stringify(baselineStyles) === JSON.stringify(['style.css?v=94']), 'index.html must include versioned style.css?v=94');
+  assert(JSON.stringify(baselineStyles) === JSON.stringify(['style.css?v=103']), 'index.html must include versioned style.css?v=103');
   for (const file of htmlFiles) {
     const scripts = localScripts(pages[file]);
     const styles = localStyles(pages[file]);
@@ -90,7 +90,7 @@ function main() {
 
   console.log(JSON.stringify({
     result: 'PASS',
-    cacheName: 'acpm-v100',
+    cacheName: 'acpm-v124',
     pages: htmlFiles,
     scriptCount: baseline.length,
     checks: [

@@ -1,13 +1,13 @@
-// ════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
 //  ACPM Service Worker
 //  Self-clearing: purges ALL old caches on activate and forces
 //  the new version to take over immediately (clients.claim).
 //  This guarantees users get fresh code after ONE page refresh,
 //  without needing to manually unregister the SW.
-// ════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v100';
+const CACHE_NAME = 'acpm-v124';
 
 const ASSETS = [
   './',
@@ -16,13 +16,13 @@ const ASSETS = [
   './pmos.html',
   './dashboard.html',
   './workspace.html',
-  './style.css?v=94',
+  './style.css?v=103',
   './utils.js?v=84',
-  './auth.js?v=85',
-  './main.js?v=95',
+  './auth.js?v=95',
+  './main.js?v=101',
   './labor.js?v=94',
-  './materials.js?v=93',
-  './billing.js?v=74',
+  './materials.js?v=94',
+  './billing.js?v=75',
   './changeorders.js?v=95',
   './sitelog.js?v=94',
   './suppliers.js?v=94',
@@ -30,13 +30,13 @@ const ASSETS = [
   './compliance.js?v=88',
   './defects.js?v=94',
   './tasks.js?v=94',
-  './notifications.js?v=79',
-  './report.js?v=88',
+  './notifications.js?v=85',
+  './report.js?v=97',
   './pmos.js?v=2',
-  './pmos-office.js?v=3',
+  './pmos-office.js?v=4',
   './face-attendance.js?v=1',
   './manifest.json'
-  // CDN assets (Firebase, jsPDF, html2canvas) are not cached — let browser handle
+  // CDN assets (Firebase, jsPDF, html2canvas) are not cached; let browser handle them.
 ];
 
 // Install: pre-cache the app shell. skipWaiting() makes the new SW
@@ -52,7 +52,7 @@ self.addEventListener('install', e => {
 });
 
 // Activate: DELETE EVERY cache that isn't the current version.
-// This is the key fix — old 'acpm-v2'/'acpm-v3' caches (with the
+// This is the key fix: old 'acpm-v2'/'acpm-v3' caches (with the
 // broken main.js) get wiped on every version bump.
 // clients.claim() forces the new SW to control the page immediately.
 self.addEventListener('activate', e => {
@@ -96,7 +96,7 @@ self.addEventListener('fetch', e => {
       .catch(() => {
         return caches.match(e.request).then(cached => {
           if (cached) return cached;
-          return new Response('Offline — no cached data available. Please connect to the internet.', {
+          return new Response('Offline: no cached data available. Please connect to the internet.', {
             status: 503,
             headers: { 'Content-Type': 'text/plain' }
           });

@@ -62,6 +62,10 @@ function billingUserId() {
   return (window._currentUser && window._currentUser.uid) || 'unknown';
 }
 
+function billingUserName() {
+  return window._currentUser?.name || window._currentUser?.email || 'System';
+}
+
 function billingProjectRef(pid, path = '') {
   return firebase.database().ref(`projects/${pid}${path ? `/${path}` : ''}`);
 }
@@ -441,6 +445,7 @@ async function approveBilling(pid, billingId) {
     updatedBy: billingUserId()
   }), 'Failed to approve billing');
   await createBillingEvent(pid, { type: 'billing_approve', billingId, status: 'approved' });
+  await createBillingNotificationEvent(pid, 'billing_approved', { billingId });
   await rebuildBillingRollups(pid);
 }
 
@@ -715,6 +720,15 @@ async function recordCollection(pid, input = {}) {
     amount: netCashReceived,
     description: payload.description,
     status: payload.status
+  });
+  await createBillingNotificationEvent(pid, 'collection_received', {
+    billingId: payload.billingId,
+    billingNo: payload.billingNo || '',
+    collectionId,
+    collectionNo: payload.collectionNo || '',
+    amount: netCashReceived,
+    paymentMethod: payload.paymentMethod || '',
+    referenceNo: payload.referenceNo || ''
   });
   await rebuildBillingRollups(pid);
   return { id: collectionId, ...payload };
@@ -1173,6 +1187,29 @@ async function createBillingEvent(pid, event = {}) {
   };
   await safeDb(() => ref.set(payload), 'Failed to write billing event');
   return { id: ref.key, ...payload };
+}
+
+async function createBillingNotificationEvent(pid, type, payload = {}) {
+  if (!pid || !type) return null;
+  const ref = billingProjectRef(pid, 'notificationEvents').push();
+  const event = {
+    module: 'billing',
+    type,
+    status: 'pending',
+    consumed: false,
+    projectId: pid,
+    createdAt: billingNow(),
+    createdBy: billingUserId(),
+    createdByName: billingUserName(),
+    ...payload
+  };
+  try {
+    await ref.set(event);
+    return { id: ref.key, ...event };
+  } catch (error) {
+    console.warn('Billing notification hook skipped:', error?.code || error?.message || error);
+    return null;
+  }
 }
 
 function watchContract(pid) {

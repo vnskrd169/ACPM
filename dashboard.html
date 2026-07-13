@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="ACPM">
 <link rel="manifest" href="./manifest.json">
 <script>window.ACPM_PAGE = 'dashboard';</script>
-<title>ACPM — LeBuild Construction</title>
+<title>ACPM - LeBuild Construction</title>
 
 <!-- Firebase v8 compat SDK (must load first) -->
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
@@ -17,39 +17,37 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
-<!-- ReCapcha anti bot lol-->
-<script src="https://www.google.com/recaptcha/enterprise.js?render=6LcZsi0tAAAAAIsQaR686BvIDAjZVDyzdw4afHoW"></script>
 <!-- Utilities (DOM helpers, formatting, safeDb, etc.) -->
 <script src="utils.js?v=84"></script>
 
-<!-- Auth (must load before main.js — main.js calls canAccessProject/canEditProject) -->
-<script src="auth.js?v=85"></script>
+<!-- Auth (must load before main.js - main.js calls canAccessProject/canEditProject) -->
+<script src="auth.js?v=95"></script>
 
 <!-- Core modules -->
-<script src="main.js?v=95"></script>
+<script src="main.js?v=101"></script>
 <script src="labor.js?v=94"></script>
-<script src="materials.js?v=93"></script>
+<script src="materials.js?v=94"></script>
 <script src="sitelog.js?v=94"></script>
 <script src="suppliers.js?v=94"></script>
-<script src="billing.js?v=74"></script>
+<script src="billing.js?v=75"></script>
 <script src="changeorders.js?v=95"></script>
 <script src="equipment.js?v=94"></script>
 <script src="compliance.js?v=88"></script>
 <script src="defects.js?v=94"></script>
 <script src="tasks.js?v=94"></script>
-<script src="notifications.js?v=79"></script>
-<script src="report.js?v=88"></script>
-<script src="pmos-office.js?v=3"></script>
+<script src="notifications.js?v=85"></script>
+<script src="report.js?v=97"></script>
+<script src="pmos-office.js?v=4"></script>
 <script src="face-attendance.js?v=1"></script>
 
 <!-- PDF generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<link rel="stylesheet" href="style.css?v=94">
+<link rel="stylesheet" href="style.css?v=103">
 
 <script>
-// ── Theme Toggle ────────────────────────────────────────────
+// -- Theme Toggle --------------------------------------------
 function toggleTheme() {
   const html = document.documentElement;
   const current = html.getAttribute('data-theme');
@@ -66,7 +64,7 @@ function toggleTheme() {
   if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
 })();
 
-// ── PWA install prompt ──────────────────────────────────────
+// -- PWA install prompt --------------------------------------
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   window.deferredPrompt = e;
@@ -102,15 +100,19 @@ window.addEventListener('appinstalled', () => {
   </div>
   <div class="hdr-right">
     <span id="currentUserBadge" class="badge badge-purple" title="Signed-in user">System</span>
-    <div class="notif-bell-wrap" style="position:relative;">
+    <div class="notif-bell-wrap">
       <button class="btn-refresh" id="notifBellBtn" onclick="document.getElementById('notifDropdown').classList.toggle('hidden')" title="Notifications">
         &#x1F514;
-        <span id="notifBadge" class="hidden" style="position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;border-radius:10px;padding:1px 5px;font-size:10px;font-weight:700;"></span>
+        <span id="notifBadge" class="notif-badge hidden"></span>
       </button>
-      <div id="notifDropdown" class="hidden" style="position:absolute;right:0;top:110%;width:320px;max-height:400px;overflow-y:auto;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:200;padding:10px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <span style="font-weight:700;font-size:13px;">Notifications</span>
-          <button class="btn-equip-action" onclick="markAllNotifRead()">Mark all read</button>
+      <div id="notifDropdown" class="notif-dropdown hidden">
+        <div class="notif-head">
+          <div>
+            <div class="notif-title">Notifications</div>
+            <div class="notif-subtitle">Project alerts and approvals</div>
+          </div>
+          <button class="notif-read-all" onclick="markAllNotifRead()">Mark read</button>
+          <button class="notif-read-all" onclick="clearReadNotifications()">Clear read</button>
         </div>
         <div id="notificationFeed"><p class="empty-hint">No notifications yet.</p></div>
       </div>
@@ -128,14 +130,14 @@ window.addEventListener('appinstalled', () => {
 
 <!-- INSTALL BAR -->
 <div id="installBar" class="install-bar hidden">
-  <p>&#x1F4F1; Install ACPM on your phone — works offline!</p>
+  <p>&#x1F4F1; Install ACPM on your phone - works offline!</p>
   <div class="install-actions">
     <button class="btn-install" id="installBtn">Install App</button>
     <button class="btn-install-dismiss" onclick="document.getElementById('installBar').classList.add('hidden')">&#x2715;</button>
   </div>
 </div>
 
-<!-- ═══ HUB VIEW ═══════════════════════════════════════════════ -->
+<!-- === HUB VIEW =============================================== -->
 <section id="hubView" class="view-hub">
 
   <div class="hub-command">
@@ -188,11 +190,11 @@ window.addEventListener('appinstalled', () => {
     <div class="dash-summary" id="dashSummary">
       <div class="sec-label">Dashboard Summary</div>
       <div class="dash-summary-grid">
-        <div class="dash-stat"><div class="dash-stat-label">Active Projects</div><div class="dash-stat-val" id="dsSumActive">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Total Budget</div><div class="dash-stat-val text-purple" id="dsSumBudget">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Total Spent</div><div class="dash-stat-val text-red" id="dsSumSpent">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Remaining</div><div class="dash-stat-val text-green" id="dsSumRemaining">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Overall Progress</div><div class="dash-stat-val" id="dsSumProgress">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Active Projects</div><div class="dash-stat-val" id="dsSumActive"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Budget</div><div class="dash-stat-val text-purple" id="dsSumBudget"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Spent</div><div class="dash-stat-val text-red" id="dsSumSpent"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Remaining</div><div class="dash-stat-val text-green" id="dsSumRemaining"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Overall Progress</div><div class="dash-stat-val" id="dsSumProgress"> - </div></div>
       </div>
     </div>
 
@@ -212,15 +214,15 @@ window.addEventListener('appinstalled', () => {
   <!-- All Projects pane -->
   <div id="allProjectsPane" class="tab-pane pane-all hidden">
     <div class="dash-summary" id="dashSummaryAll">
-      <div class="sec-label">Dashboard Summary — All Projects</div>
+      <div class="sec-label">Dashboard Summary - All Projects</div>
       <div class="dash-summary-grid">
-        <div class="dash-stat"><div class="dash-stat-label">Total Projects</div><div class="dash-stat-val" id="dsAllSumTotal">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Active</div><div class="dash-stat-val text-green" id="dsAllSumActive">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Completed</div><div class="dash-stat-val text-blue" id="dsAllSumCompleted">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Total Budget</div><div class="dash-stat-val text-purple" id="dsAllSumBudget">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Total Spent</div><div class="dash-stat-val text-red" id="dsAllSumSpent">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Remaining</div><div class="dash-stat-val text-green" id="dsAllSumRemaining">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Overall Progress</div><div class="dash-stat-val" id="dsAllSumProgress">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Projects</div><div class="dash-stat-val" id="dsAllSumTotal"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Active</div><div class="dash-stat-val text-green" id="dsAllSumActive"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Completed</div><div class="dash-stat-val text-blue" id="dsAllSumCompleted"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Budget</div><div class="dash-stat-val text-purple" id="dsAllSumBudget"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Spent</div><div class="dash-stat-val text-red" id="dsAllSumSpent"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Remaining</div><div class="dash-stat-val text-green" id="dsAllSumRemaining"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Overall Progress</div><div class="dash-stat-val" id="dsAllSumProgress"> - </div></div>
       </div>
     </div>
 
@@ -242,11 +244,11 @@ window.addEventListener('appinstalled', () => {
     <div class="dash-summary" id="dashSummaryComp">
       <div class="sec-label">Completed Projects Summary</div>
       <div class="dash-summary-grid">
-        <div class="dash-stat"><div class="dash-stat-label">Completed</div><div class="dash-stat-val text-blue" id="dsCompCount">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Total Budget</div><div class="dash-stat-val text-purple" id="dsCompBudget">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Total Spent</div><div class="dash-stat-val text-red" id="dsCompSpent">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Remaining</div><div class="dash-stat-val text-green" id="dsCompRemaining">—</div></div>
-        <div class="dash-stat"><div class="dash-stat-label">Avg Progress</div><div class="dash-stat-val" id="dsCompProgress">—</div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Completed</div><div class="dash-stat-val text-blue" id="dsCompCount"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Budget</div><div class="dash-stat-val text-purple" id="dsCompBudget"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Total Spent</div><div class="dash-stat-val text-red" id="dsCompSpent"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Remaining</div><div class="dash-stat-val text-green" id="dsCompRemaining"> - </div></div>
+        <div class="dash-stat"><div class="dash-stat-label">Avg Progress</div><div class="dash-stat-val" id="dsCompProgress"> - </div></div>
       </div>
     </div>
 
@@ -256,7 +258,7 @@ window.addEventListener('appinstalled', () => {
 </section>
 
 
-<!-- ═══ WORKSPACE VIEW ══════════════════════════════════════════ -->
+<!-- === WORKSPACE VIEW ========================================== -->
 <section id="workspaceView" class="view-workspace hidden">
 
   <!-- Locked banner -->
@@ -270,7 +272,7 @@ window.addEventListener('appinstalled', () => {
     <div class="ws-left">
       <div class="ws-project-badge">
         <span class="ws-project-label" id="wsContextLabel">Active Site</span>
-        <span class="ws-project-name" id="wsName">—</span>
+        <span class="ws-project-name" id="wsName"> - </span>
       </div>
     </div>
     <div class="ws-actions">
@@ -316,10 +318,10 @@ window.addEventListener('appinstalled', () => {
   </div>
 
 
-  <!-- ═══ LABOR PANEL ═══════════════════════════════════════════ -->
+  <!-- === LABOR PANEL =========================================== -->
   <div id="laborPanel" class="panel">
     <div id="laborBudgetWarn" class="hidden budget-warn-bar"></div>
-    
+
     <!-- Payroll Config -->
     <details class="card compact-details" style="margin-bottom:16px;" open>
       <summary class="compact-head" style="list-style:none;cursor:pointer;">
@@ -407,7 +409,7 @@ window.addEventListener('appinstalled', () => {
           <div class="worker-form">
             <input id="workerName" type="text" placeholder="Worker name">
             <input id="workerRate" type="number" placeholder="Daily rate (&#x20B1;)" inputmode="decimal">
-            <select id="workerTradeSelect"><option value="">— Select Trade —</option></select>
+            <select id="workerTradeSelect"><option value=""> -  Select Trade  - </option></select>
           </div>
           <button class="btn-add-worker" onclick="addWorker()">+ Deploy Worker to Roster</button>
           <div id="rosterList"></div>
@@ -449,7 +451,7 @@ window.addEventListener('appinstalled', () => {
         <div id="timecardGrid"><p class="empty-hint" style="padding:20px">Add workers to start tracking attendance.</p></div>
         <div id="periodIndicator"></div>
         <div class="card gap">
-          <div class="card-title"><span class="ct-icon" style="background:rgba(245,158,11,.1)">&#x1F4CA;</span> Attendance Summary — This Period</div>
+          <div class="card-title"><span class="ct-icon" style="background:rgba(245,158,11,.1)">&#x1F4CA;</span> Attendance Summary - This Period</div>
           <div id="attendanceSummary"><p class="empty-hint">No attendance data yet.</p></div>
         </div>
       </div>
@@ -487,7 +489,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 
 
-  <!-- ═══ MATERIALS PANEL ════════════════════════════════════════ -->
+  <!-- === MATERIALS PANEL ======================================== -->
   <div id="materialsPanel" class="panel hidden">
     <div id="matBudgetWarn" class="hidden budget-warn-bar"></div>
     <div class="kpi-row">
@@ -514,7 +516,7 @@ window.addEventListener('appinstalled', () => {
       <div class="po-meta-grid">
         <div>
           <select id="poSupplierSelect" onchange="applySupplierSelection()" style="margin-bottom:8px">
-            <option value="">— Quick-select supplier —</option>
+            <option value=""> -  Quick-select supplier  - </option>
           </select>
           <input type="hidden" id="poSupplierId">
           <input id="poSupplier" type="text" placeholder="Or type supplier name">
@@ -609,7 +611,7 @@ window.addEventListener('appinstalled', () => {
 
     <!-- Materials Summary -->
     <div class="card gap">
-      <div class="card-title"><span class="ct-icon" style="background:rgba(16,185,129,.1)">&#x1F4E6;</span> Materials Summary — by Item &amp; Size</div>
+      <div class="card-title"><span class="ct-icon" style="background:rgba(16,185,129,.1)">&#x1F4E6;</span> Materials Summary - by Item &amp; Size</div>
       <div id="materialsSummary"><p class="empty-hint">No data yet.</p></div>
     </div>
 
@@ -625,7 +627,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 
 
-  <!-- ═══ BILLING PANEL ══════════════════════════════════════════ -->
+  <!-- === BILLING PANEL ========================================== -->
   <div id="billingPanel" class="panel hidden">
 
     <div id="contractSetupForm" class="card">
@@ -648,14 +650,14 @@ window.addEventListener('appinstalled', () => {
         <div class="contract-dash-header">
           <div>
             <div class="sec-label">Contract</div>
-            <div class="contract-dash-amount" id="cdAmount">—</div>
+            <div class="contract-dash-amount" id="cdAmount"> - </div>
             <div class="contract-dash-meta">
-              Client: <strong id="cdClient">—</strong> &nbsp;&#xB7;&nbsp; <span id="cdDates">—</span>
+              Client: <strong id="cdClient"> - </strong> &nbsp;&#xB7;&nbsp; <span id="cdDates"> - </span>
             </div>
           </div>
           <div class="contract-dash-right">
-            <div class="contract-dash-small">Down Payment &nbsp;<strong id="cdDownPay">—</strong></div>
-            <div class="contract-dash-small">Retention &nbsp;<strong id="cdRetention">—</strong></div>
+            <div class="contract-dash-small">Down Payment &nbsp;<strong id="cdDownPay"> - </strong></div>
+            <div class="contract-dash-small">Retention &nbsp;<strong id="cdRetention"> - </strong></div>
           </div>
           <div class="contract-actions">
             <button class="btn-ws-secondary" onclick="openEditContractModal()">&#x270E; Edit Contract</button>
@@ -686,7 +688,7 @@ window.addEventListener('appinstalled', () => {
             <option value="downpayment">Downpayment</option>
             <option value="mobilization">Mobilization</option>
           </select>
-          <input id="billDesc" type="text" placeholder="Description (e.g. 2nd tranche — roofing complete)">
+          <input id="billDesc" type="text" placeholder="Description (e.g. 2nd tranche - roofing complete)">
           <input id="billDate" type="date">
           <input id="billAmount" type="number" placeholder="Amount (&#x20B1;)" inputmode="decimal">
           <input id="billRetentionPct" type="number" placeholder="Retention %" inputmode="decimal">
@@ -749,7 +751,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 
 
-  <!-- ═══ CHANGE ORDERS PANEL ════════════════════════════════════ -->
+  <!-- === CHANGE ORDERS PANEL ==================================== -->
   <div id="changeordersPanel" class="panel hidden">
     <div class="co-kpi-row">
       <div class="kpi-card">
@@ -784,7 +786,7 @@ window.addEventListener('appinstalled', () => {
       </div>
       <div class="co-impact-row">
         <div class="co-impact-label-wrap">
-          <label>&#x1F477; Labor Cost Impact (&#x20B1;) — use negative for deductions</label>
+          <label>&#x1F477; Labor Cost Impact (&#x20B1;) - use negative for deductions</label>
           <input id="coLaborImpact" type="number" placeholder="0.00" inputmode="decimal">
         </div>
         <div class="co-impact-label-wrap">
@@ -811,7 +813,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 
 
-  <!-- ═══ SITE LOG PANEL ══════════════════════════════════════════ -->
+  <!-- === SITE LOG PANEL ========================================== -->
   <div id="sitelogPanel" class="panel hidden">
     <div class="card">
       <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">&#x1F4D2;</span> Daily Site Log</div>
@@ -852,7 +854,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 
 
-  <!-- ═══ SUPPLIERS PANEL ════════════════════════════════════════ -->
+  <!-- === SUPPLIERS PANEL ======================================== -->
   <div id="suppliersPanel" class="panel hidden">
     <div class="card">
       <div class="card-title"><span class="ct-icon" style="background:rgba(13,148,136,.15)">&#x1F3EA;</span> Supplier Directory</div>
@@ -875,7 +877,7 @@ window.addEventListener('appinstalled', () => {
     </div>
   </div>
 
-  <!-- ═══ TASKS PANEL ═══════════════════════════════════════════ -->
+  <!-- === TASKS PANEL =========================================== -->
   <div id="tasksPanel" class="panel hidden">
     <div class="panel-card">
       <div class="panel-title">&#x2611; Tasks</div>
@@ -917,7 +919,7 @@ window.addEventListener('appinstalled', () => {
     </div>
   </div>
 
-  <!-- ═══ EQUIPMENT PANEL ═══════════════════════════════════════ -->
+  <!-- === EQUIPMENT PANEL ======================================= -->
   <div id="equipmentPanel" class="panel hidden">
     <div class="panel-card">
       <div class="panel-title">&#x1F6A7; Equipment</div>
@@ -951,7 +953,7 @@ window.addEventListener('appinstalled', () => {
     </div>
   </div>
 
-  <!-- ═══ COMPLIANCE PANEL ═══════════════════════════════════════ -->
+  <!-- === COMPLIANCE PANEL ======================================= -->
   <div id="compliancePanel" class="panel hidden">
     <div class="panel-card">
       <div class="panel-title">&#x1F4C4; Documents &amp; Compliance</div>
@@ -977,7 +979,7 @@ window.addEventListener('appinstalled', () => {
     </div>
   </div>
 
-  <!-- ═══ PUNCH LIST PANEL ═══════════════════════════════════════ -->
+  <!-- === PUNCH LIST PANEL ======================================= -->
   <div id="defectsPanel" class="panel hidden">
     <div class="panel-card">
       <div class="panel-title">&#x1F4CC; Punch List / Defects</div>
@@ -1008,7 +1010,7 @@ window.addEventListener('appinstalled', () => {
     </div>
   </div>
 
-  <!-- ═══ ADMIN PANEL ═══════════════════════════════════════════ -->
+  <!-- === ADMIN PANEL =========================================== -->
   <!-- Account Summary: all roles. Team Admin / Audit Log / System: boss only -->
   <div id="adminPanel" class="panel hidden">
     <!-- Sub-tab navigation -->
@@ -1043,9 +1045,16 @@ window.addEventListener('appinstalled', () => {
       <div id="teamAdminList"><p class="empty-hint">Loading users...</p></div>
     </div>
 
-    <!-- Section 3: LIFECYCLE REQUESTS (boss only) -->
+    <!-- Section 3: REQUESTS (boss only) -->
     <div id="adminSection_requests" class="panel-card hidden">
-      <div class="panel-title">&#x2709; Lifecycle Requests <span id="lifecycleRequestCount" class="badge badge-purple" style="font-size:11px;margin-left:6px;">0</span></div>
+      <div class="panel-title">&#x2709; Access Requests <span id="accessRequestCount" class="badge badge-purple" style="font-size:11px;margin-left:6px;">0</span></div>
+      <div class="task-form-row">
+        <button class="btn-ws-secondary" onclick="initAccessRequests()">&#x1F504; Refresh Access Requests</button>
+        <span class="empty-hint">New signups wait here until an admin approves role and projects.</span>
+      </div>
+      <div id="accessRequestList"><p class="empty-hint">Loading access requests...</p></div>
+      <div class="section-divider"></div>
+      <div class="panel-title">&#x1F501; Lifecycle Requests <span id="lifecycleRequestCount" class="badge badge-purple" style="font-size:11px;margin-left:6px;">0</span></div>
       <div class="task-form-row">
         <select id="lifecycleRequestFilter" onchange="renderLifecycleRequests()" style="background:var(--surface2);border:1px solid var(--border2);color:#fff;border-radius:8px;padding:8px 10px;font-size:13px;">
           <option value="pending">Pending only</option>
@@ -1131,9 +1140,9 @@ window.addEventListener('appinstalled', () => {
     <div class="modal-box modal-wide">
       <div class="modal-title">Project Access</div>
       <div class="assign-meta">
-        <span>User: <strong id="assignUserName">—</strong></span>
-        <span>Projects: <strong id="assignProjectNames">—</strong></span>
-        <span>Role: <strong id="assignProjectStatus">—</strong></span>
+        <span>User: <strong id="assignUserName"> - </strong></span>
+        <span>Projects: <strong id="assignProjectNames"> - </strong></span>
+        <span>Role: <strong id="assignProjectStatus"> - </strong></span>
         <strong id="assignUserUid" hidden></strong>
       </div>
       <div class="assign-toolbar">
@@ -1155,7 +1164,7 @@ window.addEventListener('appinstalled', () => {
 </div>
 
 
-<!-- ═══ RFP MODAL ══════════════════════════════════════════════ -->
+<!-- === RFP MODAL ============================================== -->
 <div id="rfpModal" class="modal-overlay hidden">
   <div class="modal-box modal-wide">
     <div class="modal-title">&#x1F4C4; Request for Payment (RFP)</div>
@@ -1168,7 +1177,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 </div>
 
-<!-- ═══ PAYROLL CONFIRM MODAL ═══════════════════════ -->
+<!-- === PAYROLL CONFIRM MODAL ======================= -->
 <!-- CHANGE ORDER REJECT MODAL -->
 <div id="coRejectModal" class="modal-overlay hidden">
   <div class="modal-box">
@@ -1185,7 +1194,7 @@ window.addEventListener('appinstalled', () => {
 
 <div id="payrollModal" class="modal-overlay hidden">
   <div class="modal-box modal-wide">
-    <div class="modal-title">&#x2705; Confirm Payroll — <span id="payrollPeriod" class="text-purple"></span></div>
+    <div class="modal-title">&#x2705; Confirm Payroll - <span id="payrollPeriod" class="text-purple"></span></div>
     <div class="payroll-summary">
       <div class="pay-breakdown">
         <div class="pay-row"><span class="pay-label">Regular Pay</span><span class="pay-val" id="payrollRegular">&#x20B1;0.00</span></div>
@@ -1218,10 +1227,10 @@ window.addEventListener('appinstalled', () => {
   </div>
 </div>
 
-<!-- ═══ CASH ADVANCE MODAL ════════════════════════════════════ -->
+<!-- === CASH ADVANCE MODAL ==================================== -->
 <div id="advanceModal" class="modal-overlay hidden">
   <div class="modal-box">
-    <div class="modal-title">&#x20B1; Cash Advances — <span id="advanceWorkerName" class="text-purple"></span></div>
+    <div class="modal-title">&#x20B1; Cash Advances - <span id="advanceWorkerName" class="text-purple"></span></div>
     <div class="advance-form">
       <div>
         <label class="field-label">Date</label>
@@ -1245,7 +1254,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 </div>
 
-<!-- ═══ DELIVERY RECEIPT MODAL ════════════════════════════════ -->
+<!-- === DELIVERY RECEIPT MODAL ================================ -->
 <div id="deliveryModal" class="modal-overlay hidden">
   <div class="modal-box modal-wide">
     <div class="modal-title">&#x1F4E6; Record Delivery Receipt</div>
@@ -1268,10 +1277,10 @@ window.addEventListener('appinstalled', () => {
   </div>
 </div>
 
-<!-- ═══ INVOICE APPROVAL MODAL ════════════════════════════════ -->
+<!-- === INVOICE APPROVAL MODAL ================================ -->
 <div id="invoiceModal" class="modal-overlay hidden">
   <div class="modal-box">
-    <div class="modal-title">&#x1F4CB; Approve Invoice — 3-Way Match</div>
+    <div class="modal-title">&#x1F4CB; Approve Invoice - 3-Way Match</div>
     <input type="hidden" id="invoicePoId">
     <div class="invoice-form">
       <div>
@@ -1295,7 +1304,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 </div>
 
-<!-- ═══ EDIT CONTRACT MODAL ══════════════════ -->
+<!-- === EDIT CONTRACT MODAL ================== -->
 <div id="editContractModal" class="modal-overlay hidden">
   <div class="modal-box">
     <div class="modal-title">&#x270E; Edit Contract</div>
@@ -1314,7 +1323,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 </div>
 
-<!-- ═══ EDIT SUPPLIER MODAL ═══════════════════════════════════ -->
+<!-- === EDIT SUPPLIER MODAL =================================== -->
 <div id="editSupplierModal" class="modal-overlay hidden">
   <div class="modal-box">
     <div class="modal-title">&#x270E; Edit Supplier</div>
@@ -1334,7 +1343,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 </div>
 
-<!-- ═══ EDIT TASK MODAL ═══════════════════════════════════ -->
+<!-- === EDIT TASK MODAL =================================== -->
 <div id="editTaskModal" class="modal-overlay hidden">
   <div class="modal-box">
     <div class="modal-title">&#x270E; Edit Task</div>
@@ -1366,7 +1375,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 </div>
 
-<!-- ═══ EDIT PROJECT MODAL ════════════════════════════════ -->
+<!-- === EDIT PROJECT MODAL ================================ -->
 <div id="editProjectModal" class="modal-overlay hidden">
   <div class="modal-box">
     <div class="modal-title">&#x270E; Edit Project</div>
@@ -1391,7 +1400,7 @@ window.addEventListener('appinstalled', () => {
   </div>
 </div>
 
-<!-- ═══ PAYSLIP PREVIEW MODAL ═════════════════════════════════ -->
+<!-- === PAYSLIP PREVIEW MODAL ================================= -->
 <div id="payslipModal" class="modal-overlay hidden">
   <div class="modal-box modal-wide">
     <div class="modal-title">&#x1F4C4; Individual Payslips</div>

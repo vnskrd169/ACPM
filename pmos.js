@@ -8,6 +8,7 @@
   const PHOTO_DB_VERSION = 1;
   const PHOTO_STORE = 'photoQueue';
   const PMOS_DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxNQ1PunSoV2gCpdfrHs10D7kNC5YUnIyq0IHmFsI4MrDq3wHsJZaCiEcxP2RkHNA5P/exec';
+  const MODULE_ORDER = ['quick', 'sitelog', 'photo', 'issue', 'material', 'task'];
 
   const MODULES = {
     quick: {
@@ -63,23 +64,14 @@
       fields: [
         ['task', 'Task', 'textarea'],
         ['person', 'Person', 'text'],
+        ['company', 'Company Optional', 'text'],
         ['dueDate', 'Due Date', 'date'],
         ['priority', 'Priority', 'select', PRIORITIES],
         ['status', 'Status', 'select', GENERAL_STATUSES]
       ]
     },
-    meeting: {
-      label: 'Meeting Note',
-      collection: 'pmosMeetingNotes',
-      fields: [
-        ['meetingTitle', 'Meeting Title', 'text'],
-        ['attendees', 'Attendees', 'textarea'],
-        ['notes', 'Notes', 'textarea'],
-        ['actionItems', 'Action Items', 'textarea']
-      ]
-    },
     photo: {
-      label: 'Photo Log',
+      label: 'Site Camera',
       collection: 'pmosPhotoLogs',
       fields: [
         ['caption', 'Caption', 'textarea'],
@@ -154,6 +146,10 @@
     if (!el) return;
     el.className = `pmos-sync pmos-sync-${type}`;
     el.textContent = message;
+  }
+
+  function activeModuleEntries() {
+    return MODULE_ORDER.map(key => [key, MODULES[key]]).filter(([, mod]) => !!mod);
   }
 
   function formatBytes(bytes) {
@@ -324,7 +320,8 @@
     if (!el) return;
     state.photoQueueUrls.forEach(url => URL.revokeObjectURL(url));
     state.photoQueueUrls = [];
-    const rows = state.photoQueue.filter(item => item.metadata?.uploadStatus !== 'Uploaded');
+    const rows = state.photoQueue.filter(item => !['Uploaded', 'Synced'].includes(String(item.metadata?.uploadStatus || 'Queued')));
+    renderPendingSyncCount();
     if (!rows.length) {
       el.innerHTML = '<p class="empty-hint">No pending photo uploads.</p>';
       return;
@@ -338,7 +335,7 @@
       return `<article class="pmos-queue-item">
         ${thumbUrl ? `<img src="${thumbUrl}" alt="">` : '<div class="pmos-queue-thumb">Photo</div>'}
         <div class="pmos-queue-main">
-          <strong>${h(meta.caption || meta.originalFileName || 'Photo log')}</strong>
+          <strong>${h(meta.caption || meta.originalFileName || 'Site photo')}</strong>
           <span>${h(meta.projectName || meta.projectId || '')} - ${h(meta.location || 'No location')} - ${h(photoDateFolder(meta.createdAt))}</span>
           <div class="pmos-progress"><i style="width:${progress}%"></i></div>
           ${meta.errorMessage ? `<em>${h(meta.errorMessage)}</em>` : ''}
@@ -497,7 +494,7 @@
         <div class="pmos-form-grid">
           ${mod.fields.map(f => fieldControl('photo', f)).join('')}
         </div>
-        <button class="pmos-save" type="submit">Save Locally / Queue Upload</button>
+        <button class="pmos-save" type="submit">Save Locally / Save & Upload</button>
       </form>
     </section>`;
   }
@@ -539,18 +536,19 @@
 
       <section class="pmos-today">
         <div class="pmos-card-head">
-          <div><div class="pmos-eyebrow">Today</div><h1>Pending field work</h1></div>
+          <div><div class="pmos-eyebrow">Today</div><h1>Field capture dashboard</h1></div>
+          <div id="pmosPendingSyncBadge" class="pmos-sync-count">0 pending sync</div>
           <a class="pmos-open-acpm" href="dashboard.html">ACPM</a>
         </div>
         <div id="pmosPendingList" class="pmos-list"><p class="empty-hint">No pending items due today.</p></div>
       </section>
 
       <section class="pmos-quick-actions">
-        ${Object.entries(MODULES).map(([key, mod]) => moduleButton(key, mod)).join('')}
+        ${activeModuleEntries().map(([key, mod]) => moduleButton(key, mod)).join('')}
       </section>
 
       <div id="pmosForms">
-        ${Object.entries(MODULES).map(([key, mod]) => moduleForm(key, mod)).join('')}
+        ${activeModuleEntries().map(([key, mod]) => moduleForm(key, mod)).join('')}
       </div>
 
       <section class="pmos-today">
@@ -617,7 +615,7 @@
   function handlePhotoSelection(file) {
     if (!file) return;
     if (!String(file.type || '').startsWith('image/')) {
-      setSync('Select an image file for Photo Log.', 'error');
+      setSync('Select an image file for Site Camera.', 'error');
       return;
     }
     state.photoFile = file;
@@ -627,12 +625,12 @@
     if (img) img.src = state.photoPreviewUrl;
     $('pmosPhotoPreviewWrap')?.classList.remove('hidden');
     setText('pmosPhotoSize', `Selected: ${file.name || 'site photo'} - ${formatBytes(file.size)}`);
-    setSync('Photo selected. Add details, then save locally.', 'ok');
+    setSync('Local Draft. Add details, then save locally.', 'saving');
   }
 
   function setDefaultDates() {
     const today = todayISO();
-    Object.entries(MODULES).forEach(([key, mod]) => {
+    activeModuleEntries().forEach(([key, mod]) => {
       mod.fields.forEach(([name, , type]) => {
         const el = $(`pmos_${key}_${name}`);
         if (el && type === 'date' && !el.value) el.value = today;
@@ -667,7 +665,6 @@
       issue: ['location', 'issue'],
       material: ['item', 'quantity', 'unit', 'neededDate'],
       task: ['task', 'person', 'dueDate'],
-      meeting: ['meetingTitle', 'notes'],
       photo: ['caption', 'location', 'category']
     };
     const missing = (requiredByModule[key] || []).find(name => payload[name] === undefined || payload[name] === '');
@@ -834,7 +831,7 @@
         thumbnailFileId: uploadedMeta.thumbnailFileId || '',
         originalFileName: meta.originalFileName,
         compressedSize: meta.compressedSize || current.imageBlob?.size || 0,
-        uploadStatus: 'Uploaded',
+        uploadStatus: 'Synced',
         source: PMOS_SOURCE,
         createdAt: meta.createdAt,
         uploadedAt,
@@ -905,7 +902,7 @@
         createdByName: window._currentUser?.name || '',
         source: PMOS_SOURCE
       };
-      if (!record.status && key !== 'sitelog' && key !== 'meeting' && key !== 'photo') record.status = 'New';
+      if (!record.status && key !== 'sitelog' && key !== 'photo') record.status = 'New';
       try {
         await ref.set(record);
         setSync('Saved to Firebase. ACPM can now see it.', 'ok');
@@ -984,7 +981,7 @@
   function watchPmosRecords() {
     detachPmosListeners();
     state.records = [];
-    Object.entries(MODULES).forEach(([key, mod]) => {
+    activeModuleEntries().forEach(([key, mod]) => {
       const ref = db.ref(mod.collection).limitToLast(80);
       const sourceKey = `root:${mod.collection}`;
       ref.on('value', snap => {
@@ -1000,7 +997,7 @@
       state.listeners.push(ref);
     });
     state.projects.forEach(project => {
-      Object.entries(MODULES).forEach(([key, mod]) => {
+      activeModuleEntries().forEach(([key, mod]) => {
         const ref = db.ref(`projects/${project.id}/${mod.collection}`).limitToLast(40);
         const sourceKey = `project:${project.id}:${mod.collection}`;
         ref.on('value', snap => {
@@ -1041,6 +1038,7 @@
     const recent = records.slice(0, 12);
     setHTML('pmosPendingList', pending.length ? pending.map(recordCard).join('') : '<p class="empty-hint">No pending items due today.</p>');
     setHTML('pmosRecentList', recent.length ? recent.map(recordCard).join('') : '<p class="empty-hint">No PMOS updates yet.</p>');
+    renderPendingSyncCount();
   }
 
   function recordTitle(r) {
@@ -1061,6 +1059,11 @@
         ${date ? `<b>${h(date)}</b>` : ''}
       </div>
     </article>`;
+  }
+
+  function renderPendingSyncCount() {
+    const pending = state.photoQueue.filter(item => !['Synced', 'Uploaded'].includes(String(item.metadata?.uploadStatus || 'Queued'))).length;
+    setText('pmosPendingSyncBadge', `${pending} pending sync`);
   }
 
   async function pmosRetryPhoto(localId) {

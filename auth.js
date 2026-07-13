@@ -1,25 +1,28 @@
-//  ACPM — auth.js  (Stage 1: Firebase Authentication)
+//  ACPM - auth.js  (Stage 1: Firebase Authentication)
 //  Replaces the old simpleHash + /sessions system with
 //  firebase.auth().signInWithEmailAndPassword + onAuthStateChanged.
 //
 //  Public API (unchanged contract):
-//    initAuth()              — called by main.js on DOMContentLoaded
-//    doLogin()               — login handler (onclick from auth UI)
-//    doResetPassword()       — sends password-reset email
-//    logout()                — signs out and reloads
-//    canAccessProject(pid)   — role/assignment gate
-//    canEditProject(pid)     — role/assignment gate
-//    getCurrentUser()        — returns the internal _currentAuthUser
+//    initAuth() - called by main.js on DOMContentLoaded
+//    doLogin() - login handler (onclick from auth UI)
+//    doResetPassword() - sends password-reset email
+//    logout() - signs out and reloads
+//    canAccessProject(pid) - role/assignment gate
+//    canEditProject(pid) - role/assignment gate
+//    getCurrentUser() - returns the internal _currentAuthUser
 //
 //  Global side-effects (consumed by every other module):
-//    window._currentUser     — { uid, name, role, projects, bossOf }
-//    document.body classes   — role-boss, role-apm, role-viewer
-// ════════════════════════════════════════════════════════════
+//    window._currentUser - { uid, name, role, projects, bossOf }
+//    document.body classes - role-boss, role-apm, role-viewer
+// ============================================================
 
 const AUTH_VERSION = '2';
 const EMAIL_DOMAIN = '@acpm.local';
+const PROFILE_PHOTO_STORAGE_ENABLED = false;
+const PROFILE_PHOTO_MAX_INLINE_BYTES = 180 * 1024;
 let _currentAuthUser = null;
 let _profileListener = null;
+let _accessRequestInProgress = false;
 
 const ROLE_DEFINITIONS = {
   boss: { label: 'Boss / Owner', admin: true, financial: true, projectEdit: true, field: false, readOnly: false },
@@ -102,6 +105,10 @@ function normalizeProjectList(value) {
   return [];
 }
 
+function accessRequestDisplayName(data = {}, fallback = '') {
+  return data.fullName || data.displayName || data.name || fallback || 'User';
+}
+
 function elementAllowsRole(el, role) {
   const visible = String(el?.dataset?.roleVisible || '').trim().toLowerCase();
   if (!visible || visible === 'all') return true;
@@ -113,10 +120,10 @@ function elementAllowsRole(el, role) {
     (allowed.includes('financial') && canSeeFinancials(normalized));
 }
 
-// ── Helpers ──────────────────────────────────────────────────
+// -- Helpers --------------------------------------------------
 
 /** Normalise the login input to an email.
- *  Users can type "boss" or "boss@acpm.local" — both work. */
+ *  Users can type "boss" or "boss@acpm.local" - both work. */
 function normaliseEmail(input) {
   const s = input.trim().toLowerCase();
   if (!s) return '';
@@ -156,7 +163,7 @@ function authErrorMessage(e, fallback = 'Could not complete request.') {
   }
 }
 
-// ── Load user profile from /users/{uid} ─────────────────────
+// -- Load user profile from /users/{uid} ---------------------
 //  After Firebase Auth confirms identity, we fetch the role,
 //  project assignments, and bossOf list from the Realtime DB.
 
@@ -168,53 +175,70 @@ async function loadUserProfile(uid) {
       const data = snap.val();
 
     if (data) {
-      const email = firebase.auth().currentUser?.email || null;
+      const email = data.email || firebase.auth().currentUser?.email || null;
       const role = normalizeRole(inferRoleFromIdentity(uid, email, data));
       return {
         uid,
-        name:       data.name || displayNameFromEmail(firebase.auth().currentUser?.email || uid),
+        name:       data.displayName || data.name || displayNameFromEmail(firebase.auth().currentUser?.email || uid),
+        displayName: data.displayName || data.name || '',
         role,
         status:     data.status || 'active',
         position:   data.position || '',
         projects:   normalizeProjectList(data.projects),
+        assignedProjects: normalizeProjectList(data.assignedProjects || data.projects),
         bossOf:     normalizeProjectList(data.bossOf),
         loginAt:    Date.now(),
-        email
+        lastLoginAt: data.lastLoginAt || null,
+        lastSeenAt: data.lastSeenAt || null,
+        email,
+        mobile: data.mobile || '',
+        avatarUrl: data.avatarUrl || '',
+        avatarPath: data.avatarPath || '',
+        signature: data.signature || '',
+        profileComplete: data.profileComplete !== false
+      };
+    }
+
+    const reqSnap = await firebase.database().ref(`accessRequests/${uid}`).once('value');
+    const request = reqSnap.val();
+    if (request) {
+      return {
+        uid,
+        name: accessRequestDisplayName(request, displayNameFromEmail(firebase.auth().currentUser?.email || uid)),
+        displayName: accessRequestDisplayName(request, ''),
+        role: 'apm',
+        status: request.status || 'pending',
+        position: request.position || '',
+        projects: [],
+        assignedProjects: [],
+        bossOf: [],
+        loginAt: Date.now(),
+        email: request.email || firebase.auth().currentUser?.email || null,
+        provider: request.provider || '',
+        requestedAt: request.requestedAt || null,
+        pendingReason: request.status === 'rejected'
+          ? (request.rejectionReason || request.reason || 'Your access request was rejected. Please contact an admin.')
+          : 'Your account request is waiting for admin approval.'
       };
     }
   } catch (e) {
     console.error('loadUserProfile error:', e);
   }
 
-  // Profile node missing (e.g. first-login before Step 4 migration).
-  // Bootstrap a minimal profile so the user isn't locked out.
   const email = firebase.auth().currentUser?.email;
-  const role = 'apm';
-  const fallback = {
+  return {
     uid,
     name: displayNameFromEmail(email || uid),
-    role,
+    role: 'apm',
     status: 'pending',
     position: '',
     projects: [],
+    assignedProjects: [],
     bossOf: [],
     loginAt: Date.now(),
-    email: email || null
-  };
-
-  // Write it into DB so it exists for next login
-  firebase.database().ref(`users/${uid}`).set({
-    name: fallback.name,
     email: email || null,
-    role: fallback.role,
-    status: fallback.status,
-    position: fallback.position,
-    projects: [],
-    bossOf: [],
-    createdAt: Date.now()
-  }).catch(() => {});
-
-  return fallback;
+    pendingReason: 'Your Auth account exists, but no access request was found. Submit Request Access again so an admin can approve it.'
+  };
 }
 
 /** Apply the profile to window globals and kick off the UI. */
@@ -235,16 +259,34 @@ function applyProfile(profile) {
     });
     return;
   }
-  if (profile?.status && profile.status !== 'active' && !isBoss(profile.role)) {
-    showPendingAccessScreen(profile);
+  if (profile?.status && profile.status !== 'active') {
+    const status = String(profile.status || 'pending').toLowerCase();
+    const statusReason = status === 'suspended'
+      ? 'This account is suspended. Ask an admin to reactivate access.'
+      : status === 'archived'
+        ? 'This account is archived. Ask an admin to restore access if this was a mistake.'
+        : status === 'disabled'
+          ? 'This account is disabled. Ask an admin to review access.'
+          : profile.pendingReason;
+    showPendingAccessScreen({ ...profile, pendingReason: statusReason || profile.pendingReason });
     return;
   }
+  recordUserSeen(profile);
   initAppForUser();
 }
 
-// ── Auth State Observer ───────────────────────────────────────
+function recordUserSeen(profile = _currentAuthUser) {
+  if (!profile?.uid || profile.status !== 'active') return;
+  const now = Date.now();
+  firebase.database().ref(`users/${profile.uid}`).update({
+    lastLoginAt: now,
+    lastSeenAt: now
+  }).catch(e => console.warn('lastSeenAt update skipped:', e?.code || e?.message || e));
+}
+
+// -- Auth State Observer ---------------------------------------
 //  Firebase Auth SDK persists the session across refreshes and
-//  tabs automatically — no more localStorage acpm_auth tokens.
+//  tabs automatically - no more localStorage acpm_auth tokens.
 
 function setAppLoading(isLoading) {
   document.body.classList.toggle('auth-checking', !!isLoading);
@@ -261,6 +303,11 @@ function unlockPrivateUi() {
   setAppLoading(false);
   lockPrivateUi(false);
   document.body.classList.add('auth-ready');
+}
+
+function cleanupAuthScopedListeners() {
+  if (typeof detachReportsListeners === 'function') detachReportsListeners();
+  if (typeof detachNotifications === 'function') detachNotifications();
 }
 
 function showPublicAuthUi() {
@@ -299,7 +346,12 @@ function startAuthObserver() {
     setAppLoading(true);
     lockPrivateUi(true);
     if (user) {
-      // Authenticated — load the profile from RTDB
+      if (_accessRequestInProgress && currentAppPage() === 'login') {
+        setAppLoading(false);
+        lockPrivateUi(true);
+        return;
+      }
+      // Authenticated - load the profile from RTDB
       try {
         const profile = await loadUserProfile(user.uid);
         const overlay = document.getElementById('authOverlay');
@@ -311,7 +363,8 @@ function startAuthObserver() {
         showAuthScreen();
       }
     } else {
-      // Signed out — show login screen
+      // Signed out - show login screen
+      cleanupAuthScopedListeners();
       _currentAuthUser = null;
       window._currentUser = { uid: 'anonymous', role: 'apm', name: 'System' };
       const badge = document.getElementById('currentUserBadge');
@@ -328,7 +381,7 @@ function startAuthObserver() {
   });
 }
 
-// ── Initialize Auth UI ──────────────────────────────────────
+// -- Initialize Auth UI --------------------------------------
 
 function initAuth() {
   // Firebase Auth persistence is LOCAL by default (survives refresh,
@@ -344,7 +397,7 @@ function initAuth() {
     });
 }
 
-// ── Login Screen ────────────────────────────────────────────
+// -- Login Screen --------------------------------------------
 
 function showPendingAccessScreen(profile) {
   showPublicAuthUi();
@@ -365,14 +418,22 @@ function showPendingAccessScreen(profile) {
         </div>
       </div>
       <div class="auth-pending">
-        <div class="auth-pending-title">Admin approval needed</div>
-        <div class="auth-pending-text">Your account request was received. An admin must approve your role and assign projects before you can use ACPM.</div>
+        <div class="auth-pending-title">${profile.status === 'rejected' ? 'Request rejected' : 'Admin approval needed'}</div>
+        <div class="auth-pending-text">${escapeHtml(profile.pendingReason || 'Your account request was received. An admin must approve your role and assign projects before you can use ACPM.')}</div>
         <div class="auth-pending-meta">
           <div><span>Name</span><strong>${escapeHtml(profile.name || 'User')}</strong></div>
           <div><span>Position</span><strong>${escapeHtml(profile.position || '-')}</strong></div>
           <div><span>Email</span><strong>${escapeHtml(profile.email || '-')}</strong></div>
         </div>
       </div>
+      ${profile.status !== 'approved' ? `
+        <div class="auth-form auth-pending-recovery">
+          <input type="text" id="pendingRequestName" placeholder="Full name" value="${escapeHtml(profile.displayName || profile.name || '')}" autocomplete="name">
+          <input type="text" id="pendingRequestPosition" placeholder="Position" value="${escapeHtml(profile.position || '')}" autocomplete="organization-title">
+          <button class="auth-btn" id="pendingRequestBtn" onclick="submitPendingAccessRequest()">Send Missing Request</button>
+        </div>
+        <div id="pendingRequestError" class="auth-error hidden"></div>
+      ` : ''}
       <button class="auth-btn auth-btn-secondary" onclick="logout()">Back to Sign In</button>
     </div>
   `;
@@ -430,7 +491,7 @@ function showAuthScreen() {
   });
 }
 
-// ── Login ────────────────────────────────────────────────────
+// -- Login ----------------------------------------------------
 
 async function doLogin() {
   const userIn  = document.getElementById('authUser');
@@ -448,11 +509,11 @@ async function doLogin() {
   }
 
   btn.disabled = true;
-  btn.textContent = 'Signing in…';
+  btn.textContent = 'Signing in...';
 
   try {
     await firebase.auth().signInWithEmailAndPassword(email, password);
-    // onAuthStateChanged will fire and call applyProfile — nothing else
+    // onAuthStateChanged will fire and call applyProfile - nothing else
     // to do here. If sign-in throws, we catch it below.
   } catch (e) {
     console.error('Login error:', e);
@@ -477,7 +538,7 @@ async function doLogin() {
   }
 }
 
-// ── Password Reset ──────────────────────────────────────────
+// -- Password Reset ------------------------------------------
 
 function requestAccessFields({ requireEmail = true, requirePassword = true } = {}) {
   const name = document.getElementById('requestName')?.value?.trim() || '';
@@ -497,28 +558,91 @@ function requestAccessFields({ requireEmail = true, requirePassword = true } = {
 
 async function saveAccessRequest(user, details = {}, provider = 'password') {
   const email = user.email || details.email || '';
-  const ref = firebase.database().ref(`users/${user.uid}`);
-  const existingSnap = await ref.once('value');
+  const userRef = firebase.database().ref(`users/${user.uid}`);
+  const existingSnap = await userRef.once('value');
   if (existingSnap.exists()) {
     const existing = existingSnap.val() || {};
     if (existing.status === 'active' || isBoss(existing.role) || normalizeProjectList(existing.projects).length) {
       return existing;
     }
   }
-  const profile = {
-    name: details.name || user.displayName || displayNameFromEmail(email || user.uid),
+
+  const requestRef = firebase.database().ref(`accessRequests/${user.uid}`);
+  const existingRequestSnap = await requestRef.once('value');
+  const existingRequest = existingRequestSnap.val() || {};
+  const historyKey = requestRef.child('statusHistory').push().key;
+  const now = Date.now();
+  const request = {
+    ...existingRequest,
+    uid: user.uid,
+    fullName: details.name || user.displayName || existingRequest.fullName || displayNameFromEmail(email || user.uid),
+    displayName: details.name || user.displayName || existingRequest.displayName || displayNameFromEmail(email || user.uid),
     position: details.position || '',
     email,
-    role: 'apm',
     status: 'pending',
-    projects: [],
-    bossOf: [],
     provider,
-    requestedAt: Date.now(),
-    createdAt: Date.now()
+    requestedAt: existingRequest.requestedAt || now,
+    updatedAt: now,
+    statusHistory: {
+      ...(existingRequest.statusHistory || {}),
+      [historyKey]: {
+        status: 'pending',
+        by: user.uid,
+        byName: details.name || user.displayName || '',
+        at: now,
+        provider,
+        note: existingRequestSnap.exists() ? 'Access request refreshed by user.' : 'Access request submitted.'
+      }
+    }
   };
-  await ref.set(profile);
-  return profile;
+  await requestRef.set(request);
+  return request;
+}
+
+async function submitPendingAccessRequest() {
+  const user = firebase.auth().currentUser;
+  const errEl = document.getElementById('pendingRequestError');
+  const btn = document.getElementById('pendingRequestBtn');
+  if (!user) {
+    if (errEl) {
+      errEl.textContent = 'Sign in again, then submit the access request.';
+      errEl.classList.remove('hidden');
+    }
+    return;
+  }
+  const name = document.getElementById('pendingRequestName')?.value?.trim() || user.displayName || displayNameFromEmail(user.email || user.uid);
+  const position = document.getElementById('pendingRequestPosition')?.value?.trim() || '';
+  if (!name || !position) {
+    if (errEl) {
+      errEl.textContent = 'Enter your full name and position so an admin can approve you.';
+      errEl.classList.remove('hidden');
+    }
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+  }
+  try {
+    const provider = user.providerData?.some(p => p.providerId === 'google.com') ? 'google' : 'password';
+    await saveAccessRequest(user, { name, position, email: user.email || '' }, provider);
+    if (errEl) {
+      errEl.textContent = 'Access request sent. Ask an admin to approve you in Admin > Requests.';
+      errEl.classList.remove('hidden');
+    }
+    showToast('Access request sent.');
+  } catch (e) {
+    console.error('submitPendingAccessRequest failed:', e);
+    if (errEl) {
+      errEl.textContent = authErrorMessage(e, 'Could not send access request. Ask an admin to check database rules.');
+      errEl.classList.remove('hidden');
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Send Missing Request';
+    }
+  }
 }
 
 async function doRequestAccess() {
@@ -533,16 +657,39 @@ async function doRequestAccess() {
   fields.errEl.textContent = 'Sending access request...';
   fields.errEl.classList.remove('hidden');
 
+  let createdUserUid = '';
+  _accessRequestInProgress = true;
   try {
     const cred = await firebase.auth().createUserWithEmailAndPassword(fields.email, fields.password);
+    createdUserUid = cred.user.uid;
     await cred.user.updateProfile({ displayName: fields.name }).catch(() => {});
     await saveAccessRequest(cred.user, fields, 'password');
     fields.errEl.textContent = 'Access request sent. An admin must approve your role and projects before you can use ACPM.';
     await firebase.auth().signOut();
+    buttons.forEach(btn => { btn.disabled = false; });
   } catch (e) {
     console.error('Access request error:', e);
-    fields.errEl.textContent = authErrorMessage(e, 'Could not send access request.');
+    if (e.code === 'auth/email-already-in-use') {
+      try {
+        const cred = await firebase.auth().signInWithEmailAndPassword(fields.email, fields.password);
+        await cred.user.updateProfile({ displayName: fields.name }).catch(() => {});
+        await saveAccessRequest(cred.user, fields, 'password');
+        fields.errEl.textContent = 'Access request recovered and sent. An admin must approve your role and projects before you can use ACPM.';
+        await firebase.auth().signOut();
+        buttons.forEach(btn => { btn.disabled = false; });
+        return;
+      } catch (recoverError) {
+        console.error('Access request recovery failed:', recoverError);
+      }
+    }
+    if (createdUserUid && firebase.auth().currentUser?.uid === createdUserUid) {
+      await firebase.auth().currentUser.delete().catch(() => {});
+      await firebase.auth().signOut().catch(() => {});
+    }
+    fields.errEl.textContent = authErrorMessage(e, 'Could not save the access request. The Auth account was not considered approved or complete; try again or ask an admin to check database rules.');
     buttons.forEach(btn => { btn.disabled = false; });
+  } finally {
+    _accessRequestInProgress = false;
   }
 }
 
@@ -571,17 +718,27 @@ async function doGoogleAccessRequest() {
   fields.errEl.textContent = 'Opening Google sign-in...';
   fields.errEl.classList.remove('hidden');
 
+  let createdGoogleUid = '';
+  _accessRequestInProgress = true;
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     const cred = await firebase.auth().signInWithPopup(provider);
+    createdGoogleUid = cred.additionalUserInfo?.isNewUser ? cred.user.uid : '';
     await saveAccessRequest(cred.user, fields, 'google');
     fields.errEl.textContent = 'Access request sent. An admin must approve your role and projects before you can use ACPM.';
     await firebase.auth().signOut();
+    buttons.forEach(btn => { btn.disabled = false; });
   } catch (e) {
     console.error('Google access request error:', e);
+    if (createdGoogleUid && firebase.auth().currentUser?.uid === createdGoogleUid) {
+      await firebase.auth().currentUser.delete().catch(() => {});
+      await firebase.auth().signOut().catch(() => {});
+    }
     fields.errEl.textContent = authErrorMessage(e, 'Could not send Google access request.');
     buttons.forEach(btn => { btn.disabled = false; });
+  } finally {
+    _accessRequestInProgress = false;
   }
 }
 
@@ -617,7 +774,202 @@ async function doResetPassword() {
   }
 }
 
-// ── Logout ──────────────────────────────────────────────────
+// -- Logout --------------------------------------------------
+
+function shouldPromptProfileSetup(profile = _currentAuthUser) {
+  return !!profile && profile.status === 'active' && profile.profileComplete === false;
+}
+
+function maybePromptProfileSetup() {
+  if (shouldPromptProfileSetup()) {
+    setTimeout(() => showMyProfileSetup(_currentAuthUser), 120);
+  }
+}
+
+function closeMyProfileSetup() {
+  const modal = document.getElementById('myProfileSetupModal');
+  if (!modal) return;
+  if (shouldPromptProfileSetup()) {
+    showToast('Please complete your profile before continuing.', 'warn');
+    return;
+  }
+  modal.remove();
+}
+
+function showMyProfileSetup(profile = {}) {
+  let modal = document.getElementById('myProfileSetupModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'myProfileSetupModal';
+    modal.className = 'modal-overlay profile-setup-overlay';
+    document.body.appendChild(modal);
+  }
+  const avatar = profile.avatarUrl
+    ? `<img src="${escapeHtml(profile.avatarUrl)}" alt="Profile photo">`
+    : `<span>${escapeHtml(String(profile.name || profile.email || 'U').slice(0, 1).toUpperCase())}</span>`;
+  modal.innerHTML = `
+    <div class="modal-box profile-setup-box">
+      <div class="modal-title">My Profile</div>
+      <p class="empty-hint">Complete your basic contact details. Role and project assignments stay admin-only.</p>
+      <div class="profile-setup-grid">
+        <div class="profile-avatar-preview" id="profileAvatarPreview">${avatar}</div>
+        <div class="profile-fields">
+          <label class="field-label" for="profileDisplayName">Display name</label>
+          <input id="profileDisplayName" type="text" value="${escapeHtml(profile.displayName || profile.name || '')}" placeholder="Your name">
+          <label class="field-label" for="profilePosition">Position / title</label>
+          <input id="profilePosition" type="text" value="${escapeHtml(profile.position || '')}" placeholder="Project Manager">
+          <label class="field-label" for="profileMobile">Mobile number</label>
+          <input id="profileMobile" type="tel" value="${escapeHtml(profile.mobile || '')}" placeholder="09xx xxx xxxx">
+          <label class="field-label" for="profilePhoto">Profile photo</label>
+          <input id="profilePhoto" type="file" accept="image/*">
+          <label class="field-label" for="profileSignature">Signature / initials (optional)</label>
+          <input id="profileSignature" type="text" value="${escapeHtml(profile.signature || '')}" placeholder="Signature name or initials">
+        </div>
+      </div>
+      <div id="profileSetupError" class="auth-error hidden"></div>
+      <div class="modal-actions">
+        ${profile.profileComplete === false ? '' : '<button class="btn-mc" onclick="closeMyProfileSetup()">Close</button>'}
+        <button id="profileSaveBtn" class="btn-save-payroll" onclick="saveMyProfile()">Save Profile</button>
+      </div>
+    </div>
+  `;
+}
+
+async function uploadProfilePhoto(uid, file) {
+  if (!file) return {};
+  if (!String(file.type || '').startsWith('image/')) throw new Error('Profile photo must be an image file.');
+  if (file.size > 5 * 1024 * 1024) throw new Error('Profile photo must be 5 MB or smaller.');
+  const safeName = String(file.name || 'avatar.jpg').replace(/[^a-z0-9._-]/gi, '_').slice(0, 80);
+  if (!PROFILE_PHOTO_STORAGE_ENABLED || !firebase.storage) {
+    return {
+      avatarUrl: await inlineProfilePhotoDataUrl(file),
+      avatarPath: `inline:${safeName}`,
+      avatarUpdatedAt: Date.now()
+    };
+  }
+  const path = `profilePhotos/${uid}/${Date.now()}_${safeName}`;
+  const ref = firebase.storage().ref(path);
+  await ref.put(file, { contentType: file.type || 'image/jpeg' });
+  return {
+    avatarUrl: await ref.getDownloadURL(),
+    avatarPath: path,
+    avatarUpdatedAt: Date.now()
+  };
+}
+
+function readProfilePhotoDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Could not read profile photo.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadProfilePhotoImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not process profile photo.'));
+    img.src = src;
+  });
+}
+
+async function inlineProfilePhotoDataUrl(file) {
+  const raw = await readProfilePhotoDataUrl(file);
+  try {
+    const img = await loadProfilePhotoImage(raw);
+    const side = Math.min(256, Math.max(1, img.naturalWidth || img.width || 1), Math.max(1, img.naturalHeight || img.height || 1));
+    const canvas = document.createElement('canvas');
+    canvas.width = side;
+    canvas.height = side;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Profile photo compression is unavailable.');
+    const sourceW = img.naturalWidth || img.width;
+    const sourceH = img.naturalHeight || img.height;
+    const sourceSide = Math.min(sourceW, sourceH);
+    const sx = Math.max(0, (sourceW - sourceSide) / 2);
+    const sy = Math.max(0, (sourceH - sourceSide) / 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, side, side);
+    ctx.drawImage(img, sx, sy, sourceSide, sourceSide, 0, 0, side, side);
+    for (const quality of [0.82, 0.72, 0.62]) {
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      if (dataUrl.length <= PROFILE_PHOTO_MAX_INLINE_BYTES) return dataUrl;
+    }
+  } catch (error) {
+    if (raw.length <= PROFILE_PHOTO_MAX_INLINE_BYTES) return raw;
+  }
+  throw new Error('Profile photo is too large after compression. Please choose a smaller image.');
+}
+
+async function saveMyProfile() {
+  const user = firebase.auth().currentUser;
+  if (!user || !_currentAuthUser?.uid) return;
+  const errEl = document.getElementById('profileSetupError');
+  const btn = document.getElementById('profileSaveBtn');
+  const displayName = document.getElementById('profileDisplayName')?.value?.trim() || '';
+  const position = document.getElementById('profilePosition')?.value?.trim() || '';
+  const mobile = document.getElementById('profileMobile')?.value?.trim() || '';
+  const signature = document.getElementById('profileSignature')?.value?.trim() || '';
+  const photo = document.getElementById('profilePhoto')?.files?.[0] || null;
+  if (!displayName) {
+    if (errEl) {
+      errEl.textContent = 'Display name is required.';
+      errEl.classList.remove('hidden');
+    }
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+  }
+  let photoWarning = '';
+  try {
+    let photoUpdates = {};
+    if (photo) {
+      try {
+        photoUpdates = await uploadProfilePhoto(user.uid, photo);
+      } catch (photoError) {
+        console.warn('profile photo upload skipped:', photoError?.code || photoError?.message || photoError);
+        photoWarning = 'Profile saved, but photo upload is unavailable. Initials will be used until Firebase Storage is set up.';
+      }
+    }
+    const updates = {
+      displayName,
+      name: displayName,
+      position,
+      mobile,
+      signature,
+      profileComplete: true,
+      profileUpdatedAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    Object.assign(updates, photoUpdates);
+    await firebase.database().ref(`users/${user.uid}`).update(updates);
+    await user.updateProfile({
+      displayName,
+      photoURL: photoUpdates.avatarUrl || user.photoURL || null
+    }).catch(() => {});
+    _currentAuthUser = { ..._currentAuthUser, ...updates };
+    window._currentUser = _currentAuthUser;
+    const badge = document.getElementById('currentUserBadge');
+    if (badge) badge.textContent = `${displayName} - ${roleLabel(_currentAuthUser.role)}`;
+    document.getElementById('myProfileSetupModal')?.remove();
+    showToast(photoWarning || 'Profile saved.', photoWarning ? 'warn' : 'success');
+  } catch (e) {
+    console.error('saveMyProfile failed:', e);
+    if (errEl) {
+      errEl.textContent = e?.message || 'Could not save profile.';
+      errEl.classList.remove('hidden');
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Save Profile';
+    }
+  }
+}
 
 function logout() {
   setAppLoading(true);
@@ -627,7 +979,7 @@ function logout() {
   // and reload via showAuthScreen. No explicit reload needed.
 }
 
-// ── App Bootstrap ───────────────────────────────────────────
+// -- App Bootstrap -------------------------------------------
 
 async function initAppForUser() {
   const page = currentAppPage();
@@ -641,6 +993,7 @@ async function initAppForUser() {
     filterProjectsByRole();
     if (typeof initLine17Pmos === 'function') await initLine17Pmos();
     unlockPrivateUi();
+    maybePromptProfileSetup();
     return;
   }
   const role = normalizeRole(_currentAuthUser?.role || 'apm');
@@ -707,10 +1060,12 @@ async function initAppForUser() {
       return;
     }
     unlockPrivateUi();
+    maybePromptProfileSetup();
   } else {
     // Re-render hub with role-aware data
     renderHub();
     unlockPrivateUi();
+    maybePromptProfileSetup();
   }
 
   // Boss-only background housekeeping
@@ -720,7 +1075,7 @@ async function initAppForUser() {
   }
 }
 
-// ── Role / Access Helpers ───────────────────────────────────
+// -- Role / Access Helpers -----------------------------------
 
 function filterProjectsByRole() {
   const user = _currentAuthUser;
@@ -766,11 +1121,12 @@ function canWriteFieldLog(pid) {
   return normalizeProjectList(user.projects).includes(pid) || normalizeProjectList(user.bossOf).includes(pid);
 }
 
-// ── Expose ──────────────────────────────────────────────────
+// -- Expose --------------------------------------------------
 window.initAuth          = initAuth;
 window.doLogin           = doLogin;
 window.doRegister        = doRegister;
 window.doRequestAccess   = doRequestAccess;
+window.submitPendingAccessRequest = submitPendingAccessRequest;
 window.doGoogleSignIn    = doGoogleSignIn;
 window.doGoogleAccessRequest = doGoogleAccessRequest;
 window.doResetPassword   = doResetPassword;
@@ -792,3 +1148,6 @@ window.elementAllowsRole = elementAllowsRole;
 window.roleLabel         = roleLabel;
 window.teamRoleLabel     = teamRoleLabel;
 window.normalizeProjectList = normalizeProjectList;
+window.showMyProfileSetup = showMyProfileSetup;
+window.closeMyProfileSetup = closeMyProfileSetup;
+window.saveMyProfile = saveMyProfile;

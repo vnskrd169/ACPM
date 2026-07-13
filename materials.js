@@ -255,6 +255,10 @@ function materialUserId() {
   return window._currentUser?.uid || 'unknown';
 }
 
+function materialUserName() {
+  return window._currentUser?.name || window._currentUser?.email || 'System';
+}
+
 function materialItemsArray(items) {
   if (Array.isArray(items)) return items;
   return Object.entries(items || {}).map(([key, value]) => ({ itemId: key, ...(value || {}) }));
@@ -331,6 +335,29 @@ async function createMaterialMovement(pid, movement) {
   const payload = materialMovementPayload(movement);
   await safeDb(() => ref.set(payload), 'Failed to create material movement');
   return { id: ref.key, ...payload };
+}
+
+async function createMaterialNotificationEvent(pid, type, payload = {}) {
+  if (!pid || !type) return null;
+  const ref = firebase.database().ref(`projects/${pid}/notificationEvents`).push();
+  const event = {
+    module: 'materials',
+    type,
+    status: 'pending',
+    consumed: false,
+    projectId: pid,
+    createdAt: Date.now(),
+    createdBy: materialUserId(),
+    createdByName: materialUserName(),
+    ...payload
+  };
+  try {
+    await ref.set(event);
+    return { id: ref.key, ...event };
+  } catch (error) {
+    console.warn('Materials notification hook skipped:', error?.code || error?.message || error);
+    return null;
+  }
 }
 
 function addMaterialMovementUpdate(pid, updates, movement) {
@@ -936,6 +963,13 @@ async function approvePO(poId) {
       supplierId: po?.supplierId || '',
       supplierName: po?.supplierName || po?.supplier || '',
       movementCost: parseFloat(po?.total) || 0
+    });
+    await createMaterialNotificationEvent(_mpid, 'po_approved', {
+      poId,
+      poNo: po?.poNo || '',
+      supplierId: po?.supplierId || '',
+      supplierName: po?.supplierName || po?.supplier || '',
+      amount: parseFloat(po?.total) || 0
     });
 
     const orders = await listPurchaseOrders(_mpid);

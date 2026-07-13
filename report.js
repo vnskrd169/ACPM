@@ -1,8 +1,6 @@
-
-//  ACPM â€” reports.js
+//  ACPM - report.js
 //  Executive dashboard, project health scores, variance analysis
 //  Cross-project visibility for bosses, team performance metrics
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 let _reportsListeners = [];
 let _teamAdminListener = null;
@@ -17,6 +15,8 @@ let _projectCache = [];
 let _systemReportsProjectsCache = [];
 let _lifecycleRequestListener = null;
 let _lifecycleRequestsCache = [];
+let _accessRequestListener = null;
+let _accessRequestsCache = [];
 
 function initReports() {
   detachReportsListeners();
@@ -692,16 +692,25 @@ function initAdminSummary() {
   const user = window._currentUser || {};
   const projects = reportProjectList(user.projects);
   const bossOf = reportProjectList(user.bossOf);
+  const role = typeof normalizeRole === 'function' ? normalizeRole(user.role) : String(user.role || '').toLowerCase();
+  const canManageTeam = ['boss', 'owner', 'admin'].includes(role);
+  const projectText = projects.map(formatProjectLabel).join(', ') || 'No projects assigned yet';
+  const bossOfText = bossOf.map(formatProjectLabel).join(', ') || '-';
   if (!el) return;
   el.innerHTML = `
+    ${canManageTeam ? `
+      <div class="admin-summary-actions">
+        <button class="btn-ws-secondary" onclick="switchAdminSection('team')">&#x1F465; Manage Team / Assign Projects</button>
+        <button class="btn-ws-secondary" onclick="switchAdminSection('requests')">&#x2709; Review Access Requests</button>
+      </div>` : ''}
     <div class="summary-table-wrap">
       <table class="summary-table">
         <tbody>
-          <tr><td>Name</td><td>${escapeHtml(user.name || 'User')}</td></tr>
-          <tr><td>UID</td><td style="font-family:monospace;font-size:11px">${escapeHtml(user.uid || '-')}</td></tr>
+          <tr><td>Name</td><td>${escapeHtml(user.name || user.displayName || 'User')}</td></tr>
+          <tr><td>Email</td><td>${escapeHtml(user.email || '-')}</td></tr>
           <tr><td>Role</td><td>${escapeHtml(reportRoleLabel(user.role))}</td></tr>
-          <tr><td>Projects</td><td>${escapeHtml(projects.map(formatProjectLabel).join(', ') || '-')}</td></tr>
-          <tr><td>Boss Of</td><td>${escapeHtml(bossOf.map(formatProjectLabel).join(', ') || '-')}</td></tr>
+          <tr><td>Projects</td><td>${escapeHtml(projectText)}</td></tr>
+          <tr><td>Boss Of</td><td>${escapeHtml(bossOfText)}</td></tr>
         </tbody>
       </table>
     </div>`;
@@ -712,7 +721,7 @@ function auditActorProfile(row) {
   const user = uid ? _auditUsersCache[uid] : null;
   const name = row?.userName || user?.name || user?.email || uid || '-';
   const email = row?.userEmail || user?.email || '';
-  return { uid, name, email };
+  return { uid, name, email, avatarUrl: user?.avatarUrl || '', position: user?.position || '', role: user?.role || row?.userRole || '' };
 }
 
 function auditActorSearchText(row) {
@@ -722,10 +731,47 @@ function auditActorSearchText(row) {
 
 function auditActorHtml(row) {
   const actor = auditActorProfile(row);
-  const secondary = [actor.email, actor.uid && actor.uid !== actor.name ? actor.uid : '']
+  const secondary = [actor.position || reportRoleLabel(actor.role), actor.email]
     .filter(Boolean)
     .join(' | ');
-  return `<div class="audit-actor-name">${escapeHtml(actor.name)}</div>${secondary ? `<div class="audit-actor-sub">${escapeHtml(secondary)}</div>` : ''}`;
+  return `
+    <div class="audit-actor-card">
+      ${teamAvatar(actor)}
+      <div>
+        <div class="audit-actor-name">${escapeHtml(actor.name)}</div>
+        ${secondary ? `<div class="audit-actor-sub">${escapeHtml(secondary)}</div>` : ''}
+      </div>
+    </div>`;
+}
+
+function auditActionLabel(row = {}) {
+  const action = String(row.action || 'action').replace(/_/g, ' ').trim();
+  const entity = String(row.entityType || row.module || '').replace(/_/g, ' ').trim();
+  const label = [action, entity].filter(Boolean).join(' ');
+  return label.replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function auditModuleLabel(row = {}) {
+  return String(row.entityType || row.module || 'system').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function auditActionClass(row = {}) {
+  const text = `${row.action || ''} ${row.entityType || ''} ${row.module || ''}`.toLowerCase();
+  if (text.includes('reject') || text.includes('void') || text.includes('archive') || text.includes('delete')) return 'audit-danger';
+  if (text.includes('approve') || text.includes('release') || text.includes('complete')) return 'audit-success';
+  if (text.includes('billing') || text.includes('collection') || text.includes('payment')) return 'audit-finance';
+  if (text.includes('material') || text.includes('supplier') || text.includes('po')) return 'audit-materials';
+  if (text.includes('labor') || text.includes('payroll') || text.includes('cash')) return 'audit-labor';
+  return 'audit-neutral';
+}
+
+function auditRecordSummary(row = {}) {
+  const parts = [];
+  const record = row.entityId || row.recordId || '';
+  if (record) parts.push(`Record ${record}`);
+  if (row.previousStatus || row.newStatus) parts.push(`${row.previousStatus || '-'} -> ${row.newStatus || '-'}`);
+  if (row.notes) parts.push(row.notes);
+  return parts.join(' | ');
 }
 
 function auditRowFingerprint(row = {}) {
@@ -870,9 +916,10 @@ function renderAuditLog(rows = _auditRowsCache) {
 
   const filtered = rows.filter(r => {
     const action = String(r.action || '').toLowerCase();
+    const module = String(r.entityType || r.module || '').toLowerCase();
     const actor = auditActorSearchText(r);
     const pid = String(r.projectId || '').toLowerCase();
-    return (!actionNeedle || action.includes(actionNeedle)) &&
+    return (!actionNeedle || action.includes(actionNeedle) || module.includes(actionNeedle)) &&
       (!userNeedle || actor.includes(userNeedle)) &&
       (!projectNeedle || !pid || pid === projectNeedle);
   });
@@ -885,17 +932,28 @@ function renderAuditLog(rows = _auditRowsCache) {
 
   el.innerHTML = `<div style="display:grid;gap:8px">
     ${filtered.map(r => `
-      <div class="health-card" style="border-left-color:var(--border2)">
-        <div class="health-hdr">
-          <span class="health-name">${escapeHtml(r.action || 'action')}</span>
+      <div class="health-card audit-card ${auditActionClass(r)}">
+        <div class="health-hdr audit-card-head">
+          <div>
+            <span class="audit-module-pill">${escapeHtml(auditModuleLabel(r))}</span>
+            <span class="health-name">${escapeHtml(auditActionLabel(r))}</span>
+          </div>
           <span class="health-score" style="font-size:12px">${escapeHtml(new Date(r.timestamp || Date.now()).toLocaleString('en-PH'))}</span>
         </div>
-        <div style="font-size:12px;color:var(--muted2);line-height:1.5">
-          <div><strong>User:</strong> ${auditActorHtml(r)}</div>
-          <div><strong>Entity:</strong> ${escapeHtml(r.entityType || '-')} ${r.entityId ? `· ${escapeHtml(r.entityId)}` : ''}</div>
-          <div><strong>Project:</strong> ${escapeHtml(formatProjectLabel(r.projectId || '-'))}</div>
-          ${r.fallbackPath ? '<div><strong>Source:</strong> Local fallback audit path</div>' : ''}
-          ${r.details ? `<div><strong>Details:</strong> ${escapeHtml(JSON.stringify(r.details))}</div>` : ''}
+        <div class="audit-card-grid">
+          <div>
+            <div class="audit-meta-label">Actor</div>
+            ${auditActorHtml(r)}
+          </div>
+          <div>
+            <div class="audit-meta-label">Project</div>
+            <div class="audit-project-name">${escapeHtml(formatProjectLabel(r.projectId || '-'))}</div>
+            ${auditRecordSummary(r) ? `<div class="audit-actor-sub">${escapeHtml(auditRecordSummary(r))}</div>` : ''}
+          </div>
+        </div>
+        <div class="audit-detail-line">
+          ${r.fallbackPath ? '<span>Source: Local fallback audit path</span>' : '<span>Source: Global audit log</span>'}
+          ${r.details ? `<span>Details: ${escapeHtml(JSON.stringify(r.details))}</span>` : ''}
         </div>
       </div>`).join('')}
   </div>`;
@@ -941,7 +999,10 @@ function initTeamAdmin() {
   ref.on('value', snap => {
     const users = [];
     snap.forEach(c => {
-      users.push({ uid: c.key, ...c.val() });
+      const user = { uid: c.key, ...c.val() };
+      if (String(user.status || 'active').toLowerCase() === 'pending') return false;
+      users.push(user);
+      return false;
     });
     users.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
     _teamUsersCache = users;
@@ -1035,6 +1096,239 @@ function loadProjectsForAssignments(renderList = true) {
     });
 }
 
+function requestStatusBadge(status) {
+  const clean = String(status || 'pending').toLowerCase();
+  if (clean === 'approved') return '<span class="badge badge-green">Approved</span>';
+  if (clean === 'rejected') return '<span class="badge badge-red">Rejected</span>';
+  return '<span class="badge badge-amber">Pending</span>';
+}
+
+function accessRequestName(request = {}) {
+  return request.fullName || request.displayName || request.name || request.email || request.uid || 'User';
+}
+
+function accessRequestProjectRows(uid) {
+  const projects = (_projectCache || [])
+    .filter(p => p?.id)
+    .filter(p => String(p.status || 'active').toLowerCase() === 'active');
+  if (!projects.length) return '<p class="empty-hint">No active projects loaded. You can approve now and assign projects later from Team Admin.</p>';
+  return projects.map(p => `
+    <label class="assign-proj-row access-request-project-row">
+      <input type="checkbox" data-access-project="1" data-request-uid="${escapeHtml(uid)}" value="${escapeHtml(p.id)}">
+      <span>
+        <span class="assign-proj-name">${escapeHtml(p.name || p.id)}</span>
+        <span class="assign-proj-sub">${escapeHtml(p.status || 'active')}</span>
+      </span>
+    </label>
+  `).join('') + '<p class="empty-hint access-request-note">Showing active projects only. Completed or archived projects can be assigned later from Team Admin.</p>';
+}
+
+function collectAccessRequestProjects(uid) {
+  return Array.from(document.querySelectorAll('[data-access-project="1"]'))
+    .filter(cb => cb.getAttribute('data-request-uid') === uid && cb.checked)
+    .map(cb => cb.value)
+    .filter(Boolean)
+    .sort((a, b) => String(a).localeCompare(String(b)));
+}
+
+function projectAccessMap(projectIds = []) {
+  return Array.from(new Set(projectIds.filter(Boolean).map(String)))
+    .sort((a, b) => a.localeCompare(b))
+    .reduce((map, pid) => {
+      map[pid] = true;
+      return map;
+    }, {});
+}
+
+function initAccessRequests() {
+  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
+    const el = $('accessRequestList');
+    if (el) el.innerHTML = '<p class="empty-hint">Access requests are available for admins only.</p>';
+    return;
+  }
+  if (_accessRequestListener) {
+    _accessRequestListener.off();
+    _accessRequestListener = null;
+  }
+  const el = $('accessRequestList');
+  if (el) el.innerHTML = '<p class="empty-hint">Loading access requests...</p>';
+  const ref = firebase.database().ref('accessRequests').orderByChild('status').equalTo('pending');
+  _accessRequestListener = ref;
+  ref.on('value', snap => {
+    const rows = [];
+    snap.forEach(c => {
+      rows.push({ id: c.key, uid: c.key, ...c.val() });
+      return false;
+    });
+    rows.sort((a, b) => (a.requestedAt || 0) - (b.requestedAt || 0));
+    _accessRequestsCache = rows;
+    loadProjectsForAssignments(false).catch(() => []).then(() => renderAccessRequests(rows));
+  }, error => {
+    console.error('initAccessRequests failed:', error);
+    if (el) el.innerHTML = `<p class="empty-hint">Could not load access requests: ${escapeHtml(error?.message || error?.code || 'permission denied')}</p>`;
+  });
+}
+
+function renderAccessRequests(rows = _accessRequestsCache) {
+  const el = $('accessRequestList');
+  if (!el) return;
+  setText('accessRequestCount', rows.length);
+  if (!rows.length) {
+    el.innerHTML = '<p class="empty-hint">No pending account access requests.</p>';
+    return;
+  }
+  el.innerHTML = `<div class="access-request-list">
+    ${rows.map(request => {
+      const uid = request.uid || request.id;
+      const requestedAt = request.requestedAt ? new Date(request.requestedAt).toLocaleString('en-PH') : '-';
+      return `<div class="access-request-card">
+        <div class="access-request-main">
+          <div class="access-request-title">${escapeHtml(accessRequestName(request))}</div>
+          <div class="access-request-meta">${escapeHtml(request.email || '-')} | ${escapeHtml(request.position || '-')} | ${escapeHtml(request.provider || 'password')}</div>
+          <div class="access-request-sub">Requested ${escapeHtml(requestedAt)}</div>
+          <div class="access-request-projects">${accessRequestProjectRows(uid)}</div>
+        </div>
+        <div class="access-request-side">
+          ${requestStatusBadge(request.status)}
+          <label class="field-label" for="accessRole_${escapeHtml(uid)}">Role</label>
+          <select id="accessRole_${escapeHtml(uid)}">${teamRoleOptions('apm')}</select>
+          <div class="lifecycle-request-actions">
+            <button class="btn-save-payroll" onclick='approveAccessRequest(${JSON.stringify(uid)})'>Approve</button>
+            <button class="btn-mc" onclick='rejectAccessRequest(${JSON.stringify(uid)})'>Reject</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+async function approveAccessRequest(uid) {
+  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
+    showToast('You do not have permission to approve users.', 'error');
+    return;
+  }
+  const request = _accessRequestsCache.find(r => (r.uid || r.id) === uid) ||
+    (await firebase.database().ref(`accessRequests/${uid}`).once('value')).val();
+  if (!request) {
+    showToast('Access request not found.', 'error');
+    return;
+  }
+  const role = normalizeTeamRole($(`accessRole_${uid}`)?.value || 'apm');
+  const rc1Allowed = typeof isRc1ActiveRole === 'function'
+    ? isRc1ActiveRole(role)
+    : ['boss', 'owner', 'admin', 'pm', 'apm'].includes(role);
+  if (!rc1Allowed) {
+    showToast('Only Boss/Admin/PM/APM are active in RC1.', 'error');
+    return;
+  }
+  const projects = collectAccessRequestProjects(uid);
+  if (!projects.length && ['pm', 'apm'].includes(role) && !confirm('Approve without project assignment? The user can log in but may not see a project until assigned.')) return;
+
+  const now = Date.now();
+  const admin = window._currentUser || {};
+  const historyKey = firebase.database().ref(`accessRequests/${uid}/statusHistory`).push().key;
+  const userProfile = {
+    uid,
+    displayName: accessRequestName(request),
+    name: accessRequestName(request),
+    email: request.email || '',
+    position: request.position || '',
+    role,
+    assignedProjects: projects,
+    projects: projectAccessMap(projects),
+    bossOf: {},
+    status: 'active',
+    provider: request.provider || '',
+    approvedBy: admin.uid || null,
+    approvedByName: admin.name || null,
+    approvedAt: now,
+    profileComplete: false,
+    createdAt: request.requestedAt || now,
+    updatedAt: now
+  };
+  const updates = {
+    [`users/${uid}`]: userProfile,
+    [`accessRequests/${uid}/status`]: 'approved',
+    [`accessRequests/${uid}/role`]: role,
+    [`accessRequests/${uid}/assignedProjects`]: projects,
+    [`accessRequests/${uid}/approvedBy`]: admin.uid || null,
+    [`accessRequests/${uid}/approvedByName`]: admin.name || null,
+    [`accessRequests/${uid}/approvedAt`]: now,
+    [`accessRequests/${uid}/updatedAt`]: now,
+    [`accessRequests/${uid}/statusHistory/${historyKey}`]: {
+      status: 'approved',
+      by: admin.uid || null,
+      byName: admin.name || null,
+      at: now,
+      role,
+      assignedProjects: projects
+    }
+  };
+  try {
+    await firebase.database().ref().update(updates);
+    auditLog('approve', 'accessRequest', uid, { role, assignedProjects: projects, email: request.email || '' });
+    if (typeof createNotificationEvent === 'function') {
+      createNotificationEvent({
+        global: true,
+        module: 'accounts',
+        type: 'access_request_approved',
+        payload: { uid, email: request.email || '', displayName: userProfile.displayName, role }
+      }).catch(() => {});
+    }
+    if (typeof sendNotification === 'function') {
+      sendNotification({ to: uid, type: 'access_approved', message: 'Your ACPM access was approved. Please complete your profile after login.' }).catch(() => {});
+    }
+    showToast(`${userProfile.displayName} approved.`);
+    initAccessRequests();
+    initTeamAdmin();
+  } catch (e) {
+    console.error('approveAccessRequest failed:', e);
+    showToast(`Failed to approve request: ${e?.message || e?.code || 'permission denied'}`, 'error');
+  }
+}
+
+async function rejectAccessRequest(uid) {
+  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
+    showToast('You do not have permission to reject users.', 'error');
+    return;
+  }
+  const reason = prompt('Reason for rejection (optional):') || '';
+  const now = Date.now();
+  const admin = window._currentUser || {};
+  const historyKey = firebase.database().ref(`accessRequests/${uid}/statusHistory`).push().key;
+  try {
+    await firebase.database().ref().update({
+      [`accessRequests/${uid}/status`]: 'rejected',
+      [`accessRequests/${uid}/rejectionReason`]: reason.trim(),
+      [`accessRequests/${uid}/rejectedBy`]: admin.uid || null,
+      [`accessRequests/${uid}/rejectedByName`]: admin.name || null,
+      [`accessRequests/${uid}/rejectedAt`]: now,
+      [`accessRequests/${uid}/updatedAt`]: now,
+      [`accessRequests/${uid}/statusHistory/${historyKey}`]: {
+        status: 'rejected',
+        by: admin.uid || null,
+        byName: admin.name || null,
+        at: now,
+        reason: reason.trim()
+      }
+    });
+    auditLog('reject', 'accessRequest', uid, { reason: reason.trim() });
+    if (typeof createNotificationEvent === 'function') {
+      createNotificationEvent({
+        global: true,
+        module: 'accounts',
+        type: 'access_request_rejected',
+        payload: { uid, reason: reason.trim() }
+      }).catch(() => {});
+    }
+    showToast('Access request rejected.');
+    initAccessRequests();
+  } catch (e) {
+    console.error('rejectAccessRequest failed:', e);
+    showToast(`Failed to reject request: ${e?.message || e?.code || 'permission denied'}`, 'error');
+  }
+}
+
 function openProjectAssignModal(uid) {
   const user = _teamUsersCache.find(u => u.uid === uid);
   if (!user) return;
@@ -1042,8 +1336,12 @@ function openProjectAssignModal(uid) {
   const holder = $('assignUserUid');
   const names = $('assignProjectNames');
   const status = $('assignProjectStatus');
-  if (title) title.textContent = user.name || 'User';
-  if (holder) { holder.dataset.uid = uid; holder.textContent = uid; }
+  if (title) title.textContent = teamDisplayName(user);
+  if (holder) {
+    holder.dataset.uid = uid;
+    holder.textContent = user.email || teamDisplayName(user);
+    holder.title = uid;
+  }
   const userProjects = reportProjectList(user.projects);
   if (names) names.textContent = userProjects.map(formatProjectLabel).join(', ') || 'None yet';
   if (status) status.textContent = reportRoleLabel(user.role);
@@ -1078,7 +1376,8 @@ async function saveProjectAssignments() {
     .sort((a, b) => String(a).localeCompare(String(b)));
   try {
     await firebase.database().ref(`users/${uid}`).update({
-      projects,
+      assignedProjects: projects,
+      projects: projectAccessMap(projects),
       status: 'active',
       approvedAt: Date.now(),
       approvedBy: window._currentUser?.uid || null,
@@ -1109,7 +1408,10 @@ function switchAdminSection(section) {
     if (tab) tab.classList.toggle('tab-active', name === section);
   });
   if (section === 'team') initTeamAdmin();
-  if (section === 'requests' && typeof initLifecycleRequests === 'function') initLifecycleRequests();
+  if (section === 'requests') {
+    if (typeof initAccessRequests === 'function') initAccessRequests();
+    if (typeof initLifecycleRequests === 'function') initLifecycleRequests();
+  }
   if (section === 'audit' && typeof initAuditLog === 'function') initAuditLog();
   if (section === 'summary' && typeof initAdminSummary === 'function') initAdminSummary();
   if (section === 'system' && typeof initSystemStatus === 'function') initSystemStatus();
@@ -1140,8 +1442,38 @@ function teamRoleOptions(selectedRole) {
 function teamStatusBadge(user) {
   const status = String(user?.status || 'active').trim().toLowerCase();
   if (status === 'pending') return '<span class="badge badge-amber">Pending</span>';
-  if (status === 'disabled') return '<span class="badge badge-red">Disabled</span>';
+  if (['disabled', 'suspended', 'archived'].includes(status)) return `<span class="badge badge-red">${escapeHtml(status.charAt(0).toUpperCase() + status.slice(1))}</span>`;
   return '<span class="badge badge-green">Active</span>';
+}
+
+function teamProfileBadge(user) {
+  if (user?.profileComplete === false) return '<span class="badge badge-amber">Profile needed</span>';
+  return '<span class="badge badge-green">Profile ready</span>';
+}
+
+function teamDisplayName(user = {}) {
+  return user.displayName || user.name || user.fullName || user.email || user.uid || 'User';
+}
+
+function teamInitials(user = {}) {
+  const name = teamDisplayName(user);
+  const words = String(name).replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean);
+  const initials = words.slice(0, 2).map(w => w.charAt(0).toUpperCase()).join('');
+  return initials || 'U';
+}
+
+function teamAvatar(user = {}) {
+  if (user.avatarUrl) {
+    return `<span class="team-avatar"><img src="${escapeHtml(user.avatarUrl)}" alt="${escapeHtml(teamDisplayName(user))} profile photo"></span>`;
+  }
+  return `<span class="team-avatar team-avatar-fallback">${escapeHtml(teamInitials(user))}</span>`;
+}
+
+function teamLastSeen(user = {}) {
+  const raw = user.lastSeenAt || user.lastLoginAt || user.profileUpdatedAt || user.approvedAt || user.createdAt || null;
+  if (!raw) return 'No activity yet';
+  if (typeof timeAgo === 'function') return `Seen ${timeAgo(raw)}`;
+  return `Seen ${new Date(raw).toLocaleString('en-PH')}`;
 }
 
 async function updateUserRole(uid, role) {
@@ -1179,6 +1511,79 @@ async function updateUserRole(uid, role) {
   } catch (e) {
     console.error('updateUserRole failed:', e);
     showToast(`Failed to update user role: ${e?.message || e?.code || 'permission denied'}`, 'error');
+  }
+}
+
+async function updateUserStatus(uid, nextStatus) {
+  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
+    showToast('You do not have permission to manage users.', 'error');
+    return;
+  }
+  const status = String(nextStatus || '').trim().toLowerCase();
+  if (!['active', 'suspended', 'archived'].includes(status)) {
+    showToast('Unsupported user status.', 'error');
+    return;
+  }
+  const target = _teamUsersCache.find(u => u.uid === uid);
+  if (!target) return;
+  if (uid === window._currentUser?.uid && status !== 'active') {
+    showToast('You cannot suspend or archive your own account from Team Admin.', 'error');
+    return;
+  }
+  const label = status === 'active' ? 'reactivate' : status;
+  if (!confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} ${teamDisplayName(target)}?`)) return;
+
+  const now = Date.now();
+  const admin = window._currentUser || {};
+  const statusHistoryKey = firebase.database().ref(`users/${uid}/statusHistory`).push().key;
+  const updates = {
+    [`users/${uid}/status`]: status,
+    [`users/${uid}/updatedAt`]: now,
+    [`users/${uid}/updatedBy`]: admin.uid || null,
+    [`users/${uid}/updatedByName`]: admin.name || null,
+    [`users/${uid}/statusHistory/${statusHistoryKey}`]: {
+      previousStatus: target.status || 'active',
+      status,
+      by: admin.uid || null,
+      byName: admin.name || null,
+      at: now
+    }
+  };
+  if (status === 'active') {
+    updates[`users/${uid}/reactivatedAt`] = now;
+    updates[`users/${uid}/reactivatedBy`] = admin.uid || null;
+    updates[`users/${uid}/suspendedAt`] = null;
+    updates[`users/${uid}/archivedAt`] = null;
+  } else if (status === 'suspended') {
+    updates[`users/${uid}/suspendedAt`] = now;
+    updates[`users/${uid}/suspendedBy`] = admin.uid || null;
+  } else if (status === 'archived') {
+    updates[`users/${uid}/archivedAt`] = now;
+    updates[`users/${uid}/archivedBy`] = admin.uid || null;
+  }
+
+  try {
+    await firebase.database().ref().update(updates);
+    auditLog(status === 'active' ? 'reactivate' : status, 'user', uid, { previousStatus: target.status || 'active', status });
+    if (typeof createNotificationEvent === 'function') {
+      createNotificationEvent({
+        global: true,
+        module: 'accounts',
+        type: `user_${status}`,
+        payload: {
+          recipientUserId: uid,
+          uid,
+          displayName: teamDisplayName(target),
+          previousStatus: target.status || 'active',
+          status
+        }
+      }).catch(() => {});
+    }
+    showToast(`${teamDisplayName(target)} is now ${status}.`);
+    initTeamAdmin();
+  } catch (e) {
+    console.error('updateUserStatus failed:', e);
+    showToast(`Failed to update user status: ${e?.message || e?.code || 'permission denied'}`, 'error');
   }
 }
 
@@ -1359,7 +1764,10 @@ function renderTeamAdmin(users) {
   const el = $('teamAdminList');
   if (!el) return;
   const counts = {
-    boss: users.filter(u => typeof isBoss === 'function' ? isBoss(u.role) : normalizeTeamRole(u.role) === 'boss').length,
+    boss: users.filter(u => {
+      const role = normalizeTeamRole(u.role);
+      return (typeof isBoss === 'function' ? isBoss(role) : role === 'boss') || role === 'pm';
+    }).length,
     apm: users.filter(u => normalizeTeamRole(u.role) === 'apm').length,
   };
   setText('teamUserCount', users.length);
@@ -1373,7 +1781,7 @@ function renderTeamAdmin(users) {
 
   el.innerHTML = `<div style="overflow-x:auto"><table class="summary-table">
     <thead><tr>
-      <th>Name</th><th>Position</th><th>Email</th><th>Status</th><th>Role / Projects</th><th>Boss Of</th>
+      <th>Team Member</th><th>Status</th><th>Role / Projects</th><th>Admin Action</th>
     </tr></thead>
     <tbody>
       ${users.map(user => {
@@ -1384,12 +1792,25 @@ function renderTeamAdmin(users) {
         const projectCount = projectNames.length;
         const projectPreview = projectNames.slice(0, 2).join(', ');
         const status = String(user.status || 'active').toLowerCase();
-        const search = [user.name, user.position, user.email, user.uid, role, status, ...projectNames, ...bossOf.map(formatProjectLabel)].join(' ').toLowerCase();
+        const name = teamDisplayName(user);
+        const search = [name, user.position, user.email, user.uid, role, status, ...projectNames, ...bossOf.map(formatProjectLabel)].join(' ').toLowerCase();
         return `<tr data-team-user-row data-search="${escapeHtml(search)}">
-          <td>${escapeHtml(user.name || '-')}</td>
-          <td>${escapeHtml(user.position || '-')}</td>
-          <td>${escapeHtml(user.email || '-')}</td>
-          <td>${teamStatusBadge(user)}</td>
+          <td>
+            <div class="team-user-cell">
+              ${teamAvatar(user)}
+              <div class="team-user-copy">
+                <strong>${escapeHtml(name)}</strong>
+                <span>${escapeHtml(user.position || 'No position set')}</span>
+                <small>${escapeHtml(user.email || 'No email')} | ${escapeHtml(teamLastSeen(user))}</small>
+              </div>
+            </div>
+          </td>
+          <td>
+            <div class="team-status-stack">
+              ${teamStatusBadge(user)}
+              ${teamProfileBadge(user)}
+            </div>
+          </td>
           <td>
             <div style="display:flex;flex-direction:column;gap:10px;min-width:220px">
               <select onchange="updateUserRole('${user.uid}', this.value)" ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
@@ -1402,7 +1823,16 @@ function renderTeamAdmin(users) {
               </div>
             </div>
           </td>
-          <td>${escapeHtml(bossOf.map(formatProjectLabel).join(', ') || '-')}</td>
+          <td>
+            <div class="team-action-stack">
+              ${status === 'active'
+                ? `<button class="btn-ws-secondary team-status-btn" onclick="updateUserStatus('${user.uid}', 'suspended')">Suspend</button>`
+                : `<button class="btn-save-payroll team-status-btn" onclick="updateUserStatus('${user.uid}', 'active')">Reactivate</button>`}
+              ${status !== 'archived'
+                ? `<button class="btn-mc team-status-btn" onclick="updateUserStatus('${user.uid}', 'archived')">Archive</button>`
+                : '<span class="empty-hint">Historical profile</span>'}
+            </div>
+          </td>
         </tr>`;
       }).join('')}
     </tbody>
@@ -1426,6 +1856,10 @@ function detachReportsListeners() {
     _lifecycleRequestListener.off();
     _lifecycleRequestListener = null;
   }
+  if (_accessRequestListener) {
+    _accessRequestListener.off();
+    _accessRequestListener = null;
+  }
 }
 
 function reportListenerDiagnostics() {
@@ -1434,10 +1868,11 @@ function reportListenerDiagnostics() {
     teamAdmin: _teamAdminListener ? 1 : 0,
     audit: _auditListener ? 1 : 0,
     auditFallback: _auditFallbackListeners.length,
-    lifecycleRequests: _lifecycleRequestListener ? 1 : 0
+    lifecycleRequests: _lifecycleRequestListener ? 1 : 0,
+    accessRequests: _accessRequestListener ? 1 : 0
   };
 }
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 function renderExecutiveDashboard() {
   const user = window._currentUser;
   if (!user || !(typeof isBoss === 'function' ? isBoss(user.role) : user.role === 'boss')) {
@@ -1577,9 +2012,9 @@ function renderSystemReportsFromCache() {
     }
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 //  PROJECT HEALTH ALGORITHM
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 function calculateProjectHealth(p) {
   const summary = reportSummaryForProject(p);
   const totalSpent = reportAmount(summary.totalCost);
@@ -1636,9 +2071,9 @@ function calculateProjectHealth(p) {
   };
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 //  TEAM PERFORMANCE
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 function renderTeamPerformance() {
   const ref = firebase.database().ref('projects');
   _reportsListeners.push(ref);
@@ -1719,9 +2154,9 @@ function renderTeamPerformance() {
   });
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 //  BUDGET VARIANCE ANALYSIS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 function renderBudgetVariance() {
   const ref = firebase.database().ref('projects');
   _reportsListeners.push(ref);
@@ -1793,9 +2228,9 @@ function renderBudgetVariance() {
   });
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 //  WEEKLY REPORT GENERATOR
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// -----------------------------------------------------------------------------
 async function generateWeeklyReport() {
   const user = window._currentUser;
   if (!user) return;
@@ -1838,7 +2273,7 @@ async function generateWeeklyReport() {
   showToast('Weekly report generated!');
 }
 
-// â”€â”€ Expose â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -----------------------------------------------------------------------------
 window.initReports = initReports;
 window.renderProjectReports = renderProjectReports;
 window.renderSystemReportsFromCache = renderSystemReportsFromCache;
@@ -1856,6 +2291,10 @@ window.initLifecycleRequests = initLifecycleRequests;
 window.renderLifecycleRequests = renderLifecycleRequests;
 window.approveLifecycleRequest = approveLifecycleRequest;
 window.rejectLifecycleRequest = rejectLifecycleRequest;
+window.initAccessRequests = initAccessRequests;
+window.renderAccessRequests = renderAccessRequests;
+window.approveAccessRequest = approveAccessRequest;
+window.rejectAccessRequest = rejectAccessRequest;
 window.initSystemStatus = initSystemStatus;
 window.openProjectAssignModal = openProjectAssignModal;
 window.closeProjectAssignModal = closeProjectAssignModal;
@@ -1863,6 +2302,7 @@ window.saveProjectAssignments = saveProjectAssignments;
 window.refreshTeamAdmin = refreshTeamAdmin;
 window.filterTeamUsers = filterTeamUsers;
 window.updateUserRole = updateUserRole;
+window.updateUserStatus = updateUserStatus;
 window.detachReportsListeners = detachReportsListeners;
 window.reportListenerDiagnostics = reportListenerDiagnostics;
 window.rebuildProjectReportRollup = rebuildProjectReportRollup;

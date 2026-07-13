@@ -31,6 +31,7 @@ function countMatches(text, pattern) {
 function main() {
   const initReports = functionBody('initReports');
   const detach = functionBody('detachReportsListeners');
+  const project = functionBody('renderProjectReports');
   const executive = functionBody('renderExecutiveDashboard');
   const team = functionBody('renderTeamPerformance');
   const budget = functionBody('renderBudgetVariance');
@@ -43,18 +44,24 @@ function main() {
   assert(detach.includes('_auditListener.off()'), 'detachReportsListeners must turn off Audit listener');
   assert(detach.includes('detachAuditFallbackListeners()'), 'detachReportsListeners must turn off fallback audit listeners');
   assert(detach.includes('_lifecycleRequestListener.off()'), 'detachReportsListeners must turn off Lifecycle Requests listener');
+  assert(detach.includes('_accessRequestListener.off()'), 'detachReportsListeners must turn off Access Requests listener');
 
   for (const [name, body] of [
+    ['renderProjectReports', project],
     ['renderExecutiveDashboard', executive],
     ['renderTeamPerformance', team],
     ['renderBudgetVariance', budget]
   ]) {
     assert(countMatches(body, /_reportsListeners\.push\(ref\)/g) === 1, `${name} must add exactly one tracked report listener`);
-    assert(countMatches(body, /firebase\.database\(\)\.ref\('projects'\)/g) === 1, `${name} must open exactly one projects listener`);
+    assert(
+      countMatches(body, /firebase\.database\(\)\.ref\('projects'\)/g) === 1 ||
+      countMatches(body, /firebase\.database\(\)\.ref\(`projects\/\$\{projectId\}`\)/g) === 1,
+      `${name} must open exactly one projects listener`
+    );
     assert(countMatches(body, /\.on\('value'/g) === 1, `${name} must attach exactly one value listener`);
   }
 
-  assert(countMatches(report, /_reportsListeners\.push\(ref\)/g) === 3, 'Report module must have exactly three tracked report listeners');
+  assert(countMatches(report, /_reportsListeners\.push\(ref\)/g) === 4, 'Report module must have exactly four tracked report listeners');
   assert(report.includes('function reportListenerDiagnostics()'), 'Report listener diagnostics helper must exist');
   assert(report.includes('window.reportListenerDiagnostics = reportListenerDiagnostics'), 'Report listener diagnostics helper must be exported');
 
@@ -64,7 +71,7 @@ function main() {
       'initReports detaches before attaching',
       'all report listeners are tracked',
       'report/team/audit/lifecycle listeners are cleaned up',
-      'cross-project report views use one projects listener each',
+      'project and cross-project report views use one projects listener each',
       'listener diagnostics export exists'
     ]
   }, null, 2));

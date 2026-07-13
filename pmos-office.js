@@ -7,8 +7,7 @@
     { key: 'issues', label: 'Issues', collection: 'pmosIssues', title: r => r.issue || r.location || 'Issue' },
     { key: 'materials', label: 'Material Requests', collection: 'pmosMaterialRequests', title: r => r.item || 'Material request' },
     { key: 'tasks', label: 'Follow-ups', collection: 'pmosTasks', title: r => r.task || 'Follow-up task' },
-    { key: 'meetings', label: 'Meeting Notes', collection: 'pmosMeetingNotes', title: r => r.meetingTitle || 'Meeting note' },
-    { key: 'photos', label: 'Photo Logs', collection: 'pmosPhotoLogs', title: r => r.caption || r.location || 'Photo log' }
+    { key: 'photos', label: 'Photo Proofs', collection: 'pmosPhotoLogs', title: r => r.caption || r.location || 'Photo proof' }
   ];
 
   const state = {
@@ -47,8 +46,23 @@
     return MODULES.find(m => m.collection === collection) || MODULES[0];
   }
 
-  function projectName(pid) {
-    return state.projects.find(p => p.id === pid)?.name || pid || 'No project';
+  function projectInfo(pid) {
+    return state.projects.find(p => p.id === pid) || null;
+  }
+
+  function projectName(pid, fallback = '') {
+    return projectInfo(pid)?.name || fallback || 'Unknown project';
+  }
+
+  function projectIsOperational(pid) {
+    if (!pid) return true;
+    const project = projectInfo(pid);
+    if (!project) return false;
+    return !['completed', 'archived', 'done'].includes(String(project.status || 'active').toLowerCase());
+  }
+
+  function visibleProjects() {
+    return state.projects.filter(p => projectIsOperational(p.id));
   }
 
   async function loadOfficeProjects() {
@@ -111,7 +125,7 @@
       materials: 'Material Requests',
       tasks: 'Follow-ups',
       sitelogs: 'Site Logs',
-      photos: 'Photo Logs',
+      photos: 'Photo Proof Gallery',
       reports: 'Reports'
     }[view] || view;
   }
@@ -244,6 +258,7 @@
   function allRecords() {
     const seen = new Set();
     return state.records
+      .filter(r => projectIsOperational(r.projectId))
       .filter(r => {
         const key = `${r.collection || ''}|${r.projectId || ''}|${r.id || ''}`;
         if (seen.has(key)) return false;
@@ -284,7 +299,7 @@
   }
 
   function filtersMarkup(prefix = 'pmosInbox') {
-    const projectOptions = ['<option value="">All projects</option>'].concat(state.projects.map(p => `<option value="${h(p.id)}">${h(p.name || p.id)}</option>`)).join('');
+    const projectOptions = ['<option value="">All active projects</option>'].concat(visibleProjects().map(p => `<option value="${h(p.id)}">${h(p.name || 'Untitled project')}</option>`)).join('');
     const moduleOptions = ['<option value="">All modules</option>'].concat(MODULES.map(m => `<option value="${h(m.collection)}">${h(m.label)}</option>`)).join('');
     const statusOptions = ['<option value="">All statuses</option>'].concat([...new Set([...STATUS_WORKFLOW, ...MATERIAL_STATUSES])].map(s => `<option value="${h(s)}">${h(s)}</option>`)).join('');
     return `<div class="pmos-filters">
@@ -338,7 +353,7 @@
     return `<article class="pmos-office-row">
       <div>
         <div class="pmos-row-title">${h(title)}</div>
-        <div class="pmos-row-meta">${h(projectName(r.projectId))} - ${h(r.moduleLabel)}${date ? ` - ${h(date)}` : ''}${r.createdByName ? ` - ${h(r.createdByName)}` : ''}</div>
+        <div class="pmos-row-meta">${h(projectName(r.projectId, r.projectName))} - ${h(r.moduleLabel)}${date ? ` - ${h(date)}` : ''}${r.createdByName ? ` - ${h(r.createdByName)}` : ''}</div>
         ${recordDetail(r)}
       </div>
       <div class="pmos-row-actions">
@@ -356,6 +371,7 @@
     if (r.uploadStatus) bits.push(`Upload: ${r.uploadStatus}`);
     if (r.assignedTo) bits.push(`Assigned: ${r.assignedTo}`);
     if (r.person) bits.push(`Person: ${r.person}`);
+    if (r.company) bits.push(`Company: ${r.company}`);
     if (r.quantity || r.unit) bits.push(`Qty: ${r.quantity || 0} ${r.unit || ''}`);
     return bits.length ? `<div class="pmos-row-detail">${h(bits.join(' | '))}</div>` : '';
   }
@@ -365,14 +381,14 @@
     const groups = {};
     records.forEach(r => {
       const date = r.date || (r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : 'No date');
-      const key = `${projectName(r.projectId)}||${date}`;
+      const key = `${projectName(r.projectId, r.projectName)}||${date}||${r.moduleLabel || moduleByCollection(r.collection).label}`;
       groups[key] = groups[key] || [];
       groups[key].push(r);
     });
     const html = Object.entries(groups).map(([key, items]) => {
-      const [project, date] = key.split('||');
+      const [project, date, moduleLabel] = key.split('||');
       return `<section class="pmos-feed-group">
-        <h3>${h(project)} <span>${h(date)}</span></h3>
+        <h3>${h(project)} <span>${h(date)} - ${h(moduleLabel)}</span></h3>
         ${items.map(recordRow).join('')}
       </section>`;
     }).join('');
@@ -396,7 +412,7 @@
   function issueCard(r) {
     return `<article class="pmos-board-card">
       <strong>${h(r.issue || 'Issue')}</strong>
-      <span>${h(projectName(r.projectId))} - ${h(r.location || 'No location')}</span>
+      <span>${h(projectName(r.projectId, r.projectName))} - ${h(r.location || 'No location')}</span>
       <span>${h(r.assignedTo || 'Unassigned')} - ${h(r.priority || 'Normal')}</span>
       <select onchange="pmosUpdateStatus('${h(r.collection)}','${h(r.id)}',this.value,'${h(r.projectId || '')}','${h(r.sourceKey || '')}')">
         ${STATUS_WORKFLOW.map(s => `<option value="${h(s)}" ${String(r.status || 'New') === s ? 'selected' : ''}>${h(s)}</option>`).join('')}
@@ -416,7 +432,7 @@
     return `<article class="pmos-office-row">
       <div>
         <div class="pmos-row-title">${h(r.item || 'Material')}</div>
-        <div class="pmos-row-meta">${h(projectName(r.projectId))} - ${h(r.quantity || 0)} ${h(r.unit || '')} - Needed ${h(r.neededDate || '')}</div>
+        <div class="pmos-row-meta">${h(projectName(r.projectId, r.projectName))} - ${h(r.quantity || 0)} ${h(r.unit || '')} - Needed ${h(r.neededDate || '')}</div>
         <div class="pmos-row-detail">${h(r.purpose || '')}</div>
       </div>
       <div class="pmos-row-actions">
@@ -439,7 +455,7 @@
   function renderSiteLogs() {
     const selectedProject = $('pmosSiteProject')?.value || '';
     const selectedDate = $('pmosSiteDate')?.value || '';
-    const projectOptions = ['<option value="">All projects</option>'].concat(state.projects.map(p => `<option value="${h(p.id)}">${h(p.name || p.id)}</option>`)).join('');
+    const projectOptions = ['<option value="">All active projects</option>'].concat(visibleProjects().map(p => `<option value="${h(p.id)}">${h(p.name || 'Untitled project')}</option>`)).join('');
     const records = allRecords().filter(r => r.collection === 'pmosSiteLogs')
       .filter(r => (!selectedProject || r.projectId === selectedProject) && (!selectedDate || r.date === selectedDate));
     return `<div class="pmos-office-section">
@@ -452,7 +468,7 @@
   function siteLogCard(r) {
     return `<article class="pmos-office-row">
       <div>
-        <div class="pmos-row-title">${h(r.date || '')} - ${h(projectName(r.projectId))}</div>
+        <div class="pmos-row-title">${h(r.date || '')} - ${h(projectName(r.projectId, r.projectName))}</div>
         <div class="pmos-row-meta">Weather: ${h(r.weather || '-')} - Manpower: ${h(r.manpowerCount || 0)}</div>
         <div class="pmos-row-detail">${h(r.accomplishment || '')}${r.remarks ? ` | ${h(r.remarks)}` : ''}</div>
       </div>
@@ -462,7 +478,7 @@
   function renderPhotos() {
     const selectedProject = $('pmosPhotoProject')?.value || '';
     const selectedDate = $('pmosPhotoDate')?.value || '';
-    const projectOptions = ['<option value="">All projects</option>'].concat(state.projects.map(p => `<option value="${h(p.id)}">${h(p.name || p.id)}</option>`)).join('');
+    const projectOptions = ['<option value="">All active projects</option>'].concat(visibleProjects().map(p => `<option value="${h(p.id)}">${h(p.name || 'Untitled project')}</option>`)).join('');
     const photos = allRecords().filter(r => r.collection === 'pmosPhotoLogs')
       .filter(r => {
         const date = r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : '';
@@ -471,41 +487,43 @@
     const groups = {};
     photos.forEach(r => {
       const date = r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : 'No date';
-      const key = `${projectName(r.projectId)}||${date}`;
+      const category = r.category || 'Uncategorized';
+      const key = `${projectName(r.projectId, r.projectName)}||${date}||${category}`;
       groups[key] = groups[key] || [];
       groups[key].push(r);
     });
     const body = Object.entries(groups).map(([key, rows]) => {
-      const [project, date] = key.split('||');
+      const [project, date, category] = key.split('||');
       return `<section class="pmos-feed-group">
-        <h3>${h(project)} <span>${h(date)}</span></h3>
+        <h3>${h(project)} <span>${h(date)} - ${h(category)}</span></h3>
         <div class="pmos-photo-grid">${rows.map(r => photoLogCard(r)).join('')}</div>
       </section>`;
     }).join('');
     return `<div class="pmos-office-section">
-      <h3>Photo Logs</h3>
+      <h3>Photo Proof Gallery</h3>
       <div class="pmos-filters"><select id="pmosPhotoProject" onchange="renderPmosOffice()">${projectOptions}</select><input id="pmosPhotoDate" type="date" onchange="renderPmosOffice()"></div>
-      ${body || '<p class="empty-hint">No PMOS photo logs for this view.</p>'}
+      ${body || '<p class="empty-hint">No PMOS photo proofs for this view.</p>'}
     </div>`;
   }
 
   function photoLogCard(r, compact = false) {
     const date = r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : '';
     const thumb = r.thumbnailUrl || r.photoUrl || '';
-    const status = r.uploadStatus || 'Uploaded';
-    const original = r.photoUrl ? `<a class="pmos-photo-link" href="${h(r.photoUrl)}" target="_blank" rel="noopener">Open Photo</a>` : '';
-    const title = r.caption || r.location || 'Photo log';
+    const status = r.uploadStatus || 'Synced';
+    const original = r.photoUrl ? `<a class="pmos-photo-link" href="${h(r.photoUrl)}" target="_blank" rel="noopener">View Original</a>` : '';
+    const title = r.caption || r.location || 'Photo proof';
     if (compact) {
       return `<article class="pmos-office-row pmos-photo-row">
         ${thumb ? `<img class="pmos-photo-thumb" src="${h(thumb)}" alt="">` : '<div class="pmos-photo-thumb pmos-photo-missing">No image</div>'}
         <div>
           <div class="pmos-row-title">${h(title)}</div>
-          <div class="pmos-row-meta">${h(projectName(r.projectId))} - ${h(date)}${r.createdByName ? ` - ${h(r.createdByName)}` : ''}</div>
+          <div class="pmos-row-meta">${h(projectName(r.projectId, r.projectName))} - ${h(date)}${r.createdByName ? ` - ${h(r.createdByName)}` : ''}</div>
           <div class="pmos-row-detail">${h([r.category ? `Category: ${r.category}` : '', r.location ? `Location: ${r.location}` : '', `Upload: ${status}`].filter(Boolean).join(' | '))}</div>
         </div>
         <div class="pmos-row-actions">
           <span class="badge badge-purple">${h(r.status || 'New')}</span>
           <span class="badge badge-blue">${h(status)}</span>
+          ${STATUS_WORKFLOW.filter(s => ['Reviewed', 'In Progress', 'Done', 'Archived'].includes(s)).map(s => `<button type="button" onclick="pmosUpdateStatus('${h(r.collection)}','${h(r.id)}','${h(s)}','${h(r.projectId || '')}','${h(r.sourceKey || '')}')">${h(s)}</button>`).join('')}
           ${original}
         </div>
       </article>`;
@@ -515,7 +533,7 @@
       <div class="pmos-photo-card-body">
         <strong>${h(title)}</strong>
         <span>${h(r.location || 'No location')} - ${h(r.category || 'Photo')} - ${h(date)}</span>
-        <span>${h(projectName(r.projectId))}</span>
+        <span>${h(projectName(r.projectId, r.projectName))}</span>
         <div class="pmos-photo-card-actions">
           <b>${h(status)}</b>
           ${original}
@@ -529,7 +547,6 @@
       <h3>Report Generator</h3>
       <div class="pmos-report-grid">
         <button onclick="pmosPrintReport('daily')">Daily Site Report</button>
-        <button onclick="pmosPrintReport('weekly')">Weekly Project Update</button>
         <button onclick="pmosPrintReport('issues')">Open Issues Report</button>
         <button onclick="pmosPrintReport('materials')">Material Request Summary</button>
         <button onclick="pmosPrintReport('tasks')">Follow-up List</button>
@@ -573,16 +590,14 @@
   function pmosPrintReport(type) {
     const records = allRecords();
     const today = todayISO();
-    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const pick = {
       daily: records.filter(r => (r.date || new Date(r.createdAt || 0).toISOString().slice(0, 10)) === today),
-      weekly: records.filter(r => (r.createdAt || 0) >= oneWeekAgo),
       issues: records.filter(r => r.collection === 'pmosIssues' && !['Done', 'Archived'].includes(String(r.status || 'New'))),
       materials: records.filter(r => r.collection === 'pmosMaterialRequests'),
       tasks: records.filter(r => r.collection === 'pmosTasks' && !['Done', 'Archived'].includes(String(r.status || 'New')))
     }[type] || records;
     const title = viewReportTitle(type);
-    const rows = pick.map(r => `<tr><td>${h(projectName(r.projectId))}</td><td>${h(r.moduleLabel)}</td><td>${h(moduleByCollection(r.collection).title(r))}</td><td>${h(r.status || '')}</td><td>${h(r.dueDate || r.neededDate || r.date || '')}</td></tr>`).join('');
+    const rows = pick.map(r => `<tr><td>${h(projectName(r.projectId, r.projectName))}</td><td>${h(r.moduleLabel)}</td><td>${h(moduleByCollection(r.collection).title(r))}</td><td>${h(r.status || '')}</td><td>${h(r.dueDate || r.neededDate || r.date || '')}</td></tr>`).join('');
     const win = window.open('', '_blank');
     if (!win) {
       showToast('Popup blocked. Allow popups to print reports.', 'warn');
@@ -599,7 +614,6 @@
   function viewReportTitle(type) {
     return {
       daily: 'Daily Site Report',
-      weekly: 'Weekly Project Update',
       issues: 'Open Issues Report',
       materials: 'Material Request Summary',
       tasks: 'Follow-up List'

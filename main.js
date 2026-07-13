@@ -1,9 +1,9 @@
-//  ACPM — main.js (Enhanced v3.0)
+//  ACPM - main.js (Enhanced v3.0)
 //  Firebase v8 compat init, Hub, Workspace lifecycle,
 //  Offline cache, Data compression, Health scores
-// ════════════════════════════════════════════════════════════
+// ============================================================
 
-// ── Firebase Config (v8 compat) ─────────────────────────────
+// -- Firebase Config (v8 compat) -----------------------------
 const firebaseConfig = {
   apiKey: "AIzaSyA7xFArtly4jCZZEt34TTmfNfK94RoWMaA",
   authDomain: "acpm-project-system.firebaseapp.com",
@@ -18,7 +18,7 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 window._db = db;
 
-// ── Globals ───────────────────────────────────────────────
+// -- Globals -----------------------------------------------
 window._currentPid = null;
 let _hubListeners = [];
 let _projectNotesListener = null;
@@ -26,7 +26,7 @@ let _projectDashboardListener = null;
 window._isReadOnly = false;
 window._currentProjectStatus = null;
 window._adminWorkspaceMode = false;
-// Overwritten by auth.js once Firebase Auth resolves — this is only
+// Overwritten by auth.js once Firebase Auth resolves - this is only
 // a pre-auth fallback so other modules don't crash on null access.
 window._currentUser = { uid: 'anonymous', role: 'apm', name: 'System', projects: [], bossOf: [] };
 window._allowedProjects = null;
@@ -55,10 +55,10 @@ function getRouteProjectId() {
   return new URLSearchParams(window.location.search).get('projectId') || '';
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  Offline Cache Layer (IndexedDB)
 //  Stores project data locally for instant load + offline work
-// ════════════════════════════════════════════════════════════
+// ============================================================
 const DB_NAME = 'acpm_offline';
 const DB_VERSION = 1;
 let _idb = null;
@@ -105,9 +105,9 @@ async function queueOfflineWrite(path, data) {
   await store.put({ path, data, timestamp: Date.now() });
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  Effective-budget helper (unchanged)
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function effectiveBudget(p) {
   const laborBase = parseFloat(p.laborBudget) || 0;
   const matBase = parseFloat(p.materialBudget) || 0;
@@ -193,6 +193,8 @@ function dashboardRecentItems(projects = []) {
         projectId: p.id,
         projectName,
         label: String(event.type || event.module || 'Project event').replace(/_/g, ' '),
+        module: event.module || event.type || '',
+        actor: event.createdByName || event.byName || event.userName || event.requestedByName || '',
         createdAt: parseFloat(event.createdAt) || 0
       });
     });
@@ -202,9 +204,29 @@ function dashboardRecentItems(projects = []) {
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
-// ════════════════════════════════════════════════════════════
-//  HUB — Project Dashboard
-// ════════════════════════════════════════════════════════════
+function dashboardActivityLabel(item = {}) {
+  const raw = String(item.label || item.status || 'Project update').replace(/_/g, ' ').trim();
+  return raw.replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function dashboardActivityClass(item = {}) {
+  const text = `${item.module || ''} ${item.type || ''} ${item.label || ''}`.toLowerCase();
+  if (text.includes('billing') || text.includes('collection')) return 'activity-finance';
+  if (text.includes('material') || text.includes('po') || text.includes('delivery')) return 'activity-materials';
+  if (text.includes('labor') || text.includes('payroll') || text.includes('cash')) return 'activity-labor';
+  if (text.includes('complete') || text.includes('archive')) return 'activity-status';
+  return 'activity-project';
+}
+
+function dashboardActivityWhen(ts) {
+  if (!ts) return '-';
+  if (typeof timeAgo === 'function') return timeAgo(ts);
+  return new Date(ts).toLocaleDateString('en-PH');
+}
+
+// ============================================================
+//  HUB - Project Dashboard
+// ============================================================
 
 window.addEventListener('DOMContentLoaded', () => {
   initOfflineDB().then(() => {
@@ -265,8 +287,12 @@ function initPWA() {
 
     navigator.serviceWorker.register('sw.js')
       .then(registration => {
+        if (!registration || typeof registration.update !== 'function') {
+          console.warn('Service Worker registration unavailable');
+          return;
+        }
         registration.update().catch(console.warn);
-        registration.addEventListener('updatefound', () => {
+        registration.addEventListener?.('updatefound', () => {
           const worker = registration.installing;
           if (!worker) return;
           worker.addEventListener('statechange', () => {
@@ -334,9 +360,21 @@ function canManageProjectLifecycle(pid) {
 }
 
 function assignedProjectIds(user = window._currentUser || {}) {
+  const normalize = typeof normalizeProjectList === 'function'
+    ? normalizeProjectList
+    : value => {
+      if (Array.isArray(value)) return value.filter(Boolean).map(String);
+      if (value && typeof value === 'object') {
+        return Object.entries(value)
+          .filter(([, enabled]) => enabled !== false && enabled !== null)
+          .map(([key]) => String(key));
+      }
+      return [];
+    };
   return Array.from(new Set([
-    ...(Array.isArray(user.projects) ? user.projects : []),
-    ...(Array.isArray(user.bossOf) ? user.bossOf : [])
+    ...normalize(user.projects),
+    ...normalize(user.assignedProjects),
+    ...normalize(user.bossOf)
   ].filter(Boolean)));
 }
 
@@ -358,6 +396,37 @@ function projectMatchesHubTab(project, tab, isAll) {
   }
   if (isAll) return true;
   return (project.status || 'active') === tab;
+}
+
+function refreshWorkspaceTabVisibility() {
+  const role = typeof normalizeRole === 'function'
+    ? normalizeRole(window._currentUser?.role || 'apm')
+    : (window._currentUser?.role || 'apm');
+  const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false;
+  document.querySelectorAll('#workspaceView > .tab-scroll > .tab-group > .tab-btn').forEach(el => {
+    if (el.id === 'tab_admin') {
+      el.classList.add('hidden');
+      el.style.display = 'none';
+      return;
+    }
+    const roleAllowed = typeof elementAllowsRole === 'function' ? elementAllowsRole(el, role) : true;
+    const featureAllowed = el.dataset.featureVisible === 'extras' ? extrasEnabled : true;
+    el.style.display = roleAllowed && featureAllowed ? '' : 'none';
+  });
+}
+
+function setAdminWorkspaceMode(enabled) {
+  window._adminWorkspaceMode = !!enabled;
+  $('workspaceView')?.classList.toggle('workspace-admin-mode', !!enabled);
+  if (enabled) {
+    document.querySelectorAll('#workspaceView > .tab-scroll > .tab-group > .tab-btn').forEach(el => {
+      const keep = el.id === 'tab_admin' || el.id === 'tab_reports';
+      el.style.display = keep ? '' : 'none';
+      if (el.id === 'tab_admin') el.classList.remove('hidden');
+    });
+  } else {
+    refreshWorkspaceTabVisibility();
+  }
 }
 
 function sortProjectsNewest(projects) {
@@ -419,13 +488,25 @@ function watchAssignedProjects(user, gridId, tab, isAll) {
   }
 
   const projectMap = new Map();
-  const render = () => renderProjectHubList(Array.from(projectMap.values()), gridId, tab, isAll);
+  const deniedIds = new Set();
+  let warningShown = false;
+  const render = () => {
+    renderProjectHubList(Array.from(projectMap.values()), gridId, tab, isAll);
+    if (deniedIds.size && grid && !projectMap.size) {
+      grid.innerHTML = '<p class="hub-empty">No accessible assigned projects. Ask an admin to review Team Admin project assignments.</p>';
+    }
+  };
 
   ids.forEach(pid => {
     const onError = error => {
-      console.error('Firebase project load error:', error);
-      if (grid) grid.innerHTML = '<p class="hub-empty">Error loading assigned projects. Check console.</p>';
-      showToast('Error loading assigned projects: ' + error.message, 'error');
+      console.warn('Assigned project skipped:', pid, error?.code || error?.message || error);
+      deniedIds.add(pid);
+      projectMap.delete(pid);
+      render();
+      if (!warningShown) {
+        warningShown = true;
+        showToast('Some assigned projects could not be opened. Ask an admin to review project access.', 'warn');
+      }
     };
     const projectRef = db.ref(`projects/${pid}`);
     projectRef.on('value', snap => {
@@ -515,7 +596,7 @@ function budgetMetricRow(label, budget, spent) {
       </div>
       <div class="budget-metric-foot">
         <span class="budget-health ${health.className}">${health.text}</span>
-        <span>${used}% used · ${peso(remaining)} remaining</span>
+        <span>${used}% used | ${peso(remaining)} remaining</span>
       </div>
     </div>`;
 }
@@ -733,24 +814,27 @@ function renderRecentActivity(projects, targetId = 'recentActivityView') {
     .map(p => {
       if (p.label) {
         const time = p.createdAt || null;
-        const date = time ? new Date(time).toLocaleDateString('en-PH') : '-';
+        const date = dashboardActivityWhen(time);
+        const actor = p.actor ? ` by ${p.actor}` : '';
         return `
-        <div class="activity-row">
-          <div>
+        <div class="activity-row ${dashboardActivityClass(p)}">
+          <span class="activity-dot"></span>
+          <div class="activity-copy">
             <strong>${escapeHtml(p.projectName || 'Untitled')}</strong>
-            <span>${escapeHtml(p.label)} - ${escapeHtml(date)}</span>
+            <span>${escapeHtml(dashboardActivityLabel(p))}${escapeHtml(actor)} | ${escapeHtml(date)}</span>
           </div>
           <button class="btn-equip-action" onclick="openProjectFromHub('${escapeHtml(p.projectId)}')">Open</button>
         </div>`;
       }
       const status = p.status === 'completed' ? 'Completed' : p.status === 'archived' ? 'Archived' : 'Active';
       const time = p.completedAt || p.archivedAt || p.updatedAt || p.createdAt || null;
-      const date = time ? new Date(time).toLocaleDateString('en-PH') : (p.createdDate || '-');
+      const date = time ? dashboardActivityWhen(time) : (p.createdDate || '-');
       return `
-        <div class="activity-row">
-          <div>
+        <div class="activity-row activity-project">
+          <span class="activity-dot"></span>
+          <div class="activity-copy">
             <strong>${escapeHtml(p.name || 'Untitled')}</strong>
-            <span>${status} - ${escapeHtml(date)}</span>
+            <span>${status} | ${escapeHtml(date)}</span>
           </div>
           <button class="btn-equip-action" onclick="openProjectFromHub('${escapeHtml(p.id)}')">Open</button>
         </div>`;
@@ -811,8 +895,16 @@ async function createProject(evt) {
     if (user && user.role === "apm") {
       const currentProjects = Array.from(new Set(typeof normalizeProjectList === 'function' ? normalizeProjectList(user.projects) : (Array.isArray(user.projects) ? user.projects : []))).sort((a, b) => String(a).localeCompare(String(b)));
       const uniqueProjects = Array.from(new Set([...currentProjects, newPid])).sort((a, b) => String(a).localeCompare(String(b)));
-      await db.ref(`users/${user.uid}/projects`).set(uniqueProjects);
+      const accessMap = uniqueProjects.reduce((map, pid) => {
+        map[pid] = true;
+        return map;
+      }, {});
+      await db.ref(`users/${user.uid}`).update({
+        assignedProjects: uniqueProjects,
+        projects: accessMap
+      });
       user.projects = uniqueProjects;
+      user.assignedProjects = uniqueProjects;
       window._currentUser = user;
     }
 
@@ -1111,7 +1203,7 @@ function renderProjectDashboard(projectId, project = {}) {
   const workers = objectRows(project.workers).filter(w => w.active !== false && w.status !== 'inactive' && w.status !== 'archived');
   const foremen = Array.from(new Set(trades.map(t => t.foremanName).filter(Boolean)));
   const siteLogs = objectRows(project.siteLogs);
-  const pmosLogs = ['pmosUpdates', 'pmosSiteLogs', 'pmosIssues', 'pmosMaterialRequests', 'pmosTasks', 'pmosMeetingNotes', 'pmosPhotoLogs']
+  const pmosLogs = ['pmosUpdates', 'pmosSiteLogs', 'pmosIssues', 'pmosMaterialRequests', 'pmosTasks', 'pmosPhotoLogs']
     .reduce((sum, key) => sum + objectRows(project[key]).length, 0);
 
   const laborBudget = projectAmount(project.laborBudget);
@@ -1198,9 +1290,9 @@ function openProjectFromHub(pid) {
   enterProject(pid);
 }
 
-// ════════════════════════════════════════════════════════════
-//  WORKSPACE — Enter / Exit
-// ════════════════════════════════════════════════════════════
+// ============================================================
+//  WORKSPACE - Enter / Exit
+// ============================================================
 
 async function enterProject(pid) {
   if (!canAccessProject(pid)) {
@@ -1216,7 +1308,7 @@ async function enterProject(pid) {
   setText('wsName', p.name || 'Untitled');
   setText('wsContextLabel', 'Active Site');
   ensureProjectDashboardUi();
-  $('workspaceView')?.classList.remove('workspace-admin-mode');
+  setAdminWorkspaceMode(false);
   $('hubView').classList.add('hidden');
   $('systemReportsView')?.classList.add('hidden');
   $('pmosOfficeView')?.classList.add('hidden');
@@ -1240,9 +1332,28 @@ async function enterProject(pid) {
   initNotifications();
   loadProjectNotes(pid);
   switchTab('dashboard');
+  handleNotificationRouteFocus();
 
   auditLog('enter', 'project', pid, { name: p.name });
   return true;
+}
+
+function handleNotificationRouteFocus() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('fromNotif') !== '1') return;
+  const tab = params.get('tab') || 'dashboard';
+  const allowedTabs = ['dashboard', 'labor', 'materials', 'billing', 'changeorders', 'sitelog', 'reports'];
+  const targetTab = allowedTabs.includes(tab) ? tab : 'dashboard';
+  setTimeout(() => {
+    switchTab(targetTab);
+    const panel = $(`${targetTab}Panel`) || $('workspaceView');
+    if (!panel) return;
+    panel.classList.remove('notif-route-highlight');
+    void panel.offsetWidth;
+    panel.classList.add('notif-route-highlight');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => panel.classList.remove('notif-route-highlight'), 2600);
+  }, 250);
 }
 
 function exitHub() {
@@ -1265,12 +1376,11 @@ function exitHub() {
   if (typeof detachNotifications === 'function') detachNotifications();
 
   $('workspaceView').classList.add('hidden');
-  $('workspaceView')?.classList.remove('workspace-admin-mode');
+  setAdminWorkspaceMode(false);
   $('systemReportsView')?.classList.add('hidden');
   $('pmosOfficeView')?.classList.add('hidden');
   $('hubView').classList.remove('hidden');
   window._currentPid = null;
-  window._adminWorkspaceMode = false;
   window._currentProjectStatus = null;
   window._isReadOnly = false;
   setText('wsContextLabel', 'Active Site');
@@ -1335,9 +1445,8 @@ function openTeamAdmin() {
   $('systemReportsView')?.classList.add('hidden');
   $('pmosOfficeView')?.classList.add('hidden');
   $('workspaceView')?.classList.remove('hidden');
-  $('workspaceView')?.classList.add('workspace-admin-mode');
+  setAdminWorkspaceMode(true);
   window._currentPid = null;
-  window._adminWorkspaceMode = true;
   setText('wsContextLabel', 'Admin Area');
   setText('wsName', 'Team Admin');
   document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
@@ -1346,7 +1455,7 @@ function openTeamAdmin() {
   $('tab_admin')?.classList.remove('hidden');
   $('tab_admin')?.classList.add('tab-active');
   if (typeof initTeamAdmin === 'function') initTeamAdmin();
-  if (typeof switchAdminSection === 'function') switchAdminSection('summary');
+  if (typeof switchAdminSection === 'function') switchAdminSection('team');
 }
 
 function switchAdminSection(section) {
@@ -1431,9 +1540,9 @@ async function exportDatabaseBackup() {
   showToast(failed.length ? 'Backup downloaded with some unreadable paths noted.' : 'Database backup downloaded.');
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  PROJECT NOTES
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function loadProjectNotes(pid) {
   detachProjectNotesListener();
   _projectNotesListener = db.ref(`projects/${pid}/notes`);
@@ -1473,11 +1582,11 @@ window.addEventListener('keydown', e => {
   }
 });
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  GLOBAL ERROR HANDLER
 //  Catches unhandled errors and shows a user-friendly message.
 //  Prevents the app from silently breaking.
-// ════════════════════════════════════════════════════════════
+// ============================================================
 window.addEventListener('error', e => {
   console.error('Global error:', e.error);
   showToast('Something went wrong. Please refresh the page if problems persist.', 'error');
@@ -1488,9 +1597,9 @@ window.addEventListener('unhandledrejection', e => {
   showToast('A background task failed. Please try again.', 'error');
 });
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  PROGRESS RING (SVG Donut)
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function buildProgressRing(pctUsed, isCritical, isWarning) {
   const circumference = 2 * Math.PI * 18;
   const offset = circumference - (Math.min(pctUsed, 100) / 100) * circumference;
@@ -1507,9 +1616,9 @@ function buildProgressRing(pctUsed, isCritical, isWarning) {
   </svg>`;
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  EDIT PROJECT
-// ════════════════════════════════════════════════════════════
+// ============================================================
 window._editProjectId = null;
 
 function openEditProjectModal(pid) {
@@ -1565,9 +1674,9 @@ async function editProject() {
   showToast(`Project "${name}" updated!`);
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  DASHBOARD ALERTS BAR
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function renderDashboardAlerts(projects) {
   const el = $('dashboardAlerts');
   if (!el) return;
@@ -1608,9 +1717,9 @@ function renderDashboardAlerts(projects) {
   }
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  COMPLETED PROJECTS SUMMARY
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function renderCompletedSummary(projects) {
   const count = projects.length;
   setText('dsCompCount', count);
@@ -1632,9 +1741,9 @@ function renderCompletedSummary(projects) {
   }
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  HUB CSV EXPORT
-// ════════════════════════════════════════════════════════════
+// ============================================================
 async function exportHubCSV() {
   const btn = event?.currentTarget;
   await withBusy(btn, async () => {
@@ -1662,9 +1771,9 @@ async function exportHubCSV() {
   });
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  MANUAL REFRESH
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function refreshHub() {
   const btn = $('refreshBtn');
   if (btn) {
@@ -1675,7 +1784,7 @@ function refreshHub() {
   showToast('Dashboard refreshed', 'success');
 }
 
-// ── Expose ──────────────────────────────────────────────────
+// -- Expose --------------------------------------------------
 window.createProject = createProject;
 window.markComplete = markComplete;
 window.reopenProject = reopenProject;
