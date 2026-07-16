@@ -1,0 +1,73 @@
+/* ==========================================================================
+   PMOS Proposed Storage Rules
+   These rules extend the ACPM production storage.rules with PMOS-specific
+   upload paths and security restrictions.
+   
+   WARNING: These are PROPOSED rules. Do not deploy without owner review.
+   
+   Changes from production:
+   1. Added pmos/ upload paths for all modules
+   2. Added MIME type validation (images only)
+   3. Added file size validation (max 20MB)
+   4. Added project-scoped path enforcement
+   5. Added user authentication requirement
+   6. Added project membership requirement
+   ========================================================================== */
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // PMOS photo uploads: project-scoped paths
+    match /pmos/{projectId}/{module}/{year}/{month}/{fileName} {
+      // Must be authenticated
+      allow read: if request.auth != null;
+      
+      // Must be authenticated AND assigned to the project
+      allow write: if request.auth != null
+        && request.resource.size < 20 * 1024 * 1024  // Max 20MB
+        && request.resource.contentType.matches('image/.*')  // Images only
+        && (
+          // Boss/owner/admin can write to any project
+          firebase.database()
+            .ref('/users/' + request.auth.uid + '/role')
+            .get().data.val().matches(/^(boss|owner|admin)$/)
+          ||
+          // Regular users must be assigned to the project
+          firebase.database()
+            .ref('/users/' + request.auth.uid + '/projects/' + projectId)
+            .get().data.exists()
+          ||
+          firebase.database()
+            .ref('/users/' + request.auth.uid + '/bossOf/' + projectId)
+            .get().data.exists()
+        );
+      
+      allow delete: if request.auth != null
+        && (
+          firebase.database()
+            .ref('/users/' + request.auth.uid + '/role')
+            .get().data.val().matches(/^(boss|owner|admin)$/)
+        );
+    }
+
+    // PMOS face attendance: restricted paths
+    match /pmos-face/{projectId}/{date}/{fileName} {
+      allow read, write: if request.auth != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*')
+        && (
+          firebase.database()
+            .ref('/users/' + request.auth.uid + '/role')
+            .get().data.val().matches(/^(boss|owner|admin)$/)
+          ||
+          firebase.database()
+            .ref('/users/' + request.auth.uid + '/projects/' + projectId)
+            .get().data.exists()
+          ||
+          firebase.database()
+            .ref('/users/' + request.auth.uid + '/bossOf/' + projectId)
+            .get().data.exists()
+        );
+    }
+  }
+}

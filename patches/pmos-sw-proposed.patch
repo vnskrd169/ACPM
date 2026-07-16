@@ -1,0 +1,51 @@
+From: PMOS Task
+Date: 2026-07-17
+Subject: [PROPOSED] PMOS service-worker changes for ACPM sw.js
+
+This patch is NOT applied. It documents the changes that would be needed
+if PMOS and ACPM shared a single service worker. Instead of applying this
+patch, PMOS uses a standalone worker at pmos-sw.js.
+
+--- a/sw.js
++++ b/sw.js
+@@ -1,7 +1,7 @@
+ //  ACPM Service Worker
+ //  Self-clearing: purges ALL old caches on activate and forces
+ //  the new version to take over immediately (clients.claim).
+-const CACHE_NAME = 'acpm-v124';
++const CACHE_NAME = 'acpm-pmos-v1';
++const PMOS_CACHE = 'pmos-cache-v1';
+
+ const ASSETS = [
+   ...
++  './acpm-shell.js',
++  './pmos-manifest.json',
++  './assets/brand/acpm-brand.css',
++  './assets/brand/acpm/favicon.svg',
++  './assets/brand/acpm/logo-mark.svg',
++  './assets/brand/acpm/logo-horizontal.svg'
+ ];
+
++self.addEventListener('message', e => {
++  if (e.data && e.data.action === 'skipWaiting') {
++    self.skipWaiting();
++  }
++});
+
+ self.addEventListener('activate', e => {
+   e.waitUntil(
+     caches.keys().then(keys =>
+       Promise.all(
+         keys.map(k => {
+-          if (k !== CACHE_NAME) {
++          if (k !== CACHE_NAME && k !== PMOS_CACHE) {
+             return caches.delete(k);
+           }
+           return null;
+@@ -XX,XX +XX,XX @@
+       const isPmosAsset = url.pathname.includes('pmos') ||
++        url.pathname.includes('acpm-shell') ||
++        url.pathname.includes('pmos-manifest') ||
++        url.pathname.includes('face-attendance') ||
++        url.pathname.includes('assets/brand');
+       caches.open(isPmosAsset ? PMOS_CACHE : CACHE_NAME).then(c => c.put(e.request, clone));

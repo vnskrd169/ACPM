@@ -1,0 +1,159 @@
+/* ==========================================================================
+   ACPM Brand Design Tokens
+   Centralized design variables for ACPM, PMOS, and future ACPM modules.
+   
+   Usage: @import url('assets/brand/acpm-brand.css');
+   Or:    <link rel="stylesheet" href="assets/brand/acpm-brand.css">
+   
+   These tokens are additive. They do not replace existing styles but 
+   provide a shared foundation for new and upgraded components.
+   ========================================================================== */
+
+:root {
+  /* ---- Primary Brand ---- */
+  --acpm-brand-primary: #7c3aed;
+  --acpm-brand-primary-strong: #6d28d9;
+  --acpm-brand-primary-muted: #a78bfa;
+  --acpm-brand-primary-subtle: rgba(124, 58, 237, 0.08);
+  --acpm-brand-primary-glow: rgba(124, 58, 237, 0.15);
+
+  /* ---- PMOS Brand ---- */
+  --acpm-pmos-primary: #0f766e;
+  --acpm-pmos-strong: #115e59;
+  --acpm-pmos-muted: #14b8a6;
+  --acpm-pmos-subtle: #ccfbf1;
+  --acpm-pmos-glow: rgba(15, 118, 110, 0.15);
+
+  /* ---- Accent Colors ---- */
+  --acpm-accent-blue: #3b82f6;
+  --acpm-accent-cyan: #06b6d4;
+  --acpm-accent-indigo: #6366f1;
+  --acpm-accent-amber: #f59e0b;
+  --acpm-accent-rose: #f43f5e;
+
+  /* ---- Semantic Colors ---- */
+  --acpm-success: #10b981;
+  --acpm-success-subtle: rgba(16, 185, 129, 0.08);
+  --acpm-success-strong: #059669;
+  --acpm-warning: #f59e0b;
+  --acpm-warning-subtle: rgba(245, 158, 11, 0.08);
+  --acpm-warning-strong: #d97706;
+  --acpm-danger: #ef4444;
+  --acpm-danger-subtle: rgba(239, 68, 68, 0.08);
+  --acpm-danger-strong: #dc2626;
+  --acpm-info: #3b82f6;
+  --acpm-info-subtle: rgba(59, 130, 246, 0.08);
+
+  /* ---- Neutral / Surface ---- */
+  --acpm-surface: #111318;
+  --acpm-surface-elevated: #1a1d24;
+  --acpm-surface-raised: #22262e;
+  --acpm-surface-overlay: #272b34;
+  --acpm-surface-card: #1e2128;
+  --acpm-surface-input: #1a1d24;
+  --acpm-surface-hover: #22262e;
+  --acpm-border: #2e3340;
+  --acpm-border-light: #383d4a;
+  --acpm-border-focus: #7c3aed;
+
+  /* ---- Text Colors ---- */
+  --acpm-text: #e2e8f0;
+  --acpm-text-strong: #f1f5f9;
+  --acpm-text-muted: #94a3b8;
+  --acpm-text-dim: #64748b;
+  --acpm-text-inverse: #0f172a;
+
+  /* ---- Shadows ---- */
+  --acpm-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --acpm-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --acpm-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --acpm-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4), 0 4px 6px rgba(0, 0, 0, 0.2);
+  --acpm-shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5), 0 10px 10px rgba(0, 0, 0, 0.2);
+
+  /* ---- Border Radius ---- */
+  --acpm-radius-xs: 4px;
+  --acpm-radius-sm: 6px;
+  --acpm-radius-md: 8px;
+  --acpm-radius-lg: 12px;
+  --acpm-radius-xl: 16px;
+  --acpm-radius-full: 9999px;
+
+  /* ---- Spacing Scale ---- */
+  --acpm-space-1: 4px;
+  --acpm-space-2: 8px;
+  --acpm-space-3: 12px;
+  --acpm-space-4: 16px;
+  --acpm-space-5: 20px;
+  --acpm-space-6: 24px;
+  --acpm-space-8: 32px;
+  --acpm-space-10: 40px;
+  --acpm-space-12: 48px;
+  --acpm-space-16: 64px;
+
+  /* ---- Typography ---- */
+  --acpm-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --acpm-font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  --acpm-text-xs: 11px;
+  --acpm-text-sm: 13px;
+  --acpm-text-base: 14px;
+  --acpm-text-lg: 16px;
+  --acpm-text-xl: 20px;
+  --acpm-text-2xl: 24px;
+  --acpm-text-3xl: 30px;
+
+  /* ---- Animation ---- */
+  --acpm-duration-fast: 150ms;
+  --acpm-duration-normal: 250ms;
+  --acpm-duration-slow: 400ms;
+  --acpm-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --acpm-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --acpm-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ---- Safe Areas ---- */
+  --acpm-safe-top: env(safe-area-inset-top, 0px);
+  --acpm-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --acpm-safe-left: env(safe-area-inset-left, 0px);
+  --acpm-safe-right: env(safe-area-inset-right, 0px);
+
+  /* ---- PMOS Shell Specific ---- */
+  --acpm-nav-height: 60px;
+  --acpm-bottom-nav-height: 56px;
+  --acpm-header-height: 52px;
+  --acpm-touch-target: 44px;
+}
+
+/* ---- Utility Classes ---- */
+.acpm-text-primary { color: var(--acpm-brand-primary); }
+.acpm-text-pmos { color: var(--acpm-pmos-primary); }
+.acpm-text-muted { color: var(--acpm-text-muted); }
+.acpm-text-success { color: var(--acpm-success); }
+.acpm-text-warning { color: var(--acpm-warning); }
+.acpm-text-danger { color: var(--acpm-danger); }
+
+.acpm-bg-surface { background: var(--acpm-surface); }
+.acpm-bg-elevated { background: var(--acpm-surface-elevated); }
+.acpm-bg-card { background: var(--acpm-surface-card); }
+
+.acpm-border { border: 1px solid var(--acpm-border); }
+.acpm-border-light { border: 1px solid var(--acpm-border-light); }
+
+.acpm-shadow-sm { box-shadow: var(--acpm-shadow-sm); }
+.acpm-shadow-md { box-shadow: var(--acpm-shadow-md); }
+
+.acpm-rounded { border-radius: var(--acpm-radius-md); }
+.acpm-rounded-lg { border-radius: var(--acpm-radius-lg); }
+
+.acpm-flex-center { display: flex; align-items: center; justify-content: center; }
+.acpm-gap-2 { gap: var(--acpm-space-2); }
+.acpm-gap-3 { gap: var(--acpm-space-3); }
+.acpm-gap-4 { gap: var(--acpm-space-4); }
+.acpm-p-4 { padding: var(--acpm-space-4); }
+
+/* ---- Reduced Motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --acpm-duration-fast: 0ms;
+    --acpm-duration-normal: 0ms;
+    --acpm-duration-slow: 0ms;
+  }
+}

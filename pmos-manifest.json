@@ -1,0 +1,56 @@
+{
+  "name": "ACPM Project Mobile Operations System",
+  "short_name": "ACPM PMOS",
+  "description": "Field data capture for construction project management. Part of the ACPM system.",
+  "start_url": "./pmos.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "portrait",
+  "background_color": "#111318",
+  "theme_color": "#0f766e",
+  "categories": ["business", "productivity", "construction"],
+  "lang": "en-PH",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='40' fill='%230f766e'/%3E%3Crect x='16' y='16' width='224' height='224' rx='32' fill='%23134e4a'/%3E%3Crect x='52' y='64' width='12' height='128' rx='3' fill='%2314b8a6'/%3E%3Crect x='52' y='64' width='56' height='12' rx='3' fill='%2314b8a6'/%3E%3Crect x='92' y='64' width='12' height='60' rx='3' fill='%2314b8a6'/%3E%3Crect x='52' y='112' width='56' height='12' rx='3' fill='%2314b8a6'/%3E%3Crect x='112' y='64' width='12' height='128' rx='3' fill='%232dd4bf'/%3E%3Crect x='124' y='88' width='12' height='104' rx='3' fill='%232dd4bf'/%3E%3Crect x='136' y='64' width='12' height='128' rx='3' fill='%232dd4bf'/%3E%3Ccircle cx='180' cy='128' r='34' stroke='%2306b6d4' stroke-width='10' fill='none'/%3E%3C/svg%3E",
+      "sizes": "256x256",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' rx='40' fill='%230f766e'/%3E%3Crect x='32' y='32' width='192' height='192' rx='28' fill='%23134e4a'/%3E%3Crect x='56' y='64' width='10' height='128' rx='2' fill='%2314b8a6'/%3E%3Crect x='56' y='64' width='48' height='10' rx='2' fill='%2314b8a6'/%3E%3Crect x='88' y='64' width='10' height='56' rx='2' fill='%2314b8a6'/%3E%3Crect x='56' y='110' width='48' height='10' rx='2' fill='%2314b8a6'/%3E%3Crect x='112' y='64' width='10' height='128' rx='2' fill='%232dd4bf'/%3E%3Crect x='124' y='84' width='10' height='108' rx='2' fill='%232dd4bf'/%3E%3Crect x='136' y='64' width='10' height='128' rx='2' fill='%232dd4bf'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='80' fill='%230f766e'/%3E%3Crect x='40' y='40' width='432' height='432' rx='60' fill='%23134e4a'/%3E%3Crect x='100' y='120' width='22' height='260' rx='6' fill='%2314b8a6'/%3E%3Crect x='100' y='120' width='100' height='22' rx='6' fill='%2314b8a6'/%3E%3Crect x='178' y='120' width='22' height='110' rx='6' fill='%2314b8a6'/%3E%3Crect x='100' y='215' width='100' height='22' rx='6' fill='%2314b8a6'/%3E%3Crect x='222' y='120' width='22' height='260' rx='6' fill='%232dd4bf'/%3E%3Crect x='248' y='160' width='22' height='220' rx='6' fill='%232dd4bf'/%3E%3Crect x='274' y='120' width='22' height='260' rx='6' fill='%232dd4bf'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "New Quick Update",
+      "short_name": "New Update",
+      "description": "Create a new quick field update",
+      "url": "./pmos.html?action=quick-update"
+    },
+    {
+      "name": "Report Issue",
+      "short_name": "New Issue",
+      "description": "Report a site issue or punchlist item",
+      "url": "./pmos.html?action=new-issue"
+    },
+    {
+      "name": "Open ACPM Office",
+      "short_name": "ACPM Office",
+      "description": "Open the ACPM Office Hub",
+      "url": "./dashboard.html"
+    }
+  ]
+}

@@ -1,4 +1,9 @@
 (function () {
+  /* ---- Feature Gate ---- */
+  if (!window.PMOS_CONFIG || !window.PMOS_CONFIG.faceAttendanceEnabled) {
+    return;
+  }
+
   const FACE_SOURCE = 'Line17 PMOS Face Attendance Assist';
   const FACE_MODEL = 'face-api-ssd-mobilenetv1-face-recognition-v1';
   const FACE_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js';

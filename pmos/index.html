@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0f766e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ACPM PMOS">
+<meta name="application-name" content="ACPM PMOS">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="format-detection" content="telephone=no">
+<meta name="description" content="ACPM Project Mobile Operations System - Field data capture">
+<link rel="manifest" href="./pmos-manifest.json">
+<link rel="icon" type="image/svg+xml" href="../assets/brand/acpm/favicon.svg">
+<link rel="apple-touch-icon" href="../assets/brand/acpm/logo-mark.svg">
+<script>window.ACPM_PAGE = 'pmos';</script>
+<title>ACPM PMOS — Field Operations</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+
+<!-- ACPM Core (shared from root) -->
+<script src="../utils.js?v=84"></script>
+<script src="../auth.js?v=95"></script>
+<script src="../main.js?v=101"></script>
+
+<!-- PMOS App Shell -->
+<link rel="stylesheet" href="../assets/brand/acpm-brand.css">
+<link rel="stylesheet" href="../assets/brand/pmos-app.css">
+
+<!-- PMOS App -->
+<script src="../acpm-shell.js"></script>
+<script src="../pmos.js"></script>
+<script src="../face-attendance.js"></script>
+</head>
+<body class="auth-checking auth-locked pmos-body">
+  <!-- Loading Screen -->
+  <div id="appLoading" class="app-loading" role="status" aria-live="polite">
+    <div class="app-loading-card pmos-loading-animated">
+      <div class="pmos-loading-logo">
+        <svg width="64" height="64" viewBox="0 0 256 256" fill="none">
+          <rect x="8" y="8" width="240" height="240" rx="40" fill="#0f766e"/>
+          <rect x="16" y="16" width="224" height="224" rx="32" fill="#134e4a"/>
+          <rect x="52" y="64" width="12" height="128" rx="3" fill="#14b8a6"/>
+          <rect x="52" y="64" width="56" height="12" rx="3" fill="#14b8a6"/>
+          <rect x="92" y="64" width="12" height="60" rx="3" fill="#14b8a6"/>
+          <rect x="52" y="112" width="56" height="12" rx="3" fill="#14b8a6"/>
+          <rect x="112" y="64" width="12" height="128" rx="3" fill="#2dd4bf"/>
+          <rect x="124" y="88" width="12" height="104" rx="3" fill="#2dd4bf"/>
+          <rect x="136" y="64" width="12" height="128" rx="3" fill="#2dd4bf"/>
+          <circle cx="180" cy="128" r="34" stroke="#06b6d4" stroke-width="10" fill="none"/>
+        </svg>
+      </div>
+      <div>
+        <div class="app-loading-title">ACPM PMOS</div>
+        <div class="app-loading-sub" id="pmosLoadingStatus">Checking secure session...</div>
+      </div>
+      <div class="pmos-loading-bar" id="pmosLoadingBar"><i></i></div>
+    </div>
+  </div>
+
+  <!-- Offline Banner -->
+  <div id="pmosOfflineBanner" class="pmos-offline-banner hidden" role="alert">
+    <span>&#x26A0;&#xFE0F;</span> You are offline. Records are saved locally and will sync when connected.
+  </div>
+
+  <!-- Update Available Banner -->
+  <div id="pmosUpdateBanner" class="pmos-update-banner hidden" role="alert">
+    <span>A new version is available.</span>
+    <button type="button" onclick="pmosApplyUpdate()" id="pmosUpdateBtn">Update</button>
+    <button type="button" onclick="pmosDismissUpdate()" id="pmosDismissBtn">&times;</button>
+  </div>
+
+  <!-- Install Prompt -->
+  <div id="pmosInstallBar" class="pmos-install-bar hidden" role="alert">
+    <span>Install ACPM PMOS for offline access</span>
+    <button type="button" onclick="pmosInstallApp()" id="pmosInstallBtn">Install</button>
+    <button type="button" onclick="pmosDismissInstall()">&times;</button>
+  </div>
+
+  <!-- Main PMOS App Shell -->
+  <main id="pmosApp" class="pmos-shell">
+    <div class="pmos-loading-card">Preparing field workspace...</div>
+  </main>
+
+  <!-- Toast Container -->
+  <div id="pmosToastContainer" class="pmos-toast-container" role="status" aria-live="polite"></div>
+
+  <script>
+  /* ---- PMOS PWA Registration (scoped to /pmos/) ---- */
+  (function() {
+    if ('serviceWorker' in navigator) {
+      var pmosRefreshed = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (pmosRefreshed) return;
+        pmosRefreshed = true;
+        window.location.reload();
+      });
+
+      navigator.serviceWorker.register('./pmos-sw.js', { scope: './' })
+        .then(function(reg) {
+          if (!reg || typeof reg.update !== 'function') return;
+          reg.update()['catch'](function() {});
+
+          reg.addEventListener('updatefound', function() {
+            var worker = reg.installing;
+            if (!worker) return;
+            worker.addEventListener('statechange', function() {
+              if (worker.state === 'installed' && navigator.serviceWorker.controller) {
+                var banner = document.getElementById('pmosUpdateBanner');
+                if (banner) banner.classList.remove('hidden');
+              }
+            });
+          });
+        })
+        ['catch'](function(err) {
+          if (typeof console !== 'undefined') console.warn('PMOS SW registration:', err);
+        });
+    }
+
+    /* ---- Install Prompt ---- */
+    var pmosDeferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', function(e) {
+      e.preventDefault();
+      pmosDeferredPrompt = e;
+      var bar = document.getElementById('pmosInstallBar');
+      if (bar) bar.classList.remove('hidden');
+    });
+
+    window.addEventListener('appinstalled', function() {
+      var bar = document.getElementById('pmosInstallBar');
+      if (bar) bar.classList.add('hidden');
+      if (typeof pmosToast === 'function') pmosToast('ACPM PMOS installed!');
+    });
+  })();
+
+  function pmosInstallApp() {
+    var prompt = window.pmosDeferredPrompt;
+    if (!prompt) return;
+    prompt.prompt();
+    prompt.userChoice.then(function() {
+      window.pmosDeferredPrompt = null;
+      var bar = document.getElementById('pmosInstallBar');
+      if (bar) bar.classList.add('hidden');
+    });
+  }
+
+  function pmosDismissInstall() {
+    var bar = document.getElementById('pmosInstallBar');
+    if (bar) bar.classList.add('hidden');
+  }
+
+  function pmosApplyUpdate() {
+    var banner = document.getElementById('pmosUpdateBanner');
+    if (banner) banner.classList.add('hidden');
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({ action: 'skipWaiting' });
+    }
+  }
+
+  function pmosDismissUpdate() {
+    var banner = document.getElementById('pmosUpdateBanner');
+    if (banner) banner.classList.add('hidden');
+  }
+  </script>
+</body>
+</html>
