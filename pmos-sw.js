@@ -2,7 +2,7 @@
 //  ACPM PMOS Service Worker
 //  Standalone worker scoped to pmos.html only.
 //  Does NOT interfere with ACPM's sw.js, caches, or cache cleanup.
-//  
+//
 //  Cache strategy: Network-first with offline fallback.
 //  PMOS_CACHE is the only cache managed by this worker.
 //  All old PMOS caches are purged on activate.

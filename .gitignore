@@ -1,0 +1,9 @@
+node_modules/
+.tmp_jdk/
+tmp_jdk/
+firebase-debug.log
+database-debug.log
+test-results/
+playwright-report/
+*.tsbuildinfo
+.DS_Store

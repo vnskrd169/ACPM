@@ -1,7 +1,7 @@
 /* ==========================================================================
    ACPM App Shell — Reusable UI Components
    Shared shell elements for PMOS mobile, PMOS Office, and future ACPM modules.
-   
+
    Version: 1.0.0
    Dependencies: acpm-brand.css, style.css, auth.js
    ========================================================================== */
@@ -68,16 +68,24 @@ const PHOTO_PROVIDERS = {
 };
 
 const PMOS_CONFIG = {
-  photoProvider: PHOTO_PROVIDERS.firebaseStorage,  // Default: Firebase Storage
-  maxPhotoSize: 20 * 1024 * 1024,  // 20 MB
+  /* ---- Photo upload provider ---- */
+  photoStorageProvider: 'googleDrive',       // 'googleDrive' | 'firebaseStorage' (firebaseStorage inactive)
+  useFirebaseStoragePhotos: false,           // Must remain false until explicitly enabled
+  useGoogleDrivePhotos: true,                // Primary upload path
+
+  /* ---- Google Drive Apps Script endpoint ---- */
+  driveUploadUrl: 'https://script.google.com/macros/s/AKfycbxNQ1PunSoV2gCpdfrHs10D7kNC5YUnIyq0IHmFsI4MrDq3wHsJZaCiEcxP2RkHNA5P/exec',
+
+  /* ---- Photo compression settings ---- */
+  maxPhotoSize: 20 * 1024 * 1024,            // 20 MB
   maxPhotoDimension: 2048,
   photoQuality: 0.82,
   thumbnailDimension: 400,
   thumbnailQuality: 0.78,
   maxFileSizeMB: 20,
   allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
-  enableGoogleDrive: false,  // Google Drive as secondary/export only
-  faceAttendanceEnabled: false  // Feature flag
+
+  faceAttendanceEnabled: false               // Feature flag — not related to photos
 };
 
 window.PHOTO_PROVIDERS = PHOTO_PROVIDERS;

@@ -1,14 +1,14 @@
 /* ==========================================================================
    ACPM PMOS — Project Mobile Operations System (Upgraded v2.0)
    Official field capture application for ACPM.
-   
+
    Dependency: acpm-shell.js (must be loaded first for version constants,
    UUID generator, draft storage, normalization helpers, etc.)
-   
+
    Preserved: All existing 6 modules, offline photo queue, Drive upload,
    Firebase Storage fallback, dual-path listeners, permission fallback,
    record deduplication.
-   
+
    Added: Home screen, bottom navigation, draft/edit/archive workflow,
    full offline queue for all modules, notification hooks, audit trail.
    ========================================================================== */
@@ -26,13 +26,14 @@
   const PHOTO_DB_NAME = 'line17_pmos_photo_queue';
   const PHOTO_DB_VERSION = 2;
   const PHOTO_STORE = 'photoQueue';
-  
+
   /* ---- Offline Queue Database for ALL modules ---- */
   const OFFLINE_DB_NAME = 'pmos_offline_queue';
   const OFFLINE_DB_VERSION = 1;
   const OFFLINE_STORE = 'offlineQueue';
-  
-  const PMOS_DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxNQ1PunSoV2gCpdfrHs10D7kNC5YUnIyq0IHmFsI4MrDq3wHsJZaCiEcxP2RkHNA5P/exec';
+
+  /* ---- Drive upload URL (from PMOS_CONFIG, falls back to hardcoded default) ---- */
+  const PMOS_DRIVE_UPLOAD_URL = (window.PMOS_CONFIG && window.PMOS_CONFIG.driveUploadUrl) || 'https://script.google.com/macros/s/AKfycbxNQ1PunSoV2gCpdfrHs10D7kNC5YUnIyq0IHmFsI4MrDq3wHsJZaCiEcxP2RkHNA5P/exec';
   const MODULE_ORDER = ['home', 'quick', 'sitelog', 'photo', 'issue', 'material', 'task', 'meeting'];
 
   const MODULES = {
@@ -432,7 +433,7 @@
     const project = localProject();
     const records = state.records.filter(r => !r.archived && (!project || r.projectId === project.id));
     const today = todayISO();
-    
+
     const pendingIssues = records.filter(r => r.collection === 'pmosIssues' && !['Closed', 'Archived'].includes(String(r.status || 'Open')));
     const overdueTasks = records.filter(r => r.collection === 'pmosTasks' && r.dueDate && r.dueDate < today && !['Done', 'Archived'].includes(String(r.status || 'Open')));
     const pendingMaterials = records.filter(r => r.collection === 'pmosMaterialRequests' && !['Delivered', 'Cancelled', 'Archived'].includes(String(r.status || 'Submitted')));
@@ -560,7 +561,7 @@
   function renderPmosShell() {
     const app = $('pmosApp');
     if (!app) return;
-    
+
     app.innerHTML = `
       <!-- Header -->
       <header class="pmos-header">
@@ -764,10 +765,10 @@
     // Show forms in content area
     const content = $('pmosContent');
     if (!content) return;
-    
+
     content.innerHTML = renderModuleForm(key, mod);
     setDefaultDates();
-    
+
     // Restore draft if exists
     if (typeof pmosGetDraft === 'function') {
       const draft = pmosGetDraft(key);
@@ -925,7 +926,7 @@
     }
     const mod = MODULES[key];
     const payload = readModulePayload(key);
-    
+
     /* --- EDIT MODE: update existing record instead of creating new --- */
     if (state.editingRecord && state.editingRecord.collection === mod.collection) {
       await saveExistingRecord(key, mod, payload, button);
@@ -1202,7 +1203,7 @@
       setSync(navigator.onLine ? 'Saved locally. Upload starting...' : 'Saved locally.', 'saving');
       pmosToast('Photo saved locally');
       if (navigator.onLine) uploadQueuedPhotos();
-      
+
       if (typeof pmosAuditLog === 'function') {
         pmosAuditLog('photo_capture', 'pmos_photo', project.id, localId, 'Photo captured');
       }
@@ -1239,33 +1240,22 @@
     try {
       let photoUrl = meta.photoUrl || '';
       let thumbnailUrl = meta.thumbnailUrl || '';
-      
+
       if (!photoUrl) {
-        /* Try Firebase Storage first */
-        if (firebase.storage && window.PMOS_CONFIG?.photoProvider !== 'google-drive') {
-          try {
-            const result = await uploadToFirebaseStorage(current, storagePath, thumbnailStoragePath);
-            photoUrl = result.photoUrl;
-            thumbnailUrl = result.thumbnailUrl;
-          } catch (storageError) {
-            console.warn('Firebase Storage upload failed, trying Drive:', storageError);
-            /* Fallback to Drive */
-            const uploaded = await uploadPhotoToDrive(meta, current.imageBlob, current.thumbnailBlob, storagePath, thumbnailStoragePath, pct => {
-              patchPhotoQueueView(current.localId, { uploadProgress: pct });
-            });
-            photoUrl = uploaded.photoUrl;
-            thumbnailUrl = uploaded.thumbnailUrl;
-          }
-        } else {
-          const uploaded = await uploadPhotoToDrive(meta, current.imageBlob, current.thumbnailBlob, storagePath, thumbnailStoragePath, pct => {
-            patchPhotoQueueView(current.localId, { uploadProgress: pct });
-          });
-          photoUrl = uploaded.photoUrl;
-          thumbnailUrl = uploaded.thumbnailUrl;
-        }
+        /* Google Drive only — Firebase Storage is not used */
+        const uploaded = await uploadPhotoToDrive(
+          meta, current.imageBlob, current.thumbnailBlob,
+          storagePath, thumbnailStoragePath,
+          pct => patchPhotoQueueView(current.localId, { uploadProgress: pct })
+        );
+        photoUrl = uploaded.photoUrl;
+        thumbnailUrl = uploaded.thumbnailUrl;
+        var driveFileId = uploaded.photoFileId || '';
+        var thumbnailDriveFileId = uploaded.thumbnailFileId || '';
+        var driveFolderId = uploaded.driveFolderId || '';
 
         current = await updateQueuedPhoto(current, {
-          photoUrl, thumbnailUrl, storagePath, thumbnailStoragePath, uploadProgress: 96
+          photoUrl, thumbnailUrl, uploadProgress: 96
         });
       }
 
@@ -1275,10 +1265,13 @@
       const finalRecord = {
         id: finalRef.key, projectId: meta.projectId, projectName: meta.projectName,
         caption: meta.caption, location: meta.location, category: meta.category,
-        photoUrl, thumbnailUrl, storagePath, thumbnailStoragePath,
-        storageProvider: photoUrl?.includes('drive.google.com') ? 'Google Drive' : 'Firebase Storage',
+        photoUrl, thumbnailUrl,
+        driveFileId: driveFileId || meta.driveFileId || '',
+        thumbnailDriveFileId: thumbnailDriveFileId || meta.thumbnailDriveFileId || '',
+        driveFolderId: driveFolderId || meta.driveFolderId || '',
+        storageProvider: 'Google Drive',
         originalFileName: meta.originalFileName, compressedSize: meta.compressedSize || current.imageBlob?.size || 0,
-        uploadStatus: 'Synced', source: PMOS_SOURCE,
+        uploadStatus: 'Uploaded', source: PMOS_SOURCE,
         createdAt: meta.createdAt, uploadedAt, status: 'New', module: MODULES.photo.label,
         createdBy: meta.createdBy || window._currentUser?.uid || '',
         createdByName: meta.createdByName || window._currentUser?.name || '',
@@ -1299,29 +1292,6 @@
     }
   }
 
-  async function uploadToFirebaseStorage(item, storagePath, thumbnailStoragePath) {
-    const storage = firebase.storage?.();
-    if (!storage) throw new Error('Firebase Storage SDK not loaded');
-    const meta = item.metadata || {};
-    const uploadFile = (ref, blob, onProgress) => {
-      return new Promise((resolve, reject) => {
-        const task = ref.put(blob, { contentType: 'image/jpeg' });
-        const timeout = setTimeout(() => { try { task.cancel(); } catch {} reject(new Error('Storage upload timed out.')); }, 60000);
-        task.on(firebase.storage.TaskEvent.STATE_CHANGED,
-          snap => { if (snap.totalBytes) onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)); },
-          err => { clearTimeout(timeout); reject(err); },
-          async () => { clearTimeout(timeout); resolve({ ref, url: await ref.getDownloadURL() }); }
-        );
-      });
-    };
-
-    const [mainResult, thumbResult] = await Promise.all([
-      uploadFile(storage.ref(storagePath), item.imageBlob, () => {}),
-      thumbnailStoragePath ? uploadFile(storage.ref(thumbnailStoragePath), item.thumbnailBlob, () => {}) : null
-    ]);
-    return { photoUrl: mainResult.url, thumbnailUrl: thumbResult?.url || '' };
-  }
-
   async function updateQueuedPhoto(item, patch) {
     const next = { ...item, metadata: { ...(item.metadata || {}), ...patch, updatedAt: Date.now() } };
     await idbPutPhoto(next);
@@ -1336,21 +1306,6 @@
     if (idx < 0) return;
     state.photoQueue[idx] = { ...state.photoQueue[idx], metadata: { ...(state.photoQueue[idx].metadata || {}), ...patch } };
     renderPhotoQueue();
-  }
-
-  function uploadBlobResumable(path, blob, onProgress) {
-    return new Promise((resolve, reject) => {
-      const storage = firebase.storage?.();
-      if (!storage) { reject(new Error('Firebase Storage SDK not loaded.')); return; }
-      const ref = storage.ref(path);
-      const task = ref.put(blob, { contentType: 'image/jpeg' });
-      const timeout = setTimeout(() => { try { task.cancel(); } catch {} reject(new Error('Storage upload timed out.')); }, 45000);
-      task.on(firebase.storage.TaskEvent.STATE_CHANGED,
-        snap => { if (snap.totalBytes) onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)); },
-        err => { clearTimeout(timeout); reject(err); },
-        async () => { clearTimeout(timeout); try { resolve({ ref, url: await ref.getDownloadURL() }); } catch (e) { reject(e); } }
-      );
-    });
   }
 
   function blobToBase64(blob) {
@@ -1384,6 +1339,21 @@
     const text = await response.text();
     let data = {};
     try { data = JSON.parse(text); } catch (e) { throw new Error(`Drive upload invalid response: ${text.slice(0, 120)}`); }
+
+    /* ---- Normalize Drive response fields ---- */
+    // Accept various response field name conventions
+    const normalizeField = function(field) {
+      for (var i = 1; i < arguments.length; i++) {
+        if (data[arguments[i]]) return data[arguments[i]];
+      }
+      return data[field] || '';
+    };
+    data.photoUrl = normalizeField('photoUrl', 'fileUrl', 'viewUrl', 'downloadUrl');
+    data.fileId = normalizeField('fileId', 'photoFileId');
+    data.thumbnailUrl = normalizeField('thumbnailUrl', 'thumbUrl');
+    data.thumbnailFileId = normalizeField('thumbnailFileId', 'thumbFileId');
+    data.folderId = normalizeField('folderId', 'driveFolderId');
+
     if (!response.ok || data.ok === false) {
       const driveError = String(data.error || '');
       if (driveError.includes('getFolderById')) throw new Error('Drive folder not accessible.');
@@ -1393,7 +1363,14 @@
     if (!data.photoUrl || !data.thumbnailUrl) throw new Error('Drive upload did not return photo links.');
     const thumbnailUrl = data.thumbnailFileId ? driveThumbnailUrl(data.thumbnailFileId, 800) : data.thumbnailUrl;
     onProgress(96);
-    return { photoUrl: data.photoUrl, thumbnailUrl, storagePath: `drive://${data.photoFileId || fileName}`, thumbnailStoragePath: `drive://${data.thumbnailFileId || thumbnailFileName}`, photoFileId: data.photoFileId || '', thumbnailFileId: data.thumbnailFileId || '', storageProvider: 'Google Drive' };
+    return {
+      photoUrl: data.photoUrl,
+      thumbnailUrl: thumbnailUrl,
+      photoFileId: data.fileId || data.photoFileId || '',
+      thumbnailFileId: data.thumbnailFileId || '',
+      driveFolderId: data.folderId || '',
+      storageProvider: 'Google Drive'
+    };
   }
 
   function clearPmosForm(key) {
@@ -1431,7 +1408,7 @@
       .filter(r => !r.archived && (!pid || r.projectId === pid))
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
       .slice(0, 50);
-    
+
     const byModule = {};
     captureModuleEntries().forEach(([key, mod]) => {
       const modRecords = records.filter(r => r.collection === mod.collection);
@@ -1567,7 +1544,7 @@
           <div class="pmos-more-row"><span>Cache</span><strong>${typeof CACHE_VERSION !== 'undefined' ? CACHE_VERSION : 'acpm-pmos-v1'}</strong></div>
           <div class="pmos-more-row"><span>Schema</span><strong>${typeof PMOS_SCHEMA_VERSION !== 'undefined' ? PMOS_SCHEMA_VERSION : '1.0'}</strong></div>
           <div class="pmos-more-row"><span>Face Attendance</span><strong>${faceEnabled ? 'Enabled' : 'Disabled'}</strong></div>
-          <div class="pmos-more-row"><span>Photo Provider</span><strong>${window.PMOS_CONFIG?.photoProvider === 'firebase-storage' ? 'Firebase Storage' : 'Google Drive'}</strong></div>
+          <div class="pmos-more-row"><span>Photo Provider</span><strong>Google Drive</strong></div>
           ${navigator.onLine && 'beforeinstallprompt' in window ? `<button class="pmos-more-btn" onclick="pmosInstallApp()">Install App</button>` : ''}
           <a class="pmos-more-link" href="dashboard.html">&#x1F3E0; Open ACPM Office</a>
         </section>
@@ -1593,7 +1570,7 @@
         const idempotencyKey = typeof pmosNotifIdempotencyKey === 'function'
           ? pmosNotifIdempotencyKey(notifType, record.projectId, record.clientGeneratedId || record.id)
           : `${notifType}:${record.projectId}:${record.id}`;
-        
+
         await createNotificationEvent({
           projectId: record.projectId,
           module: moduleMap[key] || 'pmos',
@@ -1624,7 +1601,7 @@
     }
     const key = stateKeyByCollection(collection);
     if (!key) { pmosToast('Unknown module.', 'error'); return; }
-    
+
     /* Store edit tracking so savePmosModule updates instead of creates */
     state.editingRecord = {
       collection: record.collection,
@@ -1633,7 +1610,7 @@
       sourcePath: record.sourcePath || '',
       sourceType: record.sourceType || 'global'
     };
-    
+
     pmosOpenModule(key);
     // Pre-fill fields
     if (MODULES[key]) {
@@ -1646,12 +1623,12 @@
     }
     pmosToast('Edit mode: modify and re-save', 'info');
   }
-  
+
   /* Update existing record instead of creating new */
   async function saveExistingRecord(key, mod, payload, button) {
     const editInfo = state.editingRecord;
     if (!editInfo) return;
-    
+
     const useProjectPath = editInfo.sourceType === 'project' || editInfo.sourcePath.startsWith('project:');
     const path = useProjectPath && editInfo.projectId
       ? `projects/${editInfo.projectId}/${mod.collection}/${editInfo.id}`
@@ -1729,7 +1706,7 @@
   function watchPmosRecords() {
     detachPmosListeners();
     state.records = [];
-    
+
     captureModuleEntries().forEach(([key, mod]) => {
       if (!mod.collection) return;
       const ref = db.ref(mod.collection).limitToLast(80);
@@ -1815,7 +1792,7 @@
       if (state.currentProjectId) localStorage.setItem(LAST_PROJECT_KEY, state.currentProjectId);
       watchPmosRecords();
       await loadPhotoQueue();
-      
+
       /* Set up online/offline event handlers */
       window.addEventListener('online', () => {
         uploadQueuedPhotos(true);

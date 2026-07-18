@@ -1,7 +1,7 @@
 /* ==========================================================================
    ACPM PMOS — Pagination Helper
    Reusable bounded Firebase queries with Load More for Office Hub views.
-   
+
    Features:
    - Bounded initial queries with configurable page sizes
    - Firebase cursor-based pagination (newest-first)

@@ -1,9 +1,9 @@
 /* ==========================================================================
    ACPM PMOS — Test Suite
    Comprehensive unit and integration tests for PMOS modules.
-   
+
    Run: node --check pmos-tests.js (syntax validation)
-   
+
    For full execution, run this file in a Node.js environment with
    Firebase Admin SDK initialized, or use a browser test runner.
    ========================================================================== */
@@ -91,7 +91,7 @@ if (typeof escapeHtml !== 'function') {
 
 // Mock window and document for Node.js tests
 if (typeof window === 'undefined') {
-  global.window = { 
+  global.window = {
     _currentUser: { uid: 'test-uid', name: 'Test User', role: 'apm', projects: { 'project-1': true } },
     PMOS_CONFIG: { faceAttendanceEnabled: false, photoProvider: 'firebase-storage' },
     APP_VERSION: '1.0.0',
@@ -99,7 +99,7 @@ if (typeof window === 'undefined') {
     CACHE_VERSION: 'acpm-pmos-v1',
     PMOS_SCHEMA_VERSION: '1.0'
   };
-  global.document = { 
+  global.document = {
     getElementById: () => null,
     querySelector: () => null,
     querySelectorAll: () => [],

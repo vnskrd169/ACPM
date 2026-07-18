@@ -1,8 +1,21 @@
+/* ==========================================================================
+   ACPM PMOS — Face Attendance Lifecycle Module
+
+   Exposes window.PMOSFaceAttendance with lifecycle methods:
+     isEnabled()  — checks feature flag
+     open()       — lazy initialization, starts models + camera
+     initialize() — alias for open()
+     close()      — stops camera, unsubscribes listeners, clears timers
+     destroy()    — full cleanup
+     getState()   — returns current lifecycle state
+
+   The IIFE no longer performs initialization on load.
+   All side effects (model downloads, camera access, Firebase listeners)
+   start ONLY through explicit open() calls.
+   ========================================================================== */
+
 (function () {
-  /* ---- Feature Gate ---- */
-  if (!window.PMOS_CONFIG || !window.PMOS_CONFIG.faceAttendanceEnabled) {
-    return;
-  }
+  'use strict';
 
   const FACE_SOURCE = 'Line17 PMOS Face Attendance Assist';
   const FACE_MODEL = 'face-api-ssd-mobilenetv1-face-recognition-v1';
@@ -15,6 +28,8 @@
   const POSSIBLE_DEFAULT = 0.55;
 
   const faceState = {
+    initialized: false,
+    active: false,
     injected: false,
     pmosInjected: false,
     settings: null,
@@ -31,7 +46,9 @@
     inboxRows: [],
     listeners: [],
     engineReady: false,
-    engineError: ''
+    engineError: '',
+    mediaStream: null,
+    timers: []
   };
 
   function h(text) {
@@ -1497,25 +1514,89 @@
     await uploadPmosFaceQueue(true);
   }
 
-  function boot() {
-    loadSettings();
-    if (window.ACPM_PAGE === 'pmos' || String(location.pathname).toLowerCase().endsWith('/pmos.html')) {
-      const timer = setInterval(() => {
+  /* ---- PMOSFaceAttendance Lifecycle API ---- */
+  function isFaceEnabled() {
+    return !!(window.PMOS_CONFIG && window.PMOS_CONFIG.faceAttendanceEnabled);
+  }
+
+  function pmosFaceOnlineHandler() { uploadPmosFaceQueue(true); }
+  function pmosFaceVisHandler() {
+    if (!document.hidden && navigator.onLine) uploadPmosFaceQueue(true);
+  }
+
+  async function openFaceAttendance() {
+    if (!isFaceEnabled()) {
+      return { ok: false, reason: 'Face attendance is disabled by feature flag.' };
+    }
+    if (faceState.active) return { ok: true, state: 'already_active' };
+    faceState.active = true;
+    faceState.initialized = true;
+    try {
+      await loadSettings();
+      // Inject UI and initialize based on current page context
+      if (window.ACPM_PAGE === 'pmos' || String(location.pathname).toLowerCase().endsWith('/pmos.html')) {
         injectPmos();
-        if (faceState.pmosInjected) clearInterval(timer);
-      }, 300);
-      window.addEventListener('online', () => uploadPmosFaceQueue(true));
-      document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && navigator.onLine) uploadPmosFaceQueue(true);
-      });
-    } else {
-      const timer = setInterval(() => {
+        // PMOS context: start online/visibility listeners for queue upload
+        window.addEventListener('online', pmosFaceOnlineHandler);
+        document.addEventListener('visibilitychange', pmosFaceVisHandler);
+      } else {
         injectAcpm();
-        if (faceState.injected) clearInterval(timer);
-      }, 300);
+        // ACPM context: activate face panel initial view and inbox watcher
+        if (!$('facePanel')) return { ok: true, state: 'ui_pending' };
+        await initFacePanel();
+      }
+      return { ok: true, state: 'opened' };
+    } catch (e) {
+      faceState.active = false;
+      return { ok: false, reason: e.message || 'Failed to open face attendance.' };
     }
   }
 
+  function closeFaceAttendance() {
+    // Stop media tracks
+    if (faceState.mediaStream) {
+      faceState.mediaStream.getTracks().forEach(function (track) { track.stop(); });
+      faceState.mediaStream = null;
+    }
+    // Unsubscribe Firebase listeners
+    faceState.listeners.forEach(function (ref) {
+      try { ref.off(); } catch (e) { /* no-op */ }
+    });
+    faceState.listeners = [];
+    // Clear timers
+    faceState.timers.forEach(function (timer) { clearInterval(timer); });
+    faceState.timers = [];
+    // Remove event listeners added by open()
+    window.removeEventListener('online', pmosFaceOnlineHandler);
+    document.removeEventListener('visibilitychange', pmosFaceVisHandler);
+    faceState.active = false;
+  }
+
+  function destroyFaceAttendance() {
+    closeFaceAttendance();
+    faceState.injected = false;
+    faceState.pmosInjected = false;
+    faceState.engineReady = false;
+    faceState.engineError = '';
+    faceState.initialized = false;
+    faceState.settings = null;
+  }
+
+  function getFaceState() {
+    return {
+      enabled: isFaceEnabled(),
+      active: faceState.active,
+      initialized: faceState.initialized,
+      injected: faceState.injected,
+      pmosInjected: faceState.pmosInjected,
+      engineReady: faceState.engineReady,
+      engineError: faceState.engineError,
+      listenerCount: faceState.listeners.length,
+      mediaStreamActive: !!faceState.mediaStream
+    };
+  }
+
+  /* ---- Window Exports (preserved for backward compatibility) ---- */
   window.selectFaceWorker = selectFaceWorker;
   window.saveFaceEnrollment = saveFaceEnrollment;
   window.revokeFaceEnrollment = revokeFaceEnrollment;
@@ -1530,7 +1611,14 @@
   window.markFaceAttendanceUnknown = markFaceAttendanceUnknown;
   window.postFaceAttendancePayroll = postFaceAttendancePayroll;
   window.pmosRetryFaceAttendance = pmosRetryFaceAttendance;
+  window.PMOSFaceAttendance = {
+    isEnabled: isFaceEnabled,
+    open: openFaceAttendance,
+    initialize: openFaceAttendance,
+    close: closeFaceAttendance,
+    destroy: destroyFaceAttendance,
+    getState: getFaceState
+  };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  /* ---- No auto-initialization on load. Call PMOSFaceAttendance.open() to start. ---- */
 })();

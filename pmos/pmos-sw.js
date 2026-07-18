@@ -1,7 +1,7 @@
 // -----------------------------------------------------------------------------
 //  ACPM PMOS Service Worker — scoped to /pmos/
 //  Does NOT interfere with ACPM's root sw.js, caches, or cache cleanup.
-//  
+//
 //  Cache strategy: Network-first with offline fallback.
 //  Only caches PMOS assets under PMOS_CACHE namespace.
 //  Only deletes caches starting with 'pmos-cache-'.

@@ -15,6 +15,17 @@
     { key: 'meetings', label: 'Meeting Notes', collection: 'pmosMeetingNotes', title: r => r.meetingTitle || r.meetingType || 'Meeting note' }
   ];
 
+  var PAGE_SIZES = {
+    inbox: 30,
+    feed: 30,
+    issues: 30,
+    materials: 25,
+    tasks: 30,
+    sitelogs: 20,
+    photos: 30,
+    meetings: 20
+  };
+
   const state = {
     initialized: false,
     projects: [],
@@ -23,9 +34,163 @@
     globalReadDeniedNotified: false,
     fallbackReadDeniedNotified: false,
     paginators: {},
+    pagination: {},  // { viewName: { page, hasMore, loading, records, cursorKey } }
     lastProjectId: '',
     lastFilterKey: ''
   };
+
+  /* ---- Pagination helpers ---- */
+  function getPagination(viewName) {
+    if (!state.pagination[viewName]) {
+      state.pagination[viewName] = { page: 0, hasMore: true, loading: false, records: [], cursorKey: null, error: null };
+    }
+    return state.pagination[viewName];
+  }
+
+  function resetPagination(viewName) {
+    state.pagination[viewName] = { page: 0, hasMore: true, loading: false, records: [], cursorKey: null, error: null };
+  }
+
+  /* Wire resetPagination into filter/project changes */
+  function resetPaginationForCurrentView() {
+    resetPagination(state.activeView);
+  }
+
+  function loadMoreView(viewName) {
+    var pag = getPagination(viewName);
+    if (pag.loading || !pag.hasMore) return;
+    pag.loading = true;
+    renderPmosOffice();  // Show loading state
+
+    var pageSize = PAGE_SIZES[viewName] || 30;
+    var projectId = state.lastProjectId;
+
+    /* Inbox/Feed must query ALL 7 collections; other views query only their own */
+    var ALL_COLLECTIONS = ['pmosUpdates', 'pmosSiteLogs', 'pmosIssues', 'pmosMaterialRequests', 'pmosTasks', 'pmosPhotoLogs', 'pmosMeetingNotes'];
+    var collections;
+    if (viewName === 'inbox' || viewName === 'feed') {
+      collections = ALL_COLLECTIONS;
+    } else {
+      collections = [collectionForView(viewName)];
+    }
+
+    /* Build queries for each collection in parallel */
+    var queryDefs = collections.map(function (collection) {
+      var ref;
+      if (projectId) {
+        ref = firebase.database().ref('projects/' + projectId + '/' + collection);
+      } else {
+        ref = firebase.database().ref(collection);
+      }
+      var q = ref.orderByChild('createdAt');
+      if (pag.cursorKey) {
+        q = q.endAt(pag.cursorKey);
+      }
+      q = q.limitToLast(pageSize + 1);
+      return { collection: collection, query: q };
+    });
+
+    /* Execute all queries in parallel, merge results */
+    /* Use per-query catch() so one denied collection doesn't block others */
+    Promise.all(queryDefs.map(function (qd) {
+      return qd.query.once('value').then(function (snap) {
+        var items = [];
+        snap.forEach(function (child) {
+          var val = child.val() || {};
+          items.push({
+            id: val.id || child.key,
+            _key: child.key,
+            _createdAt: val.createdAt || 0,
+            collection: qd.collection,
+            ...val
+          });
+        });
+        return items;
+      }).catch(function () {
+        return [];  // Gracefully skip collections that fail (e.g. restricted access)
+      });
+    }))
+    .then(function (results) {
+      /* Merge items from all collections, newest-first */
+      var allItems = [];
+      results.forEach(function (items) {
+        allItems = allItems.concat(items);
+      });
+      allItems.sort(function (a, b) {
+        return (b._createdAt || 0) - (a._createdAt || 0);
+      });
+
+      /* Check boundary: allItems > pageSize means we have more */
+      if (allItems.length > pageSize) {
+        pag.hasMore = true;
+        allItems = allItems.slice(0, pageSize);
+      } else {
+        pag.hasMore = false;
+      }
+
+      /* Dedup against existing pagination records by collection|key */
+      var existingKeys = {};
+      pag.records.forEach(function (r) { existingKeys[(r.collection||'')+'|'+(r._key||'')] = true; });
+      var newItems = [];
+      allItems.forEach(function (item) {
+        var dedupKey = (item.collection||'')+'|'+(item._key||'');
+        if (!existingKeys[dedupKey]) {
+          newItems.push(item);
+          existingKeys[dedupKey] = true;
+        }
+      });
+
+      pag.records = pag.records.concat(newItems);
+      pag.page++;
+      pag.loading = false;
+      pag.error = null;
+
+      /* Set cursor for next page (last item's createdAt across all collections) */
+      if (newItems.length > 0) {
+        var last = newItems[newItems.length - 1];
+        pag.cursorKey = last.createdAt || last._createdAt || 0;
+      } else {
+        pag.hasMore = false;
+      }
+
+      renderPmosOffice();
+    })
+    ['catch'](function (err) {
+      pag.loading = false;
+      pag.error = err;
+      renderPmosOffice();
+    });
+  }
+  window.loadMoreView = loadMoreView;
+
+  function collectionForView(viewName) {
+    var map = {
+      inbox: 'pmosUpdates',
+      feed: 'pmosUpdates',
+      issues: 'pmosIssues',
+      materials: 'pmosMaterialRequests',
+      tasks: 'pmosTasks',
+      sitelogs: 'pmosSiteLogs',
+      photos: 'pmosPhotoLogs',
+      meetings: 'pmosMeetingNotes'
+    };
+    return map[viewName] || 'pmosUpdates';
+  }
+
+  function loadMoreMarkup(viewName) {
+    var pag = getPagination(viewName);
+    if (!pag.hasMore && pag.records.length === 0 && !pag.error) return '';
+    if (!pag.hasMore && pag.records.length > 0) {
+      return '<div class="pmos-load-more-wrap"><span class="pmos-end-hint">All records loaded.</span></div>';
+    }
+    if (pag.loading) {
+      return '<div class="pmos-load-more-wrap"><button class="btn-ws-secondary" disabled>Loading...</button></div>';
+    }
+    if (pag.error) {
+      return '<div class="pmos-load-more-wrap"><button class="btn-ws-secondary" onclick="loadMoreView(\'' + viewName + '\')">Retry</button> <span class="pmos-error-hint">Could not load more.</span></div>';
+    }
+    return '<div class="pmos-load-more-wrap"><button class="btn-ws-secondary" onclick="loadMoreView(\'' + viewName + '\')">Load More</button></div>';
+  }
 
   /* ---- View-specific key helpers for subscription manager ---- */
   function viewGroup(view) { return 'pmos-office-' + view; }
@@ -144,27 +309,54 @@
     }[view] || view;
   }
 
+  /* ---- Logout cleanup listener ---- */
+  function pmosOfficeLogoutCleanup() {
+    if (SUB) {
+      Object.keys(VIEW_GROUPS).forEach(function (v) {
+        SUB.unsubscribeGroup(VIEW_GROUPS[v]);
+      });
+    }
+  }
+
+  /* Auth listener for logout cleanup */
+  if (typeof firebase !== 'undefined') {
+    firebase.auth().onAuthStateChanged(function (user) {
+      if (!user && SUB) {
+        pmosOfficeLogoutCleanup();
+      }
+    });
+  }
+
   async function initPmosOffice() {
     injectPmosOffice();
-    
-    /* If already initialized, use Subscription Manager for view-aware subscriptions */
+
+    /* === Single reinit/init path === */
     if (state.initialized) {
-      renderPmosOffice();
+      /* Reinit: clean old subs, reload projects, clear stale data, activate current view */
+      await loadOfficeProjects();
+      state.records = [];
+      state.pagination = {};
+      if (SUB) {
+        pmosOfficeLogoutCleanup();
+        SUB.enableDiagnostics(false);
+        activatePMOSOfficeView(state.activeView || 'inbox', { projectId: state.lastProjectId });
+      } else {
+        renderPmosOffice();
+      }
       return;
     }
-    
+
+    /* === First init === */
     state.initialized = true;
     await loadOfficeProjects();
 
-    /* ----- Use Subscription Manager if available ----- */
     if (SUB) {
-      SUB.enableDiagnostics(false); // disabled for production
-      subscribeOfficeViaManager();
-      renderPmosOffice();
+      SUB.enableDiagnostics(false);
+      activatePMOSOfficeView(state.activeView || 'inbox', { projectId: state.lastProjectId });
       return;
     }
 
-    /* ----- Fallback: direct listeners (legacy) ----- */
+    /* ----- Fallback: direct listeners (legacy, first init only) ----- */
     MODULES.forEach(mod => {
       const sourceKey = 'root:' + mod.collection;
       const ref = firebase.database().ref(mod.collection).limitToLast(300);
@@ -243,58 +435,280 @@
   }
 
   /* ---- Subscription Manager wiring ---- */
-  function subscribeOfficeViaManager() {
-    if (!SUB) return;
-    
-    // Unsubscribe any previous subscriptions first
-    SUB.unsubscribeGroup('pmos-office-global');
-    SUB.unsubscribeGroup('pmos-office-project');
+  /* ---- View-aware subscription groups ---- */
+  var VIEW_GROUPS = {
+    inbox: 'pmos-inbox',
+    feed: 'pmos-project-feed',
+    issues: 'pmos-issues',
+    materials: 'pmos-materials',
+    tasks: 'pmos-followups',
+    sitelogs: 'pmos-site-logs',
+    photos: 'pmos-photos',
+    meetings: 'pmos-meeting-notes',
+    reports: 'pmos-reports'
+  };
 
-    // Subscribe to all root-level PMOS collections
-    MODULES.forEach(function (mod) {
-      var key = 'root:' + mod.collection;
-      SUB.subscribe({
-        key: key,
-        group: 'pmos-office-global',
-        module: mod.key,
-        projectId: '',
-        path: mod.collection,
-        queryFactory: function () {
-          return firebase.database().ref(mod.collection).limitToLast(300);
-        },
-        callback: function (snap) {
-          handleModuleSnapshot(snap, mod, 'root:' + mod.collection, true);
-        },
-        errorCallback: function (err) { noteOfficeReadFallback(err, 'global'); }
+  /* ---- Activate a view: unsubscribe previous, subscribe new, render ---- */
+  function activatePMOSOfficeView(viewName, options) {
+    options = options || {};
+    var previousGroup = VIEW_GROUPS[state.activeView] || '';
+    var newGroup = VIEW_GROUPS[viewName] || '';
+    var selectedProjectId = options.projectId || state.lastProjectId || '';
+    var previousProjectId = state.lastProjectId;
+
+    // Unsubscribe previous view's subscriptions if different group
+    if (previousGroup && previousGroup !== newGroup && SUB) {
+      SUB.unsubscribeGroup(previousGroup);
+    }
+
+    // Flush records from previous project if project changed
+    if (previousProjectId && selectedProjectId && previousProjectId !== selectedProjectId) {
+      state.records = state.records.filter(function (r) {
+        return r.projectId !== previousProjectId;
       });
-    });
+      // Reset pagination for new project
+      resetPagination(viewName);
+    }
 
-    // Subscribe to project-level PMOS collections
-    state.projects.forEach(function (project) {
-      MODULES.forEach(function (mod) {
-        var key = 'project:' + project.id + ':' + mod.collection;
+    state.activeView = viewName;
+    state.lastProjectId = selectedProjectId;
+
+    // Subscribe to the new view's required paths
+    if (SUB) {
+      subscribeView(viewName, newGroup, selectedProjectId);
+    }
+
+    renderPmosOffice();
+  }
+
+  /* ---- Subscribe only the paths needed by a specific view ---- */
+  function subscribeView(viewName, group, projectId) {
+    if (!SUB) return;
+
+    // If we have a projectId, listen to project-scoped paths
+    switch (viewName) {
+      case 'inbox':
+        // Inbox: bounded recent records from ALL modules
+        MODULES.forEach(function (mod) {
+          SUB.subscribe({
+            key: 'inbox:' + mod.collection,
+            group: group,
+            module: mod.key,
+            projectId: '',
+            queryFactory: function () {
+              return firebase.database().ref(mod.collection).limitToLast(100);
+            },
+            callback: function (snap) {
+              handleModuleSnapshot(snap, mod, 'inbox:' + mod.collection, true);
+            },
+            errorCallback: function (err) { noteOfficeReadFallback(err, 'global'); }
+          });
+          // Also project-scoped if projectId
+          if (projectId) {
+            SUB.subscribe({
+              key: 'inbox:project:' + projectId + ':' + mod.collection,
+              group: group,
+              module: mod.key,
+              projectId: projectId,
+              queryFactory: function () {
+                return firebase.database().ref('projects/' + projectId + '/' + mod.collection).limitToLast(50);
+              },
+              callback: function (snap) {
+                handleModuleSnapshot(snap, mod, 'inbox:project:' + projectId + ':' + mod.collection, false);
+              },
+              errorCallback: function (err) { /* silent fallback */ }
+            });
+          }
+        });
+        break;
+
+      case 'feed':
+        // Project Feed: only for the selected project
+        if (projectId) {
+          MODULES.forEach(function (mod) {
+            SUB.subscribe({
+              key: 'feed:' + projectId + ':' + mod.collection,
+              group: group,
+              module: mod.key,
+              projectId: projectId,
+              queryFactory: function () {
+                return firebase.database().ref('projects/' + projectId + '/' + mod.collection).limitToLast(100);
+              },
+              callback: function (snap) {
+                handleModuleSnapshot(snap, mod, 'feed:' + projectId + ':' + mod.collection, false);
+              },
+              errorCallback: function (err) { /* silent fallback */ }
+            });
+          });
+        } else {
+          // No project selected: fallback to inbox-like all-module
+          MODULES.forEach(function (mod) {
+            SUB.subscribe({
+              key: 'feed:all:' + mod.collection,
+              group: group,
+              module: mod.key,
+              projectId: '',
+              queryFactory: function () {
+                return firebase.database().ref(mod.collection).limitToLast(100);
+              },
+              callback: function (snap) {
+                handleModuleSnapshot(snap, mod, 'feed:all:' + mod.collection, true);
+              },
+              errorCallback: function (err) { /* silent fallback */ }
+            });
+          });
+        }
+        break;
+
+      case 'issues':
+        // Issue Board: only issues
         SUB.subscribe({
-          key: key,
-          group: 'pmos-office-project',
-          module: mod.key,
-          projectId: project.id,
-          path: 'projects/' + project.id + '/' + mod.collection,
+          key: 'issues:' + (projectId || 'all'),
+          group: group,
+          module: 'issues',
+          projectId: projectId || '',
           queryFactory: function () {
-            return firebase.database().ref('projects/' + project.id + '/' + mod.collection).limitToLast(120);
+            if (projectId) {
+              return firebase.database().ref('projects/' + projectId + '/pmosIssues').limitToLast(100);
+            }
+            return firebase.database().ref('pmosIssues').limitToLast(100);
           },
           callback: function (snap) {
-            handleModuleSnapshot(snap, mod, 'project:' + project.id + ':' + mod.collection, false);
+            handleModuleSnapshot(snap, { key: 'issues', collection: 'pmosIssues', label: 'Issues' }, 'issues:' + (projectId || 'all'), !projectId);
           },
-          errorCallback: function (err) { noteOfficeReadFallback(err, 'project fallback'); }
+          errorCallback: function (err) { /* silent */ }
         });
-      });
-    });
+        break;
+
+      case 'materials':
+        // Material Requests: only materials
+        SUB.subscribe({
+          key: 'materials:' + (projectId || 'all'),
+          group: group,
+          module: 'materials',
+          projectId: projectId || '',
+          queryFactory: function () {
+            if (projectId) {
+              return firebase.database().ref('projects/' + projectId + '/pmosMaterialRequests').limitToLast(100);
+            }
+            return firebase.database().ref('pmosMaterialRequests').limitToLast(100);
+          },
+          callback: function (snap) {
+            handleModuleSnapshot(snap, { key: 'materials', collection: 'pmosMaterialRequests', label: 'Material Requests' }, 'materials:' + (projectId || 'all'), !projectId);
+          },
+          errorCallback: function (err) { /* silent */ }
+        });
+        break;
+
+      case 'tasks':
+        // Follow-ups: only tasks
+        SUB.subscribe({
+          key: 'tasks:' + (projectId || 'all'),
+          group: group,
+          module: 'tasks',
+          projectId: projectId || '',
+          queryFactory: function () {
+            if (projectId) {
+              return firebase.database().ref('projects/' + projectId + '/pmosTasks').limitToLast(100);
+            }
+            return firebase.database().ref('pmosTasks').limitToLast(100);
+          },
+          callback: function (snap) {
+            handleModuleSnapshot(snap, { key: 'tasks', collection: 'pmosTasks', label: 'Follow-ups' }, 'tasks:' + (projectId || 'all'), !projectId);
+          },
+          errorCallback: function (err) { /* silent */ }
+        });
+        break;
+
+      case 'sitelogs':
+        // Site Logs: only site logs
+        SUB.subscribe({
+          key: 'sitelogs:' + (projectId || 'all'),
+          group: group,
+          module: 'sitelogs',
+          projectId: projectId || '',
+          queryFactory: function () {
+            if (projectId) {
+              return firebase.database().ref('projects/' + projectId + '/pmosSiteLogs').limitToLast(100);
+            }
+            return firebase.database().ref('pmosSiteLogs').limitToLast(100);
+          },
+          callback: function (snap) {
+            handleModuleSnapshot(snap, { key: 'sitelogs', collection: 'pmosSiteLogs', label: 'Site Logs' }, 'sitelogs:' + (projectId || 'all'), !projectId);
+          },
+          errorCallback: function (err) { /* silent */ }
+        });
+        break;
+
+      case 'photos':
+        // Gallery: only photos
+        SUB.subscribe({
+          key: 'photos:' + (projectId || 'all'),
+          group: group,
+          module: 'photos',
+          projectId: projectId || '',
+          queryFactory: function () {
+            if (projectId) {
+              return firebase.database().ref('projects/' + projectId + '/pmosPhotoLogs').limitToLast(100);
+            }
+            return firebase.database().ref('pmosPhotoLogs').limitToLast(100);
+          },
+          callback: function (snap) {
+            handleModuleSnapshot(snap, { key: 'photos', collection: 'pmosPhotoLogs', label: 'Photo Proofs' }, 'photos:' + (projectId || 'all'), !projectId);
+          },
+          errorCallback: function (err) { /* silent */ }
+        });
+        break;
+
+      case 'meetings':
+        // Meeting Notes: only meetings
+        SUB.subscribe({
+          key: 'meetings:' + (projectId || 'all'),
+          group: group,
+          module: 'meetings',
+          projectId: projectId || '',
+          queryFactory: function () {
+            if (projectId) {
+              return firebase.database().ref('projects/' + projectId + '/pmosMeetingNotes').limitToLast(100);
+            }
+            return firebase.database().ref('pmosMeetingNotes').limitToLast(100);
+          },
+          callback: function (snap) {
+            handleModuleSnapshot(snap, { key: 'meetings', collection: 'pmosMeetingNotes', label: 'Meeting Notes' }, 'meetings:' + (projectId || 'all'), !projectId);
+          },
+          errorCallback: function (err) { /* silent */ }
+        });
+        break;
+
+      case 'reports':
+        // Reports: bounded one-time reads, no permanent listener
+        // No subscription needed - reports use one-time reads from allRecords()
+        break;
+
+      default:
+        // Fallback: subscribe to all modules like inbox
+        MODULES.forEach(function (mod) {
+          SUB.subscribe({
+            key: 'default:' + mod.collection,
+            group: group,
+            module: mod.key,
+            projectId: '',
+            queryFactory: function () {
+              return firebase.database().ref(mod.collection).limitToLast(100);
+            },
+            callback: function (snap) {
+              handleModuleSnapshot(snap, mod, 'default:' + mod.collection, true);
+            },
+            errorCallback: function (err) { noteOfficeReadFallback(err, 'global'); }
+          });
+        });
+    }
   }
 
   function handleModuleSnapshot(snap, mod, sourceKey, isGlobal) {
     // Remove existing records with this sourceKey
     state.records = state.records.filter(function (r) { return r.sourceKey !== sourceKey; });
-    
+
     snap.forEach(function (child) {
       var record = child.val() || {};
       var pid = isGlobal ? record.projectId : (record.projectId || '');
@@ -310,7 +724,7 @@
         });
       }
     });
-    
+
     renderPmosOffice();
   }
 
@@ -342,27 +756,38 @@
   }
 
   function closePmosOffice() {
+    /* Cleanup subscriptions when closing office */
+    if (SUB) {
+      Object.keys(VIEW_GROUPS).forEach(function (v) {
+        SUB.unsubscribeGroup(VIEW_GROUPS[v]);
+      });
+    }
     $('pmosOfficeView')?.classList.add('hidden');
     if (window._currentPid) $('workspaceView')?.classList.remove('hidden');
     else $('hubView')?.classList.remove('hidden');
   }
 
   function showPmosOfficeView(view) {
-    state.activeView = view;
-    renderPmosOffice();
+    activatePMOSOfficeView(view, { projectId: state.lastProjectId });
   }
 
   function allRecords() {
-    const seen = new Set();
-    return state.records
-      .filter(r => projectIsOperational(r.projectId))
-      .filter(r => {
-        const key = `${r.collection || ''}|${r.projectId || ''}|${r.id || ''}`;
+    var seen = new Set();
+    // Merge listener records (state.records) with pagination records (pag.records)
+    var merged = [].concat(state.records);
+    var pag = getPagination(state.activeView);
+    if (pag && pag.records.length > 0) {
+      merged = merged.concat(pag.records);
+    }
+    return merged
+      .filter(function (r) { return projectIsOperational(r.projectId); })
+      .filter(function (r) {
+        var key = (r.collection || '') + '|' + (r.projectId || '') + '|' + (r.id || '');
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       })
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      .sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
   }
 
   function renderPmosOffice() {
@@ -383,13 +808,28 @@
       reports: renderReports
     };
     setHTML('pmosOfficeContent', (renderers[state.activeView] || renderInbox)());
-    
-    /* Wire lightbox after photo gallery renders - use event delegation on container */
+
+    /* Wire lightbox after photo gallery renders - MutationObserver to detect gallery insertion */
     if (state.activeView === 'photos' && typeof pmosAttachLightboxToGallery === 'function') {
-      // Use setTimeout to ensure DOM is rendered before attaching
-      setTimeout(function () {
+      var galleryContainer = document.querySelector('.pmos-photo-grid');
+      if (galleryContainer) {
         pmosAttachLightboxToGallery('.pmos-photo-grid');
-      }, 0);
+      } else {
+        // Gallery not yet in DOM; observe the content area for insertion
+        var contentEl = document.getElementById('pmosOfficeContent');
+        if (contentEl) {
+          var observer = new MutationObserver(function () {
+            var grid = document.querySelector('.pmos-photo-grid');
+            if (grid) {
+              pmosAttachLightboxToGallery('.pmos-photo-grid');
+              observer.disconnect();
+            }
+          });
+          observer.observe(contentEl, { childList: true, subtree: true });
+          // Safety cleanup after 2 seconds
+          setTimeout(function () { observer.disconnect(); }, 2000);
+        }
+      }
     }
   }
 
@@ -411,13 +851,13 @@
     const moduleOptions = ['<option value="">All modules</option>'].concat(MODULES.map(m => `<option value="${h(m.collection)}">${h(m.label)}</option>`)).join('');
     const statusOptions = ['<option value="">All statuses</option>'].concat([...new Set([...STATUS_WORKFLOW, ...MATERIAL_STATUSES])].map(s => `<option value="${h(s)}">${h(s)}</option>`)).join('');
     return `<div class="pmos-filters">
-      <select id="${prefix}Project" onchange="renderPmosOffice()">${projectOptions}</select>
-      <select id="${prefix}Module" onchange="renderPmosOffice()">${moduleOptions}</select>
-      <select id="${prefix}Status" onchange="renderPmosOffice()">${statusOptions}</select>
-      <select id="${prefix}Priority" onchange="renderPmosOffice()">
+      <select id="${prefix}Project" onchange="resetPaginationForCurrentView(); renderPmosOffice()">${projectOptions}</select>
+      <select id="${prefix}Module" onchange="resetPaginationForCurrentView(); renderPmosOffice()">${moduleOptions}</select>
+      <select id="${prefix}Status" onchange="resetPaginationForCurrentView(); renderPmosOffice()">${statusOptions}</select>
+      <select id="${prefix}Priority" onchange="resetPaginationForCurrentView(); renderPmosOffice()">
         <option value="">All priorities</option><option>Critical</option><option>High</option><option>Normal</option><option>Low</option>
       </select>
-      <input id="${prefix}Date" type="date" onchange="renderPmosOffice()">
+      <input id="${prefix}Date" type="date" onchange="resetPaginationForCurrentView(); renderPmosOffice()">
     </div>`;
   }
 
@@ -444,12 +884,18 @@
   }
 
   function renderInbox() {
-    const records = filteredRecords('pmosInbox');
-    return `<div class="pmos-office-section">
-      <h3>PMOS Inbox</h3>
-      ${filtersMarkup('pmosInbox')}
-      <div class="pmos-office-list">${records.length ? records.map(recordRow).join('') : '<p class="empty-hint">No PMOS records match the filters.</p>'}</div>
-    </div>`;
+    var records = filteredRecords('pmosInbox');
+    var pag = getPagination('inbox');
+    /* On first render, reset pagination if filters changed */
+    if (pag.records.length === 0 && !pag.loading && pag.hasMore) {
+      loadMoreView('inbox');
+    }
+    return '<div class="pmos-office-section">' +
+      '<h3>PMOS Inbox</h3>' +
+      filtersMarkup('pmosInbox') +
+      '<div class="pmos-office-list">' + (records.length ? records.map(recordRow).join('') : '<p class="empty-hint">No PMOS records match the filters.</p>') + '</div>' +
+      loadMoreMarkup('inbox') +
+    '</div>';
   }
 
   function recordRow(r) {
@@ -485,36 +931,43 @@
   }
 
   function renderFeed() {
-    const records = allRecords();
-    const groups = {};
-    records.forEach(r => {
-      const date = r.date || (r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : 'No date');
-      const key = `${projectName(r.projectId, r.projectName)}||${date}||${r.moduleLabel || moduleByCollection(r.collection).label}`;
-      groups[key] = groups[key] || [];
+    var records = allRecords();
+    var groups = {};
+    records.forEach(function (r) {
+      var date = r.date || (r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : 'No date');
+      var key = projectName(r.projectId, r.projectName) + '||' + date + '||' + (r.moduleLabel || moduleByCollection(r.collection).label);
+      if (!groups[key]) groups[key] = [];
       groups[key].push(r);
     });
-    const html = Object.entries(groups).map(([key, items]) => {
-      const [project, date, moduleLabel] = key.split('||');
-      return `<section class="pmos-feed-group">
-        <h3>${h(project)} <span>${h(date)} - ${h(moduleLabel)}</span></h3>
-        ${items.map(recordRow).join('')}
-      </section>`;
+    var html = Object.keys(groups).map(function (key) {
+      var items = groups[key];
+      var parts = key.split('||');
+      var project = parts[0], date = parts[1], moduleLabel = parts[2];
+      return '<section class="pmos-feed-group">' +
+        '<h3>' + h(project) + ' <span>' + h(date) + ' - ' + h(moduleLabel) + '</span></h3>' +
+        items.map(function (r) { return recordRow(r); }).join('') +
+      '</section>';
     }).join('');
-    return html || '<p class="empty-hint">No PMOS project feed records yet.</p>';
+    var pag = getPagination('feed');
+    if (pag.records.length === 0 && !pag.loading && pag.hasMore) loadMoreView('feed');
+    return html || '<p class="empty-hint">No PMOS project feed records yet.</p>' + loadMoreMarkup('feed');
   }
 
   function renderIssues() {
-    const filter = $('pmosIssueFilter')?.value || 'open';
-    const records = allRecords().filter(r => r.collection === 'pmosIssues').filter(r => {
-      const status = String(r.status || 'New');
+    var filter = $('pmosIssueFilter')?.value || 'open';
+    var records = allRecords().filter(function (r) { return r.collection === 'pmosIssues'; }).filter(function (r) {
+      var status = String(r.status || 'New');
       if (filter === 'done') return status === 'Done';
       if (filter === 'archived') return status === 'Archived';
       return !['Done', 'Archived'].includes(status);
     });
-    return `<div class="pmos-office-section">
-      <div class="pmos-section-head"><h3>Issue Board</h3><select id="pmosIssueFilter" onchange="renderPmosOffice()"><option value="open">Open</option><option value="done">Done</option><option value="archived">Archived</option></select></div>
-      <div class="pmos-board">${records.length ? records.map(issueCard).join('') : '<p class="empty-hint">No issues in this lane.</p>'}</div>
-    </div>`;
+    var pag = getPagination('issues');
+    if (pag.records.length === 0 && !pag.loading && pag.hasMore) loadMoreView('issues');
+    return '<div class="pmos-office-section">' +
+      '<div class="pmos-section-head"><h3>Issue Board</h3><select id="pmosIssueFilter" onchange="resetPaginationForCurrentView(); renderPmosOffice()"><option value="open">Open</option><option value="done">Done</option><option value="archived">Archived</option></select></div>' +
+      '<div class="pmos-board">' + (records.length ? records.map(function (r) { return issueCard(r); }).join('') : '<p class="empty-hint">No issues in this lane.</p>') + '</div>' +
+      loadMoreMarkup('issues') +
+    '</div>';
   }
 
   function issueCard(r) {
@@ -529,11 +982,14 @@
   }
 
   function renderMaterials() {
-    const records = allRecords().filter(r => r.collection === 'pmosMaterialRequests');
-    return `<div class="pmos-office-section">
-      <h3>Material Request Inbox</h3>
-      <div class="pmos-office-list">${records.length ? records.map(materialRow).join('') : '<p class="empty-hint">No material requests from PMOS yet.</p>'}</div>
-    </div>`;
+    var records = allRecords().filter(function (r) { return r.collection === 'pmosMaterialRequests'; });
+    var pag = getPagination('materials');
+    if (pag.records.length === 0 && !pag.loading && pag.hasMore) loadMoreView('materials');
+    return '<div class="pmos-office-section">' +
+      '<h3>Material Request Inbox</h3>' +
+      '<div class="pmos-office-list">' + (records.length ? records.map(function (r) { return materialRow(r); }).join('') : '<p class="empty-hint">No material requests from PMOS yet.</p>') + '</div>' +
+      loadMoreMarkup('materials') +
+    '</div>';
   }
 
   function materialRow(r) {
@@ -550,27 +1006,33 @@
   }
 
   function renderTasks() {
-    const priorityScore = { Critical: 0, High: 1, Normal: 2, Low: 3 };
-    const records = allRecords()
-      .filter(r => r.collection === 'pmosTasks')
-      .sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')) || ((priorityScore[a.priority] ?? 9) - (priorityScore[b.priority] ?? 9)));
-    return `<div class="pmos-office-section">
-      <h3>Follow-up Board</h3>
-      <div class="pmos-office-list">${records.length ? records.map(recordRow).join('') : '<p class="empty-hint">No follow-up tasks yet.</p>'}</div>
-    </div>`;
+    var priorityScore = { Critical: 0, High: 1, Normal: 2, Low: 3 };
+    var records = allRecords()
+      .filter(function (r) { return r.collection === 'pmosTasks'; })
+      .sort(function (a, b) { return String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')) || ((priorityScore[a.priority] ?? 9) - (priorityScore[b.priority] ?? 9)); });
+    var pag = getPagination('tasks');
+    if (pag.records.length === 0 && !pag.loading && pag.hasMore) loadMoreView('tasks');
+    return '<div class="pmos-office-section">' +
+      '<h3>Follow-up Board</h3>' +
+      '<div class="pmos-office-list">' + (records.length ? records.map(function (r) { return recordRow(r); }).join('') : '<p class="empty-hint">No follow-up tasks yet.</p>') + '</div>' +
+      loadMoreMarkup('tasks') +
+    '</div>';
   }
 
   function renderSiteLogs() {
-    const selectedProject = $('pmosSiteProject')?.value || '';
-    const selectedDate = $('pmosSiteDate')?.value || '';
-    const projectOptions = ['<option value="">All active projects</option>'].concat(visibleProjects().map(p => `<option value="${h(p.id)}">${h(p.name || 'Untitled project')}</option>`)).join('');
-    const records = allRecords().filter(r => r.collection === 'pmosSiteLogs')
-      .filter(r => (!selectedProject || r.projectId === selectedProject) && (!selectedDate || r.date === selectedDate));
-    return `<div class="pmos-office-section">
-      <h3>Site Log Viewer</h3>
-      <div class="pmos-filters"><select id="pmosSiteProject" onchange="renderPmosOffice()">${projectOptions}</select><input id="pmosSiteDate" type="date" onchange="renderPmosOffice()"></div>
-      <div class="pmos-office-list">${records.length ? records.map(siteLogCard).join('') : '<p class="empty-hint">No site logs for this view.</p>'}</div>
-    </div>`;
+    var selectedProject = $('pmosSiteProject')?.value || '';
+    var selectedDate = $('pmosSiteDate')?.value || '';
+    var projectOptions = ['<option value="">All active projects</option>'].concat(visibleProjects().map(function (p) { return '<option value="' + h(p.id) + '">' + h(p.name || 'Untitled project') + '</option>'; })).join('');
+    var records = allRecords().filter(function (r) { return r.collection === 'pmosSiteLogs'; })
+      .filter(function (r) { return (!selectedProject || r.projectId === selectedProject) && (!selectedDate || r.date === selectedDate); });
+    var pag = getPagination('sitelogs');
+    if (pag.records.length === 0 && !pag.loading && pag.hasMore) loadMoreView('sitelogs');
+    return '<div class="pmos-office-section">' +
+      '<h3>Site Log Viewer</h3>' +
+      '<div class="pmos-filters"><select id="pmosSiteProject" onchange="resetPaginationForCurrentView(); renderPmosOffice()">' + projectOptions + '</select><input id="pmosSiteDate" type="date" onchange="resetPaginationForCurrentView(); renderPmosOffice()"></div>' +
+      '<div class="pmos-office-list">' + (records.length ? records.map(function (r) { return siteLogCard(r); }).join('') : '<p class="empty-hint">No site logs for this view.</p>') + '</div>' +
+      loadMoreMarkup('sitelogs') +
+    '</div>';
   }
 
   function siteLogCard(r) {
@@ -585,30 +1047,31 @@
 
   /* ---- Meeting Notes View ---- */
   function renderMeetings() {
-    const f = readFilters('pmosMeeting');
-    const records = allRecords().filter(r => r.collection === 'pmosMeetingNotes')
-      .filter(r => {
+    var f = readFilters('pmosMeeting');
+    var records = allRecords().filter(function (r) { return r.collection === 'pmosMeetingNotes'; })
+      .filter(function (r) {
         return (!f.project || r.projectId === f.project) &&
           (!f.status || String(r.status || 'Draft') === f.status);
       });
-    
-    const projectOptions = ['<option value="">All active projects</option>'].concat(visibleProjects().map(p => `<option value="${h(p.id)}">${h(p.name || 'Untitled project')}</option>`)).join('');
-    const statusOptions = ['<option value="">All statuses</option>'].concat(
+    var projectOptions = ['<option value="">All active projects</option>'].concat(visibleProjects().map(function (p) { return '<option value="' + h(p.id) + '">' + h(p.name || 'Untitled project') + '</option>'; })).join('');
+    var statusOptions = ['<option value="">All statuses</option>'].concat(
       (typeof MEETING_STATUSES !== 'undefined' ? MEETING_STATUSES : ['Draft', 'Submitted', 'Reviewed', 'Action Required', 'Closed', 'Archived'])
-        .map(s => `<option value="${h(s)}">${h(s)}</option>`)
+        .map(function (s) { return '<option value="' + h(s) + '">' + h(s) + '</option>'; })
     ).join('');
-    
-    return `<div class="pmos-office-section">
-      <h3>Meeting Notes</h3>
-      <div class="pmos-filters">
-        <select id="pmosMeetingProject" onchange="renderPmosOffice()">${projectOptions}</select>
-        <select id="pmosMeetingStatus" onchange="renderPmosOffice()">${statusOptions}</select>
-      </div>
-      <div class="pmos-office-list">${records.length ? records.map(meetingRow).join('') : '<p class="empty-hint">No meeting notes found.</p>'}</div>
-      <div class="pmos-report-grid">
-        ${typeof window.pmosPrintMeetingReport === 'function' ? '<button onclick="pmosPrintMeetingReport(allRecords())">Print Meeting Report</button>' : ''}
-      </div>
-    </div>`;
+    var pag = getPagination('meetings');
+    if (pag.records.length === 0 && !pag.loading && pag.hasMore) loadMoreView('meetings');
+    return '<div class="pmos-office-section">' +
+      '<h3>Meeting Notes</h3>' +
+      '<div class="pmos-filters">' +
+        '<select id="pmosMeetingProject" onchange="resetPaginationForCurrentView(); renderPmosOffice()">' + projectOptions + '</select>' +
+        '<select id="pmosMeetingStatus" onchange="resetPaginationForCurrentView(); renderPmosOffice()">' + statusOptions + '</select>' +
+      '</div>' +
+      '<div class="pmos-office-list">' + (records.length ? records.map(function (r) { return meetingRow(r); }).join('') : '<p class="empty-hint">No meeting notes found.</p>') + '</div>' +
+      '<div class="pmos-report-grid">' +
+        (typeof window.pmosPrintMeetingReport === 'function' ? '<button onclick="pmosPrintMeetingReport(allRecords())">Print Meeting Report</button>' : '') +
+      '</div>' +
+      loadMoreMarkup('meetings') +
+    '</div>';
   }
 
   function meetingRow(r) {
@@ -630,6 +1093,7 @@
         <select onchange="pmosUpdateMeetingStatus('${h(r.id)}','${h(r.projectId || '')}',this.value)">
           ${(typeof MEETING_STATUSES !== 'undefined' ? MEETING_STATUSES : ['Draft', 'Submitted', 'Reviewed', 'Action Required', 'Closed', 'Archived']).map(s => `<option value="${h(s)}" ${status === s ? 'selected' : ''}>${h(s)}</option>`).join('')}
         </select>
+        ${r.actionItems ? `<button type="button" onclick="pmosCreateFollowupFromMeeting('${h(r.id)}','${h(r.projectId || '')}','${h(r.actionItems).slice(0, 120).replace(/'/g, "\\'")}')">Create Follow-up</button>` : ''}
       </div>
     </article>`;
   }
@@ -669,7 +1133,7 @@
     }).join('');
     return '<div class="pmos-office-section">' +
       '<h3>Photo Proof Gallery</h3>' +
-      '<div class="pmos-filters"><select id="pmosPhotoProject" onchange="renderPmosOffice()">' + projectOptions + '</select><input id="pmosPhotoDate" type="date" onchange="renderPmosOffice()"></div>' +
+      '<div class="pmos-filters"><select id="pmosPhotoProject" onchange="resetPaginationForCurrentView(); renderPmosOffice()">' + projectOptions + '</select><input id="pmosPhotoDate" type="date" onchange="resetPaginationForCurrentView(); renderPmosOffice()"></div>' +
       (body || '<p class="empty-hint">No PMOS photo proofs for this view.</p>') +
       '<div class="pmos-load-more-wrap" id="pmosPhotoLoadMore"></div>' +
     '</div>';

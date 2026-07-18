@@ -9,6 +9,8 @@
       "docs/**",
       "scripts/**",
       "line17-face-attendance/**",
+      "tmp_jdk/**",
+      "database-debug.log",
       "cors.json",
       "database.rules.json",
       "storage.rules",

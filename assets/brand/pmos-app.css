@@ -96,7 +96,7 @@
 }
 
 .pmos-install-bar span { flex: 1; }
-.pmos-install-bar button { 
+.pmos-install-bar button {
   padding: 6px 16px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;
   background: var(--acpm-pmos-primary, #0f766e); color: #fff;
 }

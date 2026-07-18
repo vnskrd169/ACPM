@@ -1,7 +1,7 @@
 /* ==========================================================================
    ACPM PMOS — Photo Gallery Lightbox
    Full-featured gallery lightbox for PMOS Office photo review.
-   
+
    Features: modal dialog, full-size preview, thumbnail fallback,
    loading/missing/failed states, next/previous, counter, caption,
    category, project name, uploader, dates, storage provider,

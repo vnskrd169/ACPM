@@ -1,11 +1,11 @@
 /* ==========================================================================
    ACPM Brand Design Tokens
    Centralized design variables for ACPM, PMOS, and future ACPM modules.
-   
+
    Usage: @import url('assets/brand/acpm-brand.css');
    Or:    <link rel="stylesheet" href="assets/brand/acpm-brand.css">
-   
-   These tokens are additive. They do not replace existing styles but 
+
+   These tokens are additive. They do not replace existing styles but
    provide a shared foundation for new and upgraded components.
    ========================================================================== */
 

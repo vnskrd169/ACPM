@@ -2,11 +2,11 @@
    ACPM PMOS — Meeting Notes Module
    Standalone module for creating, editing, reviewing, and archiving
    meeting minutes within the PMOS ecosystem.
-   
+
    Fields: project, meeting title, date, type, attendees, location,
    agenda, discussion, decisions, action items, assigned persons,
    target dates, attachments, prepared by, reviewed by, status.
-   
+
    Statuses: Draft → Submitted → Reviewed → Action Required → Closed → Archived
    ========================================================================== */
 
@@ -198,6 +198,7 @@
         <button type="button" onclick="pmosUpdateMeetingStatus('${h(r.id)}','${h(r.projectId || '')}','Reviewed')">Reviewed</button>
         <button type="button" onclick="pmosUpdateMeetingStatus('${h(r.id)}','${h(r.projectId || '')}','Closed')">Close</button>
         <button type="button" onclick="pmosUpdateMeetingStatus('${h(r.id)}','${h(r.projectId || '')}','Archived')">Archive</button>
+        ${r.actionItems ? `<button type="button" onclick="pmosCreateFollowupFromMeeting('${h(r.id)}','${h(r.projectId || '')}','${h(r.actionItems).slice(0, 120).replace(/'/g, "\\'")}')">Create Follow-up</button>` : ''}
       </div>
     </article>`;
   }
@@ -275,12 +276,88 @@
     win.print();
   }
 
+  /* ---- Action Item to Follow-up Conversion ---- */
+  async function pmosCreateFollowupFromMeeting(meetingId, projectId, actionItemText) {
+    if (!meetingId || !projectId) {
+      if (typeof pmosToast === 'function') pmosToast('Cannot create follow-up: missing meeting or project.', 'error');
+      return;
+    }
+    try {
+      // Check for existing follow-up with same source relationship
+      const existingSnap = await firebase.database().ref('pmosTasks')
+        .orderByChild('sourceModule')
+        .equalTo('meeting-notes')
+        .once('value');
+      var alreadyExists = false;
+      existingSnap.forEach(function (child) {
+        var task = child.val() || {};
+        if (task.sourceRecordId === meetingId) {
+          alreadyExists = true;
+        }
+      });
+
+      if (alreadyExists) {
+        if (typeof pmosToast === 'function') pmosToast('Follow-up already created from this meeting.', 'warn');
+        return;
+      }
+
+      // No existing follow-up found — create one
+      const taskRef = firebase.database().ref('pmosTasks').push();
+      const now = Date.now();
+      const task = {
+        id: taskRef.key,
+        task: actionItemText || 'Follow-up from meeting',
+        person: '',
+        dueDate: '',
+        priority: 'Normal',
+        status: 'New',
+        remarks: 'Created from Meeting Notes action item',
+        projectId: projectId,
+        module: 'Follow-ups',
+        sourceModule: 'meeting-notes',
+        sourceRecordId: meetingId,
+        schemaVersion: typeof PMOS_SCHEMA_VERSION !== 'undefined' ? PMOS_SCHEMA_VERSION : '1.0',
+        syncStatus: 'synced',
+        createdAt: now,
+        updatedAt: now,
+        createdBy: window._currentUser?.uid || '',
+        createdByName: window._currentUser?.name || '',
+        source: 'Line17 PMOS'
+      };
+      try {
+        await taskRef.set(task);
+        if (typeof pmosToast === 'function') pmosToast('Follow-up task created from meeting action item.');
+        if (typeof pmosAuditLog === 'function') {
+          pmosAuditLog('create_followup_from_meeting', 'pmos_tasks', projectId, taskRef.key, 'Follow-up created from meeting action item');
+        }
+        if (typeof renderPmosOffice === 'function') renderPmosOffice();
+      } catch (e) {
+        if (String(e?.code || '').toLowerCase().includes('permission')) {
+          try {
+            await firebase.database().ref(`projects/${projectId}/pmosTasks/${taskRef.key}`).set(task);
+            if (typeof pmosToast === 'function') pmosToast('Follow-up task created (project path).');
+            if (typeof renderPmosOffice === 'function') renderPmosOffice();
+            return;
+          } catch (fbError) {
+            console.error('Follow-up creation fallback failed:', fbError);
+          }
+        }
+        console.error('Follow-up creation failed:', e);
+        if (typeof pmosToast === 'function') pmosToast('Could not create follow-up task.', 'error');
+      }
+    } catch (e) {
+      console.error('Follow-up check failed:', e);
+      if (typeof pmosToast === 'function') pmosToast('Could not check for existing follow-up.', 'error');
+    }
+  }
+
   /* ---- Exports ---- */
   window.pmosSaveMeeting = pmosSaveMeeting;
   window.pmosRenderMeetingNotes = pmosRenderMeetingNotes;
   window.pmosUpdateMeetingStatus = pmosUpdateMeetingStatus;
   window.pmosFilterMeetingNotes = pmosFilterMeetingNotes;
   window.pmosPrintMeetingReport = pmosPrintMeetingReport;
+  window.pmosCreateFollowupFromMeeting = pmosCreateFollowupFromMeeting;
   window.MEETING_STATUSES = MEETING_STATUSES;
   window.MEETING_TYPES = MEETING_TYPES;
 })();

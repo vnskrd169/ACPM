@@ -2,9 +2,9 @@
    PMOS Proposed Storage Rules
    These rules extend the ACPM production storage.rules with PMOS-specific
    upload paths and security restrictions.
-   
+
    WARNING: These are PROPOSED rules. Do not deploy without owner review.
-   
+
    Changes from production:
    1. Added pmos/ upload paths for all modules
    2. Added MIME type validation (images only)
@@ -21,7 +21,7 @@ service firebase.storage {
     match /pmos/{projectId}/{module}/{year}/{month}/{fileName} {
       // Must be authenticated
       allow read: if request.auth != null;
-      
+
       // Must be authenticated AND assigned to the project
       allow write: if request.auth != null
         && request.resource.size < 20 * 1024 * 1024  // Max 20MB
@@ -41,7 +41,7 @@ service firebase.storage {
             .ref('/users/' + request.auth.uid + '/bossOf/' + projectId)
             .get().data.exists()
         );
-      
+
       allow delete: if request.auth != null
         && (
           firebase.database()
