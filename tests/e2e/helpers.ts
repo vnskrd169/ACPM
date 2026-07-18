@@ -38,7 +38,7 @@ const TEST_USERS = {
  * Inject a mock Firebase SDK + user into every page load.
  * This runs before any page scripts via addInitScript.
  */
-function buildInitScript(userKey: keyof typeof TEST_USERS): string {
+export function buildInitScript(userKey: keyof typeof TEST_USERS): string {
   const user = TEST_USERS[userKey];
   return `
     // Inject current user
