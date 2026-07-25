@@ -7,7 +7,7 @@
 // -----------------------------------------------------------------------------
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v124';
+const CACHE_NAME = 'acpm-v126';
 
 const ASSETS = [
   './',
@@ -16,10 +16,10 @@ const ASSETS = [
   './pmos.html',
   './dashboard.html',
   './workspace.html',
-  './style.css?v=103',
-  './utils.js?v=84',
-  './auth.js?v=95',
-  './main.js?v=101',
+  './style.css?v=104',
+  './utils.js?v=85',
+  './auth.js?v=96',
+  './main.js?v=103',
   './labor.js?v=94',
   './materials.js?v=94',
   './billing.js?v=75',
@@ -31,6 +31,7 @@ const ASSETS = [
   './defects.js?v=94',
   './tasks.js?v=94',
   './notifications.js?v=85',
+  './ux-palette.js?v=1',
   './report.js?v=97',
   './pmos.js?v=2',
   './pmos-office.js?v=4',
@@ -78,6 +79,9 @@ self.addEventListener('fetch', e => {
 
   // Skip Firebase API calls (Realtime DB uses WebSockets)
   const url = new URL(e.request.url);
+  if (url.pathname === '/pmos/' || url.pathname.startsWith('/pmos/')) {
+    return;
+  }
   if (url.hostname.includes('firebaseio.com') ||
       url.hostname.includes('googleapis.com') ||
       url.hostname.includes('gstatic.com')) {

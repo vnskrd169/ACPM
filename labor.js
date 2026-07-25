@@ -448,7 +448,7 @@ async function addWorker() {
 
   // Validate daily rate is reasonable (not extreme)
   if (rate > 50000) {
-    if (!confirm(`Daily rate ${peso(rate)} seems very high. Continue?`)) return;
+    showToast(`Daily rate ${peso(rate)} seems very high. Proceeding automatically.`, 'warn', 4000);
   }
 
   const workerData = { name, trade, dailyRate: rate, active: true, status: 'active', addedAt: Date.now(), addedBy: window._currentUser.uid };

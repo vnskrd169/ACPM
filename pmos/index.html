@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#0f766e">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ACPM PMOS">
 <meta name="application-name" content="ACPM PMOS">
@@ -21,12 +21,11 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
 <!-- ACPM Core (shared from root) -->
 <script src="../utils.js?v=84"></script>
 <script src="../auth.js?v=95"></script>
-<script src="../main.js?v=101"></script>
+<script src="../main.js?v=102"></script>
 
 <!-- PMOS App Shell -->
 <link rel="stylesheet" href="../assets/brand/acpm-brand.css">
@@ -35,7 +34,6 @@
 <!-- PMOS App -->
 <script src="../acpm-shell.js"></script>
 <script src="../pmos.js"></script>
-<script src="../face-attendance.js"></script>
 </head>
 <body class="auth-checking auth-locked pmos-body">
   <!-- Loading Screen -->
@@ -93,6 +91,7 @@
   <script>
   /* ---- PMOS PWA Registration (scoped to /pmos/) ---- */
   (function() {
+    if (window.__ACPM_DISABLE_SW_FOR_E2E__) return;
     if ('serviceWorker' in navigator) {
       var pmosRefreshed = false;
       navigator.serviceWorker.addEventListener('controllerchange', function() {

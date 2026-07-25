@@ -2,7 +2,7 @@
 
 Status: RC1 READY - FINAL GATES PASSED
 
-Post-RC1 account onboarding and clarity patch: cache `acpm-v124`, `style.css?v=103`, `auth.js?v=95`, `main.js?v=101`, `materials.js?v=94`, `billing.js?v=75`, `notifications.js?v=85`, `report.js?v=97`, and `pmos-office.js?v=4` keeps Hub as the default project command center while fixing signup access requests, Admin approval, Team Admin visibility, first-login profile completion, orphan Auth-account request recovery, per-user notification clearing, active-project-only assignment during approval, Firebase-rule-compatible project assignment maps, PMOS Office hiding completed-project records, clearer Hub Recent Activity rows, clearer Admin Audit Log action cards, project-map notification listeners, non-admin assigned-project loading resilience, and Team Admin suspend/reactivate/archive workflow.
+Post-RC1 account onboarding and clarity patch: cache `acpm-v125`, `style.css?v=103`, `auth.js?v=95`, `main.js?v=102`, `materials.js?v=94`, `billing.js?v=75`, `notifications.js?v=85`, `report.js?v=97`, and `pmos-office.js?v=4` keeps Hub as the default project command center while fixing signup access requests, Admin approval, Team Admin visibility, first-login profile completion, orphan Auth-account request recovery, per-user notification clearing, active-project-only assignment during approval, Firebase-rule-compatible project assignment maps, PMOS Office hiding completed-project records, clearer Hub Recent Activity rows, clearer Admin Audit Log action cards, project-map notification listeners, non-admin assigned-project loading resilience, Team Admin suspend/reactivate/archive workflow, and PMOS scoped service worker isolation.
 
 Last updated: 2026-07-12
 
@@ -10,7 +10,7 @@ Last updated: 2026-07-12
 
 | Area | Result | Evidence |
 | --- | --- | --- |
-| Authentication / routing / PWA shell | PASS | Multi-page route foundation is active. Current PWA cache static QA verifies cache v124, manifest `login.html` start URL, versioned `style.css?v=103`, current `auth.js?v=95`, current `main.js?v=101`, and synchronized app-shell script versions. |
+| Authentication / routing / PWA shell | PASS | Multi-page route foundation is active. Current PWA cache static QA verifies cache v125, manifest `login.html` start URL, versioned `style.css?v=103`, current `auth.js?v=95`, current `main.js?v=102`, and synchronized app-shell script versions. |
 | Dashboard integration | PASS | Rollup data QA, dashboard static QA, Boss browser smoke, and live Firebase RC1 gate passed. Live v116 smoke confirms Hub is the return target from Team Admin and System Reports does not open accidentally. |
 | Project lifecycle | PASS | Active/completed/archive behavior previously verified; dashboard cards render active and completed actions. |
 | Labor v1 | PASS | Real Firebase cash advance/payroll archive QA passed via `scripts/labor_v1_cash_advance_real_qa.js`. |
@@ -36,7 +36,7 @@ Last updated: 2026-07-12
 
 Live v123 account/admin QA on 2026-07-13:
 
-- Hosted app served cache `acpm-v124`, `auth.js?v=95`, `main.js?v=101`, `notifications.js?v=85`, `report.js?v=97`, and `style.css?v=103`.
+- Hosted app served cache `acpm-v125`, `auth.js?v=95`, `main.js?v=102`, `notifications.js?v=85`, `report.js?v=97`, and `style.css?v=103`.
 - Request Access created a real Auth account plus `accessRequests/{uid}` pending record.
 - Boss/Admin approval wrote the operational `users/{uid}` profile, audit log, global notification event, and direct notification.
 - First approved login forced My Profile setup; profile fields and inline profile photo persisted.
@@ -44,7 +44,7 @@ Live v123 account/admin QA on 2026-07-13:
 - Team Admin suspend/reactivate/archive preserved history and blocked suspended/archived logins.
 - Profile photo support uses compressed inline avatars for RC1 when Firebase Storage is unavailable.
 - UI polish smoke passed for mobile login/request pending, notification dropdown, Team Admin avatars/actions, and My Profile modal.
-- Team Admin navigation smoke after cache v124 confirmed Admin sub-tabs remain visible in Admin mode, Team Admin opens directly to the Team assignment view, and project module tabs stay hidden.
+- Team Admin navigation smoke after cache v125 confirmed Admin sub-tabs remain visible in Admin mode, Team Admin opens directly to the Team assignment view, and project module tabs stay hidden.
 | Hosting hygiene | PASS | Firebase Hosting ignore rules now exclude root and nested Markdown files. Live static verification confirms `CURRENT_TASK.md`, `README.md`, `docs/qa/QA_AUDIT.md`, and `scripts/rc1_static_gate.js` return 404 while `sw.js` and `dashboard.html` serve current v116 assets with no mojibake markers. |
 
 ## Stop Condition
@@ -105,7 +105,7 @@ Browser smoke passed:
 - Dashboard route as signed-in Boss.
 - Workspace route with `projectId` preserved.
 - Team Admin role options exclude Foreman/Safety/Viewer.
-- Loaded current cache/script set includes `style.css?v=103`, `auth.js?v=95`, `main.js?v=101`, `labor.js?v=94`, `materials.js?v=94`, `billing.js?v=75`, `changeorders.js?v=95`, `sitelog.js?v=94`, `suppliers.js?v=94`, `equipment.js?v=94`, `compliance.js?v=88`, `defects.js?v=94`, `tasks.js?v=94`, `notifications.js?v=85`, `report.js?v=97`, and `pmos-office.js?v=4`.
+- Loaded current cache/script set includes `style.css?v=103`, `auth.js?v=95`, `main.js?v=102`, `labor.js?v=94`, `materials.js?v=94`, `billing.js?v=75`, `changeorders.js?v=95`, `sitelog.js?v=94`, `suppliers.js?v=94`, `equipment.js?v=94`, `compliance.js?v=88`, `defects.js?v=94`, `tasks.js?v=94`, `notifications.js?v=85`, `report.js?v=97`, and `pmos-office.js?v=4`.
 - Local browser smoke after PWA gate confirmed dashboard route loads cache v89 script set, auth settles to `role-boss auth-ready`, loader hides, and console errors are empty.
 - Local browser smoke after historical-safety patch confirmed `labor.js?v=87` and `materials.js?v=87` load on dashboard with no console errors.
 - Materials label polish after cache v93 removed invalid `\u1Fxxx` escapes from PO buttons and stock labels; static gate verifies clean `Approve Invoice` and `Image` labels.

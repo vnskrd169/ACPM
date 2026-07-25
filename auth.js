@@ -456,19 +456,19 @@ function showAuthScreen() {
           <div class="auth-sub">LeBuild Design &amp; Construction</div>
         </div>
       </div>
-      <div class="auth-form">
-        <input type="email" id="authUser" placeholder="Email address" autocomplete="email">
-        <input type="password" id="authPass" placeholder="Password" autocomplete="current-password">
-        <button class="auth-btn" id="authLoginBtn" onclick="doLogin()">Sign In</button>
-        <button class="auth-btn auth-btn-google" onclick="doGoogleSignIn()">Continue with Google</button>
+      <form class="auth-form" id="loginForm" onsubmit="event.preventDefault(); doLogin(); return false;" aria-label="Sign in">
+        <input type="email" id="authUser" placeholder="Email address" autocomplete="email" aria-label="Email address">
+        <input type="password" id="authPass" placeholder="Password" autocomplete="current-password" aria-label="Password">
+        <button class="auth-btn" id="authLoginBtn" type="submit">Sign In</button>
+        <button class="auth-btn auth-btn-google" type="button" onclick="doGoogleSignIn()">Continue with Google</button>
         <div class="auth-divider"><span>Request access</span></div>
-        <input type="text" id="requestName" placeholder="Full name" autocomplete="name">
-        <input type="text" id="requestPosition" placeholder="Position" autocomplete="organization-title">
-        <input type="email" id="requestEmail" placeholder="Google email / work email" autocomplete="email">
-        <input type="password" id="requestPass" placeholder="Password for email request" autocomplete="new-password">
-        <button class="auth-btn auth-btn-secondary" onclick="doRequestAccess()">Submit Request</button>
-        <button class="auth-btn auth-btn-secondary" onclick="doGoogleAccessRequest()">Request with Google</button>
-      </div>
+        <input type="text" id="requestName" placeholder="Full name" autocomplete="name" aria-label="Full name">
+        <input type="text" id="requestPosition" placeholder="Position" autocomplete="organization-title" aria-label="Position">
+        <input type="email" id="requestEmail" placeholder="Google email / work email" autocomplete="email" aria-label="Google email">
+        <input type="password" id="requestPass" placeholder="Password for email request" autocomplete="new-password" aria-label="Password for email request">
+        <button class="auth-btn auth-btn-secondary" type="button" onclick="doRequestAccess()">Submit Request</button>
+        <button class="auth-btn auth-btn-secondary" type="button" onclick="doGoogleAccessRequest()">Request with Google</button>
+      </form>
       <div class="auth-hint">Requests stay pending until an admin approves your role and projects.</div>
       <div id="authError" class="auth-error hidden"></div>
       <div class="auth-reset-row">
@@ -997,7 +997,7 @@ async function initAppForUser() {
     return;
   }
   const role = normalizeRole(_currentAuthUser?.role || 'apm');
-  const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false;
+  const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true;
 
   // Role-based CSS classes
   document.body.classList.remove('role-boss', 'role-owner', 'role-admin', 'role-pm', 'role-apm', 'role-foreman', 'role-safety', 'role-viewer');
@@ -1025,6 +1025,11 @@ async function initAppForUser() {
     extrasToggle.classList.toggle('is-enabled', extrasEnabled);
     extrasToggle.textContent = extrasEnabled ? 'Extras On' : 'Extras';
     extrasToggle.title = extrasEnabled ? 'Hide optional tabs' : 'Show optional tabs';
+    // Position Extras toggle at the end of the tab group
+    const tabGroup = extrasToggle.closest('.tab-group');
+    if (tabGroup && extrasToggle.parentNode === tabGroup) {
+      tabGroup.appendChild(extrasToggle);
+    }
   }
 
   const preferredTab = canSeeFinancials(role) ? '#tab_reports' : (isFieldRole(role) || isViewerRole(role)) ? '#tab_sitelog' : '#tab_labor';
@@ -1123,6 +1128,8 @@ function canWriteFieldLog(pid) {
 
 // -- Expose --------------------------------------------------
 window.initAuth          = initAuth;
+
+
 window.doLogin           = doLogin;
 window.doRegister        = doRegister;
 window.doRequestAccess   = doRequestAccess;

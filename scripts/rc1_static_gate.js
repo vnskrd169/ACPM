@@ -47,16 +47,16 @@ function main() {
   const html = Object.fromEntries(htmlFiles.map(file => [file, read(file)]));
   const loginHtml = read('login.html');
 
-  assert(/const CACHE_NAME = 'acpm-v124'/.test(sw), 'service worker cache must be acpm-v124');
-  assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=103">'), 'login.html must load style.css?v=103');
-  assert(extractScriptVersion(loginHtml, 'utils.js') === '84', 'login.html must load utils.js?v=84');
-  assert(extractScriptVersion(loginHtml, 'auth.js') === '95', 'login.html must load auth.js?v=95');
-  assert(extractScriptVersion(loginHtml, 'main.js') === '101', 'login.html must load main.js?v=101');
+  assert(/const CACHE_NAME = 'acpm-v126'/.test(sw), 'service worker cache must be acpm-v126');
+  assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=104">'), 'login.html must load style.css?v=104');
+  assert(extractScriptVersion(loginHtml, 'utils.js') === '85', 'login.html must load utils.js?v=85');
+  assert(extractScriptVersion(loginHtml, 'auth.js') === '96', 'login.html must load auth.js?v=96');
+  assert(extractScriptVersion(loginHtml, 'main.js') === '103', 'login.html must load main.js?v=103');
   for (const [file, content] of Object.entries(html)) {
-    assert(content.includes('<link rel="stylesheet" href="style.css?v=103">'), `${file} must load style.css?v=103`);
-    assert(extractScriptVersion(content, 'utils.js') === '84', `${file} must load utils.js?v=84`);
-    assert(extractScriptVersion(content, 'auth.js') === '95', `${file} must load auth.js?v=95`);
-    assert(extractScriptVersion(content, 'main.js') === '101', `${file} must load main.js?v=101`);
+    assert(content.includes('<link rel="stylesheet" href="style.css?v=104">'), `${file} must load style.css?v=104`);
+    assert(extractScriptVersion(content, 'utils.js') === '85', `${file} must load utils.js?v=85`);
+    assert(extractScriptVersion(content, 'auth.js') === '96', `${file} must load auth.js?v=96`);
+    assert(extractScriptVersion(content, 'main.js') === '103', `${file} must load main.js?v=103`);
     assert(extractScriptVersion(content, 'suppliers.js') === '94', `${file} must load suppliers.js?v=94`);
     assert(extractScriptVersion(content, 'labor.js') === '94', `${file} must load labor.js?v=94`);
     assert(extractScriptVersion(content, 'materials.js') === '94', `${file} must load materials.js?v=94`);
@@ -64,10 +64,10 @@ function main() {
     assert(extractScriptVersion(content, 'notifications.js') === '85', `${file} must load notifications.js?v=85`);
     assert(extractScriptVersion(content, 'report.js') === '97', `${file} must load report.js?v=97`);
   }
-  assert(sw.includes('./utils.js?v=84'), 'service worker must cache utils.js?v=84');
-  assert(sw.includes('./style.css?v=103'), 'service worker must cache style.css?v=103');
-  assert(sw.includes('./auth.js?v=95'), 'service worker must cache auth.js?v=95');
-  assert(sw.includes('./main.js?v=101'), 'service worker must cache main.js?v=101');
+  assert(sw.includes('./utils.js?v=85'), 'service worker must cache utils.js?v=85');
+  assert(sw.includes('./style.css?v=104'), 'service worker must cache style.css?v=104');
+  assert(sw.includes('./auth.js?v=96'), 'service worker must cache auth.js?v=96');
+  assert(sw.includes('./main.js?v=103'), 'service worker must cache main.js?v=103');
   assert(sw.includes('./labor.js?v=94'), 'service worker must cache labor.js?v=94');
   assert(sw.includes('./materials.js?v=94'), 'service worker must cache materials.js?v=94');
   assert(sw.includes('./billing.js?v=75'), 'service worker must cache billing.js?v=75');
@@ -79,6 +79,7 @@ function main() {
   assert(sw.includes('./defects.js?v=94'), 'service worker must cache defects.js?v=94');
   assert(sw.includes('./tasks.js?v=94'), 'service worker must cache tasks.js?v=94');
   assert(sw.includes('./notifications.js?v=85'), 'service worker must cache notifications.js?v=85');
+  assert(sw.includes("url.pathname === '/pmos/'") && sw.includes("url.pathname.startsWith('/pmos/')"), 'root service worker must leave /pmos/ routes to the scoped PMOS service worker');
 
   assert(mainSource.includes('...normalize(user.assignedProjects)'), 'dashboard assigned-project loading must support assignedProjects and project maps');
   assert(notifications.includes('...normalize(user.assignedProjects)'), 'notification listeners must support map-shaped assigned projects');
@@ -138,7 +139,7 @@ function main() {
   console.log(JSON.stringify({
     result: 'PASS',
     checks: [
-      'v124 cache/style and script references',
+      'v125 cache/style and script references',
       'login shell uses current auth/routing scripts',
       'service worker update/reload path',
       'RC1 active role validation',

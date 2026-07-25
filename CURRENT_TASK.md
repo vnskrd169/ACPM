@@ -13,7 +13,7 @@ Bring ACPM closer to RC1 by improving production clarity and reducing PM workloa
 - Fixed PMOS Office display so project UIDs are not shown as the primary label and completed/archived project records are hidden from active PMOS views.
 - Improved Team Admin roster readability with avatar/initials, name, email, position, profile completion, status, last-seen signal, role, and project assignment grouped for faster admin scanning.
 - Added safe `lastLoginAt` / `lastSeenAt` active-user writes and deployed matching database rules.
-- Bumped PWA cache/script set to `acpm-v124`, `style.css?v=103`, `auth.js?v=95`, `main.js?v=101`, `notifications.js?v=85`, and `report.js?v=97`.
+- Bumped PWA cache/script set to `acpm-v125`, `style.css?v=103`, `auth.js?v=95`, `main.js?v=102`, `notifications.js?v=85`, and `report.js?v=97`.
 - Improved Hub Recent Activity rows with clearer action labels, optional actor names, relative time/date, and module-colored status dots.
 - Improved Admin Audit Log rows with module pills, action labels, actor identity, project labels, record summary, source, and detail text.
 - Removed the stale duplicate Audit Log renderer from `report.js`.
@@ -35,14 +35,20 @@ Bring ACPM closer to RC1 by improving production clarity and reducing PM workloa
 - Fixed the signup/request access auth-state race so Firebase Auth account creation does not render a misleading Request Pending screen before `accessRequests/{uid}` is written.
 - Added profile photo persistence without requiring Firebase Storage by storing small compressed inline avatars in `users/{uid}/avatarUrl`; initials fallback remains available when no photo is selected.
 - Added auth sign-out listener cleanup for Reports/Admin/Notifications so Boss root listeners do not survive into PM/APM sessions.
-- Deployed hosting cache `acpm-v124` to `https://acpm-project-system.web.app`.
-- Focused live Firebase onboarding QA passed on cache `acpm-v124`: signup, access request, Admin approval, profile completion with inline avatar persistence, audit/notification creation, self-write denial, suspend/reactivate/archive, and blocked suspended/archived login all passed. QA user final state was archived.
-- Focused live Firebase notification QA passed on cache `acpm-v124`: event record, listener, badge, dropdown render, click-through to workspace, mark-read persistence, refresh persistence, unassigned-recipient filtering, and QA project archive all passed.
+- Deployed hosting cache `acpm-v125` to `https://acpm-project-system.web.app`.
+- Focused live Firebase onboarding QA passed on cache `acpm-v125`: signup, access request, Admin approval, profile completion with inline avatar persistence, audit/notification creation, self-write denial, suspend/reactivate/archive, and blocked suspended/archived login all passed. QA user final state was archived.
+- Focused live Firebase notification QA passed on cache `acpm-v125`: event record, listener, badge, dropdown render, click-through to workspace, mark-read persistence, refresh persistence, unassigned-recipient filtering, and QA project archive all passed.
 - UI polish smoke passed: mobile login/request pending fit the viewport, notification dropdown rendered cleanly, Team Admin avatars/action stacks rendered, project tabs stayed hidden in Team Admin, and My Profile modal fit the viewport.
 - Accepted release risk recorded: broad controlled full real-write RC1 QA is intentionally deferred for now. Focused onboarding/notification QA and existing module gates remain the evidence base until real project use produces new bug reports.
+- PMOS company-sendout QA completed: PMOS field shell is Firebase Storage-free, uses Google Drive Apps Script photo configuration, keeps Face Attendance disabled/unloaded, and validates ACPM/PMOS branding assets, manifests, colors, and local asset references.
+- Fixed PMOS scoped service worker isolation: root `sw.js` leaves `/pmos/` routes to the scoped PMOS worker, and `main.js` skips root PWA registration on the PMOS page.
+- Fixed hidden PMOS action sheet pointer blocking so closed create sheets cannot intercept form Save buttons.
+- Updated PMOS browser QA harness so Firebase Auth/RTDB mocks are not overwritten by Firebase CDN scripts, Viewer is blocked for RC1, and service-worker offline reload is tested separately from normal workflow tests.
 
 ## Files Changed In Current RC1 Batch
 - `auth.js`
+- `acpm-shell.js`
+- `assets/brand/pmos-app.css`
 - `billing.js`
 - `dashboard.html`
 - `database.rules.json`
@@ -57,17 +63,25 @@ Bring ACPM closer to RC1 by improving production clarity and reducing PM workloa
 - `main.js`
 - `materials.js`
 - `notifications.js`
+- `PMOS_CURRENT_STATUS.md`
+- `PMOS_QA_REPORT.md`
 - `pmos-office.js`
+- `pmos/pmos-sw.js`
+- `pmos/index.html`
+- `pmos-sw.js`
 - `pmos.js`
 - `report.js`
 - `scripts/notifications_end_to_end_live_qa.js`
 - `scripts/onboarding_ui_polish_smoke.js`
+- `scripts/pmos_release_static_qa.js`
 - `scripts/pwa_cache_static_qa.js`
 - `scripts/rc1_docs_static_qa.js`
 - `scripts/rc1_static_gate.js`
 - `storage.rules`
 - `style.css`
 - `sw.js`
+- `tests/e2e/helpers.ts`
+- `tests/e2e/pmos-workflow.spec.ts`
 - `workspace.html`
 
 ## Checks Already Passed
@@ -88,7 +102,7 @@ Bring ACPM closer to RC1 by improving production clarity and reducing PM workloa
 - Firebase Hosting deploy completed for `https://acpm-project-system.web.app` after the current v116 asset set.
 - Firebase Database rules deploy completed after access request and `lastSeenAt` rule fixes.
 - `firebase.cmd deploy --only database --dry-run` confirmed deployed database rules syntax remains valid.
-- Live static fetch confirms `sw.js`, `dashboard.html`, and `login.html` serve `acpm-v124`, `style.css?v=103`, `auth.js?v=95`, `main.js?v=101`, `notifications.js?v=85`, and `report.js?v=97`.
+- Live static fetch confirms `sw.js`, `dashboard.html`, and `login.html` serve `acpm-v125`, `style.css?v=103`, `auth.js?v=95`, `main.js?v=102`, `notifications.js?v=85`, and `report.js?v=97`.
 - Live browser smoke against `https://acpm-project-system.web.app` after the Team Admin navigation fix passed: Team Admin defaults to Team, Admin sub-tabs are visible, project module tabs are hidden, and profile/notification smoke checks still pass.
 - Live static fetch confirms `CURRENT_TASK.md`, `docs/qa/QA_ACCOUNT_ONBOARDING.md`, and `scripts/rc1_static_gate.js` return 404 from Hosting.
 - Live static fetch confirmed hosted `dashboard.html` has no mojibake markers.
@@ -101,6 +115,10 @@ Bring ACPM closer to RC1 by improving production clarity and reducing PM workloa
   - Notification bell opened and rendered rows plus Clear read control.
   - Hub button returned to Hub with System Reports hidden.
   - Console errors/warnings: none.
+- PMOS static release QA passed: field shell is Firebase Storage-free, Drive Apps Script photo path is configured, Face Attendance is disabled/unloaded from PMOS rollout shell, PMOS cache versions are bumped, manifests parse, local assets exist, and brand/PMOS shell text has no mojibake.
+- PMOS full Playwright browser QA passed: `npm.cmd run test:e2e -- --project=chromium tests/e2e/pmos-workflow.spec.ts --reporter=line` returned 17 passed / 0 failed.
+- PMOS unit QA passed: `npm.cmd run test:pmos` returned 56 passed / 0 failed.
+- Firebase dry-run after the PMOS pass returned database rules syntax valid and dry run complete.
 
 ## Unresolved Bugs / Risks
 - In-app browser connector failed during smoke setup in this environment (`failed to write kernel assets`), but standalone Playwright live browser smoke passed against the deployed v116 site.
@@ -109,6 +127,7 @@ Bring ACPM closer to RC1 by improving production clarity and reducing PM workloa
 - Firebase Storage is not required for RC1 profile photos. Small avatars are stored inline in Realtime Database; Firebase Storage remains the future path for larger profile media.
 - Focused live onboarding QA creates labeled historical QA Auth/request/user records and archives the QA app profile; do not bulk-delete historical records.
 - Broad controlled full real-write RC1 QA is deferred by owner decision. Treat this as an accepted release risk, not as proof that every module is bug-free under full-system write load.
+- Real Google Drive PMOS photo upload was not live-write tested in this pass to avoid creating company test uploads; PMOS is wired to the existing Apps Script endpoint and uses Drive-only configuration.
 
 ## Remaining Implementation Steps
 1. Review and archive/remove safe QA records intentionally, never by bulk delete.
@@ -123,9 +142,14 @@ node --check main.js
 node --check report.js
 node --check notifications.js
 node --check pmos-office.js
+node --check pmos.js
+node --check acpm-shell.js
+node scripts/pmos_release_static_qa.js
 node scripts/rc1_static_gate.js
 node scripts/pwa_cache_static_qa.js
 node scripts/rc1_docs_static_qa.js
+npm.cmd run test:pmos
+npm.cmd run test:e2e -- --project=chromium tests/e2e/pmos-workflow.spec.ts --reporter=line
 node scripts/onboarding_ui_polish_smoke.js
 node -e "JSON.parse(require('fs').readFileSync('database.rules.json','utf8')); console.log('rules json ok')"
 firebase.cmd deploy --only database,hosting

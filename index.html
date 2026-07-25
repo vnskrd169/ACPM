@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#7c3aed">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ACPM">
 <link rel="manifest" href="./manifest.json">
@@ -18,13 +18,13 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
 <!-- Utilities (DOM helpers, formatting, safeDb, etc.) -->
-<script src="utils.js?v=84"></script>
+<script src="utils.js?v=85"></script>
 
 <!-- Auth (must load before main.js - main.js calls canAccessProject/canEditProject) -->
-<script src="auth.js?v=95"></script>
+<script src="auth.js?v=96"></script>
 
 <!-- Core modules -->
-<script src="main.js?v=101"></script>
+<script src="main.js?v=103"></script>
 <script src="labor.js?v=94"></script>
 <script src="materials.js?v=94"></script>
 <script src="sitelog.js?v=94"></script>
@@ -39,12 +39,13 @@
 <script src="report.js?v=97"></script>
 <script src="pmos-office.js?v=4"></script>
 <script src="face-attendance.js?v=1"></script>
+<script src="ux-palette.js?v=1"></script>
 
 <!-- PDF generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<link rel="stylesheet" href="style.css?v=103">
+<link rel="stylesheet" href="style.css?v=104">
 
 <script>
 // -- Theme Toggle --------------------------------------------
@@ -159,9 +160,9 @@ window.addEventListener('appinstalled', () => {
       New Project Site
     </div>
     <div class="create-grid">
-      <input id="newName" type="text" placeholder="Project name (e.g., Batangas Phase 1)">
-      <input id="newLaborBudget" type="number" placeholder="Labor Budget (&#x20B1;)" inputmode="decimal">
-      <input id="newMaterialBudget" type="number" placeholder="Materials Budget (&#x20B1;)" inputmode="decimal">
+      <input id="newName" type="text" placeholder="Project name (e.g., Batangas Phase 1)" aria-label="New project name">
+      <input id="newLaborBudget" type="number" placeholder="Labor Budget (&#x20B1;)" inputmode="decimal" aria-label="Labor budget">
+      <input id="newMaterialBudget" type="number" placeholder="Materials Budget (&#x20B1;)" inputmode="decimal" aria-label="Materials budget">
     </div>
     <div class="form-actions">
       <button class="btn-create" onclick="createProject(event)">+ Create Project</button>
@@ -171,7 +172,7 @@ window.addEventListener('appinstalled', () => {
   <!-- Search -->
   <div class="hub-search-wrap">
     <span class="hub-search-icon">&#x1F50D;</span>
-    <input id="projectSearch" type="text" placeholder="Search projects..." oninput="filterProjects(this.value)">
+    <input id="projectSearch" type="text" placeholder="Search projects..." oninput="filterProjects(this.value)" aria-label="Search projects">
   </div>
 
   <!-- Hub tabs -->
@@ -398,7 +399,7 @@ window.addEventListener('appinstalled', () => {
         <div class="card">
           <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">&#x1F3F7;&#xFE0F;</span> Trades</div>
           <div class="trade-input-row">
-            <input id="newTradeName" type="text" placeholder="e.g., Carpenter" onkeydown="if(event.key==='Enter')addTrade()">
+            <input id="newTradeName" type="text" placeholder="e.g., Carpenter" onkeydown="if(event.key==='Enter')addTrade()" aria-label="New trade name">
             <button class="btn-add-sm" onclick="addTrade()">+ Add</button>
           </div>
           <div id="tradeList"><p class="empty-hint">No trades yet.</p></div>
@@ -406,8 +407,8 @@ window.addEventListener('appinstalled', () => {
         <div class="card gap">
           <div class="card-title"><span class="ct-icon" style="background:rgba(16,185,129,.1)">&#x1F477;</span> Staff Roster</div>
           <div class="worker-form">
-            <input id="workerName" type="text" placeholder="Worker name">
-            <input id="workerRate" type="number" placeholder="Daily rate (&#x20B1;)" inputmode="decimal">
+            <input id="workerName" type="text" placeholder="Worker name" aria-label="Worker name">
+            <input id="workerRate" type="number" placeholder="Daily rate (&#x20B1;)" inputmode="decimal" aria-label="Daily rate">
             <select id="workerTradeSelect"><option value=""> -  Select Trade  - </option></select>
           </div>
           <button class="btn-add-worker" onclick="addWorker()">+ Deploy Worker to Roster</button>
@@ -518,7 +519,7 @@ window.addEventListener('appinstalled', () => {
             <option value=""> -  Quick-select supplier  - </option>
           </select>
           <input type="hidden" id="poSupplierId">
-          <input id="poSupplier" type="text" placeholder="Or type supplier name">
+          <input id="poSupplier" type="text" placeholder="Or type supplier name" aria-label="Supplier name">
         </div>
         <input id="poDate" type="date">
         <select id="poUrgency">
@@ -529,11 +530,11 @@ window.addEventListener('appinstalled', () => {
         <input id="poNotes" type="text" placeholder="Notes / reference (optional)" style="grid-column:1/-1">
       </div>
       <div class="po-item-form">
-        <input id="poItemDesc" type="text" placeholder="Item description">
-        <input id="poItemSize" type="text" placeholder="Size (e.g. 12mm)">
-        <input id="poItemQty" type="number" placeholder="Qty" inputmode="decimal">
-        <input id="poItemUnit" type="text" placeholder="Unit">
-        <input id="poItemCost" type="number" placeholder="Unit cost (&#x20B1;)" inputmode="decimal">
+        <input id="poItemDesc" type="text" placeholder="Item description" aria-label="Item description">
+        <input id="poItemSize" type="text" placeholder="Size (e.g. 12mm)" aria-label="Item size">
+        <input id="poItemQty" type="number" placeholder="Qty" inputmode="decimal" aria-label="Item quantity">
+        <input id="poItemUnit" type="text" placeholder="Unit" aria-label="Item unit">
+        <input id="poItemCost" type="number" placeholder="Unit cost (&#x20B1;)" inputmode="decimal" aria-label="Unit cost">
         <button class="btn-add-sm" onclick="addDraftItem()">+ Add</button>
       </div>
       <div id="draftList"><p class="empty-hint">No items yet. Fill the form and click + Add.</p></div>
@@ -559,10 +560,10 @@ window.addEventListener('appinstalled', () => {
         <select id="matIssueItem">
           <option value="">Select stock item</option>
         </select>
-        <input id="matIssueQty" type="number" placeholder="Qty to issue" inputmode="decimal">
-        <input id="matIssueTo" type="text" placeholder="Issued to / receiver">
-        <input id="matIssueScope" type="text" placeholder="Scope / trade">
-        <input id="matIssuePurpose" type="text" placeholder="Purpose / location">
+        <input id="matIssueQty" type="number" placeholder="Qty to issue" inputmode="decimal" aria-label="Quantity to issue">
+        <input id="matIssueTo" type="text" placeholder="Issued to / receiver" aria-label="Issued to">
+        <input id="matIssueScope" type="text" placeholder="Scope / trade" aria-label="Scope or trade">
+        <input id="matIssuePurpose" type="text" placeholder="Purpose / location" aria-label="Purpose or location">
         <button class="btn-add-sm" onclick="submitMaterialIssuance()">Issue Stock</button>
       </div>
     </div>
@@ -822,7 +823,7 @@ window.addEventListener('appinstalled', () => {
       </div>
       <div class="log-form">
         <div class="log-date-row">
-          <input id="logDate" type="date">
+          <input id="logDate" type="date" aria-label="Log date">
           <textarea id="logNotes" rows="3" placeholder="What happened on site today? Notes, progress, issues, deliveries..."></textarea>
         </div>
         <div class="task-form-row">
@@ -858,7 +859,7 @@ window.addEventListener('appinstalled', () => {
     <div class="card">
       <div class="card-title"><span class="ct-icon" style="background:rgba(13,148,136,.15)">&#x1F3EA;</span> Supplier Directory</div>
       <div class="supplier-form">
-        <input id="supName" type="text" placeholder="Supplier name (required)">
+        <input id="supName" type="text" placeholder="Supplier name (required)" aria-label="Supplier name">
         <input id="supContact" type="text" placeholder="Contact / phone">
         <input id="supSpecialty" type="text" placeholder="Specialty (e.g. Hardware)">
         <button class="btn-add-sm" onclick="addSupplier()">+ Add</button>
@@ -891,7 +892,7 @@ window.addEventListener('appinstalled', () => {
         <div id="taskProgressBar" class="mini-fill"></div>
       </div>
       <div class="task-form-row">
-        <input id="taskTitle" type="text" placeholder="Task title">
+        <input id="taskTitle" type="text" placeholder="Task title" aria-label="Task title">
         <input id="taskDesc" type="text" placeholder="Description (optional)">
       </div>
       <div class="task-form-row">
@@ -929,7 +930,7 @@ window.addEventListener('appinstalled', () => {
         <span>Overdue Service: <strong id="equipOverdue">0</strong></span>
       </div>
       <div class="task-form-row">
-        <input id="equipName" type="text" placeholder="Equipment name">
+        <input id="equipName" type="text" placeholder="Equipment name" aria-label="Equipment name">
         <select id="equipType">
           <option value="other">Other</option>
           <option value="heavy">Heavy Machinery</option>
@@ -963,7 +964,7 @@ window.addEventListener('appinstalled', () => {
       </div>
       <div class="task-form-row">
         <select id="compDocType"></select>
-        <input id="compName" type="text" placeholder="Document name (e.g. Mayor's Permit 2026)">
+        <input id="compName" type="text" placeholder="Document name (e.g. Mayor's Permit 2026)" aria-label="Document name">
         <input id="compRefNo" type="text" placeholder="Ref / Permit No. (optional)">
       </div>
       <div class="task-form-row">

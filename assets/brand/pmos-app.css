@@ -332,10 +332,22 @@
   align-items: flex-end;
 }
 
+.pmos-action-sheet.hidden {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden;
+}
+
+.pmos-action-sheet.hidden .pmos-action-sheet-backdrop,
+.pmos-action-sheet.hidden .pmos-action-sheet-content {
+  pointer-events: none !important;
+}
+
 .pmos-action-sheet-backdrop {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
 }
 
 .pmos-action-sheet-content {
@@ -904,13 +916,26 @@
   to { transform: rotate(360deg); }
 }
 
-/* ---- Badges ---- */
-.badge-red { background: var(--acpm-danger-subtle, rgba(239,68,68,0.1)); color: var(--acpm-danger, #ef4444); }
-.badge-green { background: var(--acpm-success-subtle, rgba(16,185,129,0.1)); color: var(--acpm-success, #10b981); }
-.badge-amber { background: var(--acpm-warning-subtle, rgba(245,158,11,0.1)); color: var(--acpm-warning, #f59e0b); }
-.badge-blue { background: var(--acpm-info-subtle, rgba(59,130,246,0.1)); color: var(--acpm-info, #3b82f6); }
-.badge-purple { background: var(--acpm-brand-primary-subtle, rgba(124,58,237,0.1)); color: var(--acpm-brand-primary-muted, #a78bfa); }
-.badge-dim { background: transparent; color: var(--acpm-text-dim, #64748b); }
+/* ---- Badges ---- (Unified with main ACPM badge system) */
+.pmos-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1.4;
+}
+
+.pmos-badge-red { background: var(--acpm-danger-subtle, rgba(239,68,68,0.1)); color: var(--acpm-danger, #ef4444); }
+.pmos-badge-green { background: var(--acpm-success-subtle, rgba(16,185,129,0.1)); color: var(--acpm-success, #10b981); }
+.pmos-badge-amber { background: var(--acpm-warning-subtle, rgba(245,158,11,0.1)); color: var(--acpm-warning, #f59e0b); }
+.pmos-badge-blue { background: var(--acpm-info-subtle, rgba(59,130,246,0.1)); color: var(--acpm-info, #3b82f6); }
+.pmos-badge-purple { background: var(--acpm-brand-primary-subtle, rgba(124,58,237,0.1)); color: var(--acpm-brand-primary-muted, #a78bfa); }
+.pmos-badge-dim { background: transparent; color: var(--acpm-text-dim, #64748b); }
+.pmos-badge-teal { background: var(--acpm-pmos-subtle, rgba(15,118,110,0.1)); color: var(--acpm-pmos-primary, #0f766e); }
 
 /* ---- Print Report Styles ---- */
 .pmos-office-report {

@@ -234,6 +234,11 @@ window.addEventListener('DOMContentLoaded', () => {
   }).catch(() => {
     // Fallback: run without offline cache
     initAuth();
+  }).finally(() => {
+    // UX enhancements: command palette, preference restoration
+    setTimeout(() => {
+      if (typeof initUXEnhancements === 'function') initUXEnhancements();
+    }, 500);
   });
 
   try {
@@ -252,7 +257,9 @@ window.addEventListener('DOMContentLoaded', () => {
     console.error('Firebase connection check failed:', e);
   }
 
-  initPWA();
+  if (getAppPage() !== 'pmos') {
+    initPWA();
+  }
 });
 
 async function syncOfflineQueue() {
@@ -402,7 +409,7 @@ function refreshWorkspaceTabVisibility() {
   const role = typeof normalizeRole === 'function'
     ? normalizeRole(window._currentUser?.role || 'apm')
     : (window._currentUser?.role || 'apm');
-  const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false;
+  const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true;
   document.querySelectorAll('#workspaceView > .tab-scroll > .tab-group > .tab-btn').forEach(el => {
     if (el.id === 'tab_admin') {
       el.classList.add('hidden');
@@ -1406,9 +1413,8 @@ function switchTab(tab) {
 }
 
 function toggleExtraTabs(forceValue) {
-  const next = typeof forceValue === 'boolean'
-    ? forceValue
-    : !(typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false);
+  const current = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true;
+  const next = typeof forceValue === 'boolean' ? forceValue : !current;
   if (typeof setFeatureFlag === 'function') setFeatureFlag('extras', next);
 
   const role = typeof normalizeRole === 'function'
@@ -1567,13 +1573,75 @@ async function saveProjectNotes() {
 
 // Keyboard shortcuts
 window.addEventListener('keydown', e => {
-  if (e.ctrlKey && e.key >= '1' && e.key <= '8') {
-    const tabs = ['labor', 'materials', 'billing', 'changeorders', 'sitelog', 'suppliers', 'tasks', 'equipment', 'compliance', 'defects', 'reports'];
+  // Escape: Go back to hub from workspace or close overlays
+  if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    // Don't escape from form inputs
+    const tag = document.activeElement?.tagName || '';
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) {
+      document.activeElement?.blur();
+      e.preventDefault();
+      return;
+    }
+    // Close notification dropdown if open
+    const notifDropdown = document.getElementById('notifDropdown');
+    if (notifDropdown && !notifDropdown.classList.contains('hidden')) {
+      e.preventDefault();
+      notifDropdown.classList.add('hidden');
+      return;
+    }
+    // Close any modal overlays
+    const overlay = document.querySelector('.modal-overlay, .dialog-overlay, [id*="Modal"], [id*="modal"]');
+    if (overlay && overlay.style?.display !== 'none' && !overlay.classList?.contains('hidden')) {
+      e.preventDefault();
+      overlay.remove ? overlay.remove() : overlay.classList.add('hidden');
+      return;
+    }
+    // Exit workspace views back to hub
+    const workspace = $('workspaceView');
+    if (workspace && !workspace.classList.contains('hidden')) {
+      const hub = $('hubView');
+      if (hub && !hub.classList.contains('hidden')) {
+        // Already looking at hub, don't exit
+        return;
+      }
+      e.preventDefault();
+      exitHub();
+      return;
+    }
+    // Close sub-views
+    const systemReports = $('systemReportsView');
+    if (systemReports && !systemReports.classList.contains('hidden')) {
+      e.preventDefault();
+      systemReports.classList.add('hidden');
+      $('hubView')?.classList.remove('hidden');
+      return;
+    }
+    const pmosOffice = $('pmosOfficeView');
+    if (pmosOffice && !pmosOffice.classList.contains('hidden')) {
+      e.preventDefault();
+      pmosOffice.classList.add('hidden');
+      $('hubView')?.classList.remove('hidden');
+    }
+  }
+  // Ctrl+1-8: Switch workspace tabs
+  if ((e.ctrlKey || e.metaKey) && e.key >= '1' && e.key <= '8') {
+    const tabs = ['dashboard', 'labor', 'materials', 'billing', 'sitelog', 'changeorders', 'suppliers', 'reports'];
     const idx = parseInt(e.key) - 1;
     const workspace = $('workspaceView');
     if (tabs[idx] && workspace && !workspace.classList.contains('hidden')) {
-      switchTab(tabs[idx]);
+      const tabBtn = $(`tab_${tabs[idx]}`);
+      if (tabBtn && tabBtn.style.display !== 'none') {
+        switchTab(tabs[idx]);
+        e.preventDefault();
+      }
+    }
+  }
+  // ? Show keyboard shortcuts help
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    const active = document.activeElement;
+    if (!active || active === document.body || active === $('hubView')) {
       e.preventDefault();
+      showShortcutsHelp();
     }
   }
   if (e.ctrlKey && e.key === 's') {

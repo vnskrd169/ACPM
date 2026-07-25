@@ -1,6 +1,12 @@
 import { Page, expect } from '@playwright/test';
 
-/* ---- Test user definitions ---- */
+const TEST_PROJECT = {
+  id: 'test-project-1',
+  name: 'E2E Test Project',
+  status: 'active',
+  createdAt: 1780000000000,
+};
+
 const TEST_USERS = {
   field: {
     uid: 'test-field-user-uid',
@@ -34,26 +40,61 @@ const TEST_USERS = {
   },
 };
 
-/**
- * Inject a mock Firebase SDK + user into every page load.
- * This runs before any page scripts via addInitScript.
- */
-export function buildInitScript(userKey: keyof typeof TEST_USERS): string {
+export function buildInitScript(userKey: keyof typeof TEST_USERS, options: { disableServiceWorker?: boolean } = {}): string {
   const user = TEST_USERS[userKey];
+  const disableServiceWorker = options.disableServiceWorker !== false;
   return `
-    // Inject current user
     window._currentUser = ${JSON.stringify(user)};
     window._currentPid = 'test-project-1';
+    window.__ACPM_DISABLE_SW_FOR_E2E__ = ${disableServiceWorker ? 'true' : 'false'};
 
-    // Mock Firebase SDK — uses Object.assign to merge function + static properties
-    function makeDbRef() {
+    const __pmosTestUser = ${JSON.stringify(user)};
+    const __pmosTestProject = ${JSON.stringify(TEST_PROJECT)};
+
+    function makeSnapshot(value, key) {
       return {
-        once: function () { return Promise.resolve({ val: function () { return null; }, forEach: function () {} }); },
-        on: function () {},
+        key: key || '',
+        val: function () { return value; },
+        exists: function () { return value !== null && value !== undefined; },
+        forEach: function (cb) {
+          if (!value || typeof value !== 'object') return false;
+          Object.keys(value).forEach(function (childKey) {
+            cb(makeSnapshot(value[childKey], childKey));
+          });
+          return false;
+        },
+      };
+    }
+
+    function dataForPath(path) {
+      if (path === 'users/' + __pmosTestUser.uid) {
+        return Object.assign({}, __pmosTestUser, {
+          status: 'active',
+          displayName: __pmosTestUser.name,
+          assignedProjects: __pmosTestUser.projects || {},
+          profileComplete: true,
+        });
+      }
+      if (path === 'accessRequests/' + __pmosTestUser.uid) return null;
+      if (path === 'projects') return { 'test-project-1': __pmosTestProject };
+      if (path === 'projects/test-project-1') return __pmosTestProject;
+      return null;
+    }
+
+    function makeDbRef(path) {
+      return {
+        key: String(path || '').split('/').pop() || 'mock-key',
+        once: function () { return Promise.resolve(makeSnapshot(dataForPath(path), String(path || '').split('/').pop())); },
+        on: function (event, cb) {
+          if (typeof cb === 'function') setTimeout(function () { cb(makeSnapshot(dataForPath(path), String(path || '').split('/').pop())); }, 0);
+        },
         off: function () {},
         update: function () { return Promise.resolve(); },
         set: function () { return Promise.resolve(); },
-        push: function () { return { key: 'mock-key-' + Date.now() }; },
+        push: function () {
+          const key = 'mock-key-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+          return makeDbRef((path || '') + '/' + key);
+        },
         orderByChild: function () { return this; },
         equalTo: function () { return this; },
         limitToLast: function () { return this; },
@@ -64,233 +105,187 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS): string {
     }
 
     window.firebase = {
+      initializeApp: function () { return {}; },
+      app: function () { return {}; },
+      apps: [],
       auth: function () {
         return {
+          currentUser: Object.assign({}, __pmosTestUser, { getIdToken: function() { return Promise.resolve('mock-token'); } }),
+          Auth: { Persistence: { LOCAL: 'local' } },
+          setPersistence: function () { return Promise.resolve(); },
           onAuthStateChanged: function (cb) {
-            cb(Object.assign({}, ${JSON.stringify(user)}, { getIdToken: function() { return Promise.resolve('mock-token'); } }));
+            cb(Object.assign({}, __pmosTestUser, { getIdToken: function() { return Promise.resolve('mock-token'); } }));
             return function () {};
           },
-          signInAnonymously: function () { return Promise.resolve({ user: ${JSON.stringify(user)} }); },
+          signInAnonymously: function () { return Promise.resolve({ user: __pmosTestUser }); },
           signOut: function () { return Promise.resolve(); },
         };
       },
       database: Object.assign(
-        function () { return { ref: function () { return makeDbRef(); } }; },
+        function () { return { ref: function (path) { return makeDbRef(path || ''); } }; },
         { ServerValue: { TIMESTAMP: Date.now() } }
       ),
-      storage: Object.assign(
-        function () {
-          return {
-            ref: function () {
-              return {
-                put: function () { return { on: function () {} }; },
-                getDownloadURL: function () { return Promise.resolve('https://mock-storage.url/photo.jpg'); },
-                delete: function () { return Promise.resolve(); },
-              };
-            },
-          };
-        },
-        { TaskEvent: { STATE_CHANGED: 'state_changed' } }
-      ),
     };
+    window.firebase.auth.Auth = { Persistence: { LOCAL: 'local' } };
 
-    // Set PMOS globals
     window.APP_VERSION = '1.0.0';
     window.PMOS_VERSION = '1.0.0';
-    window.CACHE_VERSION = 'acpm-pmos-v1';
+    window.CACHE_VERSION = 'acpm-pmos-v2';
     window.PMOS_SCHEMA_VERSION = '1.0';
     window.PMOS_CONFIG = {
       faceAttendanceEnabled: false,
-      photoProvider: 'firebase-storage',
+      photoStorageProvider: 'googleDrive',
+      useFirebaseStoragePhotos: false,
+      useGoogleDrivePhotos: true,
+      driveUploadUrl: 'https://script.google.com/macros/s/test/exec',
       maxPhotoSize: 20971520,
       allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
     };
   `;
 }
 
-/**
- * Setup page with console error tracking.
- * Call this in beforeEach BEFORE any navigation.
- */
+async function blockFirebaseCdnForMockedAuth(page: Page) {
+  const pageWithFlag = page as Page & { __pmosFirebaseCdnBlocked?: boolean };
+  if (pageWithFlag.__pmosFirebaseCdnBlocked) return;
+  pageWithFlag.__pmosFirebaseCdnBlocked = true;
+  await page.route('**/www.gstatic.com/firebasejs/**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/javascript',
+    body: '',
+  }));
+}
+
 export function setupConsoleTracking(page: Page): string[] {
   const errors: string[] = [];
   page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      errors.push(msg.text());
-    }
+    if (msg.type() === 'error') errors.push(msg.text());
   });
-  page.on('pageerror', (err) => {
-    errors.push(err.message);
-  });
+  page.on('pageerror', (err) => errors.push(err.message));
   return errors;
 }
 
-/**
- * Navigate to the PMOS mobile application
- */
 export async function navigateToPmos(page: Page) {
+  await blockFirebaseCdnForMockedAuth(page);
+  await page.context().setOffline(false);
   await page.goto('/pmos.html');
   await page.waitForLoadState('domcontentloaded');
-  await page.waitForTimeout(1500);
+  await page.waitForURL('**/pmos/**', { timeout: 10000 }).catch(() => {});
+  await page.waitForFunction(() => {
+    return !!document.querySelector('#pmosContent') &&
+      !document.body.classList.contains('auth-checking') &&
+      !document.querySelector('#authOverlay');
+  }, null, { timeout: 15000 });
 }
 
-/**
- * Open the PMOS Office Hub from the ACPM index
- */
+export async function navigateToBlockedPmos(page: Page) {
+  await blockFirebaseCdnForMockedAuth(page);
+  await page.context().setOffline(false);
+  await page.goto('/pmos.html');
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForURL('**/pmos/**', { timeout: 10000 }).catch(() => {});
+  await expect(page.locator('#authOverlay')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('#authOverlay')).toContainText(/not active in RC1|Admin approval needed/i);
+}
+
+export async function waitForPmosServiceWorker(page: Page) {
+  await page.waitForFunction(async () => {
+    if (!('serviceWorker' in navigator)) return false;
+    try {
+      await navigator.serviceWorker.ready;
+      return !!navigator.serviceWorker.controller;
+    } catch (e) {
+      return false;
+    }
+  }, null, { timeout: 15000 });
+}
+
 export async function openPmosOffice(page: Page) {
+  await blockFirebaseCdnForMockedAuth(page);
   await page.goto('/index.html');
   await page.waitForLoadState('domcontentloaded');
   await page.waitForTimeout(1500);
 }
 
-/**
- * Select a project in the PMOS mobile interface
- */
 export async function selectProject(page: Page, projectId: string) {
   const select = page.locator('#pmosProjectSelect');
-  if (await select.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await select.selectOption(projectId).catch(() => {});
-    await page.waitForTimeout(500);
-  }
+  await expect(select).toBeVisible({ timeout: 10000 });
+  await select.selectOption(projectId);
 }
 
-/**
- * Navigate to a specific PMOS module tab
- */
 export async function openPmosModule(page: Page, module: string) {
-  const tab = page.locator(`#pmosTab_${module}`);
-  if (await tab.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await tab.click();
-    await page.waitForTimeout(500);
-  }
+  await page.evaluate((key) => (window as any).pmosOpenModule?.(key), module);
+  await page.locator(`[data-pmos-form="${module}"]`).waitFor({ state: 'visible', timeout: 10000 });
 }
 
-/**
- * Fill a Quick Update form and submit
- */
+async function submitCurrentPmosForm(page: Page, module: string) {
+  const form = page.locator(`[data-pmos-form="${module}"]`);
+  await form.locator('button[type="submit"]').click();
+  await expect(page.locator('#pmosSyncStatus')).toContainText(/Saved|offline|project|Firebase/i, { timeout: 10000 });
+}
+
 export async function fillQuickUpdate(page: Page, data: { category: string; note: string; priority?: string }) {
   await openPmosModule(page, 'quick');
-  const cat = page.locator('#pmosQuickCategory');
-  if (await cat.isVisible({ timeout: 5000 }).catch(() => false)) { await cat.selectOption(data.category); }
-  const note = page.locator('#pmosQuickNote');
-  if (await note.isVisible().catch(() => false)) { await note.fill(data.note); }
-  if (data.priority) {
-    const pri = page.locator('#pmosQuickPriority');
-    if (await pri.isVisible().catch(() => false)) { await pri.selectOption(data.priority); }
-  }
-  const save = page.locator('#pmosQuickSave');
-  if (await save.isVisible({ timeout: 5000 }).catch(() => false)) { await save.click(); }
-  await page.waitForTimeout(500);
+  await page.locator('#pmos_quick_category').selectOption(data.category);
+  await page.locator('#pmos_quick_note').fill(data.note);
+  if (data.priority) await page.locator('#pmos_quick_priority').selectOption(data.priority);
+  await submitCurrentPmosForm(page, 'quick');
 }
 
-/**
- * Fill a Site Log form and submit
- */
 export async function fillSiteLog(page: Page, data: { weather: string; accomplishment: string }) {
   await openPmosModule(page, 'sitelog');
-  const weather = page.locator('#pmosSiteWeather');
-  if (await weather.isVisible({ timeout: 5000 }).catch(() => false)) { await weather.fill(data.weather); }
-  const acc = page.locator('#pmosSiteAccomplishment');
-  if (await acc.isVisible().catch(() => false)) { await acc.fill(data.accomplishment); }
-  const save = page.locator('#pmosSiteSave');
-  if (await save.isVisible({ timeout: 5000 }).catch(() => false)) { await save.click(); }
-  await page.waitForTimeout(500);
+  await page.locator('#pmos_sitelog_date').fill(new Date().toISOString().slice(0, 10));
+  await page.locator('#pmos_sitelog_weather').fill(data.weather);
+  await page.locator('#pmos_sitelog_manpowerCount').fill('6');
+  await page.locator('#pmos_sitelog_accomplishment').fill(data.accomplishment);
+  await page.locator('#pmos_sitelog_remarks').fill('E2E site log');
+  await submitCurrentPmosForm(page, 'sitelog');
 }
 
-/**
- * Fill an Issue form and submit
- */
 export async function fillIssue(page: Page, data: { location: string; issue: string; priority?: string }) {
   await openPmosModule(page, 'issue');
-  const loc = page.locator('#pmosIssueLocation');
-  if (await loc.isVisible({ timeout: 5000 }).catch(() => false)) { await loc.fill(data.location); }
-  const desc = page.locator('#pmosIssueDescription');
-  if (await desc.isVisible().catch(() => false)) { await desc.fill(data.issue); }
-  if (data.priority) {
-    const pri = page.locator('#pmosIssuePriority');
-    if (await pri.isVisible().catch(() => false)) { await pri.selectOption(data.priority); }
-  }
-  const save = page.locator('#pmosIssueSave');
-  if (await save.isVisible({ timeout: 5000 }).catch(() => false)) { await save.click(); }
-  await page.waitForTimeout(500);
+  await page.locator('#pmos_issue_location').fill(data.location);
+  await page.locator('#pmos_issue_issue').fill(data.issue);
+  await page.locator('#pmos_issue_assignedTo').fill('QA Foreman');
+  await page.locator('#pmos_issue_dueDate').fill(new Date().toISOString().slice(0, 10));
+  if (data.priority) await page.locator('#pmos_issue_priority').selectOption(data.priority);
+  await submitCurrentPmosForm(page, 'issue');
 }
 
-/**
- * Fill a Material Request with multiple items and submit
- */
 export async function fillMaterialRequest(page: Page, items: Array<{ item: string; quantity?: string; unit?: string }>) {
   await openPmosModule(page, 'material');
-  for (const data of items) {
-    const itemField = page.locator('#pmosMaterialItem');
-    if (await itemField.isVisible({ timeout: 5000 }).catch(() => false)) { await itemField.fill(data.item); }
-    if (data.quantity) {
-      const qtyField = page.locator('#pmosMaterialQuantity');
-      if (await qtyField.isVisible().catch(() => false)) { await qtyField.fill(data.quantity); }
-    }
-    if (data.unit) {
-      const unitField = page.locator('#pmosMaterialUnit');
-      if (await unitField.isVisible().catch(() => false)) { await unitField.selectOption(data.unit); }
-    }
-    const addBtn = page.locator('#pmosMaterialAdd').or(page.locator('button:text("Add")'));
-    if (await addBtn.isVisible().catch(() => false)) { await addBtn.click(); }
-    await page.waitForTimeout(300);
-  }
-  const submitBtn = page.locator('#pmosMaterialSubmit').or(page.locator('button:text("Submit")'));
-  if (await submitBtn.isVisible({ timeout: 5000 }).catch(() => false)) { await submitBtn.click(); }
-  await page.waitForTimeout(500);
+  const first = items[0] || { item: 'Material' };
+  await page.locator('#pmos_material_item').fill(first.item);
+  await page.locator('#pmos_material_quantity').fill(first.quantity || '1');
+  await page.locator('#pmos_material_unit').fill(first.unit || 'pcs');
+  await page.locator('#pmos_material_neededDate').fill(new Date().toISOString().slice(0, 10));
+  await page.locator('#pmos_material_purpose').fill('E2E material request');
+  await submitCurrentPmosForm(page, 'material');
 }
 
-/**
- * Fill a Follow-up form and submit
- */
 export async function fillFollowUp(page: Page, data: { task: string; person: string; priority?: string }) {
   await openPmosModule(page, 'task');
-  const desc = page.locator('#pmosTaskDescription');
-  if (await desc.isVisible({ timeout: 5000 }).catch(() => false)) { await desc.fill(data.task); }
-  const person = page.locator('#pmosTaskPerson');
-  if (await person.isVisible().catch(() => false)) { await person.fill(data.person); }
-  if (data.priority) {
-    const pri = page.locator('#pmosTaskPriority');
-    if (await pri.isVisible().catch(() => false)) { await pri.selectOption(data.priority); }
-  }
-  const save = page.locator('#pmosTaskSave');
-  if (await save.isVisible({ timeout: 5000 }).catch(() => false)) { await save.click(); }
-  await page.waitForTimeout(500);
+  await page.locator('#pmos_task_task').fill(data.task);
+  await page.locator('#pmos_task_person').fill(data.person);
+  await page.locator('#pmos_task_dueDate').fill(new Date().toISOString().slice(0, 10));
+  if (data.priority) await page.locator('#pmos_task_priority').selectOption(data.priority);
+  await submitCurrentPmosForm(page, 'task');
 }
 
-/**
- * Fill a Meeting Notes form and submit
- */
 export async function fillMeetingNotes(page: Page, data: { title: string; type: string; attendees?: string; actionItems?: string }) {
   await openPmosModule(page, 'meeting');
-  const title = page.locator('#pmosMeetingTitle');
-  if (await title.isVisible({ timeout: 5000 }).catch(() => false)) { await title.fill(data.title); }
-  const type = page.locator('#pmosMeetingType');
-  if (await type.isVisible().catch(() => false)) { await type.selectOption(data.type); }
-  if (data.attendees) {
-    const att = page.locator('#pmosMeetingAttendees');
-    if (await att.isVisible().catch(() => false)) { await att.fill(data.attendees); }
-  }
-  if (data.actionItems) {
-    const ai = page.locator('#pmosMeetingActionItems');
-    if (await ai.isVisible().catch(() => false)) { await ai.fill(data.actionItems); }
-  }
-  const save = page.locator('#pmosMeetingSave');
-  if (await save.isVisible({ timeout: 5000 }).catch(() => false)) { await save.click(); }
-  await page.waitForTimeout(500);
+  await page.locator('#pmos_meeting_meetingTitle').fill(data.title);
+  await page.locator('#pmos_meeting_meetingDate').fill(new Date().toISOString().slice(0, 10));
+  await page.locator('#pmos_meeting_meetingType').selectOption(data.type);
+  if (data.attendees) await page.locator('#pmos_meeting_attendees').fill(data.attendees);
+  if (data.actionItems) await page.locator('#pmos_meeting_actionItems').fill(data.actionItems);
+  await submitCurrentPmosForm(page, 'meeting');
 }
 
-/**
- * Simulate going offline
- */
 export async function goOffline(page: Page) {
   await page.context().setOffline(true);
   await page.evaluate(() => { window.dispatchEvent(new Event('offline')); });
 }
 
-/**
- * Simulate going online
- */
 export async function goOnline(page: Page) {
   await page.context().setOffline(false);
   await page.evaluate(() => { window.dispatchEvent(new Event('online')); });

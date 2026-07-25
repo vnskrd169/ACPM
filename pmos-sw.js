@@ -8,7 +8,7 @@
 //  All old PMOS caches are purged on activate.
 // -----------------------------------------------------------------------------
 
-const PMOS_CACHE = 'pmos-cache-v1';
+const PMOS_CACHE = 'pmos-cache-v2';
 
 const PMOS_ASSETS = [
   './pmos.html',
@@ -16,7 +16,6 @@ const PMOS_ASSETS = [
   './pmos.js',
   './pmos-office.js',
   './meeting-notes.js',
-  './face-attendance.js',
   './pmos-manifest.json',
   './assets/brand/acpm-brand.css',
   './assets/brand/pmos-app.css',

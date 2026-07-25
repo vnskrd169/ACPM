@@ -3,6 +3,8 @@ import {
   buildInitScript,
   setupConsoleTracking,
   navigateToPmos,
+  navigateToBlockedPmos,
+  waitForPmosServiceWorker,
   selectProject,
   fillQuickUpdate,
   fillSiteLog,
@@ -157,12 +159,13 @@ test.describe('PMOS Reviewer Workflow', () => {
 });
 
 test.describe('PMOS Viewer Workflow', () => {
-  test('should have limited access as Viewer', async ({ page }) => {
+  test('should block Viewer access in RC1', async ({ page }) => {
     page.addInitScript(buildInitScript('viewer'));
     const errors = setupConsoleTracking(page);
-    await navigateToPmos(page);
+    await navigateToBlockedPmos(page);
     const bodyText = await page.locator('body').innerText();
     expect(bodyText.length).toBeGreaterThan(0);
+    expect(bodyText).toContain('not active in RC1');
     expect(errors.length).toBe(0);
   });
 });
@@ -189,11 +192,12 @@ test.describe('PMOS PWA and Offline', () => {
   });
 
   test('should handle offline state gracefully', async ({ page }) => {
-    page.addInitScript(buildInitScript('field'));
+    page.addInitScript(buildInitScript('field', { disableServiceWorker: false }));
     const errors = setupConsoleTracking(page);
     await navigateToPmos(page);
+    await waitForPmosServiceWorker(page);
     await goOffline(page);
-    await page.reload();
+    await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('domcontentloaded');
     await page.waitForTimeout(1000);
     const bodyText = await page.locator('body').innerText();

@@ -81,8 +81,8 @@ function main() {
 
   assertIncludes('docs/release/RC1_READINESS.md', 'Status: RC1 READY', 'explicit RC1-ready status');
   assertIncludes('docs/release/RC1_READINESS.md', 'Live Firebase RC1 gate: PASS', 'live Firebase RC1 gate result');
-  assertIncludes('docs/release/RC1_READINESS.md', 'cache v124', 'current PWA cache evidence');
-  assertIncludes('docs/release/RC1_READINESS.md', 'main.js?v=101', 'current main.js shell evidence');
+  assertIncludes('docs/release/RC1_READINESS.md', 'cache v125', 'current PWA cache evidence');
+  assertIncludes('docs/release/RC1_READINESS.md', 'main.js?v=102', 'current main.js shell evidence');
   assertIncludes('docs/release/RC1_READINESS.md', 'node scripts/rc1_final_readiness_gate.js', 'final readiness gate command');
   assertIncludes('docs/release/RC1_READINESS.md', 'PASS_RC1_READY', 'current final readiness pass result');
   assertIncludes('docs/release/RC1_READINESS.md', 'Change Orders browser click-through after cache v97', 'Change Orders visible reject modal pass evidence');
@@ -122,7 +122,7 @@ function main() {
       'module docs include status/QA/known limitation evidence',
       'RC1 readiness is explicitly RC1-ready after final role/UI sign-off',
       'RC1 readiness includes live Firebase gate pass evidence',
-      'RC1 readiness includes current v124 shell evidence',
+      'RC1 readiness includes current v125 shell evidence',
       'post-deploy real Firebase gate is documented',
       'local post-deploy gate is documented as read-only',
       'roles/audit/notification/supplier/dashboard RC1 evidence is documented',

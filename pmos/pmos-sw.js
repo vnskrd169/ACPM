@@ -7,7 +7,7 @@
 //  Only deletes caches starting with 'pmos-cache-'.
 // -----------------------------------------------------------------------------
 
-var PMOS_CACHE = 'pmos-cache-v1';
+var PMOS_CACHE = 'pmos-cache-v2';
 
 var PMOS_ASSETS = [
   './',
@@ -19,7 +19,6 @@ var PMOS_ASSETS = [
   '../pmos.js',
   '../pmos-office.js',
   '../meeting-notes.js',
-  '../face-attendance.js',
   '../pmos-subscription-manager.js',
   '../pmos-photo-lightbox.js',
   '../assets/brand/acpm-brand.css',

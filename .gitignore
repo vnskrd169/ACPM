@@ -7,3 +7,19 @@ test-results/
 playwright-report/
 *.tsbuildinfo
 .DS_Store
+
+# Firebase service account keys (NEVER commit)
+*service-account*.json
+*ServiceAccount*.json
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Firebase cache
+.firebase/*.cache
+
+# Build artifacts
+dist/
+build/
