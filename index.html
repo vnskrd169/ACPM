@@ -824,27 +824,27 @@ window.addEventListener('appinstalled', () => {
       <div class="log-form">
         <div class="log-date-row">
           <input id="logDate" type="date" aria-label="Log date">
-          <textarea id="logNotes" rows="3" placeholder="What happened on site today? Notes, progress, issues, deliveries..."></textarea>
+          <textarea id="logNotes" rows="3" placeholder="What happened on site today? Notes, progress, issues, deliveries..." aria-label="Log notes"></textarea>
         </div>
         <div class="task-form-row">
-          <textarea id="logWork" rows="2" placeholder="Work accomplished"></textarea>
-          <textarea id="logManpower" rows="2" placeholder="Manpower / trades / foremen"></textarea>
+          <textarea id="logWork" rows="2" placeholder="Work accomplished" aria-label="Work accomplished"></textarea>
+          <textarea id="logManpower" rows="2" placeholder="Manpower / trades / foremen" aria-label="Manpower"></textarea>
         </div>
         <div class="task-form-row">
-          <textarea id="logEquipment" rows="2" placeholder="Equipment used"></textarea>
-          <textarea id="logVisitors" rows="2" placeholder="Visitors"></textarea>
+          <textarea id="logEquipment" rows="2" placeholder="Equipment used" aria-label="Equipment used"></textarea>
+          <textarea id="logVisitors" rows="2" placeholder="Visitors" aria-label="Visitors"></textarea>
         </div>
         <div class="task-form-row">
-          <textarea id="logIssues" rows="2" placeholder="Issues, one per line"></textarea>
-          <textarea id="logDelays" rows="2" placeholder="Delays, one per line"></textarea>
+          <textarea id="logIssues" rows="2" placeholder="Issues, one per line" aria-label="Issues"></textarea>
+          <textarea id="logDelays" rows="2" placeholder="Delays, one per line" aria-label="Delays"></textarea>
         </div>
         <div class="task-form-row">
-          <textarea id="logSafety" rows="2" placeholder="Safety notes"></textarea>
-          <textarea id="logSafetyIncidents" rows="2" placeholder="Safety incidents"></textarea>
+          <textarea id="logSafety" rows="2" placeholder="Safety notes" aria-label="Safety notes"></textarea>
+          <textarea id="logSafetyIncidents" rows="2" placeholder="Safety incidents" aria-label="Safety incidents"></textarea>
         </div>
         <div class="log-actions-row">
           <input id="logWeather" type="text" placeholder="Weather (e.g., Sunny 32&#xB0;C)" style="flex:1">
-          <textarea id="logPhotos" rows="2" placeholder="Photo URLs, one per line" style="flex:1"></textarea>
+          <textarea id="logPhotos" rows="2" placeholder="Photo URLs, one per line" style="flex:1" aria-label="Photo URLs"></textarea>
           <button class="btn-add-sm" onclick="saveLog()">+ Save Entry</button>
           <button class="btn-ws-secondary" onclick="exportSiteLogs()">&#x2B07;&#xFE0F; Export</button>
         </div>

@@ -456,7 +456,7 @@ function showAuthScreen() {
           <div class="auth-sub">LeBuild Design &amp; Construction</div>
         </div>
       </div>
-      <form class="auth-form" id="loginForm" onsubmit="event.preventDefault(); doLogin(); return false;" aria-label="Sign in">
+      <form class="auth-form" id="loginForm" onsubmit="event.preventDefault(); handleAuthFormSubmit(); return false;" aria-label="Sign in">
         <input type="email" id="authUser" placeholder="Email address" autocomplete="email" aria-label="Email address">
         <input type="password" id="authPass" placeholder="Password" autocomplete="current-password" aria-label="Password">
         <button class="auth-btn" id="authLoginBtn" type="submit">Sign In</button>
@@ -493,11 +493,22 @@ function showAuthScreen() {
 
 // -- Login ----------------------------------------------------
 
+async function handleAuthFormSubmit() {
+  // Detect which section is active: if request fields have values, call request access instead
+  const requestName = document.getElementById('requestName');
+  if (requestName && requestName.value.trim()) {
+    doRequestAccess();
+    return;
+  }
+  doLogin();
+}
+
 async function doLogin() {
   const userIn  = document.getElementById('authUser');
   const passIn  = document.getElementById('authPass');
   const errEl   = document.getElementById('authError');
   const btn     = document.getElementById('authLoginBtn');
+  const origBtnText = btn ? btn.textContent : 'Sign In';
 
   const email    = normaliseEmail(userIn?.value || '');
   const password = passIn?.value || '';
@@ -533,8 +544,9 @@ async function doLogin() {
     }
     errEl.textContent = msg;
     errEl.classList.remove('hidden');
+  } finally {
     btn.disabled = false;
-    btn.textContent = 'Sign In';
+    btn.textContent = origBtnText;
   }
 }
 
