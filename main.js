@@ -1910,6 +1910,10 @@ window._editProjectId = null;
 
 function openEditProjectModal(pid) {
   if (typeof requireEdit === 'function' ? !requireEdit(pid) : !canEditProject(pid)) return;
+  if (typeof canSeeFinancials === 'function' && !canSeeFinancials(window._currentUser?.role)) {
+    showToast('Budget editing is available to PM and Admin accounts only.', 'error');
+    return;
+  }
   const snap = db.ref(`projects/${pid}`).once('value').then(snap => {
     const p = snap.val();
     if (!p) { showToast('Project not found.', 'error'); return; }
@@ -1930,6 +1934,10 @@ async function editProject() {
   const pid = window._editProjectId;
   if (!pid) return;
   if (typeof requireEdit === 'function' ? !requireEdit(pid) : !canEditProject(pid)) return;
+  if (typeof canSeeFinancials === 'function' && !canSeeFinancials(window._currentUser?.role)) {
+    showToast('Budget editing is available to PM and Admin accounts only.', 'error');
+    return;
+  }
   const vName = validateProjectName($('editProjName')?.value);
   if (!vName.ok) { showToast(vName.msg, 'error'); return; }
   const name = vName.value;

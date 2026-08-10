@@ -199,6 +199,43 @@ describe('Financial record protection (production database.rules.json)', () => {
     });
   });
 
+  describe('budget controls — APM read-only, PM+ control (RC1 release gate)', () => {
+    it('APM cannot write laborBudget / materialBudget on an assigned project', async () => {
+      const db = testEnv.authenticatedContext(USERS.apm).database();
+      await assertFails(db.ref(`projects/${ACTIVE_PROJECT}/laborBudget`).set(999999));
+      await assertFails(db.ref(`projects/${ACTIVE_PROJECT}/materialBudget`).set(999999));
+    });
+    it('APM cannot write laborBudgetDelta / materialBudgetDelta', async () => {
+      const db = testEnv.authenticatedContext(USERS.apm).database();
+      await assertFails(db.ref(`projects/${ACTIVE_PROJECT}/laborBudgetDelta`).set(50000));
+      await assertFails(db.ref(`projects/${ACTIVE_PROJECT}/materialBudgetDelta`).set(50000));
+    });
+    it('APM cannot write laborSpent (payroll spend counter)', async () => {
+      const db = testEnv.authenticatedContext(USERS.apm).database();
+      await assertFails(db.ref(`projects/${ACTIVE_PROJECT}/laborSpent`).set(999999));
+    });
+    it('PM (financial authority) CAN write budget controls', async () => {
+      const db = testEnv.authenticatedContext(USERS.pm).database();
+      await assertSucceeds(db.ref(`projects/${ACTIVE_PROJECT}/laborBudget`).set(120000));
+      await assertSucceeds(db.ref(`projects/${ACTIVE_PROJECT}/materialBudget`).set(120000));
+      await assertSucceeds(db.ref(`projects/${ACTIVE_PROJECT}/laborBudgetDelta`).set(20000));
+      await assertSucceeds(db.ref(`projects/${ACTIVE_PROJECT}/materialBudgetDelta`).set(20000));
+      await assertSucceeds(db.ref(`projects/${ACTIVE_PROJECT}/laborSpent`).set(5000));
+    });
+    it('APM cannot fabricate a payrollLog (PM+ only)', async () => {
+      const db = testEnv.authenticatedContext(USERS.apm).database();
+      await assertFails(db.ref(`projects/${ACTIVE_PROJECT}/payrollLogs/log-apm-fake`).set(payrollLog({ weekKey: '2026-07-06_2026-07-11' })));
+    });
+    it('APM cannot fabricate attendanceHistory (PM+ only)', async () => {
+      const db = testEnv.authenticatedContext(USERS.apm).database();
+      await assertFails(db.ref(`projects/${ACTIVE_PROJECT}/attendanceHistory/hist-apm-fake`).set(attendanceHistory()));
+    });
+    it('materialSpent remains writable by assigned APM (receiving workflow preserved)', async () => {
+      const db = testEnv.authenticatedContext(USERS.apm).database();
+      await assertSucceeds(db.ref(`projects/${ACTIVE_PROJECT}/materialSpent`).set(21000));
+    });
+  });
+
   describe('ordinary project access preserved', () => {
     it('APM can still write project data (notes, trades, attendance) in an assigned project', async () => {
       const db = testEnv.authenticatedContext(USERS.apm).database();
