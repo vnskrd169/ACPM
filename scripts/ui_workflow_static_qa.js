@@ -22,6 +22,7 @@ function main() {
   const sitelog = read('sitelog.js');
   const materials = read('materials.js');
   const labor = read('labor.js');
+  const billing = read('billing.js');
 
   assertIncludes(workspace, 'id="tab_changeorders"', 'Change Orders tab must exist');
   assertIncludes(workspace, 'onclick="switchTab(\'changeorders\')"', 'Change Orders tab must call switchTab');
@@ -86,8 +87,27 @@ function main() {
   assertIncludes(materials, 'REQUEST FOR PAYMENT (RFP) - PURCHASE ORDER', 'PO RFP text must carry the RFP header');
   assertIncludes(materials, 'TOTAL AMOUNT:', 'PO RFP text must include the total amount');
   assertIncludes(materials, 'window.generatePORFP = generatePORFP', 'generatePORFP must be exported');
+  assertIncludes(materials, 'data-action="inv-rfp"', 'PO cards with a supplier invoice must expose an Invoice RFP action');
+  assertIncludes(materials, "else if (action === 'inv-rfp') generateInvoiceRFP(poId)", 'Invoice RFP action must call generateInvoiceRFP');
+  assertIncludes(materials, 'async function generateInvoiceRFP(poId)', 'generateInvoiceRFP UI handler must exist');
+  assertIncludes(materials, 'REQUEST FOR PAYMENT (RFP) - SUPPLIER INVOICE', 'Supplier invoice RFP text must carry the invoice header');
+  assertIncludes(materials, 'INVOICE AMOUNT:', 'Supplier invoice RFP text must include the invoice amount');
+  assertIncludes(materials, 'window.generateInvoiceRFP = generateInvoiceRFP', 'generateInvoiceRFP must be exported');
   assertIncludes(labor, "if (data.source === 'po') { downloadPORFP(doc, data); return; }", 'downloadRFP must route PO RFPs to downloadPORFP');
   assertIncludes(labor, 'function downloadPORFP(doc, data)', 'downloadPORFP PDF helper must exist');
+  assertIncludes(labor, "if (data.source === 'invoice') { downloadInvoiceRFP(doc, data); return; }", 'downloadRFP must route invoice RFPs to downloadInvoiceRFP');
+  assertIncludes(labor, 'function downloadInvoiceRFP(doc, data)', 'downloadInvoiceRFP PDF helper must exist');
+
+  // Billing — client billing RFP (Request for Payment) export wiring
+  assertIncludes(billing, 'data-action="rfp"', 'Billing rows must expose an RFP action');
+  assertIncludes(billing, "if (action === 'rfp') generateBillingRFP(id)", 'Billing row RFP action must call generateBillingRFP');
+  assertIncludes(billing, 'async function generateBillingRFP(billingId)', 'generateBillingRFP UI handler must exist');
+  assertIncludes(billing, 'REQUEST FOR PAYMENT (RFP) - CLIENT BILLING', 'Client billing RFP text must carry the billing header');
+  assertIncludes(billing, 'NET BILLABLE', 'Client billing RFP text must include the net billable');
+  assertIncludes(billing, 'Receivable Balance', 'Client billing RFP text must include the receivable balance');
+  assertIncludes(billing, 'window.generateBillingRFP = generateBillingRFP', 'generateBillingRFP must be exported');
+  assertIncludes(labor, "if (data.source === 'billing') { downloadBillingRFP(doc, data); return; }", 'downloadRFP must route billing RFPs to downloadBillingRFP');
+  assertIncludes(labor, 'function downloadBillingRFP(doc, data)', 'downloadBillingRFP PDF helper must exist');
 
   assertIncludes(main, "'changeorders'", 'Workspace switcher must include Change Orders');
   assertIncludes(main, "'sitelog'", 'Workspace switcher must include Site Log');
@@ -100,7 +120,9 @@ function main() {
       'Site Log tab/panel/form/save/export actions are wired in current workspace shell',
       'Site Log visible save/void/export actions call workflow helpers',
       'Materials PO cards expose an RFP action wired to generatePORFP (copy text + PDF)',
-      'downloadRFP routes PO RFPs to the downloadPORFP PDF helper',
+      'Materials PO cards with a supplier invoice expose an Invoice RFP wired to generateInvoiceRFP',
+      'downloadRFP routes PO RFPs to downloadPORFP and invoice RFPs to downloadInvoiceRFP',
+      'Billing rows expose an RFP wired to generateBillingRFP, routed to downloadBillingRFP (copy text + PDF)',
       'Workspace switcher includes Change Orders and Site Log modules'
     ]
   }, null, 2));

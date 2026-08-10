@@ -14,6 +14,13 @@ PMOS is ready for controlled company usage. The field app uses the scoped
 released payroll) and the local dev shell (never deployed) are fully
 verified by the 2026-08-10 full regression run.
 
+Production release state (2026-08-10): task transition rules are enforced at
+the database layer and deployed to Staging + Production (guarded paths,
+live-verified), and the **PO RFP export** (Materials → each PO card has a 📋
+RFP button with Copy Text + Download PDF) is live in Production, verified on
+the real Angeles Residence PO-001. Branch `feature/pmos-official-app` is
+pushed to origin (`vnskrd169/ACPM`).
+
 ## Current Parameters
 
 | Parameter | Current Value | Status |
@@ -31,7 +38,7 @@ verified by the 2026-08-10 full regression run.
 | Firebase Storage in PMOS shell | Not loaded | PASS |
 | Face Attendance in PMOS shell | Not loaded | PASS |
 | Payroll math module | `payroll-math.js?v=2` | PASS |
-| Labor module | `labor.js?v=97` | PASS |
+| Labor module | `labor.js?v=98` | PASS |
 
 ## QA Evidence (full regression 2026-08-10)
 
@@ -45,9 +52,18 @@ verified by the 2026-08-10 full regression run.
   `cloud-storage-rules-runtime-v1.1.3`), not an app defect.
 - Static gates 9/9: rc1_static, pwa_cache, rc1_docs, pmos_release,
   historical_integrity, ui_workflow, pm_apm_task_workflow, dev_shell,
-  environment — all PASS.
+  environment — all PASS (ui_workflow extended for the PO RFP wiring).
 - JS syntax checks for changed PMOS/PWA files: **PASS**
 - Firebase JSON/rules parse: **PASS**
+- Live production verification (2026-08-10):
+  - Staging deployed task-rules role matrix
+    (`scripts/staging_rules_tasks_live_qa.js`): 12/12 PASS.
+  - Production pilot smoke (real UI task lifecycle,
+    `scripts/production_pilot_smoke.js`): 12/12 PASS.
+  - Production PO RFP on real Angeles PO-001
+    (`scripts/production_po_rfp_live_check.js`): 14/14 PASS.
+  - Deployed-rules order/payroll write probe
+    (`scripts/live_po_payroll_probe.js`): 10/10 PASS.
 
 ## Ready Workflows
 
@@ -67,6 +83,8 @@ verified by the 2026-08-10 full regression run.
 - Logout cleanup
 - Payroll compile with cash advance deduction and carry-forward
 - RFP from archived NET payroll (snapshot rates)
+- PO RFP (Request for Payment) export from Materials order cards
+  (Copy Text + Download PDF)
 - Local dev shell (`dev-shell.html`, localhost only, never deployed)
 
 ## Known Limitations
@@ -82,6 +100,8 @@ verified by the 2026-08-10 full regression run.
 
 ## Recommendation
 
-Proceed with company UAT using the deployed Firebase Hosting site after
-deployment. Ask users to hard refresh once or reopen the app after install so
-the new service worker/cache versions are active.
+Proceed with company UAT using the deployed Firebase Hosting site. Ask users
+to hard refresh once or reopen the app after install so the new service
+worker/cache versions are active. PMs/APMs should only order or run payroll in
+**active** projects — archived/completed projects are write-blocked at the
+rules layer by design.

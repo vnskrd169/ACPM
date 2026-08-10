@@ -184,6 +184,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ═══ HARDENING: MEDIA SAFETY + SCROLL STANDARD ══════════════
+   Scroll standard: the page owns vertical scrolling. Internal
+   vertical scroll is reserved for modals (.modal-box) and explicitly
+   height-capped containers only. Never cap a panel's height without
+   an internal scroll strategy, and never hide overflow just to remove
+   a scrollbar. Wide tables scroll horizontally inside .table-wrap /
+   .overflow-scroll / .grid-scroll wrappers. */
+img, video { max-width: 100%; }
+
 /* ═══ SCROLLBAR ═══════════════════════════════════════════ */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -3652,7 +3661,13 @@ table.table-compact td { padding: 8px 10px; font-size: 11px; }
 .ci-safe   { color: var(--green); }
 .ci-danger { color: var(--red); }
 
-.billing-form-grid { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 10px; align-items: end; margin-bottom: 12px; }
+.billing-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
+  gap: 10px; align-items: end; margin-bottom: 12px;
+}
+/* Overflow-proofing: inputs must never force the grid wider than its container */
+.billing-form-grid > * { min-width: 0; }
 @media(max-width:600px) { .billing-form-grid { grid-template-columns: 1fr; } }
 
 .bill-row { border-top: 1px solid var(--border); transition: background var(--transition-fast); }
@@ -3915,6 +3930,7 @@ table.table-compact td { padding: 8px 10px; font-size: 11px; }
   z-index: 200; display: flex;
   align-items: flex-end; justify-content: center; padding: 0;
   animation: fadeIn 0.2s ease;
+  overscroll-behavior: contain;
 }
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -3933,6 +3949,7 @@ table.table-compact td { padding: 8px 10px; font-size: 11px; }
   box-shadow: 0 -8px 40px rgba(0,0,0,.5);
   transition: background var(--transition-slow), border-color var(--transition-slow);
   animation: slideUp 0.3s ease;
+  overscroll-behavior: contain;
 }
 @keyframes slideUp {
   from { transform: translateY(20px); opacity: 0; }
@@ -7005,7 +7022,7 @@ table.table-compact td { padding: 8px 10px; font-size: 11px; }
 }
 
 #billingPanel .billing-form-grid {
-  grid-template-columns: minmax(170px, 1.1fr) minmax(220px, 1.8fr) minmax(148px, .8fr) minmax(140px, .8fr) minmax(140px, .8fr) auto;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr));
   gap: 8px;
   align-items: stretch;
 }
@@ -8315,6 +8332,7 @@ table.table-compact td { padding: 8px 10px; font-size: 11px; }
   font-weight: 800;
 }
 
+.summary-table-wrap { overflow-x: auto; }
 #adminPanel .summary-table-wrap,
 #reportsPanel #teamPerformance > div,
 #reportsPanel #budgetVariance > div {
@@ -9312,6 +9330,9 @@ table.table-compact td { padding: 8px 10px; font-size: 11px; }
   margin: 2px 0 8px;
   padding: 5px;
   overflow-x: auto;
+  /* width: fit-content (base rule) must be capped so the internal
+     horizontal scroll engages instead of overflowing the page */
+  max-width: 100%;
   border: 1px solid var(--border2);
   border-radius: var(--radius);
   background: var(--surface);
@@ -9954,9 +9975,15 @@ body.auth-locked .main {
 
 .dashboard-split {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(280px, .6fr);
+  /* auto-fit + clamped track min: never overflows a narrow viewport */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 14px;
   align-items: start;
+}
+/* Grid children must be allowed to shrink below their nowrap content
+   (min-width:auto forces track min-content and overflows narrow viewports). */
+.dashboard-split > * {
+  min-width: 0;
 }
 
 .budget-comparison-card,
@@ -10168,11 +10195,13 @@ body.auth-locked .main {
 .activity-row .activity-copy {
   min-width: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .activity-row strong,
 .activity-row span {
   display: block;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

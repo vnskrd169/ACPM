@@ -1,5 +1,72 @@
 # ACPM Changelog
 
+## Production hardening — UI/UX/workflow/regression pass (2026-08-10)
+
+### Root causes fixed
+- **Payroll no-scroll**: panels used fixed-height + `overflow:hidden`-style
+  traps; replaced with document-flow scrolling so the page owns vertical
+  scrolling everywhere (verified by an automated hard-scroll probe).
+- **Escape handler bug** (`main.js`): pressing Escape on an open modal
+  removed it from the DOM *and* then exited the workspace to the Hub. Now
+  Escape closes only the modal — regression-guarded in the local audit.
+- **Billing form grid overflow**: `#billingPanel .billing-form-grid` used
+  fixed `minmax` tracks (~860px+) that overflowed at 768px and below;
+  clamped to `repeat(auto-fill, minmax(min(100%, 190px), 1fr))`.
+- **Summary tables clipped**: tables outside the admin/reports sub-sections
+  (materials summary, labor history) rendered without a horizontal scroll
+  wrapper — now wrapped in `overflow-x: auto` with readable min widths.
+- **Hub activity feed**: long project names clipped without ellipsis — flex
+  copy gets `min-width: 0` so text ellipsizes instead of overflowing.
+
+### New reusable QA harness
+- `scripts/ui_layout_local_audit.js` — full local browser audit with mocked
+  Firebase + stress data (30 workers, 20 projects, full attendance week, 6
+  POs with partial deliveries, 25 material rows, 20 tasks, billings, site
+  logs, change orders). No credentials needed. Probes every matrix viewport
+  (1920×1080 … 375×667) for scroll traps, horizontal overflow, reachable
+  primary actions, modal fit + footer reachability, Escape correctness,
+  30-item PO builder, tab switching, duplicated ids, PMOS nav views + create
+  sheet, and console errors. **464/464 PASS**.
+
+### Verified
+- Vitest full suite (emulator-backed): **146 passed / 10 skipped**.
+- Playwright Office + PMOS e2e: **24/24 PASS**.
+- Static gates: rc1_static, pwa_cache, ui_layout, ui_workflow,
+  pmos_release, environment — all PASS.
+- PWA: `sw.js` `acpm-v136`, PMOS workers `pmos-cache-v6`; asset params
+  bumped (`style.css?v=110`, `main.js?v=108`, `labor.js?v=98`,
+  `materials.js?v=96`).
+
+## Supplier Invoice RFP deployed — Staging + Production (2026-08-10)
+
+### Deployed
+- Added an **Invoice RFP** for supplier invoices. When a PO has an approved
+  supplier invoice (`invoiceNo` / `invoiceAmount` / `invoiceStatus: matched` /
+  `threeWayMatch`), the PO card in Materials shows a 📋 **Invoice RFP** button
+  next to the existing RFP/Image buttons. It opens the shared RFP modal with
+  **Copy Text** and **Download PDF**: REQUEST FOR PAYMENT - SUPPLIER INVOICE
+  with project, PO number, invoice number/date, supplier, 3-way match status,
+  line items, `INVOICE AMOUNT`, `PO TOTAL`, and an "Approved by" line.
+- `generateInvoiceRFP()` in `materials.js` (items normalized via `buildPoItem`
+  so legacy POs render correct unit costs); `labor.js` `downloadRFP()` routes
+  `source: 'invoice'` to a new `downloadInvoiceRFP()` PDF helper; the
+  `ui_workflow_static_qa` gate verifies the wiring.
+
+### Live verification (deployed sites, read-only QA projects, self-cleaning)
+- **Staging** `acpm-project-system-qa` — deployed via guarded
+  `scripts/deploy-staging.ps1 -HostingOnly`; live check
+  `RFP_CHECK_STAGING=1 node scripts/production_invoice_rfp_live_check.js`
+  with an ephemeral staging boss account: **11/11 PASS**.
+- **Production** `acpm-project-system` — promoted via guarded
+  `scripts/deploy-production.ps1 -ConfirmProduction` (hosting only, rules
+  unchanged); live check `node scripts/production_invoice_rfp_live_check.js`
+  as boss@acpm.local: **11/11 PASS**.
+- Checks: Invoice RFP button renders on the PO card, modal opens, text carries
+  the SUPPLIER INVOICE header, invoice number, supplier, 3-WAY MATCHED status,
+  `INVOICE AMOUNT: ₱10,000.00`, and `PO TOTAL`; Download PDF produces
+  `RFP_Invoice_*.pdf`. QA projects and the staging boss account were deleted
+  after each run (no `qa_invrfp_*` residue in either database).
+
 ## Production deployment — PO RFP export (2026-08-10)
 
 ### Deployed
@@ -108,7 +175,7 @@
   - JS syntax checks clean; `database.rules.json` and `firebase.json` parse.
 - Status docs refreshed to the RC6/v134 baseline: `CURRENT_TASK.md` and
   `PMOS_CURRENT_STATUS.md` now document cache `acpm-v134`, PMOS caches
-  `pmos-cache-v4` / `acpm-pmos-v4`, `labor.js?v=97`, `payroll-math.js?v=2`,
+  `pmos-cache-v4` / `acpm-pmos-v4`, `labor.js?v=98`, `payroll-math.js?v=2`,
   the dev shell, and the verified regression evidence.
 
 ## v0.9.0-rc6 (Payroll Integrity + Local Dev Shell) - 2026-08-09
@@ -140,7 +207,7 @@
 
 ### Release ops
 - Cache version bumps: `sw.js` acpm-v133 → acpm-v134, PMOS workers
-  pmos-cache-v3 → v4, shell label acpm-pmos-v3 → v4; `labor.js?v=97`,
+  pmos-cache-v3 → v4, shell label acpm-pmos-v3 → v4; `labor.js?v=98`,
   `payroll-math.js?v=2`. Static gates updated and passing.
 
 ## v0.9.0-rc5 (Payroll Financial Hardening) - 2026-08-08

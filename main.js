@@ -1800,11 +1800,19 @@ window.addEventListener('keydown', e => {
       notifDropdown.classList.add('hidden');
       return;
     }
-    // Close any modal overlays
-    const overlay = document.querySelector('.modal-overlay, .dialog-overlay, [id*="Modal"], [id*="modal"]');
-    if (overlay && overlay.style?.display !== 'none' && !overlay.classList?.contains('hidden')) {
+    // Close the VISIBLE modal overlay (if any). Modals toggle `.hidden` —
+    // never remove them from the DOM (reopening would break). Only act on
+    // overlays that are actually open; the first `.modal-overlay` in the DOM
+    // is usually a hidden one, so we scan for the visible instance.
+    let openModal = null;
+    document.querySelectorAll('.modal-overlay, .dialog-overlay').forEach(m => {
+      if (openModal) return;
+      const inlineStyle = m.getAttribute('style') || '';
+      if (!m.classList.contains('hidden') && !/display\s*:\s*none/i.test(inlineStyle)) openModal = m;
+    });
+    if (openModal) {
       e.preventDefault();
-      overlay.remove ? overlay.remove() : overlay.classList.add('hidden');
+      openModal.classList.add('hidden');
       return;
     }
     // Exit workspace views back to hub

@@ -995,7 +995,7 @@ function renderAdvanceLogFromSnapshots(el, wSnap, advSnap, ws, we) {
   const totalOut = filtered.reduce((s, r) => s + cashAdvanceActiveOutstanding(r), 0);
   const totalDeducted = filtered.reduce((s, r) => s + r.deductedAmount, 0);
 
-  el.innerHTML = `<div style="overflow-x:auto">
+  el.innerHTML = `<div class="overflow-scroll">
     <table class="advance-log-table">
       <thead><tr>
         <th class="al-worker">Worker</th>
@@ -1316,7 +1316,7 @@ function updateAttendanceSummary(data) {
   const entries = Object.values(data);
   if (!entries.length) { el.innerHTML = '<p class="empty-hint">No attendance data yet.</p>'; return; }
   const grand = entries.reduce((s, w) => s + w.sub, 0);
-  el.innerHTML = `<div style="overflow-x:auto"><table class="summary-table">
+  el.innerHTML = `<div class="overflow-scroll"><table class="summary-table">
     <thead><tr>
       <th>Worker</th><th>Trade</th><th>Rate/Day</th><th style="text-align:center">Days</th><th style="text-align:center">OT Hrs</th><th style="text-align:right">Subtotal</th>
     </tr></thead>
@@ -2255,6 +2255,8 @@ function downloadRFP() {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const data = window._rfpData;
   if (data.source === 'po') { downloadPORFP(doc, data); return; }
+  if (data.source === 'invoice') { downloadInvoiceRFP(doc, data); return; }
+  if (data.source === 'billing') { downloadBillingRFP(doc, data); return; }
   const lm = 20, rm = 190;
   let y = 20;
   const verified = data.source === 'archive';
@@ -2361,6 +2363,108 @@ function downloadPORFP(doc, data) {
 
   const safeName = String(data.projectName || 'PO').replace(/[^\w\-]+/g, '_');
   doc.save(`RFP_${safeName}_${String(data.date || new Date().toISOString().slice(0, 10)).replace(/[^\w\-]+/g, '_')}.pdf`);
+}
+
+// Supplier invoice RFP PDF (used by downloadRFP when source === 'invoice')
+function downloadInvoiceRFP(doc, data) {
+  const lm = 20, rm = 190;
+  let y = 20;
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  doc.setFontSize(14).setFont('helvetica', 'bold');
+  doc.text('REQUEST FOR PAYMENT - SUPPLIER INVOICE', lm, y); y += 7;
+  doc.setFontSize(9).setFont('helvetica', 'normal');
+  doc.text(`Project        : ${data.projectName}`, lm, y); y += 5;
+  doc.text(`PO Number      : ${data.poNo}`, lm, y); y += 5;
+  doc.text(`Invoice Number : ${data.invoiceNo}`, lm, y); y += 5;
+  doc.text(`Invoice Date   : ${data.invoiceDate}`, lm, y); y += 5;
+  doc.text(`Supplier       : ${data.supplier}`, lm, y); y += 5;
+  doc.text(`Date Prepared  : ${today}`, lm, y); y += 5;
+  doc.setFont('helvetica', 'bold');
+  doc.text(`3-Way Match    : ${data.matchLabel}`, lm, y); y += 5;
+  doc.setDrawColor(60, 80, 120).setLineWidth(0.4);
+  doc.line(lm, y, rm, y); y += 6;
+
+  doc.setFont('helvetica', 'bold').setFontSize(8);
+  doc.text('ITEM / SIZE', lm + 2, y);
+  doc.text('QTY', lm + 92, y);
+  doc.text('UNIT COST', lm + 122, y);
+  doc.text('TOTAL', rm - 2, y, { align: 'right' });
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  (data.items || []).forEach((it) => {
+    const desc = String(it.desc || it.description || '').slice(0, 42);
+    const qty = it.qtyOrdered ?? it.qty;
+    doc.text(desc, lm + 2, y);
+    doc.text(`${qty} ${it.unit || ''}`, lm + 92, y);
+    doc.text(peso(it.cost), lm + 122, y);
+    doc.text(peso(it.totalCost ?? it.total), rm - 2, y, { align: 'right' });
+    y += 5;
+    if (y > 270) { doc.addPage(); y = 20; }
+  });
+  y += 4;
+  doc.setFont('helvetica', 'bold').setFontSize(9);
+  doc.text('INVOICE AMOUNT', lm + 2, y);
+  doc.text(peso(data.total), rm - 2, y, { align: 'right' }); y += 6;
+  doc.setFont('helvetica', 'normal').setFontSize(8);
+  doc.text(`PO TOTAL: ${peso(data.poTotal)}`, lm + 2, y); y += 12;
+  doc.text('Approved by: ___________________________', lm, y);
+
+  const safeName = String(data.projectName || 'PO').replace(/[^\w\-]+/g, '_');
+  const safeInv = String(data.invoiceNo || 'invoice').replace(/[^\w\-]+/g, '_');
+  doc.save(`RFP_Invoice_${safeInv}_${safeName}.pdf`);
+}
+
+// Client billing RFP PDF (used by downloadRFP when source === 'billing')
+function downloadBillingRFP(doc, data) {
+  const lm = 20, rm = 190;
+  let y = 20;
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  doc.setFontSize(14).setFont('helvetica', 'bold');
+  doc.text('REQUEST FOR PAYMENT - CLIENT BILLING', lm, y); y += 7;
+  doc.setFontSize(9).setFont('helvetica', 'normal');
+  doc.text(`Project        : ${data.projectName}`, lm, y); y += 5;
+  doc.text(`Client         : ${data.clientName || '\u2014'}`, lm, y); y += 5;
+  doc.text(`Billing No     : ${data.billingNo}`, lm, y); y += 5;
+  doc.text(`Type           : ${data.billingType}`, lm, y); y += 5;
+  doc.text(`Billing Date   : ${data.date}`, lm, y); y += 5;
+  if (data.dueDate) { doc.text(`Due Date       : ${data.dueDate}`, lm, y); y += 5; }
+  doc.text(`Date Prepared  : ${today}`, lm, y); y += 5;
+  doc.setDrawColor(60, 80, 120).setLineWidth(0.4);
+  doc.line(lm, y, rm, y); y += 8;
+
+  doc.setFont('helvetica', 'bold').setFontSize(10);
+  doc.text('GROSS AMOUNT', lm + 2, y);
+  doc.text(peso(data.gross), rm - 2, y, { align: 'right' }); y += 6;
+  if (data.deductions > 0) {
+    doc.text('Less Deductions', lm + 2, y);
+    doc.text(`-${peso(data.deductions)}`, rm - 2, y, { align: 'right' }); y += 6;
+  }
+  if (data.retention > 0) {
+    doc.text(`Retention (${data.retentionPct || 0}%)`, lm + 2, y);
+    doc.text(`-${peso(data.retention)}`, rm - 2, y, { align: 'right' }); y += 6;
+  }
+  doc.setFont('helvetica', 'bold').setFontSize(11);
+  doc.text('NET BILLABLE', lm + 2, y);
+  doc.text(peso(data.net), rm - 2, y, { align: 'right' }); y += 8;
+  doc.setDrawColor(60, 80, 120).setLineWidth(0.4);
+  doc.line(lm, y, rm, y); y += 8;
+
+  doc.setFont('helvetica', 'normal').setFontSize(9);
+  if (data.collected > 0) {
+    doc.text('Collected', lm + 2, y);
+    doc.text(peso(data.collected), rm - 2, y, { align: 'right' }); y += 6;
+  }
+  doc.setFont('helvetica', 'bold');
+  doc.text('Receivable Balance', lm + 2, y);
+  doc.text(peso(data.receivable), rm - 2, y, { align: 'right' }); y += 12;
+
+  doc.setFont('helvetica', 'normal').setFontSize(8);
+  doc.text('Approved by: ___________________________', lm, y);
+
+  const safeName = String(data.projectName || 'Billing').replace(/[^\w\-]+/g, '_');
+  doc.save(`RFP_Billing_${safeName}_${String(data.date || new Date().toISOString().slice(0, 10)).replace(/[^\w\-]+/g, '_')}.pdf`);
 }
 
 function watchPayrollLogs(pid) {

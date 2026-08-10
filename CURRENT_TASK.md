@@ -9,7 +9,16 @@ construction operations system for PM and APM use.
 
 Status: RC6 PAYROLL INTEGRITY + LOCAL DEV SHELL — FULL REGRESSION VERIFIED
 
-Branch: `feature/pmos-official-app`
+Branch: `feature/pmos-official-app` (pushed to origin, 2026-08-10)
+
+Latest production release state (2026-08-10):
+
+- Task transition rules deployed to **Staging + Production** via the guarded
+  release paths (commit `6edff0a`); deployed rules byte-identical to local and
+  live-verified (Staging role matrix 12/12, Production enforcement probes).
+- **PO RFP export** deployed to Production (commit `118545e`); every PO card in
+  Materials has a 📋 RFP button (Copy Text + Download PDF) verified live on the
+  real Angeles Residence PO-001 (**14/14 PASS**).
 
 Deployed release:
 
@@ -17,7 +26,7 @@ Deployed release:
 - Stylesheet: `style.css?v=108`
 - Office main: `main.js?v=106`
 - Auth: `auth.js?v=98`
-- Labor: `labor.js?v=97`
+- Labor: `labor.js?v=98`
 - Payroll math: `payroll-math.js?v=2`
 - Utils: `utils.js?v=87`
 - PMOS: app v3 with task adapter v2, office v4
@@ -46,6 +55,27 @@ Deployed release:
   current live rate.
 - Payroll review modal shows per-worker Gross / Cash Advance Deduction / NET
   with warnings for missing rates, carry-forward balances, and negative NET.
+
+### Production releases (2026-08-10)
+- Child-level task transition rules (`projects/{pid}/tasks/{taskId}` `.validate`
+  state machine: canonical vocabulary, valid transitions, PM-only completion
+  gate, immutable createdBy/createdAt, terminal states) deployed to Staging
+  `acpm-project-system-qa` and Production `acpm-project-system`. Verified live:
+  deployed rules fetched and diffed byte-identical to `database.rules.json`;
+  anonymous writes → `401`; Staging role matrix via
+  `scripts/staging_rules_tasks_live_qa.js` (12/12 PASS, ephemeral accounts,
+  self-cleaning).
+- PO RFP export: `generatePORFP()` in `materials.js` + `downloadPORFP()` in
+  `labor.js`; Production hosting promoted via guarded
+  `deploy-production.ps1 -ConfirmProduction`. Verified live with
+  `scripts/production_po_rfp_live_check.js` on real Angeles PO-001 (14/14 PASS:
+  RFP text with line items + TOTAL AMOUNT, clipboard copy, PDF download;
+  read-only).
+- Live task lifecycle smoke `scripts/production_pilot_smoke.js`: 12/12 PASS in
+  the real Production UI (dedicated QA project, deleted after).
+- Deployed-rules write probe `scripts/live_po_payroll_probe.js`: the rules
+  allow PM order/payroll writes 10/10 on well-formed active projects (the
+  earlier "stuck" report was not a rules regression).
 
 ### Local Dev Shell (debugging aid, never deployed)
 - `dev-shell.html` + `dev/dev-bypass.js`: localhost-only, `?dev=1` /
@@ -79,7 +109,7 @@ Deployed release:
 - Staging Email/Password and Google Authentication provisioned separately via
   `firebase.auth.staging.json`.
 
-## Files Added (RC5/RC6)
+## Files Added (RC5/RC6 + 2026-08-10 releases)
 
 - `payroll-math.js`
 - `dev-shell.html`, `dev/` (`dev-bypass.js`, `dev-rules.json`,
@@ -88,6 +118,9 @@ Deployed release:
 - `tests/pmos/payroll-math.test.ts`, `tests/pmos/labor-smoke.test.ts`,
   `tests/pmos/rules-financial.test.ts`, `tests/pmos/rules-tasks.test.ts`
 - `scripts/dev_shell_static_qa.js`
+- `scripts/staging_rules_tasks_live_qa.js`, `scripts/live_po_payroll_probe.js`,
+  `scripts/production_pilot_smoke.js`,
+  `scripts/production_po_rfp_live_check.js`
 
 ## QA Passed
 
@@ -98,15 +131,21 @@ Deployed release:
   - Production Firebase role rules emulator: 13/13 PASS.
   - Payroll financial rules emulator: 13/13 PASS.
   - PMOS database rules emulator: 24/24 PASS.
-  - Task transition rules emulator (`tests/pmos/rules-tasks.test.ts`): 20/20
+  - Task transition rules emulator (`tests/pmos/rules-tasks.test.ts`): 22/22
     PASS — canonical transitions, PM completion gate, creator identity
     immutability, terminal-state enforcement.
   - Storage rules suite skipped (documented pinned emulator runtime
     limitation, not an app defect).
   - Static gates 9/9 PASS: rc1_static, pwa_cache, rc1_docs, pmos_release,
     historical_integrity, ui_workflow, pm_apm_task_workflow, dev_shell,
-    environment, plus firebase_rules_gate.
+    environment, plus firebase_rules_gate (ui_workflow extended for the PO RFP
+    wiring).
   - JS syntax checks clean; `database.rules.json` and `firebase.json` parse.
+- Live production verification (2026-08-10):
+  - Staging deployed task-rules role matrix: 12/12 PASS.
+  - Production pilot smoke (real UI task lifecycle): 12/12 PASS.
+  - Production PO RFP on real Angeles PO-001: 14/14 PASS.
+  - Deployed-rules order/payroll write probe: 10/10 PASS.
 - Prior release gates (RC1–RC4): dashboard attention lists render as
   interactive project rows; light-theme report card hover surfaces; Boss UI
   smoke; environment isolation static/browser QA; real Staging lifecycle;
@@ -115,11 +154,15 @@ Deployed release:
 
 ## Known Limitations
 
-- Child-level task transition rules are now enforced in `database.rules.json`
+- Child-level task transition rules are enforced in `database.rules.json`
   (canonical transitions, PM completion gate, immutable creator identity,
-  terminal states) and verified by `tests/pmos/rules-tasks.test.ts` (20/20).
-  The rules still deploy through the guarded release path; external field
-  roles remain disabled for RC1.
+  terminal states), verified by `tests/pmos/rules-tasks.test.ts`, and **deployed
+  to Staging + Production** (guarded paths, live-verified 2026-08-10). External
+  field roles remain disabled for RC1.
+- Project `.write` rules intentionally deny PM/APM writes to archived/completed
+  projects (boss/owner/admin are never blocked); ordering or payroll in a
+  closed project fails with a permission error by design — reactivate the
+  project or use a boss account.
 - The storage rules emulator suite remains skipped: `cloud-storage-rules-`
   `runtime-v1.1.3` cannot compile cross-service `database()` access in
   `storage.rules.pmos-proposed`. Re-enable after the emulator runtime upgrade.
@@ -135,6 +178,8 @@ Deployed release:
    `docs/PILOT_ISSUE_LOG.md`.
 2. Develop and verify future changes in Staging before guarded Production
    promotion.
+3. Branch `feature/pmos-official-app` is pushed to GitHub
+   (`vnskrd169/ACPM`); open the PR when ready to merge into `main`.
 
 ## Exact Commands
 

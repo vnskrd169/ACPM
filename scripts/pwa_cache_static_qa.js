@@ -51,14 +51,14 @@ function main() {
   const assetSet = new Set(serviceWorkerAssets(sw));
 
   assert(manifest.start_url === './login.html', 'PWA manifest start_url must open login.html');
-  assert(JSON.stringify(localStyles(loginHtml)) === JSON.stringify(['style.css?v=108']), 'login.html must include versioned style.css?v=108');
+  assert(JSON.stringify(localStyles(loginHtml)) === JSON.stringify(['style.css?v=110']), 'login.html must include versioned style.css?v=110');
   assert(mainJs.includes("navigator.serviceWorker.register('sw.js')"), 'main.js must register sw.js');
   assert(mainJs.includes('registration.update()'), 'main.js must actively check for service worker updates');
   assert(mainJs.includes("addEventListener('controllerchange'"), 'main.js must reload when a new service worker controls the page');
-  assert(JSON.stringify(localScripts(loginHtml)) === JSON.stringify(['environment.js?v=1', 'utils.js?v=87', 'auth.js?v=98', 'main.js?v=106']), 'login.html must include current environment/auth shell scripts');
+  assert(JSON.stringify(localScripts(loginHtml)) === JSON.stringify(['environment.js?v=1', 'utils.js?v=87', 'auth.js?v=98', 'main.js?v=108']), 'login.html must include current environment/auth shell scripts');
   assert(indexHtml.includes("window.location.replace('./login.html' + suffix)"), 'legacy index.html must redirect to login.html');
   assert(localScripts(indexHtml).length === 0, 'legacy index.html must not duplicate the private app shell');
-  assert(sw.includes("const CACHE_NAME = 'acpm-v134'"), 'service worker cache must be acpm-v134');
+  assert(sw.includes("const CACHE_NAME = 'acpm-v136'"), 'service worker cache must be acpm-v136');
   assert(sw.includes('caches.delete(k)'), 'service worker must purge stale caches on activate');
   assert(sw.includes('self.clients.claim()'), 'service worker must claim clients after activation');
 
@@ -72,7 +72,7 @@ function main() {
   const baseline = localScripts(pages[appHtmlFiles[0]]);
   const baselineStyles = localStyles(pages[appHtmlFiles[0]]);
   assert(baseline.length >= 10, 'dashboard.html must include local app scripts with versions');
-  assert(JSON.stringify(baselineStyles) === JSON.stringify(['style.css?v=108']), 'dashboard.html must include versioned style.css?v=108');
+  assert(JSON.stringify(baselineStyles) === JSON.stringify(['style.css?v=110']), 'dashboard.html must include versioned style.css?v=110');
   for (const file of appHtmlFiles) {
     const scripts = localScripts(pages[file]);
     const styles = localStyles(pages[file]);
@@ -93,7 +93,7 @@ function main() {
 
   console.log(JSON.stringify({
     result: 'PASS',
-    cacheName: 'acpm-v134',
+    cacheName: 'acpm-v136',
     pages: appHtmlFiles,
     scriptCount: baseline.length,
     checks: [

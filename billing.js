@@ -1440,6 +1440,7 @@ function billingActionHtml(record) {
   const retentionBalance = billingAmount(record.retentionReceivable);
   return `
     <span class="billing-actions">
+      ${active ? `<button class="billing-mini-btn" data-action="rfp" data-bid="${record.id}">&#x1F4CB; RFP</button>` : ''}
       ${active ? `<button class="billing-mini-btn" data-action="deduct" data-bid="${record.id}">Deduct</button>` : ''}
       ${active && retentionBalance > 0 ? `<button class="billing-mini-btn" data-action="retention" data-bid="${record.id}">Release</button>` : ''}
       ${approved ? `<button class="billing-mini-btn" data-action="snapshot" data-bid="${record.id}">Snapshot</button>` : ''}
@@ -1453,12 +1454,89 @@ function bindBillingRowActions(tr) {
     const id = button.getAttribute('data-bid');
     const action = button.getAttribute('data-action');
     button.addEventListener('click', () => {
+      if (action === 'rfp') generateBillingRFP(id);
       if (action === 'deduct') addBillingDeductionFromUI(id);
       if (action === 'retention') releaseRetentionFromUI(id);
       if (action === 'snapshot') generateBillingOutputForBilling(id);
       if (action === 'void') deleteBilling(id);
     });
   });
+}
+
+// ── RFP (Request for Payment) text for a client billing ──────
+async function generateBillingRFP(billingId) {
+  if (!_bpid) return;
+  const [billingSnap, nameSnap, contractSnap] = await Promise.all([
+    billingProjectRef(_bpid, `billings/${billingId}`).once('value').catch(() => null),
+    firebase.database().ref(`projects/${_bpid}/name`).once('value').catch(() => null),
+    billingProjectRef(_bpid, 'contract').once('value').catch(() => null)
+  ]);
+  const raw = billingSnap ? billingSnap.val() : null;
+  if (!raw) { showToast('Billing not found.', 'error'); return; }
+  const record = { id: billingId, ...raw };
+
+  const projectName = (nameSnap && nameSnap.val()) || _bpid;
+  const contract = (contractSnap && contractSnap.val()) || {};
+  const clientName = contract.clientName || contract.client || '';
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+  const gross = billingGross(record);
+  const deductions = billingDeductionTotal(record);
+  const retention = calculateBillingRetentionAmount(record, gross, deductions);
+  const net = billingNet(record);
+  const collected = billingAmount(record.allocatedCollectionTotal ?? record.collectedAmount);
+  const receivable = billingReceivableDisplay(record);
+  const billingNo = billingDisplayNo(record);
+  const statusLabel = String(record.status || 'submitted').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+  const lines = [];
+  lines.push(
+    'REQUEST FOR PAYMENT (RFP) - CLIENT BILLING',
+    `Project        : ${projectName}`,
+    `Client         : ${clientName || '\u2014'}`,
+    `Billing No     : ${billingNo}`,
+    `Type           : ${billingTypeLabel(record.type)}`,
+    `Billing Date   : ${record.date || ''}`,
+    record.dueDate ? `Due Date       : ${record.dueDate}` : '',
+    record.periodStart && record.periodEnd ? `Period         : ${record.periodStart} to ${record.periodEnd}` : '',
+    `Status         : ${statusLabel}`,
+    record.description ? `Description    : ${record.description}` : '',
+    record.percentComplete ? `Progress       : ${record.percentComplete}% complete` : '',
+    `Date Prepared  : ${today}`,
+    '\u2500'.repeat(54)
+  );
+  lines.push(`GROSS AMOUNT        : ${peso(gross)}`);
+  if (deductions > 0) lines.push(`Less Deductions     : -${peso(deductions)}`);
+  if (retention > 0) lines.push(`Retention (${record.retentionPct || 0}%)      : -${peso(retention)}`);
+  lines.push(`NET BILLABLE        : ${peso(net)}`);
+  lines.push('\u2500'.repeat(54));
+  if (collected > 0) lines.push(`Collected           : ${peso(collected)}`);
+  lines.push(`Receivable Balance  : ${peso(receivable)}`);
+  lines.push('', 'Approved by: ___________________________');
+
+  window._rfpData = {
+    lines,
+    source: 'billing',
+    projectName,
+    billingNo,
+    clientName,
+    billingType: billingTypeLabel(record.type),
+    date: record.date || '',
+    dueDate: record.dueDate || '',
+    description: record.description || '',
+    gross,
+    deductions,
+    retention,
+    retentionPct: billingAmount(record.retentionPct),
+    net,
+    collected,
+    receivable,
+    status: record.status || 'submitted'
+  };
+  const ta = $('rfpOutput');
+  if (!ta) { showToast('RFP output is not available on this page.', 'error'); return; }
+  ta.value = lines.join('\n');
+  const modal = $('rfpModal');
+  if (modal) modal.classList.remove('hidden');
 }
 
 function watchBillings(pid) {
@@ -1943,6 +2021,7 @@ async function exportBillingSummary() {
 }
 
 // ── Expose to global scope ────────────────────────────────────
+window.generateBillingRFP = generateBillingRFP;
 window.initBilling = initBilling;
 window.detachBillingListeners = detachBillingListeners;
 window.getContract = getContract;

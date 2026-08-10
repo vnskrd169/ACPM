@@ -7,7 +7,7 @@
 // -----------------------------------------------------------------------------
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v134';
+const CACHE_NAME = 'acpm-v136';
 
 const ASSETS = [
   './',
@@ -17,13 +17,13 @@ const ASSETS = [
   './dashboard.html',
   './workspace.html',
   './environment.js?v=1',
-  './style.css?v=108',
+  './style.css?v=110',
   './utils.js?v=87',
   './auth.js?v=98',
-  './main.js?v=106',
+  './main.js?v=108',
   './payroll-math.js?v=2',
-  './labor.js?v=97',
-  './materials.js?v=95',
+  './labor.js?v=98',
+  './materials.js?v=96',
   './billing.js?v=76',
   './changeorders.js?v=95',
   './sitelog.js?v=94',
