@@ -100,10 +100,12 @@ write lifecycle status or `completedAt`; they must use the transition helper.
 
 ## Known Limitations
 
-- Realtime Database rules enforce active roles and project assignment, while
-  the PM-only completion transition is also enforced in application services.
-  A future child-level write model should enforce every task transition at the
-  database layer before external field accounts are introduced.
+- Realtime Database rules enforce active roles and project assignment, and
+  `projects/{projectId}/tasks/{taskId}` now carries a child-level transition
+  state machine (`.validate`): canonical statuses only, valid lifecycle
+  transitions only, PM-only completion gate (`boss|owner|admin|pm`), immutable
+  `createdBy`/`createdAt`, and terminal completed/cancelled states. Verified by
+  `tests/pmos/rules-tasks.test.ts` (20/20 under the database emulator).
 - Attachments use existing project/PMOS upload mechanisms. Firebase Storage is
   not required for RC1.
 - Recurring scheduling is represented by creating a new task; there is no

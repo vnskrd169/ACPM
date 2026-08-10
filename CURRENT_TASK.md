@@ -86,7 +86,7 @@ Deployed release:
   `seed-dev-data.js`, `firebase.dev.json`)
 - `docs/DEV_SHELL.md`
 - `tests/pmos/payroll-math.test.ts`, `tests/pmos/labor-smoke.test.ts`,
-  `tests/pmos/rules-financial.test.ts`
+  `tests/pmos/rules-financial.test.ts`, `tests/pmos/rules-tasks.test.ts`
 - `scripts/dev_shell_static_qa.js`
 
 ## QA Passed
@@ -98,6 +98,9 @@ Deployed release:
   - Production Firebase role rules emulator: 13/13 PASS.
   - Payroll financial rules emulator: 13/13 PASS.
   - PMOS database rules emulator: 24/24 PASS.
+  - Task transition rules emulator (`tests/pmos/rules-tasks.test.ts`): 20/20
+    PASS — canonical transitions, PM completion gate, creator identity
+    immutability, terminal-state enforcement.
   - Storage rules suite skipped (documented pinned emulator runtime
     limitation, not an app defect).
   - Static gates 9/9 PASS: rc1_static, pwa_cache, rc1_docs, pmos_release,
@@ -112,9 +115,11 @@ Deployed release:
 
 ## Known Limitations
 
-- Task service enforces PM verification, but assigned-project rules still grant
-  broad internal project writes. Add child-level transition rules before
-  activating external field roles.
+- Child-level task transition rules are now enforced in `database.rules.json`
+  (canonical transitions, PM completion gate, immutable creator identity,
+  terminal states) and verified by `tests/pmos/rules-tasks.test.ts` (20/20).
+  The rules still deploy through the guarded release path; external field
+  roles remain disabled for RC1.
 - The storage rules emulator suite remains skipped: `cloud-storage-rules-`
   `runtime-v1.1.3` cannot compile cross-service `database()` access in
   `storage.rules.pmos-proposed`. Re-enable after the emulator runtime upgrade.

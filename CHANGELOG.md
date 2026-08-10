@@ -1,5 +1,52 @@
 # ACPM Changelog
 
+## Production deployment — Task transition rules (2026-08-10)
+
+### Deployed
+- Promoted the exact Staging-tested state to Production `acpm-project-system`
+  via the guarded `scripts/deploy-production.ps1 -ConfirmProduction
+  -IncludeDatabase` path. All three pre-deploy gates passed (environment
+  isolation, PWA cache, RC1 static gate), then `database: rules released
+  successfully` for `acpm-project-system-default-rtdb` and hosting (102
+  files) deployed to `https://acpm-project-system.web.app`.
+
+### Live verification (read-only — no test records written to Production)
+- Fetched the deployed Production rules from the live RTDB
+  (`.settings/rules.json`) and confirmed the full rules object is
+  byte-identical to local `database.rules.json` (task `.validate` 2370
+  chars, PM completion gate, transition state machine, identity freeze,
+  payrollLogs financial protection all present).
+- Live enforcement probes: anonymous task writes and project reads return
+  `401 Permission denied` on Production; console read of the users node
+  confirms the database is healthy and existing records are intact.
+- The role-based transition matrix itself was verified on Staging
+  (`scripts/staging_rules_tasks_live_qa.js`, 12/12 PASS) immediately before
+  this promotion; per the repo safety rules, no ephemeral QA accounts or
+  test records are created in Production.
+
+## Staging deployment — Task transition rules (2026-08-10)
+
+### Deployed
+- Deployed `database.rules.json` (child-level task transition state machine,
+  PM completion gate, identity freeze) to Staging `acpm-project-system-qa` via
+  the guarded `npm.cmd run deploy:staging` path after the three pre-deploy
+  gates passed. Hosting assets deployed alongside.
+
+### Live verification
+- Fetched the deployed rules from the Staging RTDB
+  (`.settings/rules.json`) and confirmed the task `.validate` is byte-identical
+  to the local `database.rules.json` (2370 chars, full rules object match).
+- Live enforcement probes: anonymous task writes and project reads return
+  `401 Permission denied` on Staging.
+- Role-based live QA `scripts/staging_rules_tasks_live_qa.js`: provisioned
+  ephemeral PM/APM accounts in the Staging Auth project, seeded roles via
+  console access, and exercised the deployed rules — **12/12 PASS** covering
+  APM lifecycle (create/in_progress/for_verification), APM denial (complete,
+  fresh-create-as-completed, status skip, createdBy mutation), PM allowance
+  (complete, fresh-create-as-completed), and PM denial (reverse transition,
+  createdAt mutation). All ephemeral accounts, test project, and user records
+  were deleted after the run (verified no `rulesqa-*` residue).
+
 ## v0.9.0-rc6 (Full Regression Verification) - 2026-08-10
 
 ### Verified release signature

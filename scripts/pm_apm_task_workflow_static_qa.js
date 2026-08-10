@@ -56,6 +56,15 @@ function run() {
     assert(rules.includes(`"${path}"`), `Firebase rules must define ${path}`);
   });
 
+  // Child-level transition state machine must live in database.rules.json so the
+  // assigned-project write grant cannot bypass PM verification or lifecycle order.
+  assert(rules.includes("newData.child('status').val() !== 'completed'"), 'Firebase rules must gate completed on a verifier role');
+  assert(rules.includes("root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)"), 'Firebase rules must define the PM verification role set');
+  assert(rules.includes("data.child('status').val() === 'for_verification'"), 'Firebase rules must define the for_verification state machine');
+  assert(rules.includes("data.child('status').val() === 'pending'"), 'Firebase rules must define the pending state machine');
+  assert(rules.includes("newData.child('createdBy').val() === data.child('createdBy').val()"), 'Firebase rules must freeze task creator identity');
+  assert(rules.includes("newData.child('createdAt').val() === data.child('createdAt').val()"), 'Firebase rules must freeze task creation time');
+
   assert(auth.includes('function canSeeAllProjects(role)'), 'Central PM project visibility capability must exist');
   assert(auth.includes('function canCreateProjects(role)'), 'Central PM project creation capability must exist');
   assert(auth.includes('function canManageProjectAssignments(role)'), 'Central project assignment capability must exist');
@@ -91,7 +100,8 @@ function run() {
       'PM-to-APM assignment restriction',
       'Mission Board operational landing view',
       'task notification deep routing',
-      'completed work excluded from open-item counts'
+      'completed work excluded from open-item counts',
+      'child-level task transition state machine in Firebase rules'
     ]
   }, null, 2));
 }
