@@ -2,6 +2,34 @@
 
 ## ACPM OS v1.0 — Company Pilot (2026-08-10)
 
+### Delivery Receipt modal scroll fix (post-release hotfix)
+
+**Bug**: The Record Delivery Receipt modal clipped PO line items when many
+rows existed — header/footer stayed visible but the item list could not be
+scrolled (reported production bug).
+
+**Root cause**: `.modal-box` is a flex column with `max-height: 90dvh` and
+`overflow-y: auto`, but `#deliveryItemsList` had `overflow: hidden` with no
+`min-height: 0` — when the box hit max-height the flex items shrank and the
+list clipped rows with no internal scrollbar while the box itself had nothing
+to scroll.
+
+**Fix** (style.css): `#deliveryItemsList` now uses `min-height: 0;
+overflow-y: auto; overscroll-behavior: contain` so the list owns internal
+scrolling and every row stays reachable at any count. No `overflow: hidden`
+masking; horizontal responsiveness preserved.
+
+**Verification**:
+- Interactive probe (scripts/delivery_modal_scroll_probe.js): 24/24 PASS at
+  1366×768, 1024×768, 390×844 with 30 seeded rows — mouse wheel, keyboard
+  PageDown, trackpad/touch-equivalent scrolling all reach the last row;
+  footer stays visible; Escape closes; zero console errors.
+- Layout audit harness: 504/504 PASS at the full viewport matrix.
+- Permanent regression case added to scripts/ui_layout_local_audit.js
+  (30-item delivery modal scroll + footer reachability per viewport).
+- Deployed to production: `style.css?v=111`, `CACHE_NAME = 'acpm-v138'`.
+
+
 ### CRITICAL SECURITY FIX: APM budget-control mutation blocked
 
 **Vulnerability**: An assigned APM could write `laborSpent`, `laborBudget`,
