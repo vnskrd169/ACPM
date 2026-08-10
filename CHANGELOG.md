@@ -1,5 +1,71 @@
 # ACPM Changelog
 
+## ACPM OS v1.0 — Company Pilot (2026-08-10)
+
+### CRITICAL SECURITY FIX: APM budget-control mutation blocked
+
+**Vulnerability**: An assigned APM could write `laborSpent`, `laborBudget`,
+`materialBudget`, and budget deltas directly via REST because the project-node
+`.write` rule granted APM write access to the entire subtree with no
+child-level field protections. This was confirmed via a live production probe
+at acpm-project-system — the genre of bug that would have allowed an APM to
+falsify budget usage or payroll spend figures.
+
+**Fix**:
+- Added PM+-only (boss|owner|admin|pm) `.validate` role gates on:
+  `laborBudget`, `materialBudget`, `laborBudgetDelta`, `materialBudgetDelta`,
+  `laborSpent` — the five budget-control fields that APM never legitimately
+  writes.
+- Added PM+-only `.validate` role gate on `payrollLogs/$logId` and
+  `attendanceHistory/$logId` — blocking APM from fabricating payroll records.
+- Gated the edit-project modal (`openEditProjectModal`, `editProject`) behind
+  `canSeeFinancials()` so APM cannot edit budgets via the UI either.
+- Emulator tests added (20 rules tests, 13 production-roles tests — all pass).
+- `materialSpent`/`materialReceivedCost`/`materialCommitted` remain writable
+  by assigned APM because the receiving workflow (confirmDelivery) legitimately
+  updates them as part of the atomic delivery record — a full audit trail
+  exists in `deliveries/` and `materialMovements/`.
+
+### App bug fix: PM could not see Punch List / Equipment / Compliance tabs
+
+The defects (Punch List), equipment, and compliance tabs had
+`data-role-visible="apm,boss"`, which excluded PM because `elementAllowsRole`
+checks `allowed.includes('pm')` — PM is not in the list. This meant a PM could
+not open the Punch List to verify or resolve issues, derailing the PM
+verification workflow required by the company pilot. Fixed all three tabs in
+both workspace.html and dashboard.html to `apm,pm,boss,owner,admin`.
+
+### Live company pilot acceptance — 48/48 checks passed against production
+
+The `scripts/v1_live_pilot_acceptance.js` script drives the real deployed
+acpm-project-system with dedicated QA accounts (PM + APM) through the
+complete company lifecycle:
+
+- PM sign-in + company-wide project visibility
+- APM isolation + confirmed read-only budget (security fix verified)
+- Project creation + assignment + persistence after refresh
+- Payroll scenarios A/B/C/D (gross 16250, net 12250, CA 4000)
+- CA carry-forward 1000, no double deduction
+- RFP == compiled NET (₱12,250.00)
+- Historical rate immutability (850→900 edit, historical unchanged)
+- Partial delivery 60→40 with both records preserved, fully delivered
+- Task lifecycle (pending → completed)
+- Billing seeded record visible
+- Critical punch list item visible to PM
+- Logout/login persistence, APM cannot finalize payroll
+- Zero console errors during the session
+
+### PWA cache bumped to v137
+
+Updated `main.js?v=108→109`, `CACHE_NAME = 'acpm-v136→v137'`, all QA
+script version assertions, and PMOS cache namespace.
+
+### Verification
+- Vitest full suite: **153 passed / 10 skipped**.
+- Playwright PMOS + Office e2e: **24/24 PASS**.
+- Static gates: environment, rc1, pwa_cache, pmos_release, ui_workflow — all PASS.
+- PWA: `sw.js` `acpm-v137`, `main.js?v=109` deployed.
+
 ## Production hardening — UI/UX/workflow/regression pass (2026-08-10)
 
 ### Root causes fixed
