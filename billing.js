@@ -1215,6 +1215,7 @@ async function createBillingNotificationEvent(pid, type, payload = {}) {
 function watchContract(pid) {
   _contractListener = firebase.database().ref(`projects/${pid}/contract`);
   _contractListener.on('value', snap => {
+    hidePanelSkeleton('billingSkeleton');
     const c = snap.val() || {};
     const hasContract = !!c.amount;
 
@@ -1272,9 +1273,9 @@ async function saveContract(pidOrInput, maybeInput) {
   const startDate = $('contractStart').value;
   const endDate = $('contractEnd').value;
 
-  if (amount <= 0) { showToast('Enter contract amount.', 'error'); return; }
-  if (!client) { showToast('Enter client name.', 'error'); return; }
-  if (client.length > 100) { showToast('Client name too long.', 'error'); return; }
+  if (amount <= 0) { setFieldError($('contractAmt'), 'Enter contract amount.'); return; }
+  if (!client) { setFieldError($('contractClient'), 'Enter client name.'); return; }
+  if (client.length > 100) { setFieldError($('contractClient'), 'Client name too long.'); return; }
 
   // Validate dates
   if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
@@ -1505,7 +1506,7 @@ function watchBillings(pid) {
         <td class="b-cell b-right b-bold">${peso(billingGross(b))}</td>
         <td class="b-cell b-right b-bold">${peso(billingReceivableDisplay(b))}</td>
         <td class="b-cell">
-          <select class="status-sel ${statusClass}" onchange="updateBillingStatus('${b.id}',this.value)">
+          <select class="status-sel ${statusClass}" aria-label="Billing status for ${b.id}" onchange="updateBillingStatus('${b.id}',this.value)">
             <option value="pending" ${b.status === 'pending' ? 'selected' : ''}>Pending</option>
             <option value="submitted" ${b.status === 'submitted' ? 'selected' : ''}>Submitted</option>
             <option value="approved" ${b.status === 'approved' ? 'selected' : ''}>Approved</option>
@@ -1540,12 +1541,12 @@ async function addBillingRequest() {
   const type = ($('billType') && $('billType').value) || 'progress';
   const retentionPct = parseFloat(($('billRetentionPct') && $('billRetentionPct').value) || '') || 0;
   const deductionTotal = parseFloat(($('billDeduction') && $('billDeduction').value) || '') || 0;
-  if (!date) { showToast('Enter billing date.', 'error'); return; }
-  if (!desc) { showToast('Enter description.', 'error'); return; }
-  if (amount <= 0) { showToast('Enter billing amount.', 'error'); return; }
-  if (retentionPct < 0 || retentionPct > 100) { showToast('Retention must be from 0% to 100%.', 'error'); return; }
-  if (deductionTotal < 0 || deductionTotal >= amount) { showToast('Deduction must be lower than billing amount.', 'error'); return; }
-  if (desc.length > 200) { showToast('Description too long (max 200).', 'error'); return; }
+  if (!date) { setFieldError($('billDate'), 'Enter billing date.'); return; }
+  if (!desc) { setFieldError($('billDesc'), 'Enter description.'); return; }
+  if (amount <= 0) { setFieldError($('billAmount'), 'Enter billing amount.'); return; }
+  if (retentionPct < 0 || retentionPct > 100) { setFieldError($('billRetentionPct'), 'Retention must be from 0% to 100%.'); return; }
+  if (deductionTotal < 0 || deductionTotal >= amount) { setFieldError($('billDeduction'), 'Deduction must be lower than billing amount.'); return; }
+  if (desc.length > 200) { setFieldError($('billDesc'), 'Description too long (max 200).'); return; }
 
   // Validate date not in future
   const inputDate = new Date(date + 'T00:00:00');

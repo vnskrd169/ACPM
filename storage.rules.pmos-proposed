@@ -30,7 +30,7 @@ service firebase.storage {
           // Boss/owner/admin can write to any project
           firebase.database()
             .ref('/users/' + request.auth.uid + '/role')
-            .get().data.val().matches(/^(boss|owner|admin)$/)
+            .get().data.val().matches('^(boss|owner|admin)$')
           ||
           // Regular users must be assigned to the project
           firebase.database()
@@ -46,7 +46,7 @@ service firebase.storage {
         && (
           firebase.database()
             .ref('/users/' + request.auth.uid + '/role')
-            .get().data.val().matches(/^(boss|owner|admin)$/)
+            .get().data.val().matches('^(boss|owner|admin)$')
         );
     }
 
@@ -58,7 +58,7 @@ service firebase.storage {
         && (
           firebase.database()
             .ref('/users/' + request.auth.uid + '/role')
-            .get().data.val().matches(/^(boss|owner|admin)$/)
+            .get().data.val().matches('^(boss|owner|admin)$')
           ||
           firebase.database()
             .ref('/users/' + request.auth.uid + '/projects/' + projectId)

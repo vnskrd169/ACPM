@@ -360,7 +360,7 @@ function renderNotificationFeed(items) {
           <div class="notif-text">${escapeHtml(n.message)}</div>
           <div class="notif-meta">${escapeHtml(n.projectName || 'Whole system')}</div>
         </div>
-        ${!n.read ? `<button class="notif-mark" onclick="event.stopPropagation(); markNotifRead('${escapeHtml(n.readKey)}')" title="Mark as read">OK</button>` : '<span class="notif-done">Read</span>'}
+        ${!n.read ? `<button class="notif-mark" aria-label="Mark notification as read" onclick="event.stopPropagation(); markNotifRead('${escapeHtml(n.readKey)}')" title="Mark as read">OK</button>` : '<span class="notif-done">Read</span>'}
       </div>
     `;
   }).join('');
@@ -385,6 +385,7 @@ function notificationTargetTab(item = {}) {
   if (text.includes('billing') || text.includes('collection') || text.includes('invoice') || text.includes('payment')) return 'billing';
   if (text.includes('change') || text.includes('co_')) return 'changeorders';
   if (text.includes('site_log') || text.includes('sitelog') || text.includes('site logs')) return 'sitelog';
+  if (text.includes('task') || text.includes('mission') || text.includes('follow_up')) return 'tasks';
   if (text.includes('labor') || text.includes('payroll') || text.includes('cash_advance')) return 'labor';
   return 'dashboard';
 }
@@ -524,7 +525,9 @@ async function sendNotification({ to, type, message, projectId, projectName, lin
     }
     const recipientSnap = await firebase.database().ref(`users/${to}`).once('value');
     const recipient = recipientSnap.val() || {};
-    const recipientProjects = Array.isArray(recipient.projects) ? recipient.projects : [];
+    const recipientProjects = typeof normalizeProjectList === 'function'
+      ? normalizeProjectList(recipient.projects || recipient.assignedProjects)
+      : Array.isArray(recipient.projects) ? recipient.projects : Object.keys(recipient.projects || {});
     if (!(typeof isBoss === 'function' ? isBoss(recipient.role) : recipient.role === 'boss') && !recipientProjects.includes(projectId)) {
       showToast('You can only notify members of that project.', 'error');
       return;

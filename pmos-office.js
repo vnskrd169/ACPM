@@ -10,7 +10,8 @@
     { key: 'siteLogs', label: 'Site Logs', collection: 'pmosSiteLogs', title: r => r.accomplishment || r.remarks || 'Site log' },
     { key: 'issues', label: 'Issues', collection: 'pmosIssues', title: r => r.issue || r.location || 'Issue' },
     { key: 'materials', label: 'Material Requests', collection: 'pmosMaterialRequests', title: r => r.item || 'Material request' },
-    { key: 'tasks', label: 'Follow-ups', collection: 'pmosTasks', title: r => r.task || 'Follow-up task' },
+    { key: 'tasks', label: 'Follow-ups', collection: 'pmosTasks', title: r => r.task || r.title || 'Follow-up task' },
+    { key: 'acpmTasks', label: 'ACPM Tasks', collection: 'tasks', title: r => r.title || 'Task' },
     { key: 'photos', label: 'Photo Proofs', collection: 'pmosPhotoLogs', title: r => r.caption || r.location || 'Photo proof' },
     { key: 'meetings', label: 'Meeting Notes', collection: 'pmosMeetingNotes', title: r => r.meetingTitle || r.meetingType || 'Meeting note' }
   ];
@@ -36,7 +37,8 @@
     paginators: {},
     pagination: {},  // { viewName: { page, hasMore, loading, records, cursorKey } }
     lastProjectId: '',
-    lastFilterKey: ''
+    lastFilterKey: '',
+    initialLoading: true  // True until first data arrives from any source
   };
 
   /* ---- Pagination helpers ---- */
@@ -60,13 +62,14 @@
     var pag = getPagination(viewName);
     if (pag.loading || !pag.hasMore) return;
     pag.loading = true;
+    state.initialLoading = false;  // First pagination clears initial loading
     renderPmosOffice();  // Show loading state
 
     var pageSize = PAGE_SIZES[viewName] || 30;
     var projectId = state.lastProjectId;
 
     /* Inbox/Feed must query ALL 7 collections; other views query only their own */
-    var ALL_COLLECTIONS = ['pmosUpdates', 'pmosSiteLogs', 'pmosIssues', 'pmosMaterialRequests', 'pmosTasks', 'pmosPhotoLogs', 'pmosMeetingNotes'];
+    var ALL_COLLECTIONS = ['pmosUpdates', 'pmosSiteLogs', 'pmosIssues', 'pmosMaterialRequests', 'pmosTasks', 'tasks', 'pmosPhotoLogs', 'pmosMeetingNotes'];
     var collections;
     if (viewName === 'inbox' || viewName === 'feed') {
       collections = ALL_COLLECTIONS;
@@ -184,12 +187,32 @@
       return '<div class="pmos-load-more-wrap"><span class="pmos-end-hint">All records loaded.</span></div>';
     }
     if (pag.loading) {
-      return '<div class="pmos-load-more-wrap"><button class="btn-ws-secondary" disabled>Loading...</button></div>';
+      /* Show shimmer skeleton rows while loading */
+      return '<div class="pmos-skeleton-office-list">' + skeletonOfficeRows(3) + '</div>';
     }
     if (pag.error) {
       return '<div class="pmos-load-more-wrap"><button class="btn-ws-secondary" onclick="loadMoreView(\'' + viewName + '\')">Retry</button> <span class="pmos-error-hint">Could not load more.</span></div>';
     }
     return '<div class="pmos-load-more-wrap"><button class="btn-ws-secondary" onclick="loadMoreView(\'' + viewName + '\')">Load More</button></div>';
+  }
+
+  /* Generate N skeleton office rows for loading states */
+  function skeletonOfficeRows(count) {
+    var widths = [
+      { title: '72%', meta: '48%' },
+      { title: '64%', meta: '52%' },
+      { title: '78%', meta: '40%' },
+      { title: '68%', meta: '55%' }
+    ];
+    var html = '';
+    for (var i = 0; i < count; i++) {
+      var w = widths[i % widths.length];
+      html += '<div class="pmos-skeleton-office-row">' +
+        '<div class="skeleton skeleton-text" style="width:' + w.title + ';height:16px"></div>' +
+        '<div class="skeleton skeleton-text" style="width:' + w.meta + ';height:12px"></div>' +
+      '</div>';
+    }
+    return html;
   }
 
   /* ---- View-specific key helpers for subscription manager ---- */
@@ -333,6 +356,7 @@
     /* === Single reinit/init path === */
     if (state.initialized) {
       /* Reinit: clean old subs, reload projects, clear stale data, activate current view */
+      state.initialLoading = true;  // Reset for re-init skeleton state
       await loadOfficeProjects();
       state.records = [];
       state.pagination = {};
@@ -601,7 +625,7 @@
         break;
 
       case 'tasks':
-        // Follow-ups: only tasks
+        // Follow-ups: listen to both pmosTasks (legacy) AND tasks (canonical)
         SUB.subscribe({
           key: 'tasks:' + (projectId || 'all'),
           group: group,
@@ -615,6 +639,23 @@
           },
           callback: function (snap) {
             handleModuleSnapshot(snap, { key: 'tasks', collection: 'pmosTasks', label: 'Follow-ups' }, 'tasks:' + (projectId || 'all'), !projectId);
+          },
+          errorCallback: function (err) { /* silent */ }
+        });
+        // Also listen to canonical tasks path
+        SUB.subscribe({
+          key: 'tasks_canonical:' + (projectId || 'all'),
+          group: group,
+          module: 'acpmTasks',
+          projectId: projectId || '',
+          queryFactory: function () {
+            if (projectId) {
+              return firebase.database().ref('projects/' + projectId + '/tasks').limitToLast(100);
+            }
+            return firebase.database().ref('tasks').limitToLast(100);
+          },
+          callback: function (snap) {
+            handleModuleSnapshot(snap, { key: 'acpmTasks', collection: 'tasks', label: 'ACPM Tasks' }, 'tasks_canonical:' + (projectId || 'all'), !projectId);
           },
           errorCallback: function (err) { /* silent */ }
         });
@@ -706,6 +747,7 @@
   }
 
   function handleModuleSnapshot(snap, mod, sourceKey, isGlobal) {
+    state.initialLoading = false;  // Any data arrival clears initial loading
     // Remove existing records with this sourceKey
     state.records = state.records.filter(function (r) { return r.sourceKey !== sourceKey; });
 
@@ -796,6 +838,19 @@
       btn.classList.toggle('is-active', btn.id === 'pmosOfficeTab_' + state.activeView);
     });
     renderPmosStats();
+
+    /* Show skeleton content during initial load */
+    var records = allRecords();
+    if (state.initialLoading && records.length === 0) {
+      setHTML('pmosOfficeContent',
+        '<div class="pmos-office-section">' +
+          '<h3><span class="skeleton skeleton-text" style="width:120px;height:18px;display:inline-block"></span></h3>' +
+          '<div class="pmos-skeleton-office-list">' + skeletonOfficeRows(4) + '</div>' +
+        '</div>'
+      );
+      return;
+    }
+
     var renderers = {
       inbox: renderInbox,
       feed: renderFeed,
@@ -835,6 +890,15 @@
 
   function renderPmosStats() {
     const records = allRecords();
+    if (state.initialLoading && records.length === 0) {
+      setHTML('pmosOfficeStats', `
+        <div class="skeleton pmos-skeleton-stat"></div>
+        <div class="skeleton pmos-skeleton-stat"></div>
+        <div class="skeleton pmos-skeleton-stat"></div>
+        <div class="skeleton pmos-skeleton-stat"></div>
+      `);
+      return;
+    }
     const open = records.filter(r => !['Done', 'Archived', 'Delivered', 'Cancelled'].includes(String(r.status || 'New'))).length;
     const issues = records.filter(r => r.collection === 'pmosIssues' && !['Done', 'Archived'].includes(String(r.status || 'New'))).length;
     const materials = records.filter(r => r.collection === 'pmosMaterialRequests' && !['Delivered', 'Cancelled'].includes(String(r.status || 'Pending'))).length;
@@ -1008,7 +1072,7 @@
   function renderTasks() {
     var priorityScore = { Critical: 0, High: 1, Normal: 2, Low: 3 };
     var records = allRecords()
-      .filter(function (r) { return r.collection === 'pmosTasks'; })
+      .filter(function (r) { return r.collection === 'pmosTasks' || r.collection === 'tasks'; })
       .sort(function (a, b) { return String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')) || ((priorityScore[a.priority] ?? 9) - (priorityScore[b.priority] ?? 9)); });
     var pag = getPagination('tasks');
     if (pag.records.length === 0 && !pag.loading && pag.hasMore) loadMoreView('tasks');
@@ -1227,7 +1291,7 @@
       daily: records.filter(r => (r.date || new Date(r.createdAt || 0).toISOString().slice(0, 10)) === today),
       issues: records.filter(r => r.collection === 'pmosIssues' && !['Done', 'Archived'].includes(String(r.status || 'New'))),
       materials: records.filter(r => r.collection === 'pmosMaterialRequests'),
-      tasks: records.filter(r => r.collection === 'pmosTasks' && !['Done', 'Archived'].includes(String(r.status || 'New')))
+      tasks: records.filter(r => (r.collection === 'pmosTasks' || r.collection === 'tasks') && !['Done', 'Archived'].includes(String(r.status || 'New')))
     }[type] || records;
     const title = viewReportTitle(type);
     const rows = pick.map(r => `<tr><td>${h(projectName(r.projectId, r.projectName))}</td><td>${h(r.moduleLabel)}</td><td>${h(moduleByCollection(r.collection).title(r))}</td><td>${h(r.status || '')}</td><td>${h(r.dueDate || r.neededDate || r.date || '')}</td></tr>`).join('');

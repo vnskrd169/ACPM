@@ -36,6 +36,7 @@ function matListen(ref, cb) {
 function watchMatBudget(pid) {
   const ref = firebase.database().ref(`projects/${pid}`);
   matListen(ref, snap => {
+    hidePanelSkeleton('matSkeleton');
     const d = snap.val() || {};
     const budget = (parseFloat(d.materialBudget) || 0) + (parseFloat(d.materialBudgetDelta) || 0);
     const spent = parseFloat(d.materialSpent) || 0;
@@ -226,10 +227,10 @@ function addDraftItem() {
   const qty = parseFloat($('poItemQty')?.value) || 0;
   const unit = $('poItemUnit')?.value.trim() || '';
   const cost = parseFloat($('poItemCost')?.value) || 0;
-  if (!desc) { showToast('Enter item description.', 'error'); return; }
-  if (qty <= 0) { showToast('Enter valid quantity.', 'error'); return; }
-  if (cost <= 0) { showToast('Enter valid unit cost.', 'error'); return; }
-  if (desc.length > 100) { showToast('Description too long (max 100).', 'error'); return; }
+  if (!desc) { setFieldError($('draftItemDesc'), 'Enter item description.'); return; }
+  if (qty <= 0) { setFieldError($('draftItemQty'), 'Enter valid quantity.'); return; }
+  if (cost <= 0) { setFieldError($('draftItemCost'), 'Enter valid unit cost.'); return; }
+  if (desc.length > 100) { setFieldError($('draftItemDesc'), 'Description too long (max 100).'); return; }
 
   _draftItems.push({ desc, size, qty, unit, cost, total: qty * cost });
   ['poItemDesc', 'poItemSize', 'poItemQty', 'poItemUnit', 'poItemCost'].forEach(id => {
@@ -878,9 +879,9 @@ async function submitPO() {
   const notes = $('poNotes')?.value.trim() || '';
   const urgency = $('poUrgency')?.value || 'normal';
 
-  if (!supplier) { showToast('Enter supplier name.', 'error'); return; }
-  if (!date) { showToast('Enter PO date.', 'error'); return; }
-  if (supplier.length > 50) { showToast('Supplier name too long.', 'error'); return; }
+  if (!supplier) { setFieldError($('poSupplier'), 'Enter supplier name.'); return; }
+  if (!date) { setFieldError($('poDate'), 'Enter PO date.'); return; }
+  if (supplier.length > 50) { setFieldError($('poSupplier'), 'Supplier name too long.'); return; }
 
   // Validate date not in future
   const inputDate = new Date(date + 'T00:00:00');
@@ -1007,8 +1008,8 @@ async function openDeliveryModal(poId) {
         <div class="delivery-item-row">
           <span class="delivery-item-name">${escapeHtml(item.desc)} ${item.size ? `[${escapeHtml(item.size)}]` : ''}</span>
           <span class="delivery-item-ordered">Ordered: ${item.qty} ${escapeHtml(item.unit)} &middot; Remaining: ${remaining} ${escapeHtml(item.unit)}</span>
-          <input type="number" class="delivery-qty-received" id="delQty_${i}" placeholder="Qty Received" inputmode="decimal" max="${remaining}" ${remaining <= 0 ? 'disabled' : ''}>
-          <select id="delCondition_${i}">
+          <input type="number" class="delivery-qty-received" id="delQty_${i}" placeholder="Qty Received" inputmode="decimal" max="${remaining}" ${remaining <= 0 ? 'disabled' : ''} aria-label="Qty received for line ${i + 1}">
+          <select id="delCondition_${i}" aria-label="Delivery condition for line ${i + 1}">
             <option value="good">Good</option>
             <option value="damaged">Damaged</option>
             <option value="incomplete">Incomplete</option>
@@ -1495,7 +1496,7 @@ function watchPOHistory(pid) {
         // Action buttons based on status
         let actions = '';
         if (po.status === 'pending_approval') {
-          actions = `<button class="po-approve-btn" data-po="${po.id}" data-action="approve">\u2713 Approve PO</button>`;
+          actions = `<button class="po-approve-btn btn-lg" data-po="${po.id}" data-action="approve">\u2713 Approve PO</button>`;
         } else if (po.status === 'approved' || po.status === 'ordered' || po.status === 'partially_delivered') {
           actions = `
             <button class="po-mark-btn" data-po="${po.id}" data-action="delivery">Record Delivery</button>

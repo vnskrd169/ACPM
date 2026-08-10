@@ -191,7 +191,7 @@ function main() {
     warnings: [...new Set(warnings)],
     failures,
     nextStep: failures.some(item => item.includes('projects root'))
-      ? 'Deploy or tighten Firebase Realtime Database rules so PM/APM cannot read the full projects root, rerun scripts/roles_live_account_qa.js, then rerun this final readiness gate.'
+      ? 'Verify PM company-wide project access and APM assigned-only access, rerun scripts/roles_live_account_qa.js, then rerun this final readiness gate.'
       : failures.length
         ? 'Resolve the failed gate command(s), then rerun this final readiness gate.'
         : warnings.length

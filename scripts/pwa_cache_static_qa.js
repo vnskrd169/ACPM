@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const htmlFiles = ['index.html', 'dashboard.html', 'workspace.html'];
+const appHtmlFiles = ['dashboard.html', 'workspace.html'];
 const requiredShellFiles = ['./', './index.html', './login.html', './dashboard.html', './workspace.html', './manifest.json'];
 
 function read(file) {
@@ -45,17 +45,20 @@ function main() {
   const manifest = JSON.parse(read('manifest.json'));
   const sw = read('sw.js');
   const mainJs = read('main.js');
-  const pages = Object.fromEntries(htmlFiles.map(file => [file, read(file)]));
+  const pages = Object.fromEntries(appHtmlFiles.map(file => [file, read(file)]));
+  const indexHtml = read('index.html');
   const loginHtml = read('login.html');
   const assetSet = new Set(serviceWorkerAssets(sw));
 
   assert(manifest.start_url === './login.html', 'PWA manifest start_url must open login.html');
-  assert(JSON.stringify(localStyles(loginHtml)) === JSON.stringify(['style.css?v=104']), 'login.html must include versioned style.css?v=104');
+  assert(JSON.stringify(localStyles(loginHtml)) === JSON.stringify(['style.css?v=108']), 'login.html must include versioned style.css?v=108');
   assert(mainJs.includes("navigator.serviceWorker.register('sw.js')"), 'main.js must register sw.js');
   assert(mainJs.includes('registration.update()'), 'main.js must actively check for service worker updates');
   assert(mainJs.includes("addEventListener('controllerchange'"), 'main.js must reload when a new service worker controls the page');
-  assert(JSON.stringify(localScripts(loginHtml)) === JSON.stringify(['utils.js?v=85', 'auth.js?v=96', 'main.js?v=103']), 'login.html must include current auth shell scripts');
-  assert(sw.includes("const CACHE_NAME = 'acpm-v126'"), 'service worker cache must be acpm-v126');
+  assert(JSON.stringify(localScripts(loginHtml)) === JSON.stringify(['environment.js?v=1', 'utils.js?v=87', 'auth.js?v=98', 'main.js?v=106']), 'login.html must include current environment/auth shell scripts');
+  assert(indexHtml.includes("window.location.replace('./login.html' + suffix)"), 'legacy index.html must redirect to login.html');
+  assert(localScripts(indexHtml).length === 0, 'legacy index.html must not duplicate the private app shell');
+  assert(sw.includes("const CACHE_NAME = 'acpm-v134'"), 'service worker cache must be acpm-v134');
   assert(sw.includes('caches.delete(k)'), 'service worker must purge stale caches on activate');
   assert(sw.includes('self.clients.claim()'), 'service worker must claim clients after activation');
 
@@ -66,15 +69,15 @@ function main() {
     assert(assetSet.has(`./${script}`), `service worker must cache login shell script ./${script}`);
   }
 
-  const baseline = localScripts(pages[htmlFiles[0]]);
-  const baselineStyles = localStyles(pages[htmlFiles[0]]);
-  assert(baseline.length >= 10, 'index.html must include local app scripts with versions');
-  assert(JSON.stringify(baselineStyles) === JSON.stringify(['style.css?v=104']), 'index.html must include versioned style.css?v=104');
-  for (const file of htmlFiles) {
+  const baseline = localScripts(pages[appHtmlFiles[0]]);
+  const baselineStyles = localStyles(pages[appHtmlFiles[0]]);
+  assert(baseline.length >= 10, 'dashboard.html must include local app scripts with versions');
+  assert(JSON.stringify(baselineStyles) === JSON.stringify(['style.css?v=108']), 'dashboard.html must include versioned style.css?v=108');
+  for (const file of appHtmlFiles) {
     const scripts = localScripts(pages[file]);
     const styles = localStyles(pages[file]);
-    assert(JSON.stringify(scripts) === JSON.stringify(baseline), `${file} script versions/order must match index.html`);
-    assert(JSON.stringify(styles) === JSON.stringify(baselineStyles), `${file} stylesheet versions/order must match index.html`);
+    assert(JSON.stringify(scripts) === JSON.stringify(baseline), `${file} script versions/order must match dashboard.html`);
+    assert(JSON.stringify(styles) === JSON.stringify(baselineStyles), `${file} stylesheet versions/order must match dashboard.html`);
     for (const script of scripts) {
       assert(assetSet.has(`./${script}`), `service worker must cache ./${script}`);
     }
@@ -83,15 +86,15 @@ function main() {
     }
   }
 
-  for (const file of ['utils.js', 'auth.js', 'main.js', 'labor.js', 'materials.js', 'billing.js', 'changeorders.js', 'sitelog.js', 'suppliers.js', 'notifications.js', 'report.js']) {
+  for (const file of ['utils.js', 'auth.js', 'main.js', 'payroll-math.js', 'labor.js', 'materials.js', 'billing.js', 'changeorders.js', 'sitelog.js', 'suppliers.js', 'notifications.js', 'report.js']) {
     const matches = baseline.filter(script => script.startsWith(`${file}?v=`));
     assert(matches.length === 1, `app shell must include one versioned ${file}`);
   }
 
   console.log(JSON.stringify({
     result: 'PASS',
-    cacheName: 'acpm-v126',
-    pages: htmlFiles,
+    cacheName: 'acpm-v134',
+    pages: appHtmlFiles,
     scriptCount: baseline.length,
     checks: [
       'manifest opens login.html',
@@ -100,7 +103,8 @@ function main() {
       'service worker update/reload path exists',
       'stale caches are purged',
       'versioned stylesheet is cached',
-      'index/dashboard/workspace script versions match',
+      'dashboard/workspace script versions match',
+      'legacy index route redirects without a duplicate app shell',
       'service worker caches every versioned local script',
       'core module scripts are versioned once'
     ]

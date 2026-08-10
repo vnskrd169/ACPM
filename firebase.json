@@ -8,19 +8,49 @@
       "**/node_modules/**",
       "docs/**",
       "scripts/**",
+      "tests/**",
+      "test-results/**",
+      "patches/**",
       "line17-face-attendance/**",
       "tmp_jdk/**",
       "database-debug.log",
+      "*.log",
       "cors.json",
       "database.rules.json",
+      "database.rules.*.json",
       "storage.rules",
+      "storage.rules.*",
+      "dev",
+      "dev/**",
+      "dev-shell.html",
+      "firebase.emulator.json",
+      "firebase.pmos.test.json",
+      "package.json",
+      "package-lock.json",
+      "playwright.config.ts",
+      "vitest.config.ts",
+      "pmos-tests.js",
+      "nul",
       "*.md",
       "**/*.md",
       "README.md"
     ],
     "headers": [
       {
-        "source": "**/*.@(html|js|css|json)",
+        "source": "**/*.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          },
+          {
+            "key": "X-UA-Compatible",
+            "value": "IE=edge"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(js|css|json)",
         "headers": [
           {
             "key": "Cache-Control",
@@ -33,6 +63,14 @@
       {
         "source": "/",
         "destination": "/login.html"
+      },
+      {
+        "source": "/pmos/**",
+        "destination": "/pmos/index.html"
+      },
+      {
+        "source": "/pmos",
+        "destination": "/pmos/index.html"
       }
     ]
   },

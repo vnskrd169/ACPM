@@ -15,7 +15,142 @@ import {
   openPmosOffice,
   goOffline,
   goOnline,
+  navigateToDashboard,
+  navigateToWorkspace,
+  navigateLegacyIndex,
 } from './helpers';
+
+test.describe('ACPM PM and APM Operations', () => {
+  test('PM sees project creation, assignments, and all project cards', async ({ page }) => {
+    page.addInitScript(buildInitScript('pm'));
+    const errors = setupConsoleTracking(page);
+    await navigateToDashboard(page);
+
+    await expect(page.locator('.hub-create-card')).toBeVisible();
+    await expect(page.locator('#teamAdminBtn')).toBeVisible();
+    await expect(page.locator('#teamAdminBtn')).toContainText('Project Assignments');
+    await expect(page.locator('#projectGrid .proj-card')).toHaveCount(1);
+    await expect(page.locator('#dashAttnInfoList .dash-attn-item')).toHaveCount(1);
+    await expect(page.locator('#dashAttnInfoList')).not.toContainText('<div');
+    await expect(page.locator('#dashAttnWarningList')).not.toContainText('<span');
+    expect(errors.length).toBe(0);
+  });
+
+  test('APM sees assigned projects without management controls', async ({ page }) => {
+    page.addInitScript(buildInitScript('field'));
+    const errors = setupConsoleTracking(page);
+    await navigateToDashboard(page);
+
+    await expect(page.locator('.hub-create-card')).toBeHidden();
+    await expect(page.locator('#teamAdminBtn')).toBeHidden();
+    await expect(page.locator('#projectGrid .proj-card')).toHaveCount(1);
+    expect(errors.length).toBe(0);
+  });
+
+  test('PM opens Project Assignments without exposing project modules or boss-only admin tabs', async ({ page }) => {
+    page.addInitScript(buildInitScript('pm'));
+    const errors = setupConsoleTracking(page);
+    await navigateToDashboard(page);
+
+    await page.locator('#teamAdminBtn').click();
+    await expect(page.locator('#workspaceView')).toBeVisible();
+    await expect(page.locator('#adminPanel')).toBeVisible();
+    await expect(page.locator('#adminTab_team')).toBeVisible();
+    await expect(page.locator('#adminSection_team')).toBeVisible();
+    await expect(page.locator('#adminTab_requests')).toBeHidden();
+    await expect(page.locator('#adminTab_audit')).toBeHidden();
+    await expect(page.locator('#adminTab_system')).toBeHidden();
+    await expect(page.locator('[data-project-tab]:visible')).toHaveCount(0);
+    await expect(page.locator('[data-team-user-row]')).toHaveCount(2);
+    expect(errors.length).toBe(0);
+  });
+
+  test('PM workspace refresh preserves project and exposes Mission Board and Tasks', async ({ page }) => {
+    page.addInitScript(buildInitScript('pm'));
+    const errors = setupConsoleTracking(page);
+    const navigations: string[] = [];
+    page.on('framenavigated', frame => {
+      if (frame === page.mainFrame()) navigations.push(frame.url());
+    });
+    try {
+      await navigateToWorkspace(page);
+    } catch (error) {
+      const diagnostics = await page.evaluate(() => ({
+        appPage: (window as any).getAppPage?.(),
+        routeProjectId: (window as any).getRouteProjectId?.(),
+        currentUser: (window as any)._currentUser,
+        authUser: (window as any).getCurrentUser?.(),
+        canAccessTestProject: (window as any).canAccessProject?.('test-project-1'),
+        canReadTestProject: (window as any).canReadFullProject?.('test-project-1'),
+        mockDbPaths: (window as any).__mockDbPaths,
+      })).catch(() => ({}));
+      console.log(JSON.stringify({ url: page.url(), navigations, browserErrors: errors, diagnostics }, null, 2));
+      throw error;
+    }
+
+    await expect(page.locator('#tab_dashboard')).toBeVisible();
+    await page.locator('#tab_dashboard').click();
+    await expect(page.locator('#dashboardPanel')).toBeVisible();
+    await expect(page.locator('#pdMissionList')).toBeVisible();
+    await expect(page.locator('#tab_tasks')).toBeVisible();
+
+    await page.reload();
+    await page.waitForFunction(() => {
+      const workspace = document.querySelector('#workspaceView');
+      return !!workspace && !workspace.classList.contains('hidden') && document.body.classList.contains('auth-ready');
+    }, null, { timeout: 15000 });
+    expect(page.url()).toContain('projectId=test-project-1');
+    expect(errors.length).toBe(0);
+  });
+
+  test('legacy index route leaves no old application shell', async ({ page }) => {
+    page.addInitScript(buildInitScript('pm'));
+    const errors = setupConsoleTracking(page);
+    await navigateLegacyIndex(page);
+    await page.waitForURL(/\/dashboard(?:\.html)?(?:[?#].*)?$/, { timeout: 15000 });
+    await expect(page.locator('#hubView')).toBeVisible();
+    expect(errors.length).toBe(0);
+  });
+
+  test('System Reports keeps a readable light-theme hover surface', async ({ page }) => {
+    page.addInitScript(buildInitScript('boss'));
+    const errors = setupConsoleTracking(page);
+    await navigateToDashboard(page);
+
+    await page.evaluate(() => {
+      document.documentElement.setAttribute('data-theme', 'light');
+      (window as any).openSystemReports();
+    });
+    await expect(page.locator('#systemReportsView')).toBeVisible();
+    await page.locator('#executiveDashboard').hover();
+    await page.waitForTimeout(300);
+
+    const colors = await page.evaluate(() => {
+      const panel = document.querySelector('#executiveDashboard');
+      const healthName = document.querySelector('#systemReportsView .health-name');
+      return {
+        hoverToken: getComputedStyle(document.documentElement).getPropertyValue('--surface-hover').trim(),
+        panelBackground: panel ? getComputedStyle(panel).backgroundColor : '',
+        healthNameColor: healthName ? getComputedStyle(healthName).color : '',
+      };
+    });
+    expect(colors.hoverToken.toLowerCase()).toBe('#f7f5ff');
+    expect(colors.panelBackground).not.toBe('rgb(34, 38, 46)');
+    expect(colors.healthNameColor).not.toBe('rgb(255, 255, 255)');
+    expect(errors.length).toBe(0);
+  });
+
+  test('PMOS fits a field phone viewport without horizontal overflow', async ({ page }) => {
+    page.addInitScript(buildInitScript('field'));
+    await page.setViewportSize({ width: 390, height: 780 });
+    await navigateToPmos(page);
+    const metrics = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    }));
+    expect(metrics.documentWidth).toBeLessThanOrEqual(metrics.viewport + 4);
+  });
+});
 
 test.describe('PMOS Field User Workflow', () => {
   test.beforeEach(async ({ page }) => {

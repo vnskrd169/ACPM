@@ -302,48 +302,79 @@
       }
 
       // No existing follow-up found — create one
-      const taskRef = firebase.database().ref('pmosTasks').push();
-      const now = Date.now();
-      const task = {
-        id: taskRef.key,
-        task: actionItemText || 'Follow-up from meeting',
-        person: '',
-        dueDate: '',
-        priority: 'Normal',
-        status: 'New',
-        remarks: 'Created from Meeting Notes action item',
-        projectId: projectId,
-        module: 'Follow-ups',
-        sourceModule: 'meeting-notes',
-        sourceRecordId: meetingId,
-        schemaVersion: typeof PMOS_SCHEMA_VERSION !== 'undefined' ? PMOS_SCHEMA_VERSION : '1.0',
-        syncStatus: 'synced',
-        createdAt: now,
-        updatedAt: now,
-        createdBy: window._currentUser?.uid || '',
-        createdByName: window._currentUser?.name || '',
-        source: 'Line17 PMOS'
-      };
-      try {
-        await taskRef.set(task);
-        if (typeof pmosToast === 'function') pmosToast('Follow-up task created from meeting action item.');
-        if (typeof pmosAuditLog === 'function') {
-          pmosAuditLog('create_followup_from_meeting', 'pmos_tasks', projectId, taskRef.key, 'Follow-up created from meeting action item');
-        }
-        if (typeof renderPmosOffice === 'function') renderPmosOffice();
-      } catch (e) {
-        if (String(e?.code || '').toLowerCase().includes('permission')) {
-          try {
-            await firebase.database().ref(`projects/${projectId}/pmosTasks/${taskRef.key}`).set(task);
-            if (typeof pmosToast === 'function') pmosToast('Follow-up task created (project path).');
-            if (typeof renderPmosOffice === 'function') renderPmosOffice();
-            return;
-          } catch (fbError) {
-            console.error('Follow-up creation fallback failed:', fbError);
+      // Use canonical task path: projects/{projectId}/tasks/{taskId}
+      var adapter = window.PmosTaskAdapter;
+      if (adapter) {
+        var taskData = {
+          title: actionItemText || 'Follow-up from meeting',
+          assignedToName: '',
+          description: 'Created from Meeting Notes action item',
+          dueDate: '',
+          priority: 'normal',
+          status: 'open',
+          source: 'Line17 PMOS',
+          category: 'meeting-followup',
+          createdByName: window._currentUser?.name || '',
+          createdBy: window._currentUser?.uid || '',
+          sourceModule: 'meeting-notes',
+          sourceRecordId: meetingId
+        };
+        try {
+          var result = await adapter.createCanonicalTask(projectId, taskData);
+          if (typeof pmosToast === 'function') pmosToast('Follow-up task created.');
+          if (typeof pmosAuditLog === 'function') {
+            pmosAuditLog('create_followup_from_meeting', 'acpm_tasks', projectId, result.key, 'Follow-up created from meeting action item');
           }
+          if (typeof renderPmosOffice === 'function') renderPmosOffice();
+        } catch (e) {
+          console.error('Follow-up canonical create failed:', e);
+          if (typeof pmosToast === 'function') pmosToast('Could not create follow-up task.', 'error');
         }
-        console.error('Follow-up creation failed:', e);
-        if (typeof pmosToast === 'function') pmosToast('Could not create follow-up task.', 'error');
+      } else {
+        // Adapter not loaded — use legacy pmosTasks path
+        var taskRef = firebase.database().ref('pmosTasks').push();
+        var now = Date.now();
+        var task = {
+          id: taskRef.key,
+          task: actionItemText || 'Follow-up from meeting',
+          person: '',
+          dueDate: '',
+          priority: 'Normal',
+          status: 'New',
+          remarks: 'Created from Meeting Notes action item',
+          projectId: projectId,
+          module: 'Follow-ups',
+          sourceModule: 'meeting-notes',
+          sourceRecordId: meetingId,
+          schemaVersion: typeof PMOS_SCHEMA_VERSION !== 'undefined' ? PMOS_SCHEMA_VERSION : '1.0',
+          syncStatus: 'synced',
+          createdAt: now,
+          updatedAt: now,
+          createdBy: window._currentUser?.uid || '',
+          createdByName: window._currentUser?.name || '',
+          source: 'Line17 PMOS'
+        };
+        try {
+          await taskRef.set(task);
+          if (typeof pmosToast === 'function') pmosToast('Follow-up task created from meeting action item.');
+          if (typeof pmosAuditLog === 'function') {
+            pmosAuditLog('create_followup_from_meeting', 'pmos_tasks', projectId, taskRef.key, 'Follow-up created from meeting action item');
+          }
+          if (typeof renderPmosOffice === 'function') renderPmosOffice();
+        } catch (e) {
+          if (String(e?.code || '').toLowerCase().includes('permission')) {
+            try {
+              await firebase.database().ref('projects/' + projectId + '/pmosTasks/' + taskRef.key).set(task);
+              if (typeof pmosToast === 'function') pmosToast('Follow-up task created (project path).');
+              if (typeof renderPmosOffice === 'function') renderPmosOffice();
+              return;
+            } catch (fbError) {
+              console.error('Follow-up creation fallback failed:', fbError);
+            }
+          }
+          console.error('Follow-up creation failed:', e);
+          if (typeof pmosToast === 'function') pmosToast('Could not create follow-up task.', 'error');
+        }
       }
     } catch (e) {
       console.error('Follow-up check failed:', e);

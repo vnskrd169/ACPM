@@ -1,16 +1,35 @@
 # ACPM RC1 Readiness Gate
 
-Status: RC1 READY - FINAL GATES PASSED
+Status: RC1 READY - PRODUCTION AND ISOLATED STAGING V132 LIVE VERIFIED
 
-Post-RC1 account onboarding and clarity patch: cache `acpm-v125`, `style.css?v=103`, `auth.js?v=95`, `main.js?v=102`, `materials.js?v=94`, `billing.js?v=75`, `notifications.js?v=85`, `report.js?v=97`, and `pmos-office.js?v=4` keeps Hub as the default project command center while fixing signup access requests, Admin approval, Team Admin visibility, first-login profile completion, orphan Auth-account request recovery, per-user notification clearing, active-project-only assignment during approval, Firebase-rule-compatible project assignment maps, PMOS Office hiding completed-project records, clearer Hub Recent Activity rows, clearer Admin Audit Log action cards, project-map notification listeners, non-admin assigned-project loading resilience, Team Admin suspend/reactivate/archive workflow, and PMOS scoped service worker isolation.
+Current deployed release: cache v132, `style.css?v=107`,
+`auth.js?v=98`, `main.js?v=106`, `tasks.js?v=95`,
+`notifications.js?v=86`, `report.js?v=97`, `pmos-office.js?v=4`,
+PMOS app v3, and canonical PMOS task adapter v2.
 
-Last updated: 2026-07-12
+Last updated: 2026-07-31
+
+## Current Production Sprint
+
+- ACPM Office and PMOS use one canonical task record under
+  `projects/{projectId}/tasks/{taskId}`.
+- PM has company-wide project visibility, project creation, APM assignment,
+  financial review, and task verification.
+- APM remains assigned-project only and submits completed work for PM
+  verification.
+- Task states are `pending`, `in_progress`, `blocked`,
+  `for_verification`, `completed`, and `cancelled`.
+- Completed tasks are terminal and leave Pending Works automatically.
+- `index.html` is a compatibility redirect only; it does not render private UI.
+- Firebase Storage remains optional and disabled for PMOS photos; the configured
+  Google Drive Apps Script remains the photo transport.
 
 ## Current Pass Areas
 
 | Area | Result | Evidence |
 | --- | --- | --- |
-| Authentication / routing / PWA shell | PASS | Multi-page route foundation is active. Current PWA cache static QA verifies cache v125, manifest `login.html` start URL, versioned `style.css?v=103`, current `auth.js?v=95`, current `main.js?v=102`, and synchronized app-shell script versions. |
+| Authentication / routing / PWA shell | PASS | Multi-page route foundation is active. Current PWA cache static QA verifies cache v132, manifest `login.html` start URL, versioned `style.css?v=107`, environment selector v1, current `auth.js?v=98`, current `main.js?v=106`, and synchronized app-shell script versions. |
+| Production / Staging isolation | PASS | Separate Firebase projects, databases, manifests, deployment targets, and visible Staging marker passed public browser QA. Real Staging lifecycle and real Production signed-in smoke passed on v132. See `docs/qa/QA_ENVIRONMENTS.md`. |
 | Dashboard integration | PASS | Rollup data QA, dashboard static QA, Boss browser smoke, and live Firebase RC1 gate passed. Live v116 smoke confirms Hub is the return target from Team Admin and System Reports does not open accidentally. |
 | Project lifecycle | PASS | Active/completed/archive behavior previously verified; dashboard cards render active and completed actions. |
 | Labor v1 | PASS | Real Firebase cash advance/payroll archive QA passed via `scripts/labor_v1_cash_advance_real_qa.js`. |
@@ -19,7 +38,8 @@ Last updated: 2026-07-12
 | Change Orders v1 | PASS | Real Firebase workflow/data QA passed; static workflow QA passed; Boss Extras smoke passed at cache `acpm-v85`; visible create/approve and reject-modal browser workflows passed against live Firebase. |
 | Site Logs v1 | PASS with known limitation | Real Firebase workflow/data QA passed; media upload/offline queue remain future. |
 | Reports v1 data foundation | PASS | Real Firebase rollup/snapshot QA passed; listener cleanup/static listener QA passed after adding the project-report and access-request listener checks; Boss Reports smoke passed at cache `acpm-v85`; current app shell loads `report.js?v=97`. |
-| Roles RC1 lock | PASS | Admin/PM/APM QA accounts were provisioned with owner approval. Dedicated role-account QA passes: Admin can read the project index, PM/APM cannot read the full `projects` root, and PM/APM can read assigned project data. |
+| Roles RC1 lock | PASS | Firebase emulator role QA passed 13/13. PM has intended company-wide project access and may assign APM projects; APM is assigned-project only; pending/suspended/deferred roles are denied. |
+| Task engine / PMOS sync | PASS | Canonical lifecycle static QA passed, production rules passed 13/13, and the complete Office/PMOS Playwright suite passed 24/24, including PM Project Assignments and light-theme report visibility. |
 
 ## Current Warning / Blocker Areas
 
@@ -28,11 +48,44 @@ Last updated: 2026-07-12
 | Suppliers v1 | PASS | Core workflow, supplier canonical event/notification/rollup paths, and fallback behavior passed in real Firebase QA. |
 | Audit Logs | PASS with warning | Project fallback and supplier fallback audit behavior passed in real Firebase QA. Browser/live evidence still shows global `/auditLogs` can be denied by deployed rules, so project fallback audit rows remain required. |
 | Global Notification Events | PASS | Project and global notification event hooks passed in real Firebase QA. In-app bell consumption is wired and polished with per-user Clear read behavior, map-shaped project listener support, and sign-out listener cleanup; push notifications are intentionally future. |
-| Firebase rules deployment | PASS | Published Realtime Database rules now pass PM/APM deployed-rule security QA: root `projects` read is denied while assigned project read is allowed. |
+| Firebase rules deployment | PASS | Published Realtime Database rules allow PM company-wide project visibility while denying APM root listing and allowing APM assigned-project access. |
 | PM/APM/Admin role QA | PASS | `scripts/roles_live_account_qa.js` passes for Admin, PM, and APM with `rc1RoleAccountQaComplete = true`. |
 | Account Onboarding | PASS | Focused live Firebase QA on 2026-07-13 passed signup, `accessRequests/{uid}`, Admin approval, profile setup, inline profile-photo persistence, self-write denial, suspend/reactivate/archive, audit, and notification event workflow. |
 | Full real-write signup QA | PASS with controlled historical records | `scripts/account_onboarding_live_qa.js` creates labeled QA Auth/request/user records and leaves the QA user archived instead of deleting history. Do not bulk-delete historical request/user rows. |
 | Controlled full real-write RC1 QA | ACCEPTED RELEASE RISK | The owner intentionally deferred a broad full-system real-write RC1 QA pass for now. Current evidence covers focused feature-batch QA plus existing module gates; any remaining full-system production issues should be captured from real project use and fixed as critical production bugs. |
+| Task transition enforcement | WARNING | PM verification is enforced in the Office/PMOS task services. The broad assigned-project write grant means a future field-user release should add child-level transition rules before exposing external accounts. |
+
+## Current Automated Evidence - 2026-07-29
+
+```text
+npx playwright test
+24/24 PASS
+
+firebase emulators:exec --only database --config firebase.emulator.json \
+  --project acpm-production-rules-test "npm.cmd run test:production:rules"
+13/13 PASS
+
+firebase deploy --only database --dry-run --project acpm-project-system
+PASS - rules syntax valid
+
+firebase deploy --only hosting --project acpm-project-system
+PASS - cache v130 released
+
+node scripts/onboarding_ui_polish_smoke.js
+PASS - live Boss notifications, Project Assignments, and profile UI
+
+ACPM_REQUIRE_RC1_FINAL=1 node scripts/rc1_final_readiness_gate.js
+PASS_RC1_READY - no warnings or failures
+
+Live cache v130 focused browser smoke
+PASS - five active-project attention rows rendered without raw HTML
+PASS - light report hover rgb(247, 245, 255), readable project text
+```
+
+The browser suite covers PM/APM role surfaces, workspace refresh,
+legacy-route redirection, PMOS forms, Office review views, offline queue,
+deferred Viewer denial, responsive field layout, PWA behavior, and logout
+cleanup.
 
 Live v123 account/admin QA on 2026-07-13:
 
@@ -45,7 +98,7 @@ Live v123 account/admin QA on 2026-07-13:
 - Profile photo support uses compressed inline avatars for RC1 when Firebase Storage is unavailable.
 - UI polish smoke passed for mobile login/request pending, notification dropdown, Team Admin avatars/actions, and My Profile modal.
 - Team Admin navigation smoke after cache v125 confirmed Admin sub-tabs remain visible in Admin mode, Team Admin opens directly to the Team assignment view, and project module tabs stay hidden.
-| Hosting hygiene | PASS | Firebase Hosting ignore rules now exclude root and nested Markdown files. Live static verification confirms `CURRENT_TASK.md`, `README.md`, `docs/qa/QA_AUDIT.md`, and `scripts/rc1_static_gate.js` return 404 while `sw.js` and `dashboard.html` serve current v116 assets with no mojibake markers. |
+| Hosting hygiene | PASS | Firebase Hosting ignore rules exclude root and nested Markdown files, test scripts, package metadata, and `nul`. Live static verification confirms private paths return 404 and cache v130 serves the corrected dashboard and report styles. |
 
 ## Stop Condition
 
@@ -150,14 +203,17 @@ Additional live fallback QA passed:
 - RC1 role matrix static QA: PASS
 - RC1 role/UI/rule matrix static QA after cache v96: PASS
 - Live role-account gate: PASS for Boss/Admin/PM/APM accounts; `rc1RoleAccountQaComplete = true`.
-- Live user-role inventory after QA account provisioning: PASS_READ_ONLY_INVENTORY; live `users` contains `admin` = 1, `pm` = 1, `apm` = 3, and `boss` = 2, with no `foreman`, `safety`, or `viewer` profiles.
+- Live user-role inventory after final QA: PASS_READ_ONLY_INVENTORY; live `users` contains `admin` = 1, `pm` = 2, `apm` = 2, and `boss` = 2, with no `foreman`, `safety`, or `viewer` profiles.
 - Live Boss Team Admin browser smoke after cache v97: PASS; signed-in Boss rendered 4 live management profiles, including 2 APM users, with role dropdowns limited to Boss/Admin/PM/APM and no console errors.
 - Live inventory now reports RC1-specific profile readiness fields: Admin, PM, and APM profiles are present.
 - Owner-approved RC1 QA Admin/PM/APM Auth accounts were provisioned on 2026-07-02 using `scripts/provision_rc1_role_qa_accounts.js`.
-- Dedicated Admin/PM/APM role-account QA: PASS. Admin can read the project index; PM/APM are denied full-root `projects` reads and can read assigned project data.
-- Dedicated deployed-rule security gate: PASS. `scripts/rc1_deployed_rules_security_qa.js` verifies PM/APM root denial and assigned-project allow behavior.
+- Dedicated Admin/PM/APM role-account QA: PASS. Admin and PM can read the project index; APM is denied full-root `projects` reads and can read assigned project data.
+- Dedicated deployed-rule security gate: PASS. `scripts/rc1_deployed_rules_security_qa.js` verifies PM company-wide visibility and APM root-deny/assigned-project-allow behavior.
 - Credentialed post-deploy local gate: PASS_WITH_REAL_QA_SKIPPED with `scripts/rc1_deployed_rules_security_qa.js` included and passing.
 - RC1 final readiness gate with dedicated Admin/PM/APM credentials: PASS_RC1_READY. Field-role deny QA is a future activation gate because no deferred-role profiles exist.
+- Cache v129 live Boss UI smoke: PASS. Project Assignments renders 7 users,
+  all Boss admin tabs are visible, project module tabs remain hidden in admin
+  mode, notifications render, and My Profile fits the production viewport.
 - RC1 post-deploy local gate: PASS_WITH_REAL_QA_SKIPPED; rerun with Boss credential also covered the live role inventory script.
 - Live Firebase RC1 gate: PASS on 2026-07-02
 - Live real QA scripts passed: Suppliers, Audit/Notifications, Labor cash advance/payroll, Reports, Site Logs, Change Orders, and Billing Phase 2.
@@ -177,7 +233,8 @@ Use `node scripts/rc1_final_readiness_gate.js` as the release decision gate. It 
 Role-account sign-off path:
 
 - Admin, PM, and APM QA accounts now exist with owner approval.
-- Firebase rules now deny PM/APM full-root `projects` reads.
+- Firebase rules now allow PM company-wide project reads and deny APM full-root
+  reads while allowing assigned-project access.
 - Run `scripts/roles_live_account_qa.js` with those credentials.
 - Run `scripts/rc1_deployed_rules_security_qa.js` with PM/APM credentials.
 - Confirmed `rc1RoleAccountQaComplete = true`.

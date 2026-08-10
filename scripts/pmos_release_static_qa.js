@@ -77,9 +77,10 @@ function main() {
   assert(pmosApp.includes('Google Drive only'), 'PMOS photo upload code must document Drive-only upload path');
   assert(pmosApp.includes("storageProvider: 'Google Drive'"), 'PMOS photo records must store Google Drive as provider');
 
-  assert(pmosSw.includes("pmos-cache-v2"), 'scoped PMOS service worker must use pmos-cache-v2');
-  assert(rootPmosSw.includes("pmos-cache-v2"), 'legacy PMOS service worker must use pmos-cache-v2');
-  assert(pmosShell.includes("const CACHE_VERSION = 'acpm-pmos-v2'"), 'PMOS shell cache label must be acpm-pmos-v2');
+  assert(pmosSw.includes("pmos-cache-v4"), 'scoped PMOS service worker must use pmos-cache-v4');
+  assert(rootPmosSw.includes("pmos-cache-v4"), 'legacy PMOS service worker must use pmos-cache-v4');
+  assert(pmosShell.includes("const CACHE_VERSION = 'acpm-pmos-v4'"), 'PMOS shell cache label must be acpm-pmos-v4');
+  assert(pmosIndex.includes('../environment.js?v=1'), 'PMOS shell must load the shared environment selector');
   assert(!pmosSw.includes('../face-attendance.js'), 'scoped PMOS SW must not cache Face Attendance for Drive-only rollout');
   assert(!rootPmosSw.includes('./face-attendance.js'), 'legacy PMOS SW must not cache Face Attendance for Drive-only rollout');
 
@@ -121,8 +122,8 @@ function main() {
       'PMOS local asset references exist',
       'Brand/PMOS shell text has no mojibake'
     ],
-    pmosCache: 'pmos-cache-v2',
-    pmosShellCache: 'acpm-pmos-v2',
+    pmosCache: 'pmos-cache-v4',
+    pmosShellCache: 'acpm-pmos-v4',
     photoProvider: 'Google Drive'
   }, null, 2));
 }

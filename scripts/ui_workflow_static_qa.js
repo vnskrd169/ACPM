@@ -68,7 +68,7 @@ function main() {
   assertIncludes(workspace, 'onclick="exportSiteLogs()"', 'Site Log export action must exist');
 
   assertIncludes(sitelog, 'async function saveLog()', 'saveLog UI handler must exist');
-  assertIncludes(sitelog, "showToast('Select a date.'", 'saveLog must validate date');
+  assertIncludes(sitelog, "setFieldError($('logDate'), 'Select a date.')", 'saveLog must validate date');
   assertIncludes(sitelog, 'Write notes or work accomplished first.', 'saveLog must require notes or work accomplished');
   assertIncludes(sitelog, 'Log date cannot be in the future.', 'saveLog must reject future dates');
   assertIncludes(sitelog, 'createSiteLog(_slpid, data)', 'saveLog must call createSiteLog helper');

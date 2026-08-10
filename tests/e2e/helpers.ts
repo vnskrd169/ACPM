@@ -23,6 +23,13 @@ const TEST_USERS = {
     projects: { 'test-project-1': true },
     bossOf: { 'test-project-1': true },
   },
+  pm: {
+    uid: 'test-pm-user-uid',
+    name: 'Test Project Manager',
+    email: 'pm@test.com',
+    role: 'pm',
+    projects: {},
+  },
   viewer: {
     uid: 'test-viewer-uid',
     name: 'Test Viewer',
@@ -50,6 +57,7 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: { dis
 
     const __pmosTestUser = ${JSON.stringify(user)};
     const __pmosTestProject = ${JSON.stringify(TEST_PROJECT)};
+    window.__mockDbPaths = [];
 
     function makeSnapshot(value, key) {
       return {
@@ -67,6 +75,7 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: { dis
     }
 
     function dataForPath(path) {
+      window.__mockDbPaths.push(path);
       if (path === 'users/' + __pmosTestUser.uid) {
         return Object.assign({}, __pmosTestUser, {
           status: 'active',
@@ -76,6 +85,27 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: { dis
         });
       }
       if (path === 'accessRequests/' + __pmosTestUser.uid) return null;
+      if (path === 'users') {
+        return {
+          [__pmosTestUser.uid]: Object.assign({}, __pmosTestUser, {
+            status: 'active',
+            displayName: __pmosTestUser.name,
+            assignedProjects: __pmosTestUser.projects || {},
+            profileComplete: true,
+          }),
+          'test-field-user-uid': {
+            uid: 'test-field-user-uid',
+            name: 'Test Field User',
+            displayName: 'Test Field User',
+            email: 'field@test.com',
+            role: 'apm',
+            status: 'active',
+            projects: { 'test-project-1': true },
+            assignedProjects: { 'test-project-1': true },
+            profileComplete: true,
+          },
+        };
+      }
       if (path === 'projects') return { 'test-project-1': __pmosTestProject };
       if (path === 'projects/test-project-1') return __pmosTestProject;
       return null;
@@ -130,7 +160,7 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: { dis
 
     window.APP_VERSION = '1.0.0';
     window.PMOS_VERSION = '1.0.0';
-    window.CACHE_VERSION = 'acpm-pmos-v2';
+    window.CACHE_VERSION = 'acpm-pmos-v3';
     window.PMOS_SCHEMA_VERSION = '1.0';
     window.PMOS_CONFIG = {
       faceAttendanceEnabled: false,
@@ -187,6 +217,42 @@ export async function navigateToBlockedPmos(page: Page) {
   await expect(page.locator('#authOverlay')).toContainText(/not active in RC1|Admin approval needed/i);
 }
 
+export async function navigateToDashboard(page: Page) {
+  await blockFirebaseCdnForMockedAuth(page);
+  await page.context().setOffline(false);
+  await page.goto('/dashboard.html');
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForFunction(() => {
+    const hub = document.querySelector('#hubView');
+    return !!hub &&
+      !hub.classList.contains('hidden') &&
+      document.body.classList.contains('auth-ready') &&
+      !document.querySelector('#authOverlay');
+  }, null, { timeout: 15000 });
+}
+
+export async function navigateToWorkspace(page: Page, projectId = 'test-project-1') {
+  await blockFirebaseCdnForMockedAuth(page);
+  await page.context().setOffline(false);
+  // `serve` canonicalizes .html URLs and drops their query string. Use its
+  // clean local route so the workspace projectId reaches the application.
+  await page.goto(`/workspace?projectId=${encodeURIComponent(projectId)}`);
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForFunction(() => {
+    const workspace = document.querySelector('#workspaceView');
+    return !!workspace &&
+      !workspace.classList.contains('hidden') &&
+      document.body.classList.contains('auth-ready') &&
+      !document.querySelector('#authOverlay');
+  }, null, { timeout: 15000 });
+}
+
+export async function navigateLegacyIndex(page: Page) {
+  await blockFirebaseCdnForMockedAuth(page);
+  await page.context().setOffline(false);
+  await page.goto('/index.html');
+}
+
 export async function waitForPmosServiceWorker(page: Page) {
   await page.waitForFunction(async () => {
     if (!('serviceWorker' in navigator)) return false;
@@ -201,7 +267,7 @@ export async function waitForPmosServiceWorker(page: Page) {
 
 export async function openPmosOffice(page: Page) {
   await blockFirebaseCdnForMockedAuth(page);
-  await page.goto('/index.html');
+  await page.goto('/dashboard.html');
   await page.waitForLoadState('domcontentloaded');
   await page.waitForTimeout(1500);
 }
@@ -264,8 +330,8 @@ export async function fillMaterialRequest(page: Page, items: Array<{ item: strin
 
 export async function fillFollowUp(page: Page, data: { task: string; person: string; priority?: string }) {
   await openPmosModule(page, 'task');
-  await page.locator('#pmos_task_task').fill(data.task);
-  await page.locator('#pmos_task_person').fill(data.person);
+  await page.locator('#pmos_task_title').fill(data.task);
+  await page.locator('#pmos_task_assignedToName').fill(data.person);
   await page.locator('#pmos_task_dueDate').fill(new Date().toISOString().slice(0, 10));
   if (data.priority) await page.locator('#pmos_task_priority').selectOption(data.priority);
   await submitCurrentPmosForm(page, 'task');

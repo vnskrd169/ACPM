@@ -24,9 +24,9 @@ PASS:
 Deductions verified:
 
 ```text
-Carpenter released advance deducted = 1000
-Electrical released advance deducted = 560
-Total cash advance deduction = 1560
+Carpenter released advance deducted = 1000 (full eligible balance, within gross)
+Electrical released advance deducted = 2800 (full gross; 1200 carries to next run)
+Total cash advance deduction = 3800
 ```
 
 Bugs found and fixed before user QA:
@@ -82,7 +82,7 @@ Verified code paths:
 
 Known limitation:
 
-- Regenerated RFP uses current trade settings. If a foreman/payment method is edited after payroll compile, regenerated RFP may differ from archived `byTrade`. For v1, generate or save/export the RFP during the payroll run.
+- For weeks WITHOUT a compiled payroll log, RFP is a PROVISIONAL GROSS estimate from live attendance/current trade settings (clearly labeled). For compiled weeks, RFP is generated from the verified archived NET payroll log (snapshot rates + net amounts), so later trade/rate edits cannot change a released RFP.
 
 ### 4. Cash Advance Balance
 
@@ -91,7 +91,7 @@ Known limitation:
 - PASS when pending approval, approved-but-not-released, rejected, and closed advances are not deducted by payroll.
 - PASS when only `released` or legacy active advances are eligible for payroll deduction.
 - PASS when payroll deducts only from the worker who received the advance.
-- PASS when deduction is capped by the current amortization rule.
+- PASS when the deduction equals the exact eligible balance, capped at the worker's gross for the period so NET never goes negative (unpaid remainder carries forward).
 - PASS when `deductedAmount` increases by exactly the payroll deduction.
 - PASS when partial deduction changes status to `deducted`.
 - PASS when `deducted` becomes `true` and status becomes `closed` only after `deductedAmount >= amount`.
@@ -102,7 +102,7 @@ Known limitation:
 
 Verified code paths:
 
-- `compilePayroll()` calculates remaining balance as `amount - deductedAmount`.
+- `compilePayroll()` delegates deduction math to `payroll-math.js` `computeAdvanceDeductions()` (verified rule: full eligible balance capped at gross, remainder carried forward).
 - `compilePayroll()` ignores cash advances that are not released/legacy-eligible.
 - `confirmSavePayroll()` writes updated `deductedAmount`, `deducted`, `lastDeductedAt`, `status`, and `statusHistory`.
 - Payroll archive stores deductions in `cashAdvancesDeducted`.
@@ -160,7 +160,7 @@ Labor v1 is marked STABLE when:
 - Workers still store `trade` by name, not `tradeId`.
 - Inactive workers are hidden from the active roster, but remain visible in the attendance grid for a selected week if they already have attendance in that week.
 - Payroll archive is one log per compile with nested `byTrade`, not separate Firebase nodes per trade.
-- RFP is generated from selected week live attendance/current trade settings, not from a stored archived RFP node.
+- RFP uses the verified archived NET payroll log when the selected week is compiled; otherwise it falls back to a clearly-labeled provisional GROSS estimate.
 - Payroll math is client-side; no backend payroll validator exists yet.
 - Cash advance approval/release permissions are enforced in client helpers, not server-side Cloud Functions.
 - Firebase rules indexes must be deployed/imported before production use.

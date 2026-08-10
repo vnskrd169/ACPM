@@ -153,10 +153,12 @@ projects/{projectId}/payrollLogs/{logId}
 - Cash advances follow a full lifecycle: `draft`, `submitted`, `pending_approval`, `approved`, `rejected`, `released`, `deducted`, `closed`.
 - New cash advance requests start as `pending_approval`. They are not deducted from payroll until marked `released`.
 - Legacy advances without a `status` are treated as `released` for payroll compatibility, so old active balances do not require a migration.
+- Cash advance deduction rule (verified 2026-08): payroll deducts the exact eligible balance, capped at the worker's gross pay for the period so NET never goes negative; the unpaid remainder carries forward to the next payroll run. Multiple advances are applied in order against the worker's gross.
 - Cash advances are never deleted in the normal workflow. Incorrect or finished requests are closed with status history.
 - `cashAdvanceEvents` stores immutable workflow events. `notificationEvents` stores notification hooks for future Notification module consumption; no live notification delivery is implemented in Labor v1.
 - Payroll logs are immutable v1 archives. Each log stores the full `byTrade`, worker details, attendance snapshot, and cash advance deductions used at compile time.
-- RFP output is generated per trade/foreman from the selected week. The generated text/PDF is derived from current attendance and trade settings.
+- RFP output for a compiled week is generated from the verified archived NET payroll log (snapshot rates + net amounts) and cannot be changed by later rate/trade edits. For weeks without a compiled payroll, RFP falls back to a clearly-labeled provisional GROSS estimate.
+- All payroll formulas (gross pay, cash advance eligibility/deduction, rate resolution) are centralized in `payroll-math.js` — a pure, unit-tested module. `labor.js` renders and persists the results.
 
 ## Indexes
 

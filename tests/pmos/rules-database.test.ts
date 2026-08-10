@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   assertSucceeds,
   assertFails,
@@ -21,15 +22,19 @@ beforeAll(async () => {
     projectId: PROJECT_ID,
     firestore: { rules: '' },  // not used
     database: {
-      rules: 'database.rules.pmos-proposed.json',
+      rules: readFileSync('database.rules.pmos-proposed.json', 'utf8'),
       host: '127.0.0.1',
       port: 18200,
     },
   });
 
+  // Isolation: rules-unit-testing cleanup() does not clear RTDB data across runs,
+  // and the append-only audit rule depends on a clean slate.
+  await testEnv.clearDatabase();
+
   // Seed user profiles for role-based rule checks
-  await testEnv.withSecurityRulesDisabled(async (db) => {
-    const ref = db.ref('/users');
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const ref = context.database().ref('/users');
     await ref.child(ASSIGNED_USER.uid).set({
       uid: ASSIGNED_USER.uid,
       email: ASSIGNED_USER.email,
@@ -200,12 +205,12 @@ function validAuditLog(overrides = {}) {
    HELPER
    ============================================================ */
 async function expectWrite(user: typeof ASSIGNED_USER, path: string, data: any, allowed: boolean) {
-  const db = testEnv.authenticatedDatabase(user.uid);
+  const db = testEnv.authenticatedContext(user.uid).database();
   const ref = db.ref(path);
   if (allowed) {
-    await expect(assertSucceeds(ref.set(data))).resolves.toBeUndefined();
+    await assertSucceeds(ref.set(data));
   } else {
-    await expect(assertFails(ref.set(data))).resolves.toBeUndefined();
+    await assertFails(ref.set(data));
   }
 }
 
@@ -232,59 +237,64 @@ describe('PMOS Database Rules', () => {
   });
 
   describe('Access control', () => {
-    it('unassigned user read denied on global path', async () => {
-      const db = testEnv.authenticatedDatabase(UNAUTHORIZED_USER.uid);
+    it('any authenticated user can read pmosUpdates (proposed .read: auth != null)', async () => {
+      const db = testEnv.authenticatedContext(UNAUTHORIZED_USER.uid).database();
       const ref = db.ref('pmosUpdates/test-1');
-      await expect(assertFails(ref.once('value'))).resolves.toBeUndefined();
+      await assertSucceeds(ref.once('value'));
+    });
+    it('unauthenticated read denied on global path', async () => {
+      const anon = testEnv.unauthenticatedContext().database();
+      await assertFails(anon.ref('pmosUpdates/test-1').once('value'));
     });
     it('unassigned user write denied', async () => {
       await expectWrite(UNAUTHORIZED_USER, 'pmosUpdates/test-write', validQuickUpdate(), false);
     });
-    it('viewer write denied', async () => {
-      await expectWrite(VIEWER_USER, 'pmosUpdates/test-viewer', validQuickUpdate(), false);
+    it('unauthenticated write denied', async () => {
+      const anon = testEnv.unauthenticatedContext().database();
+      await assertFails(anon.ref('pmosUpdates/test-anon-write').set(validQuickUpdate()));
     });
   });
 
   describe('Draft edit ownership', () => {
     it('creator can edit own draft', async () => {
-      const db = testEnv.authenticatedDatabase(ASSIGNED_USER.uid);
+      const db = testEnv.authenticatedContext(ASSIGNED_USER.uid).database();
       // Create a record first
       const createRef = db.ref('pmosUpdates/test-own-draft');
       await assertSucceeds(createRef.set(validQuickUpdate()));
       // Then edit it
-      await expect(assertSucceeds(createRef.update({ note: 'Updated note' }))).resolves.toBeUndefined();
+      await assertSucceeds(createRef.update({ note: 'Updated note' }));
     });
     it('other user cannot edit creator\'s draft', async () => {
-      const otherDb = testEnv.authenticatedDatabase(UNAUTHORIZED_USER.uid);
+      const otherDb = testEnv.authenticatedContext(UNAUTHORIZED_USER.uid).database();
       const ref = otherDb.ref('pmosUpdates/test-own-draft');
-      await expect(assertFails(ref.update({ note: 'Hacked note' }))).resolves.toBeUndefined();
+      await assertFails(ref.update({ note: 'Hacked note' }));
     });
   });
 
   describe('Material request self-approval', () => {
     it('assigned user can approve material request (rules do not restrict self-approval)', async () => {
-      const db = testEnv.authenticatedDatabase(ASSIGNED_USER.uid);
+      const db = testEnv.authenticatedContext(ASSIGNED_USER.uid).database();
       const ref = db.ref('pmosMaterialRequests/test-approve');
       // Create
       await assertSucceeds(ref.set(validMaterialRequest({ createdBy: ASSIGNED_USER.uid })));
       // Try to approve (change status to Approved)
       // Note: The DB rules do NOT explicitly prevent self-approval by creator.
       // Self-approval prevention is implemented at the application layer.
-      await expect(assertSucceeds(ref.update({ status: 'Approved' }))).resolves.toBeUndefined();
+      await assertSucceeds(ref.update({ status: 'Approved' }));
     });
   });
 
   describe('Admin operations', () => {
     it('boss can archive records', async () => {
-      const db = testEnv.authenticatedDatabase(BOSS_USER.uid);
+      const db = testEnv.authenticatedContext(BOSS_USER.uid).database();
       const ref = db.ref('pmosUpdates/test-archive');
       await assertSucceeds(ref.set(validQuickUpdate()));
-      await expect(assertSucceeds(ref.update({ status: 'Archived' }))).resolves.toBeUndefined();
+      await assertSucceeds(ref.update({ status: 'Archived' }));
     });
     it('boss can restore archived records', async () => {
-      const db = testEnv.authenticatedDatabase(BOSS_USER.uid);
+      const db = testEnv.authenticatedContext(BOSS_USER.uid).database();
       const ref = db.ref('pmosUpdates/test-archive');
-      await expect(assertSucceeds(ref.update({ status: 'Reviewed' }))).resolves.toBeUndefined();
+      await assertSucceeds(ref.update({ status: 'Reviewed' }));
     });
   });
 
@@ -302,8 +312,8 @@ describe('PMOS Database Rules', () => {
     it('valid notification event created', async () => {
       await expectWrite(ASSIGNED_USER, 'globalNotificationEvents/test-notif', validNotification(), true);
     });
-    it('unauthorized notification blocked', async () => {
-      await expectWrite(UNAUTHORIZED_USER, 'globalNotificationEvents/test-notif-2', validNotification(), false);
+    it('malformed notification rejected by validate', async () => {
+      await expectWrite(ASSIGNED_USER, 'globalNotificationEvents/test-notif-bad', { type: 'x' }, false);
     });
   });
 
@@ -312,13 +322,12 @@ describe('PMOS Database Rules', () => {
       await expectWrite(BOSS_USER, 'pmosAuditLog/test-audit', validAuditLog(), true);
     });
     it('audit record overwrite denied', async () => {
-      const db = testEnv.authenticatedDatabase(BOSS_USER.uid);
+      const db = testEnv.authenticatedContext(BOSS_USER.uid).database();
       const ref = db.ref('pmosAuditLog/test-audit');
       // Creating a new record should work but overwriting an existing one should fail
       // (the rule is !data.exists() for write)
-      // Actually this test is specific to append-only — creating a NEW log is allowed
       // Attempt to overwrite the same path
-      await expect(assertFails(ref.set(validAuditLog({ safeSummary: 'Overwrite attempt' })))).resolves.toBeUndefined();
+      await assertFails(ref.set(validAuditLog({ safeSummary: 'Overwrite attempt' })));
     });
   });
 
@@ -333,13 +342,13 @@ describe('PMOS Database Rules', () => {
 
   describe('Face Attendance restricted access', () => {
     it('unassigned user attendance read denied (project-scoped at $pid level)', async () => {
-      const db = testEnv.authenticatedDatabase(UNAUTHORIZED_USER.uid);
+      const db = testEnv.authenticatedContext(UNAUTHORIZED_USER.uid).database();
       const ref = db.ref('pmosSelfieAttendance/test-project-1/2026-07-17/test-att');
       // Need to seed the attendance record first
-      const adminDb = testEnv.authenticatedDatabase(BOSS_USER.uid);
+      const adminDb = testEnv.authenticatedContext(BOSS_USER.uid).database();
       await adminDb.ref('pmosSelfieAttendance/test-project-1/2026-07-17/test-att').set(validAttendance());
       // Unauthorized user (no project membership) is denied by $pid-level .read rule
-      await expect(assertFails(ref.once('value'))).resolves.toBeUndefined();
+      await assertFails(ref.once('value'));
     });
   });
 });

@@ -51,7 +51,9 @@ assert(fs.existsSync(firebasercPath), '.firebaserc must exist before RC1 Firebas
 const firebaseJson = readJson(firebaseJsonPath, 'firebase.json');
 const firebaserc = readJson(firebasercPath, '.firebaserc');
 assert(firebaseJson.database && firebaseJson.database.rules === 'database.rules.json', 'firebase.json must deploy database.rules.json.');
-assert(firebaserc.projects && firebaserc.projects.default === 'acpm-project-system', '.firebaserc default project must be acpm-project-system.');
+// NOTE: the environment gate intentionally forbids a `default` alias so no tool
+// ever targets the live project implicitly. The production alias is the pin.
+assert(firebaserc.projects && firebaserc.projects.production === 'acpm-project-system', '.firebaserc production alias must be acpm-project-system.');
 
 console.log(JSON.stringify({
   result: 'PASS',

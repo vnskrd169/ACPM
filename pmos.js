@@ -114,16 +114,16 @@
     },
     task: {
       label: 'Follow-up Task',
-      collection: 'pmosTasks',
+      collection: 'tasks',
       icon: '&#x2705;',
+      /* Uses canonical path: projects/{id}/tasks */
       fields: [
-        ['task', 'Task', 'textarea'],
-        ['person', 'Person', 'text'],
+        ['title', 'Task', 'textarea'],
+        ['assignedToName', 'Person', 'text'],
         ['company', 'Company Optional', 'text'],
         ['dueDate', 'Due Date', 'date'],
         ['priority', 'Priority', 'select', PRIORITIES],
-        ['status', 'Status', 'select', ['Open', 'In Progress', 'Waiting', 'Done', 'Cancelled', 'Archived']],
-        ['remarks', 'Remarks', 'textarea']
+        ['description', 'Remarks', 'textarea']
       ]
     },
     meeting: {
@@ -156,6 +156,11 @@
       ]
     }
   };
+
+  var FIREBASE_CONNECTED = null;     /* null = unknown, true = connected, false = disconnected */
+  var FIREBASE_LISTENER_ATTACHED = false;
+  var CONNECTION_OVERRIDE = null;    /* manually forced status by setSync */
+  var CONNECTION_OVERRIDE_EXPIRY = 0;
 
   const state = {
     initialized: false,
@@ -225,6 +230,31 @@
   }
 
   function localProject() { return state.projects.find(p => p.id === state.currentProjectId) || null; }
+
+  /* ============================================================
+     TASK VISIBILITY HELPERS
+     ============================================================ */
+  function isTeamWideRole(role) {
+    return ['boss', 'owner', 'admin', 'pm', 'apm'].indexOf(String(role || '').toLowerCase()) !== -1;
+  }
+
+  function canUserSeeTask(task) {
+    var user = window._currentUser || {};
+    if (!user || !user.uid) return false;
+    /* PM/APM can coordinate all tasks inside an accessible project. */
+    if (isTeamWideRole(user.role)) return true;
+    /* Creator can always see their own tasks */
+    if (task.createdBy === user.uid) return true;
+    /* Field users see only tasks assigned to them */
+    if (task.assignedToUid && task.assignedToUid === user.uid) return true;
+    return false;
+  }
+
+  function getTaskVisibility(user) {
+    if (!user || !user.uid) return 'none';
+    if (isTeamWideRole(user.role)) return 'all';
+    return 'own';
+  }
 
   /* ============================================================
      OFFLINE QUEUE (All Modules)
@@ -418,12 +448,130 @@
     return projects.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   }
 
-  function setSync(message, type) {
-    const el = $('pmosSyncStatus');
+  /* ---- Combined Connection Status ---- */
+  function getConnectionState() {
+    /* Check for manual override from setSync (e.g. 'Syncing...', 'Sync failed') */
+    if (CONNECTION_OVERRIDE && Date.now() < CONNECTION_OVERRIDE_EXPIRY) {
+      return CONNECTION_OVERRIDE;
+    }
+    CONNECTION_OVERRIDE = null;
+
+    var online = navigator.onLine;
+    var firebaseConnected = FIREBASE_CONNECTED;
+
+    /* --- Determine combined state --- */
+    if (!online) return 'offline';
+    if (firebaseConnected === null) return 'reconnecting';  /* checking... */
+    if (firebaseConnected === false) return 'reconnecting'; /* browser online, Firebase not yet */
+    if (firebaseConnected === true) return 'online';
+    return 'offline';
+  }
+
+  function getConnectionLabel(state) {
+    var pending = getPendingOfflineCount();
+    var pendingLabel = pending > 0 ? ' (' + pending + ' pending)' : '';
+    var labels = {
+      online: '\u{1F310} Online',
+      reconnecting: '\u{1F504} Reconnecting' + pendingLabel,
+      offline: '\u26A0\uFE0F Offline \u2014 saved locally' + pendingLabel,
+      syncing: '\u{1F504} Syncing...',
+      sync_failed: '\u26A0\uFE0F Sync failed' + pendingLabel
+    };
+    return labels[state] || labels.offline;
+  }
+
+  function getConnectionType(state) {
+    var types = {
+      online: 'ok',
+      reconnecting: 'saving',
+      offline: 'error',
+      syncing: 'saving',
+      sync_failed: 'error'
+    };
+    return types[state] || 'error';
+  }
+
+  /* ---- Track real last successful sync time ---- */
+  var LAST_SUCCESSFUL_SYNC_TIME = Date.now();
+
+  function getPendingOfflineCount() {
+    var count = 0;
+    try {
+      count += state.photoQueue.filter(function (item) {
+        return !['Synced', 'Uploaded'].includes(String(item.metadata?.uploadStatus || 'Queued'));
+      }).length;
+    } catch (e) { /* ignore */ }
+    return count;
+  }
+
+  function getLastSyncLabel() {
+    return new Date(LAST_SUCCESSFUL_SYNC_TIME).toLocaleTimeString('en-PH');
+  }
+
+  function updateConnectionStatus() {
+    var el = $('pmosSyncStatus');
     if (!el) return;
-    el.className = `pmos-sync pmos-sync-${type || 'ok'}`;
+    var state = getConnectionState();
+    var label = getConnectionLabel(state);
+    var type = getConnectionType(state);
+    el.className = 'pmos-sync pmos-sync-' + type;
+    el.title = label;
+    el.textContent = label;
+  }
+
+  /* ---- Attach Firebase connection listener ---- */
+  function attachFirebaseConnectionListener() {
+    if (FIREBASE_LISTENER_ATTACHED) return;
+    FIREBASE_LISTENER_ATTACHED = true;
+    try {
+      var connectedRef = firebase.database().ref('.info/connected');
+      connectedRef.on('value', function (snap) {
+        FIREBASE_CONNECTED = snap.val() === true;
+        CONNECTION_OVERRIDE = null;
+        updateConnectionStatus();
+      }, function (err) {
+        console.warn('Firebase connection listener error:', err);
+        FIREBASE_CONNECTED = navigator.onLine;
+        updateConnectionStatus();
+      });
+    } catch (e) {
+      console.warn('Could not attach Firebase connection listener:', e);
+      FIREBASE_CONNECTED = navigator.onLine;
+    }
+  }
+
+  /* ---- Override setSync to also update connection state ---- */
+  function setSync(message, type) {
+    var el = $('pmosSyncStatus');
+    if (!el) return;
+
+    /* Save sync result for state machine */
+    if (type === 'saving' || type === 'ok' || type === 'error') {
+      /* Map: 'saving' → syncing, 'ok' → clear override, 'error' → sync_failed */
+      if (type === 'saving') {
+        CONNECTION_OVERRIDE = 'syncing';
+        CONNECTION_OVERRIDE_EXPIRY = Date.now() + 10000;
+      } else if (type === 'ok') {
+        CONNECTION_OVERRIDE = null;
+        CONNECTION_OVERRIDE_EXPIRY = 0;
+      } else if (type === 'error') {
+        CONNECTION_OVERRIDE = 'sync_failed';
+        CONNECTION_OVERRIDE_EXPIRY = Date.now() + 60000;  /* show for 60s */
+      }
+    }
+
+    el.className = 'pmos-sync pmos-sync-' + (type || 'ok');
     el.textContent = message;
+    el.title = message;
+
     if (typeof pmosSyncStatus === 'function') pmosSyncStatus(message, type || 'idle');
+
+    /* After short-lived messages, restore combined status */
+    if (type === 'ok') {
+      LAST_SUCCESSFUL_SYNC_TIME = Date.now();
+      clearTimeout(el._syncRestoreTimeout);
+      el._syncRestoreTimeout = setTimeout(updateConnectionStatus, 3000);
+    }
   }
 
   /* ============================================================
@@ -435,14 +583,17 @@
     const today = todayISO();
 
     const pendingIssues = records.filter(r => r.collection === 'pmosIssues' && !['Closed', 'Archived'].includes(String(r.status || 'Open')));
-    const overdueTasks = records.filter(r => r.collection === 'pmosTasks' && r.dueDate && r.dueDate < today && !['Done', 'Archived'].includes(String(r.status || 'Open')));
+    const overdueTasks = records.filter(r => (r.collection === 'pmosTasks' || r.collection === 'tasks') && r.dueDate && r.dueDate < today && !['Done', 'Archived', 'completed', 'archived'].includes(String(r.status || 'Open')));
     const pendingMaterials = records.filter(r => r.collection === 'pmosMaterialRequests' && !['Delivered', 'Cancelled', 'Archived'].includes(String(r.status || 'Submitted')));
     const pendingPhotos = state.photoQueue.filter(item => !['Synced', 'Uploaded'].includes(String(item.metadata?.uploadStatus || 'Queued'))).length;
     const pendingSync = pendingPhotos;
 
     const name = window._currentUser?.name || 'User';
     const projectName = project?.name || '—';
-    const online = navigator.onLine;
+    var connState = getConnectionState();
+    var connLabel = getConnectionLabel(connState);
+    var connType = getConnectionType(connState);
+    var connClass = connState === 'online' ? 'pmos-online' : connState === 'reconnecting' ? 'pmos-reconnecting' : 'pmos-offline';
 
     return `
       <section class="pmos-home">
@@ -452,8 +603,8 @@
             <div class="pmos-home-project">${h(projectName)}</div>
           </div>
           <div class="pmos-home-actions">
-            <span class="pmos-home-status ${online ? 'pmos-online' : 'pmos-offline'}">
-              ${online ? '&#x1F30D; Online' : '&#x26A0; Offline'}
+            <span class="pmos-home-status ${connClass}" title="${h(connLabel)}">
+              ${h(connLabel)}
             </span>
           </div>
         </div>
@@ -512,6 +663,8 @@
           </div>
         </div>
 
+        ${renderTodayTasks(records)}
+
         <div class="pmos-home-section">
           <div class="pmos-section-head">
             <h3>Recent Updates</h3>
@@ -524,18 +677,111 @@
     `;
   }
 
+  /* ---- Today's Tasks Section ---- */
+  function renderTodayTasks(records) {
+    var pid = state.currentProjectId;
+    var adapter = window.PmosTaskAdapter;
+    var user = window._currentUser || {};
+    var visibility = getTaskVisibility(user);
+
+    var allTaskRecords = records.filter(function (r) {
+      return (r.collection === 'pmosTasks' || r.collection === 'tasks') && !r.archived;
+    });
+
+    // Normalize via adapter
+    var tasks = allTaskRecords.map(function (t) {
+      return adapter ? adapter.normalizeTask(t) : t;
+    }).filter(Boolean);
+
+    // Filter by assignedToUid for non-team-wide roles
+    var visibleTasks = tasks.filter(function (t) {
+      return visibility === 'all' ? true : canUserSeeTask(t);
+    });
+
+    var today = todayISO();
+    var closedStatuses = ['Done', 'Archived', 'completed', 'archived'];
+    var openCount = visibleTasks.filter(function (t) {
+      return closedStatuses.indexOf(String(t.status || 'open')) === -1;
+    }).length;
+
+    var overdueCount = visibleTasks.filter(function (t) {
+      return t.dueDate && t.dueDate < today && closedStatuses.indexOf(String(t.status || 'open')) === -1;
+    }).length;
+
+    var topTasks = visibleTasks
+      .filter(function (t) { return closedStatuses.indexOf(String(t.status || 'open')) === -1; })
+      .sort(function (a, b) {
+        var aDue = a.dueDate || '9999';
+        var bDue = b.dueDate || '9999';
+        return aDue.localeCompare(bDue) || (b.createdAt || 0) - (a.createdAt || 0);
+      })
+      .slice(0, 3);
+
+    function taskCardMini(t) {
+      var title = h(t.title || t.task || 'Task').slice(0, 45);
+      var assignee = h(t.assignedToName || t.person || t.assignedTo || 'Unassigned');
+      var dueStr = t.dueDate ? '<span class="pmos-task-due">' + (t.dueDate < today ? '&#x26A0; Overdue' : t.dueDate) + '</span>' : '';
+      var statusClass = t.status === 'overdue' || (t.dueDate && t.dueDate < today) ? 'pmos-task-overdue-tag' : '';
+      var priorityLower = String(t.priority || '').toLowerCase();
+      var priorityDot = '<span class="pmos-task-priority-dot pmos-priority-' + (priorityLower || 'normal') + '"></span>';
+      return '<div class="pmos-task-mini-card ' + statusClass + '" onclick="pmosShowNav(\'tasks\')">' +
+        '<div class="pmos-task-mini-hdr">' +
+          '<strong>' + title + '</strong>' +
+          dueStr +
+        '</div>' +
+        '<div class="pmos-task-mini-meta">' +
+          '<span>' + priorityDot + ' ' + assignee + '</span>' +
+          '<span class="badge badge-' + (priorityLower === 'critical' || priorityLower === 'high' ? 'red' : 'purple') + '">' + h(t.priority || 'Normal') + '</span>' +
+        '</div>' +
+        (t.progress ? '<div class="pmos-task-mini-progress"><div class="task-progress-bar" style="width:' + t.progress + '%"></div></div>' : '') +
+      '</div>';
+    }
+
+    return '<div class="pmos-home-section pmos-today-tasks">' +
+      '<div class="pmos-section-head">' +
+        '<h3>&#x2705; Today\'s Tasks</h3>' +
+        '<button class="pmos-btn-link" onclick="pmosShowNav(\'tasks\')">View All</button>' +
+      '</div>' +
+      '<div class="pmos-today-task-stats">' +
+        '<div class="pmos-today-stat" onclick="pmosShowNav(\'tasks\')">' +
+          '<strong>' + openCount + '</strong>' +
+          '<span>Open</span>' +
+        '</div>' +
+        '<div class="pmos-today-stat pmos-today-stat-overdue" onclick="pmosShowNav(\'tasks\')">' +
+          '<strong>' + overdueCount + '</strong>' +
+          '<span>Overdue</span>' +
+        '</div>' +
+        '<div class="pmos-today-stat" onclick="pmosOpenModule(\'task\')">' +
+          '<strong>+</strong>' +
+          '<span>New Task</span>' +
+        '</div>' +
+      '</div>' +
+      (topTasks.length ? '<div class="pmos-today-task-list">' + topTasks.map(taskCardMini).join('') + '</div>' : window.renderOnboardingState({variant:'inline',icon:'📋',title:'No tasks yet',desc:'Tap the + button below to add your first task for this project.',ctaLabel:'Create Task',ctaAction:'pmosOpenCreate()'})) +
+    '</div>';
+  }
+
   function renderHomeRecent(records) {
-    if (!records.length) return '<p class="empty-hint">No recent updates. Tap a quick action above to get started.</p>';
+    if (!records.length) return window.renderOnboardingState({variant:'inline',icon:'📸',title:'No recent updates',desc:'Capture a photo, log an issue, or complete a task to see your activity here.',ctaLabel:'Take Photo',ctaAction:'pmosCapturePhoto()'});
     return records.map(r => {
       const label = r.note || r.issue || r.item || r.task || r.meetingTitle || r.caption || r.accomplishment || 'Record';
       const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-PH') : '';
-      return `<div class="pmos-home-recent-item">
-        <span class="pmos-recent-icon">${moduleIcon(r.collection)}</span>
-        <div>
-          <strong>${h(label).slice(0, 60)}</strong>
-          <span>${h(r.moduleLabel || '')} &middot; ${date}</span>
+      const moduleIconStr = moduleIcon(r.collection);
+      const sClass = statusBadgeClass(r.status || 'New');
+      return `<div class="pmos-task-row pmos-recent-card">
+        <div class="pmos-task-row-left">
+          <div class="pmos-task-row-title">
+            <span class="pmos-module-icon-sm">${moduleIconStr}</span>
+            <strong>${h(label).slice(0, 60)}</strong>
+          </div>
+          <div class="pmos-task-row-meta">
+            ${r.moduleLabel ? `<span>${h(r.moduleLabel)}</span>` : ''}
+            <span>&#x1F4C5; ${date}</span>
+            ${r.draft ? '<span class="badge badge-amber badge-xs">Draft</span>' : ''}
+          </div>
         </div>
-        <span class="badge badge-${statusBadgeClass(r.status || 'New')}">${h(r.status || 'New')}</span>
+        <div class="pmos-task-row-right">
+          <span class="badge badge-${sClass}">${h(r.status || 'New')}</span>
+        </div>
       </div>`;
     }).join('');
   }
@@ -543,7 +789,8 @@
   function moduleIcon(collection) {
     const icons = {
       pmosUpdates: '&#x26A1;', pmosSiteLogs: '&#x1F4CB;', pmosIssues: '&#x26A0;',
-      pmosMaterialRequests: '&#x1F4E6;', pmosTasks: '&#x2705;', pmosPhotoLogs: '&#x1F4F7;', pmosMeetingNotes: '&#x1F91D;'
+      pmosMaterialRequests: '&#x1F4E6;', pmosTasks: '&#x2705;', pmosPhotoLogs: '&#x1F4F7;', pmosMeetingNotes: '&#x1F91D;',
+      tasks: '&#x2705;'
     };
     return icons[collection] || '&#x1F4DD;';
   }
@@ -598,7 +845,41 @@
 
       <!-- Main Content Area -->
       <div id="pmosContent" class="pmos-content">
-        <div class="pmos-loading-card">Loading...</div>
+        <div class="pmos-home pmos-loading-state">
+          <!-- Header skeleton -->
+          <div class="pmos-home-header">
+            <div>
+              <div class="pmos-skeleton pmos-skeleton-text" style="width:100px;height:12px;margin-bottom:8px"></div>
+              <div class="pmos-skeleton pmos-skeleton-text" style="width:200px;height:20px;border-radius:4px"></div>
+            </div>
+            <div class="pmos-skeleton" style="width:80px;height:24px;border-radius:12px;flex-shrink:0"></div>
+          </div>
+          <!-- Date skeleton -->
+          <div class="pmos-skeleton pmos-skeleton-text" style="width:150px;margin-bottom:20px;height:14px"></div>
+          <!-- Stat cards -->
+          <div class="pmos-home-stats">
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:72px"></div>
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:72px"></div>
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:72px"></div>
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:72px"></div>
+          </div>
+          <!-- Alert skeleton -->
+          <div class="pmos-skeleton pmos-skeleton-card" style="height:48px;margin-bottom:20px"></div>
+          <!-- Action grid -->
+          <div class="pmos-home-actions-grid">
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:72px"></div>
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:72px"></div>
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:72px"></div>
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:72px"></div>
+          </div>
+          <!-- Tasks skeleton -->
+          <div style="margin-top:24px">
+            <div class="pmos-skeleton pmos-skeleton-text" style="width:120px;margin-bottom:12px;height:14px"></div>
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:56px;margin-bottom:8px"></div>
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:56px;margin-bottom:8px"></div>
+            <div class="pmos-skeleton pmos-skeleton-card" style="height:56px"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Bottom Navigation -->
@@ -804,6 +1085,232 @@
   window.pmosHideCreateSheet = pmosHideCreateSheet;
   window.pmosOpenModule = pmosOpenModule;
 
+  /* ---- Legacy task save fallback (when adapter is not loaded) ---- */
+  async function saveTaskLegacy(project, mod, payload) {
+    const now = Date.now();
+    const ref = db.ref('pmosTasks').push();
+    const clientId = typeof pmosUuid === 'function' ? pmosUuid() : 'pmos_' + now;
+    const record = {
+      task: payload.title || payload.task || '',
+      person: payload.assignedToName || payload.person || '',
+      company: payload.company || '',
+      remarks: payload.description || payload.remarks || '',
+      dueDate: payload.dueDate || '',
+      priority: payload.priority || 'Normal',
+      status: payload.status || 'Open',
+      progress: 0,
+      id: ref.key,
+      clientGeneratedId: clientId,
+      module: 'Follow-ups',
+      projectId: project.id,
+      projectName: project.name || project.id,
+      schemaVersion: typeof PMOS_SCHEMA_VERSION !== 'undefined' ? PMOS_SCHEMA_VERSION : '1.0',
+      syncStatus: 'synced',
+      draft: false,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: window._currentUser?.uid || '',
+      createdByName: window._currentUser?.name || '',
+      source: PMOS_SOURCE
+    };
+    try {
+      await ref.set(record);
+      setSync('Task saved (legacy path).', 'ok');
+      pmosToast('Task created');
+      clearPmosForm('task');
+    } catch (e) {
+      if (String(e?.code || '').toLowerCase().includes('permission')) {
+        try {
+          await db.ref('projects/' + project.id + '/pmosTasks/' + ref.key).set({
+            ...record, globalPathDenied: true
+          });
+          setSync('Task saved under project.', 'ok');
+          pmosToast('Task created');
+          clearPmosForm('task');
+          return;
+        } catch (fbError) {
+          console.error('Task fallback failed:', fbError);
+        }
+      }
+      throw e;
+    }
+  }
+
+  function pmosTaskById(taskId) {
+    var adapter = window.PmosTaskAdapter;
+    var raw = state.records.find(function (record) {
+      return (record.collection === 'tasks' || record.collection === 'pmosTasks') &&
+        record.id === taskId &&
+        (!state.currentProjectId || record.projectId === state.currentProjectId);
+    });
+    return raw && adapter ? adapter.normalizeTask(raw) : raw;
+  }
+
+  function pmosTaskActionButtons(task) {
+    var adapter = window.PmosTaskAdapter;
+    var transitions = adapter && adapter.TASK_TRANSITIONS ? adapter.TASK_TRANSITIONS[task.status] || [] : [];
+    var role = typeof normalizeRole === 'function'
+      ? normalizeRole(window._currentUser?.role)
+      : String(window._currentUser?.role || '').toLowerCase();
+    var canVerify = ['boss', 'owner', 'admin', 'pm'].includes(role);
+    var buttons = [];
+    if (transitions.includes('in_progress')) {
+      buttons.push('<button type="button" class="pmos-btn-primary" onclick="pmosTransitionTask(\'in_progress\')">Start / Resume</button>');
+    }
+    if (transitions.includes('blocked')) {
+      buttons.push('<button type="button" class="pmos-btn-secondary" onclick="pmosTransitionTask(\'blocked\')">Mark Blocked</button>');
+    }
+    if (transitions.includes('for_verification')) {
+      buttons.push('<button type="button" class="pmos-btn-primary" onclick="pmosTransitionTask(\'for_verification\')">Submit for Verification</button>');
+    }
+    if (transitions.includes('completed') && canVerify) {
+      buttons.push('<button type="button" class="pmos-btn-primary" onclick="pmosTransitionTask(\'completed\')">Verify and Complete</button>');
+    }
+    if (transitions.includes('cancelled')) {
+      buttons.push('<button type="button" class="pmos-btn-secondary pmos-btn-danger" onclick="pmosTransitionTask(\'cancelled\')">Cancel Task</button>');
+    }
+    return buttons.join('');
+  }
+
+  /* ---- PMOS task detail and field action sheet ---- */
+  function pmosOpenTaskDetails(taskId) {
+    if (!taskId || !state.currentProjectId) return;
+    var task = pmosTaskById(taskId);
+    if (!task) {
+      pmosToast('Task could not be found. Refresh and try again.', 'error');
+      return;
+    }
+    var existing = $('pmosTaskDetailSheet');
+    if (existing) existing.remove();
+    var proofUrl = task.completionProof && task.completionProof.url ? task.completionProof.url : '';
+    var sheet = document.createElement('div');
+    sheet.id = 'pmosTaskDetailSheet';
+    sheet.className = 'pmos-action-sheet';
+    sheet.dataset.taskId = taskId;
+    sheet.innerHTML = `
+      <div class="pmos-action-sheet-backdrop" onclick="pmosCloseTaskDetails()"></div>
+      <section class="pmos-action-sheet-content pmos-task-detail-sheet" role="dialog" aria-modal="true" aria-labelledby="pmosTaskDetailTitle">
+        <div class="pmos-action-sheet-head">
+          <div>
+            <span class="pmos-eyebrow">Today's Mission</span>
+            <h2 id="pmosTaskDetailTitle">${h(task.title || 'Task')}</h2>
+          </div>
+          <button type="button" class="pmos-icon-btn" onclick="pmosCloseTaskDetails()" aria-label="Close task details">&times;</button>
+        </div>
+        <div class="pmos-task-detail-meta">
+          <span>${h(task.assignedToName || 'Unassigned')}</span>
+          <span>${h(task.dueDate || 'No deadline')}</span>
+          <span>${h(window.PmosTaskAdapter.statusLabel(task.status))}</span>
+        </div>
+        ${task.description ? `<p class="pmos-task-detail-copy">${h(task.description)}</p>` : ''}
+        ${task.blockedReason ? `<div class="pmos-task-detail-warning">${h(task.blockedReason)}</div>` : ''}
+        <label class="pmos-field">
+          <span>Work accomplished / completion note</span>
+          <textarea id="pmosTaskCompletionNote" rows="3" placeholder="Describe exactly what was completed">${h(task.completionNote || '')}</textarea>
+        </label>
+        <label class="pmos-field">
+          <span>Proof link (Google Drive, optional)</span>
+          <input id="pmosTaskProofUrl" type="url" placeholder="https://drive.google.com/..." value="${h(proofUrl)}">
+        </label>
+        <label class="pmos-field">
+          <span>Blocked reason</span>
+          <textarea id="pmosTaskBlockedReason" rows="2" placeholder="What is preventing work?">${h(task.blockedReason || '')}</textarea>
+        </label>
+        <div class="pmos-action-sheet-actions">${pmosTaskActionButtons(task)}</div>
+      </section>`;
+    document.body.appendChild(sheet);
+    requestAnimationFrame(function () { sheet.classList.add('is-open'); });
+  }
+
+  function pmosCloseTaskDetails() {
+    var sheet = $('pmosTaskDetailSheet');
+    if (!sheet) return;
+    sheet.classList.remove('is-open');
+    setTimeout(function () { sheet.remove(); }, 180);
+  }
+
+  async function pmosTransitionTask(status) {
+    var sheet = $('pmosTaskDetailSheet');
+    var taskId = sheet && sheet.dataset.taskId;
+    var pid = state.currentProjectId;
+    var adapter = window.PmosTaskAdapter;
+    if (!taskId || !pid || !adapter || !adapter.transitionCanonicalTask) return;
+    var completionNote = $('pmosTaskCompletionNote')?.value.trim() || '';
+    var proofUrl = $('pmosTaskProofUrl')?.value.trim() || '';
+    var blockedReason = $('pmosTaskBlockedReason')?.value.trim() || '';
+    if (status === 'for_verification' && !completionNote) {
+      pmosToast('Add a completion note before submitting.', 'warn');
+      $('pmosTaskCompletionNote')?.focus();
+      return;
+    }
+    if (status === 'blocked' && !blockedReason) {
+      pmosToast('Add the reason the work is blocked.', 'warn');
+      $('pmosTaskBlockedReason')?.focus();
+      return;
+    }
+    if (status === 'cancelled' && !blockedReason) {
+      pmosToast('Add a cancellation reason.', 'warn');
+      $('pmosTaskBlockedReason')?.focus();
+      return;
+    }
+    try {
+      await adapter.transitionCanonicalTask(pid, taskId, status, {
+        reason: blockedReason,
+        completionNote: completionNote,
+        completionProof: proofUrl ? { url: proofUrl, addedAt: Date.now(), addedBy: window._currentUser?.uid || '' } : null
+      });
+      if (typeof pmosAuditLog === 'function') {
+        pmosAuditLog('transition', 'task', pid, taskId, 'Task moved to ' + status);
+      }
+      if (status === 'for_verification' && typeof createNotificationEvent === 'function') {
+        createNotificationEvent({
+          projectId: pid,
+          module: 'tasks',
+          type: 'task_verification_requested',
+          payload: {
+            recordId: taskId,
+            message: 'Task ready for PM verification.',
+            recipientRole: 'pm',
+            link: 'workspace.html?projectId=' + encodeURIComponent(pid) + '&tab=tasks&fromNotif=1'
+          }
+        }).catch(function () {});
+      }
+      pmosCloseTaskDetails();
+      pmosToast(status === 'for_verification' ? 'Sent for PM verification' : 'Task updated');
+    } catch (error) {
+      console.error('PMOS task transition failed:', error);
+      pmosToast(error?.message || 'Task update failed.', 'error');
+    }
+  }
+  window.pmosOpenTaskDetails = pmosOpenTaskDetails;
+  window.pmosCloseTaskDetails = pmosCloseTaskDetails;
+  window.pmosTransitionTask = pmosTransitionTask;
+
+  /* ---- Handle deep-link from notifications ---- */
+  function handlePmosDeepLink() {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var projectParam = params.get('project');
+      var taskParam = params.get('task');
+      if (projectParam && taskParam) {
+        // Set the project if not already set
+        var select = $('pmosProjectSelect');
+        if (select && select.value !== projectParam) {
+          select.value = projectParam;
+          state.currentProjectId = projectParam;
+          localStorage.setItem(LAST_PROJECT_KEY, projectParam);
+          updateHeaderProject();
+        }
+        // After project is set and data loaded, open the task
+        setTimeout(function () {
+          pmosOpenTaskDetails(taskParam);
+        }, 1000);
+      }
+    } catch (e) {
+      console.warn('Deep-link handling failed:', e);
+    }
+  }
+
   /* ============================================================
      FORM RENDERING
      ============================================================ */
@@ -902,7 +1409,7 @@
       sitelog: ['date', 'weather', 'accomplishment'],
       issue: ['location', 'issue'],
       material: ['item', 'quantity', 'unit', 'neededDate'],
-      task: ['task', 'person', 'dueDate'],
+      task: ['title', 'dueDate'],
       meeting: ['meetingTitle', 'meetingDate', 'meetingType'],
       photo: ['caption', 'location', 'category']
     };
@@ -925,9 +1432,7 @@
       return;
     }
     const mod = MODULES[key];
-    const payload = readModulePayload(key);
-
-    /* --- EDIT MODE: update existing record instead of creating new --- */
+    const payload = readModulePayload(key);      /* --- EDIT MODE: update existing record instead of creating new --- */
     if (state.editingRecord && state.editingRecord.collection === mod.collection) {
       await saveExistingRecord(key, mod, payload, button);
       return;
@@ -950,8 +1455,34 @@
       }
 
       setSync('Saving...', 'saving');
-      const ref = db.ref(mod.collection).push();
+
+      /* ---- Task module uses canonical path: projects/{id}/tasks ---- */
+      if (key === 'task') {
+        try {
+          const adapter = window.PmosTaskAdapter;
+          if (adapter) {
+            const result = await adapter.createCanonicalTask(project.id, payload);
+            setSync('Task saved to ACPM.', 'ok');
+            pmosToast('Task created');
+            clearPmosForm(key);
+            if (typeof pmosAuditLog === 'function') {
+              pmosAuditLog('create', 'acpm_tasks', project.id, result.key, 'Follow-up task created via PMOS');
+            }
+            createPmosNotification(key, { ...payload, id: result.key, projectId: project.id });
+          } else {
+            // Adapter not loaded — fallback to legacy path
+            await saveTaskLegacy(project, mod, payload);
+          }
+        } catch (e) {
+          console.error('Task save failed:', e);
+          await saveOffline(key, project, mod, payload);
+        }
+        return;
+      }
+
+      /* ---- Non-task modules: save to existing collection path ---- */
       const now = Date.now();
+      const ref = db.ref(mod.collection).push();
       const clientId = typeof pmosUuid === 'function' ? pmosUuid() : `pmos_${now}`;
       const record = {
         ...payload,
@@ -1037,8 +1568,20 @@
       let synced = 0;
       for (const item of items) {
         try {
+          /* Tasks use canonical path: projects/{projectId}/tasks. Other modules use root-level ref. */
+          var isTask = item.collection === 'tasks';
+          var targetRef;
+          if (isTask && item.projectId) {
+            targetRef = db.ref('projects/' + item.projectId + '/' + item.collection).push();
+          } else {
+            targetRef = db.ref(item.collection).push();
+          }
+
           /* Check if a record with this clientGeneratedId already exists to prevent duplicates */
-          const existingCheck = await db.ref(item.collection)
+          var existingRef = isTask && item.projectId
+            ? db.ref('projects/' + item.projectId + '/' + item.collection)
+            : db.ref(item.collection);
+          const existingCheck = await existingRef
             .orderByChild('clientGeneratedId')
             .equalTo(item.localId)
             .limitToFirst(1)
@@ -1050,10 +1593,9 @@
             continue;
           }
           /* Prevent duplicate by checking clientGeneratedId */
-          const ref = db.ref(item.collection).push();
           const record = {
             ...item.payload,
-            id: ref.key,
+            id: targetRef.key,
             clientGeneratedId: item.localId,
             module: MODULES[item.module]?.label || item.module,
             projectId: item.projectId,
@@ -1068,7 +1610,7 @@
             source: PMOS_SOURCE
           };
           if (!record.status) record.status = 'New';
-          await ref.set(record);
+          await targetRef.set(record);
           await idbDeleteOffline(item.localId);
           /* Create notification for synced offline record */
           try {
@@ -1147,7 +1689,7 @@
     const rows = state.photoQueue.filter(item => !['Uploaded', 'Synced'].includes(String(item.metadata?.uploadStatus || 'Queued')));
     renderPendingSyncCount();
     if (!rows.length) {
-      el.innerHTML = '<p class="empty-hint">No pending photo uploads.</p>';
+      el.innerHTML = window.renderOnboardingState({variant:'inline',icon:'📸',title:'No pending uploads',desc:'Photos you take on site will queue here before uploading.'});
       return;
     }
     el.innerHTML = rows.map(item => {
@@ -1427,25 +1969,63 @@
             ${items.slice(0, 10).map(r => updateRecordRow(r)).join('')}
             ${items.length > 10 ? `<button class="pmos-load-more" onclick="pmosOpenModule('${key}')">View all ${items.length} records</button>` : ''}
           </section>
-        `).join('') : '<p class="empty-hint">No records yet. Tap Create to add your first field record.</p>'}
+        `).join('') : window.renderOnboardingState({variant:'inline',icon:'📝',title:'No records yet',desc:'Tap Create below to add your first field record — photo, issue, material, or update.',ctaLabel:'Create Record',ctaAction:'pmosOpenCreate()'})}
       </div>
     `;
   }
 
-  function updateRecordRow(r) {
+  /* ---- Shared Module Record Card Row ---- */
+  function pmosModuleRow(r) {
     const title = r.note || r.issue || r.item || r.task || r.meetingTitle || r.caption || r.accomplishment || 'Record';
+    const label = r.moduleLabel || getModuleLabelForCollection(r.collection) || '';
     const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-PH') : '';
-    return `<div class="pmos-update-row" ${canEditPmosRecord(r) ? `onclick="editPmosRecord('${h(r.collection)}','${h(r.id)}','${h(r.projectId || '')}')"` : ''}>
-      <div class="pmos-update-title">${h(title).slice(0, 80)}</div>
-      <div class="pmos-update-meta">
-        <span class="badge badge-${statusBadgeClass(r.status || 'New')}">${h(r.status || 'New')}</span>
-        ${r.priority ? `<span class="badge badge-${r.priority === 'Critical' || r.priority === 'High' ? 'red' : r.priority === 'Low' ? 'amber' : 'purple'}">${h(r.priority)}</span>` : ''}
-        <span>${date}</span>
-        ${r.draft ? '<span class="badge badge-amber">Draft</span>' : ''}
-        ${r.archived ? '<span class="badge badge-dim">Archived</span>' : ''}
+    const moduleIcon = moduleIcon(r.collection);
+    const priorityLower = String(r.priority || '').toLowerCase();
+    const status = r.status || 'New';
+    const isDraft = r.draft === true;
+    const isArchived = r.archived === true;
+    const canEdit = canEditPmosRecord(r);
+    const editAttr = canEdit ? ` onclick="editPmosRecord('${h(r.collection)}','${h(r.id)}','${h(r.projectId || '')}')"` : '';
+    const clickableClass = canEdit ? 'pmos-record-clickable' : '';
+
+    const sClass = statusBadgeClass(status);
+    const priorityDot = priorityLower ? `<span class="pmos-task-priority-dot pmos-priority-${priorityLower}" title="${h(r.priority)}"></span>` : '';
+    const priorityBadge = r.priority ? `<span class="badge badge-${r.priority === 'Critical' || r.priority === 'High' ? 'red' : r.priority === 'Low' ? 'amber' : 'purple'}">${h(r.priority)}</span>` : '';
+    const draftBadge = isDraft ? '<span class="badge badge-amber badge-xs">Draft</span>' : '';
+    const archivedBadge = isArchived ? '<span class="badge badge-dim badge-xs">Archived</span>' : '';
+
+    return `<div class="pmos-task-row ${clickableClass}"${editAttr}>
+      <div class="pmos-task-row-left">
+        <div class="pmos-task-row-title">
+          <span class="pmos-module-icon-sm">${moduleIcon}</span>
+          <strong>${h(title).slice(0, 80)}</strong>
+          ${priorityDot}
+        </div>
+        <div class="pmos-task-row-meta">
+          ${label ? `<span>${h(label)}</span>` : ''}
+          <span>&#x1F4C5; ${date}</span>
+          ${priorityBadge}
+          ${draftBadge}
+          ${archivedBadge}
+        </div>
       </div>
-      ${canEditPmosRecord(r) ? '<div class="pmos-update-edit-hint">Tap to edit</div>' : ''}
+      <div class="pmos-task-row-right">
+        <span class="badge badge-${sClass}">${h(status)}</span>
+      </div>
     </div>`;
+  }
+
+  function getModuleLabelForCollection(collection) {
+    for (var i = 0; i < MODULE_ORDER.length; i++) {
+      var key = MODULE_ORDER[i];
+      var mod = MODULES[key];
+      if (mod && mod.collection === collection) return mod.label;
+    }
+    return '';
+  }
+
+  function updateRecordRow(r) {
+    return pmosModuleRow(r);
   }
 
   /* ============================================================
@@ -1453,17 +2033,44 @@
      ============================================================ */
   function renderTasksView(content) {
     const pid = state.currentProjectId;
-    const tasks = state.records
-      .filter(r => r.collection === 'pmosTasks' && !r.archived && (!pid || r.projectId === pid))
-      .sort((a, b) => {
-        const aDue = a.dueDate || '9999';
-        const bDue = b.dueDate || '9999';
-        return aDue.localeCompare(bDue) || (b.createdAt || 0) - (a.createdAt || 0);
-      });
+    const adapter = window.PmosTaskAdapter;
+    const user = window._currentUser || {};
+    const visibility = getTaskVisibility(user);
+
+    // Read tasks from both paths using adapter if available, else fallback to records
+    var rawTasks = state.records
+      .filter(r => (r.collection === 'pmosTasks' || r.collection === 'tasks') && !r.archived && (!pid || r.projectId === pid));
+
+    // Normalize tasks via adapter
+    var tasks = rawTasks.map(function (t) {
+      return adapter ? adapter.normalizeTask(t) : t;
+    }).filter(Boolean);
+
+    // Filter by assignedToUid for non-team-wide roles
+    var visibleTasks = tasks.filter(function (t) {
+      return visibility === 'all' ? true : canUserSeeTask(t);
+    });
+
+    // Separate my tasks vs team tasks for team-wide roles
+    var myTasks = visibility === 'all'
+      ? tasks.filter(function (t) { return t.assignedToUid === user.uid || t.createdBy === user.uid; })
+      : visibleTasks;
+    var teamTasks = visibility === 'all'
+      ? tasks.filter(function (t) { return t.assignedToUid !== user.uid && t.createdBy !== user.uid; })
+      : [];
+
+    // Sort by due date
+    visibleTasks.sort(function (a, b) {
+      var aDue = a.dueDate || '9999';
+      var bDue = b.dueDate || '9999';
+      return aDue.localeCompare(bDue) || (b.createdAt || 0) - (a.createdAt || 0);
+    });
+
     const today = todayISO();
-    const overdue = tasks.filter(t => t.dueDate && t.dueDate < today && !['Done', 'Archived'].includes(String(t.status || 'Open')));
-    const dueToday = tasks.filter(t => t.dueDate === today && !['Done', 'Archived'].includes(String(t.status || 'Open')));
-    const open = tasks.filter(t => !['Done', 'Archived'].includes(String(t.status || 'Open')));
+    var closedStatuses = ['Done', 'Archived', 'Cancelled', 'completed', 'cancelled', 'archived'];
+    var overdue = visibleTasks.filter(function (t) { return t.dueDate && t.dueDate < today && closedStatuses.indexOf(String(t.status || 'open')) === -1; });
+    var dueToday = visibleTasks.filter(function (t) { return t.dueDate === today && closedStatuses.indexOf(String(t.status || 'open')) === -1; });
+    var open = visibleTasks.filter(function (t) { return closedStatuses.indexOf(String(t.status || 'open')) === -1; });
 
     const badgeEl = $('pmosTaskBadge');
     if (badgeEl) {
@@ -1472,37 +2079,132 @@
       badgeEl.classList.toggle('hidden', count === 0);
     }
 
+    /* Build tab headers for team-wide roles */
+    var tabHtml = visibility === 'all'
+      ? '<div class="pmos-tasks-tabs" role="tablist">' +
+        '<button class="pmos-tasks-tab is-active" data-tab="mytasks" role="tab" onclick="switchPmosTaskTab(\'mytasks\')">My Tasks (' + myTasks.length + ')</button>' +
+        '<button class="pmos-tasks-tab" data-tab="teamtasks" role="tab" onclick="switchPmosTaskTab(\'teamtasks\')">Team Tasks (' + teamTasks.length + ')</button>' +
+        '<button class="pmos-tasks-tab" data-tab="all" role="tab" onclick="switchPmosTaskTab(\'all\')">All (' + visibleTasks.length + ')</button>' +
+        '</div>'
+      : '';
+
     content.innerHTML = `
       <div class="pmos-tasks-view">
         <div class="pmos-card-head">
           <h2>Follow-up Tasks</h2>
           <button class="pmos-btn-small" onclick="pmosOpenModule('task')">+ New Task</button>
         </div>
+        ${tabHtml}
+        <div id="pmosTasksList">
         ${overdue.length ? `<section class="pmos-task-section">
           <h3 class="pmos-task-overdue">&#x26A0;&#xFE0F; Overdue (${overdue.length})</h3>
-          ${overdue.slice(0, 10).map(t => taskRow(t)).join('')}
+          ${overdue.slice(0, 10).map(function (t) { return taskRow(t); }).join('')}
         </section>` : ''}
         ${dueToday.length ? `<section class="pmos-task-section">
           <h3>&#x1F4C5; Due Today (${dueToday.length})</h3>
-          ${dueToday.slice(0, 10).map(t => taskRow(t)).join('')}
+          ${dueToday.slice(0, 10).map(function (t) { return taskRow(t); }).join('')}
         </section>` : ''}
         <section class="pmos-task-section">
           <h3>Open (${open.length})</h3>
-          ${open.slice(0, 20).map(t => taskRow(t)).join('')}
-          ${!open.length && !overdue.length ? '<p class="empty-hint">No tasks. Create your first follow-up.</p>' : ''}
+          ${open.slice(0, 20).map(function (t) { return taskRow(t); }).join('')}
+          ${!open.length && !overdue.length ? window.renderOnboardingState({variant:'inline',icon:'📋',title:'No tasks in this view',desc:'Tasks you create or get assigned will appear here. Tap the + button to create one.',ctaLabel:'Create Task',ctaAction:'pmosOpenCreate()'}) : ''}
         </section>
+        </div>
       </div>
     `;
+
+    // Store task arrays for tab switching
+    content._pmosMyTasks = myTasks;
+    content._pmosTeamTasks = teamTasks;
+    content._pmosAllTasks = visibleTasks;
   }
 
+  /* ---- Tab switching for team-wide task views ---- */
+  function switchPmosTaskTab(tab) {
+    var tabs = document.querySelectorAll('.pmos-tasks-tab');
+    tabs.forEach(function (b) { b.classList.remove('is-active'); });
+    var activeBtn = document.querySelector('.pmos-tasks-tab[data-tab="' + tab + '"]');
+    if (activeBtn) activeBtn.classList.add('is-active');
+
+    var content = $('pmosContent');
+    if (!content) return;
+    var myTasks = content._pmosMyTasks || [];
+    var teamTasks = content._pmosTeamTasks || [];
+    var allTasks = content._pmosAllTasks || [];
+
+    var selectedTasks = tab === 'mytasks' ? myTasks : tab === 'teamtasks' ? teamTasks : allTasks;
+    var today = todayISO();
+    var closedStatuses = ['Done', 'Archived', 'Cancelled', 'completed', 'cancelled', 'archived'];
+
+    selectedTasks.sort(function (a, b) {
+      var aDue = a.dueDate || '9999';
+      var bDue = b.dueDate || '9999';
+      return aDue.localeCompare(bDue) || (b.createdAt || 0) - (a.createdAt || 0);
+    });
+
+    var overdue = selectedTasks.filter(function (t) { return t.dueDate && t.dueDate < today && closedStatuses.indexOf(String(t.status || 'open')) === -1; });
+    var dueToday = selectedTasks.filter(function (t) { return t.dueDate === today && closedStatuses.indexOf(String(t.status || 'open')) === -1; });
+    var open = selectedTasks.filter(function (t) { return closedStatuses.indexOf(String(t.status || 'open')) === -1; });
+
+    var listEl = $('pmosTasksList');
+    if (!listEl) return;
+    listEl.innerHTML =
+      (overdue.length ? '<section class="pmos-task-section"><h3 class="pmos-task-overdue">&#x26A0;&#xFE0F; Overdue (' + overdue.length + ')</h3>' + overdue.slice(0, 10).map(function (t) { return taskRow(t); }).join('') + '</section>' : '') +
+      (dueToday.length ? '<section class="pmos-task-section"><h3>&#x1F4C5; Due Today (' + dueToday.length + ')</h3>' + dueToday.slice(0, 10).map(function (t) { return taskRow(t); }).join('') + '</section>' : '') +
+      '<section class="pmos-task-section"><h3>Open (' + open.length + ')</h3>' +
+      (open.slice(0, 20).map(function (t) { return taskRow(t); }).join('') || (!open.length && !overdue.length ? '<p class="empty-hint">No tasks in this view.</p>' : '')) +
+      '</section>';
+  }
+  window.switchPmosTaskTab = switchPmosTaskTab;
+
   function taskRow(t) {
-    return `<div class="pmos-task-row">
-      <div>
-        <strong>${h(t.task || 'Task').slice(0, 60)}</strong>
-        <span>${h(t.person || 'Unassigned')}${t.dueDate ? ` - Due: ${t.dueDate}` : ''}</span>
-      </div>
-      <span class="badge badge-${t.priority === 'Critical' || t.priority === 'High' ? 'red' : 'purple'}">${h(t.priority || 'Normal')}</span>
-    </div>`;
+    // Use normalized field names (fallback to legacy PMOS field names)
+    var title = h(t.title || t.task || 'Task').slice(0, 60);
+    var assignee = h(t.assignedToName || t.person || t.assignedTo || 'Unassigned');
+    var priority = t.priority || 'Normal';
+    var priorityLower = String(priority).toLowerCase();
+    var today = todayISO();
+    var isOverdue = t.dueDate && t.dueDate < today && ['pending', 'open', 'in_progress', 'blocked', 'for_verification', ''].indexOf(String(t.status || 'pending').toLowerCase()) !== -1;
+
+    // Priority indicator: colored left border
+    var priorityBorder = priorityLower === 'critical' ? 'pmos-task-critical' :
+      priorityLower === 'high' ? 'pmos-task-high' :
+      priorityLower === 'low' ? 'pmos-task-low' : '';
+
+    // Status badges
+    var status = String(t.status || 'open').toLowerCase();
+    var statusBadge = status === 'completed' || status === 'done' ? '<span class="pmos-task-status-badge pmos-task-status-done">&#x2713; Done</span>' :
+      status === 'in_progress' ? '<span class="pmos-task-status-badge pmos-task-status-progress">&#x1F504; In Progress</span>' :
+      status === 'blocked' ? '<span class="pmos-task-status-badge pmos-task-status-blocked">&#x26D4; Blocked</span>' :
+      status === 'for_verification' ? '<span class="pmos-task-status-badge pmos-task-status-review">&#x25C9; For Verification</span>' :
+      status === 'cancelled' ? '<span class="pmos-task-status-badge pmos-task-status-cancelled">&#x00D7; Cancelled</span>' :
+      isOverdue ? '<span class="pmos-task-status-badge pmos-task-status-overdue">&#x26A0;&#xFE0F; Overdue</span>' :
+      status === 'pending' || status === 'open' ? '<span class="pmos-task-status-badge pmos-task-status-open">&#x25CB; Pending</span>' : '';
+
+    var progress = t.progress ? '<div class="pmos-task-progress-wrap"><div class="pmos-task-progress-bar"><i style="width:' + t.progress + '%"></i></div><span class="pmos-task-progress-label">' + t.progress + '%</span></div>' : '';
+
+    var photoCount = t.photos ? (typeof t.photos === 'object' ? Object.keys(t.photos).length : parseInt(t.photos) || 0) : 0;
+    var photoBadge = photoCount > 0 ? '<span class="pmos-task-photo-badge">&#x1F4F7; ' + photoCount + '</span>' : '';
+
+    var priorityLabel = String(priority).charAt(0).toUpperCase() + String(priority).slice(1).toLowerCase();
+
+    return '<div class="pmos-task-row ' + priorityBorder + '" data-task-id="' + h(t.id) + '" onclick="pmosOpenTaskDetails(\'' + h(t.id) + '\')">' +
+      '<div class="pmos-task-row-left">' +
+        '<div class="pmos-task-row-title">' +
+          '<strong>' + title + '</strong>' +
+          '<span class="pmos-task-priority-dot pmos-priority-' + priorityLower + '" title="' + h(priorityLabel) + '"></span>' +
+        '</div>' +
+        '<div class="pmos-task-row-meta">' +
+          '<span class="pmos-task-assignee">&#x1F464; ' + assignee + '</span>' +
+          (t.dueDate ? '<span class="pmos-task-due-badge ' + (isOverdue ? 'pmos-task-due-overdue' : '') + '">&#x1F4C5; ' + h(t.dueDate) + '</span>' : '') +
+          photoBadge +
+        '</div>' +
+        progress +
+      '</div>' +
+      '<div class="pmos-task-row-right">' +
+        statusBadge +
+      '</div>' +
+    '</div>';
   }
 
   /* ============================================================
@@ -1523,8 +2225,9 @@
           <h3>Account</h3>
           <div class="pmos-more-row"><span>User</span><strong>${h(user.name || '')}</strong></div>
           <div class="pmos-more-row"><span>Role</span><strong>${h(typeof roleLabel === 'function' ? roleLabel(user.role) : user.role || '')}</strong></div>
-          <div class="pmos-more-row"><span>Status</span><strong>${navigator.onLine ? 'Online' : 'Offline'}</strong></div>
-          <div class="pmos-more-row"><span>Last Sync</span><strong>${new Date().toLocaleTimeString('en-PH')}</strong></div>
+          <div class="pmos-more-row"><span>Status</span><strong>${h(getConnectionLabel(getConnectionState()))}</strong></div>
+          <div class="pmos-more-row"><span>Firebase</span><strong>${FIREBASE_CONNECTED === true ? 'Connected' : FIREBASE_CONNECTED === null ? 'Checking...' : 'Disconnected'}</strong></div>
+          <div class="pmos-more-row"><span>Last Sync</span><strong>${h(getLastSyncLabel())}</strong></div>
           <div class="pmos-more-row"><span>Pending Queue</span><strong>${pendingSync}</strong></div>
           <button class="pmos-more-btn" onclick="syncOfflineQueue()">Sync Now</button>
           <button class="pmos-more-btn" onclick="uploadQueuedPhotos(true)">Upload Photos Now</button>
@@ -1533,7 +2236,7 @@
 
         <section class="pmos-more-section">
           <h3>Photo Upload Queue</h3>
-          <div id="pmosPhotoQueueList" class="pmos-list"><p class="empty-hint">No pending photo uploads.</p></div>
+          <div id="pmosPhotoQueueList" class="pmos-list"></div>
           <button class="pmos-more-btn" onclick="uploadQueuedPhotos(true)">Retry All Uploads</button>
         </section>
 
@@ -1709,6 +2412,8 @@
 
     captureModuleEntries().forEach(([key, mod]) => {
       if (!mod.collection) return;
+      /* Skip root-level listener for tasks — they live at projects/{id}/tasks, not root 'tasks' */
+      if (mod.collection === 'tasks') return;
       const ref = db.ref(mod.collection).limitToLast(80);
       const sourceKey = `root:${mod.collection}`;
       const callback = snap => {
@@ -1747,6 +2452,29 @@
         ref.on('value', callback, err => notePmosReadFallback(err, 'project fallback'));
         state.listeners.push({ ref, callback, type: 'project' });
       });
+
+      /* ---- Also listen to legacy pmosTasks path for backward compatibility ---- */
+      if (project.id) {
+        var legacyTaskKey = 'pmosTasks';
+        var legacySourceKey = 'project:' + project.id + ':pmosTasks';
+        var legacyRef = db.ref('projects/' + project.id + '/pmosTasks').limitToLast(40);
+        var legacyCb = function (snap) {
+          state.records = state.records.filter(function (r) { return r.sourceKey !== legacySourceKey; });
+          snap.forEach(function (child) {
+            var record = child.val() || {};
+            if (pmosProjectAllowed(record.projectId || project.id)) {
+              state.records.push({
+                ...record, id: record.id || child.key, projectId: record.projectId || project.id,
+                projectName: record.projectName || project.name || project.id,
+                moduleKey: 'task', moduleLabel: 'Follow-up Tasks', collection: 'pmosTasks', sourceKey: legacySourceKey
+              });
+            }
+          });
+          refreshContent();
+        };
+        legacyRef.on('value', legacyCb, function () { /* silent */ });
+        state.listeners.push({ ref: legacyRef, callback: legacyCb, type: 'project' });
+      }
     });
   }
 
@@ -1793,16 +2521,25 @@
       watchPmosRecords();
       await loadPhotoQueue();
 
+      /* Attach Firebase connection listener (distinct from navigator.onLine) */
+      attachFirebaseConnectionListener();
+
       /* Set up online/offline event handlers */
       window.addEventListener('online', () => {
+        FIREBASE_CONNECTED = null;  /* Will be updated by .info/connected listener */
+        CONNECTION_OVERRIDE = null;
+        updateConnectionStatus();
         uploadQueuedPhotos(true);
         syncOfflineQueue();
         refreshContent();
         if (typeof pmosOnlineIndicator === 'function') pmosOnlineIndicator();
       });
       window.addEventListener('offline', () => {
-        if (typeof pmosOnlineIndicator === 'function') pmosOnlineIndicator();
+        FIREBASE_CONNECTED = false;
+        CONNECTION_OVERRIDE = null;
+        updateConnectionStatus();
         refreshContent();
+        if (typeof pmosOnlineIndicator === 'function') pmosOnlineIndicator();
       });
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden && navigator.onLine) {
@@ -1811,13 +2548,15 @@
         }
       });
 
-      setSync(state.projects.length ? 'Ready to capture field updates.' : 'No active projects assigned.', state.projects.length ? 'ok' : 'error');
+      updateConnectionStatus();
       pmosShowNav('home');
       if (navigator.onLine) {
         uploadQueuedPhotos(true);
         syncOfflineQueue();
       }
       if (typeof pmosOnlineIndicator === 'function') pmosOnlineIndicator();
+      /* Handle deep-link from notifications */
+      setTimeout(handlePmosDeepLink, 1500);
     } catch (e) {
       console.error('PMOS init failed:', e);
       const app = $('pmosApp');

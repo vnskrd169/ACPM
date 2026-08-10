@@ -7,7 +7,7 @@
 // -----------------------------------------------------------------------------
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v126';
+const CACHE_NAME = 'acpm-v134';
 
 const ASSETS = [
   './',
@@ -16,27 +16,31 @@ const ASSETS = [
   './pmos.html',
   './dashboard.html',
   './workspace.html',
-  './style.css?v=104',
-  './utils.js?v=85',
-  './auth.js?v=96',
-  './main.js?v=103',
-  './labor.js?v=94',
-  './materials.js?v=94',
-  './billing.js?v=75',
+  './environment.js?v=1',
+  './style.css?v=108',
+  './utils.js?v=87',
+  './auth.js?v=98',
+  './main.js?v=106',
+  './payroll-math.js?v=2',
+  './labor.js?v=97',
+  './materials.js?v=95',
+  './billing.js?v=76',
   './changeorders.js?v=95',
   './sitelog.js?v=94',
   './suppliers.js?v=94',
   './equipment.js?v=94',
   './compliance.js?v=88',
   './defects.js?v=94',
-  './tasks.js?v=94',
-  './notifications.js?v=85',
+  './tasks.js?v=95',
+  './notifications.js?v=86',
   './ux-palette.js?v=1',
   './report.js?v=97',
-  './pmos.js?v=2',
+  './pmos.js?v=3',
   './pmos-office.js?v=4',
   './face-attendance.js?v=1',
-  './manifest.json'
+  './pmos-task-adapter.js?v=2',
+  './manifest.json',
+  './manifest-staging.json'
   // CDN assets (Firebase, jsPDF, html2canvas) are not cached; let browser handle them.
 ];
 

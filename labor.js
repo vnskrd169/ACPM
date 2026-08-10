@@ -2,6 +2,7 @@ let _lpid = null;
 let _laborListeners = [];
 let _payrollConfig = { type: 'weekly', startDay: 1, overtimeThreshold: 8, nightDiffRate: 1.1, govDeductionsEnabled: false, sssEmployerPct: 8.5, philhealthPct: 3, pagibigEmployerAmt: 100 };
 let _pendingPayrollData = null;
+let _savingPayroll = false;
 let _workersRegistered = false;
 let _projectName = '';
 let _projectSettings = { leader: '', payMethod: 'Bank' };
@@ -11,6 +12,7 @@ let _compiledWeekKeys = new Set();
 let _workersSnap = null;
 let _attendanceSnap = null;
 let _advancesSnap = null;
+let _editingWid = null;
 
 function getWeekKey(start = $('weekStart')?.value, end = $('weekEnd')?.value) {
   return start && end ? `${start}_${end}` : '';
@@ -36,14 +38,15 @@ function canTouchLaborProject() {
     : !!_lpid && typeof canEditProject === 'function' && canEditProject(_lpid);
 }
 
-const ATTENDANCE_STATUS = {
-  present:  { label: 'Present',    multiplier: 1.0, hours: 8 },
-  half:     { label: 'Half Day',   multiplier: 0.5, hours: 4 },
-  absent:   { label: 'Absent',     multiplier: 0,   hours: 0 },
-  leave:    { label: 'Paid Leave', multiplier: 1.0, hours: 8 },
-  rest:     { label: 'Rest Day',   multiplier: 0,   hours: 0 },
-  holiday:  { label: 'Holiday',    multiplier: 2.0, hours: 8 }
-};
+// Payroll formulas (gross pay, cash advance eligibility/deduction, rate
+// resolution) are owned by payroll-math.js — the single tested source of
+// truth. These thin wrappers keep existing call sites stable.
+const PayrollMath = window.PayrollMath;
+const ATTENDANCE_STATUS = PayrollMath.ATTENDANCE_STATUS;
+function calculateGrossPay(rate, att) { return PayrollMath.calculateGrossPay(rate, att); }
+function normalizeAdvanceStatus(a) { return PayrollMath.normalizeAdvanceStatus(a); }
+function cashAdvanceOutstanding(a) { return PayrollMath.cashAdvanceOutstanding(a); }
+function cashAdvancePayrollEligible(a) { return PayrollMath.cashAdvancePayrollEligible(a); }
 
 function initLabor(pid) {
   _lpid = pid;
@@ -188,6 +191,7 @@ async function savePayrollConfig() {
 function watchLaborBudget(pid) {
   const ref = firebase.database().ref(`projects/${pid}`);
   laborListen(ref, snap => {
+    hidePanelSkeleton('laborSkeleton');
     const d = snap.val() || {};
     const budget = (parseFloat(d.laborBudget) || 0) + (parseFloat(d.laborBudgetDelta) || 0);
     const spent = parseFloat(d.laborSpent) || 0;
@@ -257,7 +261,7 @@ function renderTradeChips(snap) {
       </div>
       <div class="trade-scope-grid">
         <input id="tradeForeman_${c.key}" type="text" placeholder="Foreman / leader" value="${escapeHtml(t.foremanName || _projectSettings.leader || '')}">
-        <select id="tradePayment_${c.key}">
+        <select id="tradePayment_${c.key}" aria-label="Payment method for ${escapeHtml(tradeName)}">
           ${['Bank', 'GCash', 'Cash', 'Check', 'Others'].map(pm => `<option value="${pm}" ${(t.paymentMethod || _projectSettings.payMethod || 'Bank') === pm ? 'selected' : ''}>${pm === 'Bank' ? 'Bank Transfer' : pm}</option>`).join('')}
         </select>
         <input id="tradeNotes_${c.key}" type="text" placeholder="Notes optional" value="${escapeHtml(t.notes || '')}">
@@ -388,11 +392,15 @@ function renderRoster(wSnap, pid, allAdvSnap) {
   if (!wSnap.exists()) { el.innerHTML = '<p class="empty-hint">No workers yet.</p>'; return; }
 
   let activeCount = 0;
+  const inactiveWorkers = [];
   wSnap.forEach(c => {
     const w = c.val();
-    if (!workerIsActive(w)) return;
-    activeCount++;
     const wid = c.key;
+    if (!workerIsActive(w)) {
+      inactiveWorkers.push({ wid, ...w });
+      return;
+    }
+    activeCount++;
 
     let pending = 0;
     const workerAdv = allAdvSnap?.child?.(wid);
@@ -413,19 +421,46 @@ function renderRoster(wSnap, pid, allAdvSnap) {
       </div>
     </div>
     <span class="roster-rate">${peso(w.dailyRate)}/day</span>
-    <button class="btn-advance" data-action="advance" data-wid="${wid}" data-name="${escapeHtml(w.name)}">\u20B1 Advance</button>
-    <button class="del-worker" aria-label="Remove worker" data-action="remove" data-wid="${wid}">\u2715</button>`;
+    <div class="roster-actions">
+      <button class="btn-edit-worker" aria-label="Edit worker" data-action="edit" data-wid="${wid}" data-name="${escapeHtml(w.name)}" data-trade="${escapeHtml(w.trade || '')}" data-rate="${w.dailyRate || ''}">✎</button>
+      <button class="btn-advance" data-action="advance" data-wid="${wid}" data-name="${escapeHtml(w.name)}">\u20B1 Advance</button>
+      <button class="del-worker" aria-label="Deactivate worker" data-action="remove" data-wid="${wid}" title="Deactivate worker">\u2715</button>
+    </div>`;
 
+    div.querySelector('[data-action="edit"]').addEventListener('click', (e) => {
+      const b = e.currentTarget;
+      openWorkerEditModal(b.dataset.wid, b.dataset.name, b.dataset.trade, b.dataset.rate);
+    });
     div.querySelector('[data-action="advance"]').addEventListener('click', (e) => {
-      openAdvanceModal(e.target.dataset.wid, e.target.dataset.name);
+      openAdvanceModal(e.currentTarget.dataset.wid, e.currentTarget.dataset.name);
     });
     div.querySelector('[data-action="remove"]').addEventListener('click', (e) => {
-      removeWorker(e.target.dataset.wid);
+      removeWorker(e.currentTarget.dataset.wid);
     });
 
     el.appendChild(div);
   });
   if (!activeCount) el.innerHTML = '<p class="empty-hint">No active workers yet.</p>';
+
+  // Inactive workers — safe reactivation; attendance/advance/payroll history preserved.
+  if (inactiveWorkers.length) {
+    const inactiveBlock = document.createElement('div');
+    inactiveBlock.className = 'inactive-roster';
+    inactiveBlock.innerHTML = `
+      <div class="inactive-roster-title">Inactive (${inactiveWorkers.length}) — deactivated; history preserved</div>
+      ${inactiveWorkers.map(w => `
+        <div class="inactive-worker-row">
+          <div class="inactive-worker-info">
+            <span class="inactive-worker-name">${escapeHtml(w.name)}</span>
+            <span class="inactive-worker-meta">${escapeHtml(w.trade || 'No Trade')} · ${peso(w.dailyRate)}/day${w.inactiveReason ? ` · ${escapeHtml(w.inactiveReason)}` : ''}</span>
+          </div>
+          <button class="btn-reactivate" data-action="reactivate" data-wid="${w.wid}">↺ Reactivate</button>
+        </div>`).join('')}`;
+    inactiveBlock.querySelectorAll('[data-action="reactivate"]').forEach(btn => {
+      btn.addEventListener('click', () => reactivateWorker(btn.dataset.wid));
+    });
+    el.appendChild(inactiveBlock);
+  }
 }
 
 async function addWorker() {
@@ -437,10 +472,10 @@ async function addWorker() {
   const name = $('workerName')?.value.trim();
   const trade = $('workerTradeSelect')?.value;
   const rate = parseFloat($('workerRate')?.value) || 0;
-  if (!name) { showToast('Enter worker name.', 'error'); return; }
-  if (!trade) { showToast('Select a trade.', 'error'); return; }
-  if (rate <= 0) { showToast('Enter daily rate.', 'error'); return; }
-  if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
+  if (!name) { setFieldError($('workerName'), 'Enter worker name.'); return; }
+  if (!trade) { setFieldError($('workerTradeSelect'), 'Select a trade.'); return; }
+  if (rate <= 0) { setFieldError($('workerRate'), 'Enter daily rate.'); return; }
+  if (name.length > 50) { setFieldError($('workerName'), 'Name too long (max 50).'); return; }
 
   // Check for duplicate worker name
   const dupSnap = await firebase.database().ref(`projects/${_lpid}/workers`).orderByChild('name').equalTo(name).once('value');
@@ -495,6 +530,93 @@ async function removeWorker(wid) {
   showToast('Worker deactivated. History preserved.', 'warn');
 }
 
+function openWorkerEditModal(wid, name, trade, rate) {
+  if (!wid) return;
+  _editingWid = wid;
+  if ($('workerEditName')) $('workerEditName').value = name || '';
+  if ($('workerEditRate')) $('workerEditRate').value = rate || '';
+  const sel = $('workerEditTrade');
+  if (sel) {
+    sel.innerHTML = '<option value="">\u2014 Select Trade \u2014</option>';
+    if (_tradesSnap) {
+      _tradesSnap.forEach(c => {
+        if (c.val().status === 'archived') return;
+        const opt = document.createElement('option');
+        opt.value = c.val().name;
+        opt.textContent = c.val().name;
+        sel.appendChild(opt);
+      });
+    }
+    sel.value = trade || '';
+  }
+  const modal = $('workerEditModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeWorkerEditModal() {
+  const modal = $('workerEditModal');
+  if (modal) modal.classList.add('hidden');
+  _editingWid = null;
+}
+
+async function saveWorkerEdit() {
+  if (!_lpid || !_editingWid) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  const name = $('workerEditName')?.value.trim();
+  const trade = $('workerEditTrade')?.value;
+  const rate = parseFloat($('workerEditRate')?.value);
+  if (!name) { setFieldError($('workerEditName'), 'Enter worker name.'); return; }
+  if (!trade) { setFieldError($('workerEditTrade'), 'Select a trade.'); return; }
+  if (!(rate > 0)) { setFieldError($('workerEditRate'), 'Enter a daily rate greater than zero.'); return; }
+  if (name.length > 50) { setFieldError($('workerEditName'), 'Name too long (max 50).'); return; }
+  if (rate > 50000) showToast(`Daily rate ${peso(rate)} seems very high. Proceeding automatically.`, 'warn', 4000);
+
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/workers/${_editingWid}`).update({
+    name, trade, dailyRate: rate,
+    updatedAt: Date.now(),
+    updatedBy: window._currentUser?.uid || null,
+    updatedByName: currentLaborUserLabel()
+  }), 'Failed to update worker');
+  auditLog('update', 'worker', _editingWid, { projectId: _lpid, workerName: name, rate });
+  closeWorkerEditModal();
+  showToast('Worker updated. Released payroll archives keep their original snapshot rates and amounts.');
+}
+
+async function reactivateWorker(wid) {
+  if (!_lpid || !wid) return;
+  if (!canTouchLaborProject()) {
+    showToast('You do not have edit access to this project.', 'error');
+    return;
+  }
+  const snap = await firebase.database().ref(`projects/${_lpid}/workers/${wid}`).once('value');
+  const worker = snap.val();
+  if (!worker) return;
+  if (workerIsActive(worker)) { showToast('Worker is already active.', 'warn'); return; }
+  if (!confirm(`Reactivate ${worker.name || 'this worker'}? Attendance, payroll, and cash advance history are preserved.`)) return;
+  const now = Date.now();
+  const statusKey = firebase.database().ref().push().key;
+  await safeDb(() => firebase.database().ref(`projects/${_lpid}/workers/${wid}`).update({
+    active: true,
+    status: 'active',
+    reactivatedAt: now,
+    reactivatedBy: window._currentUser?.uid || null,
+    reactivatedByName: currentLaborUserLabel(),
+    [`statusHistory/${statusKey}`]: {
+      fromStatus: worker.status || 'inactive',
+      toStatus: 'active',
+      notes: 'Worker reactivated.',
+      at: now,
+      by: window._currentUser?.uid || null,
+      byName: currentLaborUserLabel()
+    }
+  }), 'Failed to reactivate worker');
+  auditLog('update', 'worker', wid, { projectId: _lpid, workerName: worker.name || '', action: 'reactivate' });
+  showToast('Worker reactivated.');
+}
+
 // ══════════════════════════════════════════════════════
 //  CASH ADVANCES
 // ══════════════════════════════════════════════════════
@@ -520,19 +642,13 @@ function canApproveCashAdvance() {
   return role === 'boss';
 }
 
-function normalizeAdvanceStatus(a = {}) {
-  if (a.status) return a.status;
-  if (a.deducted) return 'closed';
-  return 'released';
-}
-
-function cashAdvanceOutstanding(a = {}) {
-  return Math.max(0, (parseFloat(a.amount) || 0) - (parseFloat(a.deductedAmount) || 0));
-}
-
-function cashAdvancePayrollEligible(a = {}) {
-  const status = normalizeAdvanceStatus(a);
-  return ['released', 'deducted'].includes(status) && cashAdvanceOutstanding(a) > 0;
+// Finalizing payroll (persisting a payrollLog and applying cash-advance
+// deductions) is reserved for management roles — PM and above. APM can
+// prepare a draft but must not bypass PM authority. Mirrors the RTDB rule on
+// payrollLogs/attendanceHistory and the advance status transition rule.
+function canFinalizePayroll() {
+  const role = String(window._currentUser?.role || '').toLowerCase();
+  return ['boss', 'owner', 'admin', 'pm'].includes(role);
 }
 
 function cashAdvanceActiveOutstanding(a = {}) {
@@ -989,10 +1105,10 @@ function buildGrid(pid, wSnap, attSnap) {
         ).join('');
 
         return `<td class="g-cell">
-          <select class="attendance-sel status-${status}" data-wid="${w.id}" data-date="${d.iso}" onchange="handleAttendanceChange(this)">
+          <select class="attendance-sel status-${status}" data-wid="${w.id}" data-date="${d.iso}" onchange="handleAttendanceChange(this)" aria-label="Attendance for ${escapeHtml(w.name)} on ${d.iso}">
             ${statusOptions}
           </select>
-          <input type="number" class="ot-input" placeholder="OT" value="${att.overtimeHours || ''}"
+          <input type="number" class="ot-input" placeholder="OT" value="${att.overtimeHours || ''}" aria-label="Overtime hours for ${escapeHtml(w.name)}"
             onchange="updateAttendanceOT('${w.id}','${d.iso}',this.value)" title="Overtime hours">
         </td>`;
       }).join('');
@@ -1045,14 +1161,7 @@ function handleAttendanceChange(selectEl) {
 }
 
 // ── Calculate Gross Pay with OT & Night Diff ───────────────
-function calculateGrossPay(rate, att) {
-  const status = att.status || 'absent';
-  const config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.absent;
-  const regularPay = rate * config.multiplier;
-  const otPay = (rate / 8 * 1.25) * (att.overtimeHours || 0);
-  const nightDiffPay = (rate / 8 * 0.1) * (att.nightDiffHours || 0);
-  return { regularPay, otPay, nightDiffPay, total: regularPay + otPay + nightDiffPay };
-}
+// Delegates to PayrollMath.calculateGrossPay (see wrapper at the top of this file).
 
 async function markAttendance(wid, iso, status, overtimeHours = 0, nightDiffHours = 0, notes = '') {
   if (!_lpid) return;
@@ -1194,9 +1303,11 @@ function renderPeriodIndicator() {
   if (!ws || !we) { el.innerHTML = ''; return; }
   const fmt = iso => new Date(iso + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
   const dayCount = Math.round((new Date(we + 'T12:00:00') - new Date(ws + 'T12:00:00')) / 86400000) + 1;
+  const compiled = _compiledWeekKeys.has(getWeekKey());
   el.innerHTML = `<div class="period-indicator">
     <span class="period-indicator-badge">${fmt(ws)} \u2014 ${fmt(we)}</span>
     <span class="period-indicator-range">${dayCount} day${dayCount === 1 ? '' : 's'} selected</span>
+    ${compiled ? '<span class="period-indicator-badge compiled-badge">✔ Compiled — released payroll archived; live edits will not change it</span>' : ''}
   </div>`;
 }
 
@@ -1255,6 +1366,8 @@ async function compilePayroll() {
   let grandRegular = 0, grandOT = 0, grandNight = 0, grandGross = 0;
   const attendanceToArchive = [];
   const workerPayroll = {};
+  const missingRateWarned = {};
+  const missingRateWarnings = [];
 
   attSnap.forEach(workerAtt => {
     const wid = workerAtt.key;
@@ -1268,6 +1381,10 @@ async function compilePayroll() {
       if (!weekSet.has(att.date)) return;
 
       const pay = calculateGrossPay(w.dailyRate, att);
+      if (pay.total > 0 && !(parseFloat(w.dailyRate) > 0) && !missingRateWarned[wid]) {
+        missingRateWarned[wid] = true;
+        missingRateWarnings.push(`${w.name}: has paid attendance this week but no valid daily rate — gross computed as ${peso(0)}. Set a rate to include pay.`);
+      }
       workerRegular += pay.regularPay;
       workerOT += pay.otPay;
       workerNight += pay.nightDiffPay;
@@ -1323,45 +1440,36 @@ async function compilePayroll() {
 
   if (!grandGross) { showToast('No attendance marked for this week.', 'warn'); return; }
 
-  // Process advances with SMART amortization
-  const pendingAdvances = {};
-  let totalPending = 0;
+  // ── Cash advance deduction (VERIFIED RULE) ─────────────────────────
+  // Deduct the exact eligible balance, capped at the worker's gross pay so
+  // NET never goes negative; any remainder carries to the next payroll run.
+  // Proven by tests/pmos/payroll-math.test.ts (scenarios A-D).
+  const advByWorker = {};
   advSnap?.forEach(workerAdv => {
-    const wid = workerAdv.key;
-    const wname = workers[wid]?.name || wid;
-    const workerGross = workerPayroll[wid]?.gross || 0;
+    advByWorker[workerAdv.key] = workerAdv.val();
+  });
+  const { pendingAdvances, totalPending } = PayrollMath.computeAdvanceDeductions(
+    advByWorker,
+    workerPayroll,
+    { weekEnd: /^\d{4}-\d{2}-\d{2}$/.test(end || '') ? end : null }
+  );
 
-    workerAdv.forEach(advEntry => {
-      const a = advEntry.val();
-      if (a.deducted) return;
-      if (!cashAdvancePayrollEligible(a)) return;
-      if (a.date && end !== '\u2014' && a.date > end) return;
-
-      const advanceTrade = normalizeTradeName(a.trade || workers[wid]?.trade);
-      const remaining = a.amount - (a.deductedAmount || 0);
-      const maxDeduct = Math.min(workerGross * 0.2, remaining);
-      const deductThisPayroll = maxDeduct > 0 ? maxDeduct : 0;
-      if (deductThisPayroll <= 0) return;
-
-      if (!pendingAdvances[wid]) pendingAdvances[wid] = {
-        name: wname,
-        trade: workers[wid]?.trade || '',
-        foremanName: getTradeMeta(workers[wid]?.trade).foremanName,
-        advances: [],
-        totalDeduct: 0
-      };
-      pendingAdvances[wid].advances.push({
-        key: advEntry.key,
-        ...a,
-        trade: advanceTrade,
-        deductThisPayroll,
-        remainingAfter: remaining - deductThisPayroll
-      });
-      pendingAdvances[wid].totalDeduct += deductThisPayroll;
-      totalPending += deductThisPayroll;
-      const deductionTrade = byTrade[advanceTrade] ? advanceTrade : normalizeTradeName(workers[wid]?.trade);
+  // Assign deductions to the trade group of the advance (fallback: worker trade)
+  Object.entries(pendingAdvances).forEach(([wid, wAdv]) => {
+    wAdv.advances.forEach(adv => {
+      const deductionTrade = byTrade[adv.trade] ? adv.trade : normalizeTradeName(workers[wid]?.trade);
       if (byTrade[deductionTrade]) {
-        byTrade[deductionTrade].cashAdvanceDeductions += deductThisPayroll;
+        byTrade[deductionTrade].cashAdvanceDeductions += adv.deductThisPayroll;
+      }
+    });
+  });
+
+  // Warnings: balances that could not be fully deducted this week carry over.
+  const carryWarnings = [];
+  Object.entries(pendingAdvances).forEach(([wid, wAdv]) => {
+    wAdv.advances.forEach(adv => {
+      if (adv.remainingAfter > 0) {
+        carryWarnings.push(`${wAdv.name}: ${peso(adv.deductThisPayroll)} deducted now; ${peso(adv.remainingAfter)} carries to next week.`);
       }
     });
   });
@@ -1395,6 +1503,7 @@ async function compilePayroll() {
     prevSpent: parseFloat(projSnap.val()?.laborSpent) || 0,
     attendanceToArchive,
     workerPayroll,
+    warnings: [...missingRateWarnings, ...carryWarnings],
     govEnabled,
     sssEmployerTotal,
     philhealthEmployerTotal,
@@ -1467,6 +1576,42 @@ function showPayrollModal() {
         }).join('');
   }
 
+  // Per-worker Payroll Review table — Gross / Cash Advance / NET clarity
+  const reviewWrap = $('payrollReviewWrap');
+  if (reviewWrap) {
+    const rows = Object.entries(d.workerPayroll).map(([wid, wp]) => {
+      const caDeduct = d.pendingAdvances && d.pendingAdvances[wid] ? d.pendingAdvances[wid].totalDeduct : 0;
+      const net = PayrollMath.computeWorkerNet(wp.gross, caDeduct);
+      return `<tr>
+        <td class="s-cell">${escapeHtml(wp.name)}</td>
+        <td class="s-cell s-trade">${escapeHtml(wp.trade)}</td>
+        <td class="s-cell s-right">${peso(wp.rate)}</td>
+        <td class="s-cell s-center">${wp.days}</td>
+        <td class="s-cell s-right">${peso(wp.gross)}</td>
+        <td class="s-cell s-right">${caDeduct > 0 ? `<span class="text-red">-${peso(caDeduct)}</span>` : peso(0)}</td>
+        <td class="s-cell s-right s-bold">${peso(net)}</td>
+      </tr>`;
+    }).join('');
+    reviewWrap.innerHTML = rows
+      ? `<div class="payroll-review-head">Payroll Review — per worker (rate is the snapshot used for this run)</div>
+         <div class="payroll-review-scroll"><table class="payroll-review-table">
+           <thead><tr>
+             <th>Worker</th><th>Trade</th><th class="s-right">Rate</th><th class="s-center">Days</th>
+             <th class="s-right">Gross Pay</th><th class="s-right">Cash Adv. Deduct</th><th class="s-right">Net (after CA)</th>
+           </tr></thead>
+           <tbody>${rows}</tbody>
+         </table></div>`
+      : '<p class="empty-hint">No workers with attendance this period.</p>';
+  }
+
+  // Warnings (missing rates, carried-forward balances, negative calcs)
+  const warnBox = $('payrollWarnings');
+  if (warnBox) {
+    const warnings = d.warnings || [];
+    warnBox.classList.toggle('hidden', !warnings.length);
+    warnBox.innerHTML = warnings.map(w => `<div class="warning-item">${escapeHtml(w)}</div>`).join('');
+  }
+
   $('manualDeductInput').value = '';
   updatePayrollNet();
   $('payrollModal').classList.remove('hidden');
@@ -1481,25 +1626,48 @@ function updatePayrollNet() {
     netEl.textContent = peso(net);
     netEl.style.color = net < 0 ? 'var(--red)' : 'var(--green)';
   }
+  const otherEl = $('payrollOtherDed');
+  if (otherEl) { otherEl.textContent = peso(deduct); otherEl.style.color = deduct > 0 ? 'var(--red)' : 'inherit'; }
+  const hintEl = $('netWarnHint');
+  if (hintEl) hintEl.classList.toggle('hidden', net >= 0);
 }
 
 function closePayrollModal() { $('payrollModal').classList.add('hidden'); }
 
 async function confirmSavePayroll() {
   const d = _pendingPayrollData; if (!d) return;
+  // Idempotency: never persist the same compiled draft twice (double-click or a
+  // duplicate invocation would create a second payroll log and re-apply cash
+  // advances). The stable period key + immutable log rules provide the backstop.
+  if (d.saved || _savingPayroll) {
+    showToast('Payroll for this period is already being saved.', 'warn');
+    return;
+  }
   if (!canTouchLaborProject()) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
+  if (!canFinalizePayroll()) {
+    showToast('Only Admin/Boss/Project Manager can finalize payroll. APM can prepare but cannot release payroll.', 'error');
+    return;
+  }
   const manualDeduct = parseFloat($('manualDeductInput')?.value) || 0;
+  if (manualDeduct < 0) { showToast('Additional deductions cannot be negative.', 'error'); return; }
   const net = d.grandGross - d.totalPending - manualDeduct;
 
   if (net < 0) { showToast('Net payroll cannot be negative.', 'error'); return; }
 
   const logKey = firebase.database().ref().push().key;
   const updates = {};
+  // Stable period key: a weekKey may only ever produce ONE finalized payroll
+  // log. Re-saving the same week would create a second log and consume the
+  // remaining cash-advance balances a second time, so it is hard-blocked here
+  // and enforced server-side by the immutable payrollLogs rule.
   const existingWeek = await firebase.database().ref(`projects/${_lpid}/payrollLogs`).orderByChild('weekKey').equalTo(d.weekKey).once('value');
-  if (existingWeek.exists() && !confirm('This week already has a payroll log. Save another compiled record for the same week?')) return;
+  if (existingWeek.exists()) {
+    showToast('This week already has a saved payroll log. Archived payroll is final — start the next period instead.', 'error');
+    return;
+  }
 
   // Archive attendance
   updates[`projects/${_lpid}/attendanceHistory/${logKey}`] = {
@@ -1549,12 +1717,26 @@ async function confirmSavePayroll() {
   }
 
   updates[`projects/${_lpid}/payrollLogs/${logKey}`] = logData;
-  updates[`projects/${_lpid}/laborSpent`] = d.prevSpent + net;
+  // laborSpent is now updated atomically via safeCounterIncrement below
 
   // Update advances with amortization
   if (d.totalPending > 0) {
+    // Fresh read for the idempotency guard: never deduct an advance a second
+    // time for the same weekKey, even if another tab/session already recorded
+    // the deduction for this exact period.
+    let freshAdvSnap = null;
+    try {
+      freshAdvSnap = await firebase.database().ref(`projects/${_lpid}/advances`).once('value');
+    } catch (e) {
+      console.warn('Failed to re-read advances for idempotency guard; continuing with compiled state.', e);
+    }
     for (const [wid, wAdv] of Object.entries(d.pendingAdvances)) {
       for (const adv of wAdv.advances) {
+        const freshAdvance = freshAdvSnap?.child(`${wid}/${adv.key}`).val() || {};
+        if (PayrollMath.advanceHasDeductionForWeek(freshAdvance, d.weekKey)) {
+          console.warn(`Skipping already-applied deduction for advance ${adv.key} in ${d.weekKey}.`);
+          continue;
+        }
         const newDeducted = (adv.deductedAmount || 0) + adv.deductThisPayroll;
         const isFullyPaid = newDeducted >= adv.amount;
         const nextStatus = isFullyPaid ? 'closed' : 'deducted';
@@ -1569,6 +1751,7 @@ async function confirmSavePayroll() {
           status: nextStatus,
           notes: `Payroll deduction ${peso(adv.deductThisPayroll)} applied for ${d.weekKey}.`,
           payrollLogId: logKey,
+          weekKey: d.weekKey,
           at: Date.now(),
           by: window._currentUser?.uid || null,
           byName: currentLaborUserLabel()
@@ -1607,12 +1790,30 @@ async function confirmSavePayroll() {
     }
   }
 
+  _savingPayroll = true;
   try {
     await safeDb(() => firebase.database().ref().update(updates), 'Failed to save payroll');
   } catch (e) {
     showToast('Failed to save payroll. No data was lost.', 'error');
     console.error(e);
     return;
+  } finally {
+    _savingPayroll = false;
+  }
+  // Mark this compiled draft as persisted so a second save of the same draft
+  // (e.g. a double click on the Save button) is a no-op.
+  d.saved = true;
+
+  // Atomically increment laborSpent counter (race-condition-safe via transaction)
+  if (typeof safeCounterIncrement === 'function' && net !== 0) {
+    try {
+      await safeCounterIncrement(
+        firebase.database().ref(`projects/${_lpid}/laborSpent`),
+        net
+      );
+    } catch (e) {
+      console.warn('laborSpent transaction failed (non-critical, will reconcile on next compile)', e);
+    }
   }
 
   auditLog('payroll', 'payroll', logKey, {
@@ -1850,7 +2051,7 @@ function renderTimecardRows(entries, workers) {
     const w = workers[tc.workerId] || {};
     const name = w.name || tc.workerName || tc.workerId || '\u2014';
     const trade = w.trade || tc.trade || '\u2014';
-    const rate = w.dailyRate || tc.dailyRate || 0;
+    const rate = PayrollMath.resolveRate(tc.dailyRate, w.dailyRate);
     const pay = (rate && tc.status) ? calculateGrossPay(rate, tc) : { total: 0 };
     const fmtDate = tc.date ? new Date(tc.date + 'T12:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '\u2014';
     const statusLabel = ATTENDANCE_STATUS[tc.status]?.label || escapeHtml(tc.status || '\u2014');
@@ -1881,39 +2082,96 @@ function toggleTCHistory(key) {
 // ══════════════════════════════════════════════════════
 async function generateRFP() {
   if (!_lpid) return;
-  const start = $('weekStart')?.value || '\u2014';
-  const end = $('weekEnd')?.value || '\u2014';
+  const start = $('weekStart')?.value || '';
+  const end = $('weekEnd')?.value || '';
+  if (!start || !end) { showToast('Select a week range first.', 'warn'); return; }
+  const weekKey = getWeekKey(start, end);
 
+  // Preferred source: the verified NET payroll archived for this exact week.
+  // Archived payroll logs are immutable snapshots (rates + net amounts), so a
+  // later worker-rate edit can never change a released RFP (scenario D).
+  const logSnap = await firebase.database().ref(`projects/${_lpid}/payrollLogs`)
+    .orderByChild('weekKey').equalTo(weekKey).once('value');
+  const logs = [];
+  logSnap.forEach(c => logs.push({ id: c.key, ...c.val() }));
+  if (logs.length) {
+    logs.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+    buildArchivedRFP(logs[0], start, end, weekKey);
+    return;
+  }
+
+  // Fallback: no compiled payroll for this week — live GROSS estimate only.
+  await buildLiveRFP(start, end);
+}
+
+function buildArchivedRFP(log, start, end, weekKey) {
+  const projectName = _projectName || _lpid;
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  // Groups + grand are derived from the immutable payroll log by the tested
+  // module (PayrollMath.buildRFPGroupsFromLog) — snapshot rates + net amounts,
+  // with a legacy fallback when per-worker deduction detail is missing.
+  const { groups, grand } = PayrollMath.buildRFPGroupsFromLog(log);
+
+  const lines = [];
+  lines.push(
+    'REQUEST FOR PAYMENT (RFP) - VERIFIED NET PAYROLL',
+    `Project        : ${projectName}`,
+    `Period         : ${start} to ${end}`,
+    `Date Prepared  : ${today}`,
+    `Source         : Archived payroll log${log.savedDate ? ' saved ' + log.savedDate : ''} (snapshot rates — later edits do not change this RFP)`
+  );
+
+  groups.forEach((group, index) => {
+    if (index) lines.push('', '='.repeat(54), '');
+    lines.push(
+      `Scope / Trade  : ${group.trade}`,
+      `Foreman        : ${group.foremanName || '___________________________'}`,
+      `Payment Method : ${group.paymentMethod || 'Bank'}`,
+      group.notes ? `Notes          : ${group.notes}` : '',
+      '\u2500'.repeat(54)
+    );
+    group.workers.forEach(w => {
+      const deduction = w.caDeduct > 0 ? ` - ${peso(w.caDeduct)} CA` : '';
+      lines.push(`  ${w.name.padEnd(24)} ${String(w.days).padStart(4)} day/s x ${peso(w.rate).padStart(9)} = ${peso(w.sub).padStart(10)}${deduction.padEnd(14)} = ${peso(w.net).padStart(10)} NET`);
+    });
+    lines.push(
+      `  ${'Gross'.padEnd(46)} ${peso(group.total).padStart(11)}`,
+      `  ${'Cash Advance Deductions'.padEnd(46)} -${peso(group.caDeduct).padStart(11)}`,
+      `  ${'NET'.padEnd(46)} ${peso(group.net).padStart(11)}`,
+      '',
+      'Approved by: ___________________________'
+    );
+  });
+  lines.push('', '\u2500'.repeat(54), `ALL SCOPES NET TOTAL (VERIFIED): ${peso(grand)}`);
+
+  window._rfpData = { lines, start, end, grand, groups, projectName, source: 'archive', logId: log.id || '', savedDate: log.savedDate || '' };
+  $('rfpOutput').value = lines.join('\n');
+  $('rfpModal').classList.remove('hidden');
+}
+
+async function buildLiveRFP(start, end) {
   const [wSnap, attSnap] = await Promise.all([
     firebase.database().ref(`projects/${_lpid}/workers`).once('value'),
     firebase.database().ref(`projects/${_lpid}/attendance`).once('value')
   ]);
-
   const days = getWeekDays();
   const weekSet = new Set(days.map(d => d.iso));
-
   const workers = {};
-  wSnap.forEach(c => {
-    workers[c.key] = c.val();
-  });
+  wSnap.forEach(c => { workers[c.key] = c.val(); });
 
   const byTrade = {};
-  let grand = 0, filteredDays = 0;
-
+  let grand = 0;
   attSnap.forEach(workerAtt => {
     const wid = workerAtt.key;
     const w = workers[wid];
     if (!w) return;
-
     workerAtt.forEach(daySnap => {
       const tc = daySnap.val();
-      // ── Period filter: only count days inside the selected week ──
       if (!weekSet.has(tc.date)) return;
       if (tc.status === 'absent' || tc.status === 'rest') return;
-
       const tradeKey = w.trade || 'Unassigned';
       if (!byTrade[tradeKey]) byTrade[tradeKey] = [];
-
       let entry = byTrade[tradeKey].find(x => x.name === w.name);
       if (!entry) {
         entry = { name: w.name, rate: w.dailyRate, days: 0, sub: 0, ot: 0 };
@@ -1922,9 +2180,7 @@ async function generateRFP() {
       const pay = calculateGrossPay(w.dailyRate, tc);
       entry.days += (tc.status === 'half' ? 0.5 : 1);
       entry.sub += pay.total;
-      entry.ot += pay.otPay;
       grand += pay.total;
-      filteredDays++;
     });
   });
 
@@ -1937,21 +2193,25 @@ async function generateRFP() {
   const projectName = _projectName || _lpid;
   const groups = Object.entries(byTrade).sort().map(([trade, ws]) => {
     const meta = getTradeMeta(trade);
-    const workers = ws.sort((a, b) => a.name.localeCompare(b.name));
-    const total = workers.reduce((s, w) => s + w.sub, 0);
-    return { trade, workers, total, ...meta };
+    const workersList = ws.sort((a, b) => a.name.localeCompare(b.name));
+    const total = workersList.reduce((s, w) => s + w.sub, 0);
+    return { trade, workers: workersList, total, caDeduct: 0, net: total, ...meta };
   });
 
   const lines = [];
+  lines.push(
+    'REQUEST FOR PAYMENT (RFP) - PROVISIONAL (GROSS)',
+    `Project        : ${projectName}`,
+    `Period         : ${start} to ${end}`,
+    `Date Prepared  : ${today}`,
+    '⚠️ No compiled payroll found for this period. Amounts below are GROSS.',
+    '   Compile Payroll first to generate a verified NET RFP.'
+  );
   groups.forEach((group, index) => {
     if (index) lines.push('', '='.repeat(54), '');
     lines.push(
-      `REQUEST FOR PAYMENT (RFP) - ${group.trade.toUpperCase()}`,
-      `Project        : ${projectName}`,
       `Scope / Trade  : ${group.trade}`,
       `Foreman        : ${group.foremanName || '___________________________'}`,
-      `Period         : ${start} to ${end}`,
-      `Date Prepared  : ${today}`,
       `Payment Method : ${group.paymentMethod || 'Bank'}`,
       group.notes ? `Notes          : ${group.notes}` : '',
       '\u2500'.repeat(54)
@@ -1965,9 +2225,9 @@ async function generateRFP() {
       'Approved by: ___________________________'
     );
   });
-  lines.push('', '\u2500'.repeat(54), `ALL SCOPES TOTAL: ${peso(grand)}`);
+  lines.push('', '\u2500'.repeat(54), `ALL SCOPES GROSS TOTAL (PROVISIONAL): ${peso(grand)}`);
 
-  window._rfpData = { lines, start, end, grand, byTrade, groups, projectName };
+  window._rfpData = { lines, start, end, grand, groups, projectName, source: 'live' };
   $('rfpOutput').value = lines.join('\n');
   $('rfpModal').classList.remove('hidden');
 }
@@ -1995,48 +2255,67 @@ function downloadRFP() {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const lm = 20, rm = 190;
   let y = 20;
-
+  const data = window._rfpData;
+  const verified = data.source === 'archive';
   const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
-  const projectName = _rfpData.projectName || _lpid;
-  (_rfpData.groups || []).forEach((group, index) => {
+  const projectName = data.projectName || _lpid;
+
+  doc.setFontSize(14).setFont('helvetica', 'bold');
+  doc.text(`REQUEST FOR PAYMENT - ${verified ? 'VERIFIED NET PAYROLL' : 'PROVISIONAL (GROSS)'}`, lm, y); y += 7;
+  doc.setFontSize(9).setFont('helvetica', 'normal');
+  doc.text(`Project        : ${projectName}`, lm, y); y += 5;
+  doc.text(`Period         : ${data.start} to ${data.end}`, lm, y); y += 5;
+  doc.text(`Date Prepared  : ${today}`, lm, y); y += 5;
+  if (verified) {
+    doc.text(`Source         : Archived payroll log (${data.savedDate || 'saved earlier'}) — snapshot rates`, lm, y); y += 5;
+  } else {
+    doc.setFont('helvetica', 'bold').setTextColor(200, 60, 40);
+    doc.text('PROVISIONAL - no compiled payroll for this period; amounts are GROSS.', lm, y); y += 5;
+    doc.setTextColor(0).setFont('helvetica', 'normal');
+  }
+  doc.setDrawColor(60, 80, 120).setLineWidth(0.4);
+  doc.line(lm, y, rm, y); y += 6;
+
+  (data.groups || []).forEach((group, index) => {
     if (index) {
       doc.addPage();
       y = 20;
+      doc.setFontSize(12).setFont('helvetica', 'bold');
+      doc.text(`REQUEST FOR PAYMENT - ${group.trade.toUpperCase()}`, lm, y); y += 7;
     }
-    doc.setFontSize(14).setFont('helvetica', 'bold');
-    doc.text(`REQUEST FOR PAYMENT - ${group.trade.toUpperCase()}`, lm, y); y += 7;
-    doc.setFontSize(9).setFont('helvetica', 'normal');
-    doc.text(`Project        : ${projectName}`, lm, y); y += 5;
-    doc.text(`Scope / Trade  : ${group.trade}`, lm, y); y += 5;
-    doc.text(`Foreman        : ${group.foremanName || '___________________________'}`, lm, y); y += 5;
-    doc.text(`Period         : ${_rfpData.start} to ${_rfpData.end}`, lm, y); y += 5;
-    doc.text(`Date Prepared  : ${today}`, lm, y); y += 5;
-    doc.text(`Payment Method : ${group.paymentMethod || 'Bank'}`, lm, y); y += 5;
-    if (group.notes) { doc.text(`Notes          : ${group.notes}`, lm, y); y += 5; }
-    doc.setDrawColor(60, 80, 120).setLineWidth(0.4);
-    doc.line(lm, y, rm, y); y += 6;
-
     doc.setFontSize(9).setFont('helvetica', 'bold').setTextColor(40, 80, 180);
     doc.text(group.trade.toUpperCase(), lm, y); y += 5; doc.setTextColor(0);
     group.workers.forEach(w => {
       doc.setFont('helvetica', 'normal').setFontSize(8);
       doc.text(w.name, lm + 3, y);
-      doc.text(`${w.days} day/s \u00D7 ${peso(w.rate)}`, lm + 70, y);
-      doc.text(peso(w.sub), rm, y, { align: 'right' }); y += 5;
+      doc.text(`${w.days} day/s × ${peso(w.rate)}`, lm + 70, y);
+      if (verified) {
+        doc.text(w.caDeduct > 0 ? `-${peso(w.caDeduct)}` : '', lm + 118, y);
+        doc.text(peso(w.net), rm, y, { align: 'right' });
+      } else {
+        doc.text(peso(w.sub), rm, y, { align: 'right' });
+      }
+      y += 5;
     });
     doc.setFont('helvetica', 'bold').setFontSize(8);
-    doc.text('Scope Subtotal', lm + 3, y);
-    doc.text(peso(group.total), rm, y, { align: 'right' }); y += 9;
-    doc.setFontSize(8).setFont('helvetica', 'normal');
+    if (verified) {
+      doc.text('Gross', lm + 3, y);
+      doc.text(peso(group.total), rm, y, { align: 'right' }); y += 5;
+      doc.text('Cash Advance Deductions', lm + 3, y);
+      doc.text(`-${peso(group.caDeduct)}`, rm, y, { align: 'right' }); y += 5;
+      doc.text('NET', lm + 3, y);
+      doc.text(peso(group.net), rm, y, { align: 'right' }); y += 9;
+    } else {
+      doc.text('Scope Subtotal', lm + 3, y);
+      doc.text(peso(group.total), rm, y, { align: 'right' }); y += 9;
+    }
+    doc.setFont('helvetica', 'normal').setFontSize(8);
     doc.text('Approved by: ___________________________', lm, y);
   });
   const safeName = (projectName || _lpid).replace(/[^\w\-]+/g, '_');
-  doc.save(`RFP_${safeName}_${_rfpData.start}.pdf`);
+  doc.save(`RFP_${safeName}_${data.start}.pdf`);
 }
 
-// ══════════════════════════════════════════════════════
-//  PAYROLL LOGS ARCHIVE + EXPORT
-// ══════════════════════════════════════════════════════
 function watchPayrollLogs(pid) {
   const ref = firebase.database().ref(`projects/${pid}/payrollLogs`);
   laborListen(ref, snap => {
@@ -2048,6 +2327,7 @@ function watchPayrollLogs(pid) {
     if (!snap.exists()) {
       el.innerHTML = `<p class="empty-hint">No payroll logs yet. Compile a week to create the first record.</p>`;
       renderTradeTotals({}, 0);
+      renderPeriodIndicator();
       return;
     }
 
@@ -2130,6 +2410,7 @@ function watchPayrollLogs(pid) {
 
     el.innerHTML = html;
     renderTradeTotals(tradeTotals, grandTotal);
+    renderPeriodIndicator();
   });
 }
 
@@ -2188,6 +2469,10 @@ window.renameTrade = renameTrade;
 window.deleteTrade = deleteTrade;
 window.addWorker = addWorker;
 window.removeWorker = removeWorker;
+window.openWorkerEditModal = openWorkerEditModal;
+window.closeWorkerEditModal = closeWorkerEditModal;
+window.saveWorkerEdit = saveWorkerEdit;
+window.reactivateWorker = reactivateWorker;
 window.openAdvanceModal = openAdvanceModal;
 window.closeAdvanceModal = closeAdvanceModal;
 window.saveAdvance = saveAdvance;

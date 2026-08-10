@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="ACPM">
 <link rel="manifest" href="./manifest.json">
 <script>window.ACPM_PAGE = 'workspace';</script>
+<script src="environment.js?v=1"></script>
 <title>ACPM - LeBuild Construction</title>
 
 <!-- Firebase v8 compat SDK (must load first) -->
@@ -17,25 +18,41 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
+<!-- LOCAL DEV SHELL HOOK (fail-closed, never active on remote hosts) -->
+<script>
+  (function () {
+    try {
+      var h = (window.location.hostname || '').toLowerCase();
+      var isLocal = h === 'localhost' || h === '127.0.0.1' || h === '' || h === '::1';
+      var optIn = new URLSearchParams(window.location.search).get('dev') === '1' ||
+        sessionStorage.getItem('acpm_dev_shell') === '1';
+      if (isLocal && optIn) {
+        document.write('<script src="dev/dev-bypass.js?v=1"><\/script>');
+      }
+    } catch (e) {}
+  })();
+</script>
+
 <!-- Utilities (DOM helpers, formatting, safeDb, etc.) -->
-<script src="utils.js?v=85"></script>
+<script src="utils.js?v=87"></script>
 
 <!-- Auth (must load before main.js - main.js calls canAccessProject/canEditProject) -->
-<script src="auth.js?v=96"></script>
+<script src="auth.js?v=98"></script>
 
 <!-- Core modules -->
-<script src="main.js?v=103"></script>
-<script src="labor.js?v=94"></script>
-<script src="materials.js?v=94"></script>
+<script src="main.js?v=106"></script>
+<script src="payroll-math.js?v=2"></script>
+<script src="labor.js?v=97"></script>
+<script src="materials.js?v=95"></script>
 <script src="sitelog.js?v=94"></script>
 <script src="suppliers.js?v=94"></script>
-<script src="billing.js?v=75"></script>
+<script src="billing.js?v=76"></script>
 <script src="changeorders.js?v=95"></script>
 <script src="equipment.js?v=94"></script>
 <script src="compliance.js?v=88"></script>
 <script src="defects.js?v=94"></script>
-<script src="tasks.js?v=94"></script>
-<script src="notifications.js?v=85"></script>
+<script src="tasks.js?v=95"></script>
+<script src="notifications.js?v=86"></script>
 <script src="report.js?v=97"></script>
 <script src="pmos-office.js?v=4"></script>
 <script src="face-attendance.js?v=1"></script>
@@ -45,7 +62,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<link rel="stylesheet" href="style.css?v=104">
+<link rel="stylesheet" href="style.css?v=108">
 
 <script>
 // -- Theme Toggle --------------------------------------------
@@ -121,7 +138,7 @@ window.addEventListener('appinstalled', () => {
     <button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">&#x1F313;</button>
     <button class="btn-refresh" id="refreshBtn" onclick="refreshHub()" title="Refresh dashboard">&#x1F504;</button>
     <span class="badge badge-green" id="syncBadge">&#x2601;&#xFE0F; Synced</span>
-    <button class="btn-ws-secondary" id="teamAdminBtn" onclick="openTeamAdmin()" data-boss-only style="display:none;">&#x1F465; Team Admin</button>
+    <button class="btn-ws-secondary" id="teamAdminBtn" onclick="openTeamAdmin()" data-project-manager style="display:none;">&#x1F465; Project Assignments</button>
     <button class="btn-refresh" id="signOutBtn" onclick="logout()" title="Sign out">&#x1F6AA; Sign Out</button>
     <button class="btn-hub" onclick="exitHub()">&#x1F4C2; Hub</button>
   </div>
@@ -154,25 +171,25 @@ window.addEventListener('appinstalled', () => {
   </div>
 
   <!-- Create project -->
-  <div class="card hub-create-card" data-boss-only style="display:none;">
+  <div class="card hub-create-card" data-project-manager style="display:none;">
     <div class="card-title">
       <span class="ct-icon" style="background:rgba(124,58,237,.15)">&#x1F3D7;</span>
       New Project Site
     </div>
     <div class="create-grid">
-      <input id="newName" type="text" placeholder="Project name (e.g., Batangas Phase 1)">
-      <input id="newLaborBudget" type="number" placeholder="Labor Budget (&#x20B1;)" inputmode="decimal">
-      <input id="newMaterialBudget" type="number" placeholder="Materials Budget (&#x20B1;)" inputmode="decimal">
+      <input id="newName" type="text" placeholder="Project name (e.g., Batangas Phase 1)" aria-label="New project name">
+      <input id="newLaborBudget" type="number" placeholder="Labor Budget (&#x20B1;)" inputmode="decimal" aria-label="Labor budget">
+      <input id="newMaterialBudget" type="number" placeholder="Materials Budget (&#x20B1;)" inputmode="decimal" aria-label="Materials budget">
     </div>
     <div class="form-actions">
-      <button class="btn-create" onclick="createProject(event)">+ Create Project</button>
+      <button class="btn-create btn-lg" onclick="createProject(event)">+ Create Project</button>
     </div>
   </div>
 
   <!-- Search -->
   <div class="hub-search-wrap">
     <span class="hub-search-icon">&#x1F50D;</span>
-    <input id="projectSearch" type="text" placeholder="Search projects..." oninput="filterProjects(this.value)">
+    <input id="projectSearch" type="text" placeholder="Search projects..." oninput="filterProjects(this.value)" aria-label="Search projects">
   </div>
 
   <!-- Hub tabs -->
@@ -292,7 +309,7 @@ window.addEventListener('appinstalled', () => {
     </div>
     <div id="projectNotesBody" class="hidden" style="margin-top:10px;display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;">
       <div style="flex:1;min-width:200px;">
-        <textarea id="projectNotesInput" rows="2" placeholder="Key contacts, site access info, special instructions..." style="min-height:50px;font-size:12px;"></textarea>
+        <textarea id="projectNotesInput" rows="2" placeholder="Key contacts, site access info, special instructions..." style="min-height:50px;font-size:12px;" aria-label="Project notes"></textarea>
       </div>
       <button class="btn-ws-secondary" onclick="saveProjectNotes()" style="margin-top:2px;">&#x1F4BE; Save Notes</button>
     </div>
@@ -308,7 +325,7 @@ window.addEventListener('appinstalled', () => {
       <button id="extrasToggleBtn" class="tab-btn" onclick="toggleExtraTabs()" data-role-visible="apm,pm,boss,owner,admin">&#x1F527; Extras</button>
       <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F4CB; Change Orders</button>
       <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F3EA; Suppliers</button>
-      <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')" data-role-visible="apm,boss" data-feature-visible="extras">&#x2611; Tasks</button>
+      <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x2611; Tasks</button>
       <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F6A7; Equipment</button>
       <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
       <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')" data-role-visible="apm,boss" data-feature-visible="extras">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
@@ -320,6 +337,26 @@ window.addEventListener('appinstalled', () => {
 
   <!-- === LABOR PANEL =========================================== -->
   <div id="laborPanel" class="panel">
+    <div id="laborSkeleton" class="panel-skeleton">
+      <div class="panel-skeleton-body">
+        <div class="panel-skeleton-kpis">
+          <div class="skeleton skeleton-kpi-card"></div>
+          <div class="skeleton skeleton-kpi-card"></div>
+          <div class="skeleton skeleton-kpi-card"></div>
+        </div>
+        <div class="panel-skeleton-grid">
+          <div class="panel-skeleton-col">
+            <div class="skeleton skeleton-card" style="height:160px"></div>
+            <div class="skeleton skeleton-card" style="height:200px"></div>
+          </div>
+          <div class="panel-skeleton-col">
+            <div class="skeleton skeleton-card" style="height:300px"></div>
+            <div class="skeleton skeleton-card" style="height:120px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-content-wrap">
     <div id="laborBudgetWarn" class="hidden budget-warn-bar"></div>
 
     <!-- Payroll Config -->
@@ -335,7 +372,7 @@ window.addEventListener('appinstalled', () => {
         <div class="payroll-config-grid">
           <div>
             <label class="field-label">Payroll Cycle</label>
-            <select id="payrollCycle" onchange="savePayrollConfig()">
+            <select id="payrollCycle" onchange="savePayrollConfig()" aria-label="Payroll Cycle">
               <option value="weekly">Weekly</option>
               <option value="biweekly">Bi-Weekly</option>
               <option value="semimonthly">Semi-Monthly</option>
@@ -343,31 +380,31 @@ window.addEventListener('appinstalled', () => {
           </div>
           <div>
             <label class="field-label">OT Threshold (hrs)</label>
-            <input id="otThreshold" type="number" value="8" onchange="savePayrollConfig()" placeholder="8">
+            <input id="otThreshold" type="number" value="8" onchange="savePayrollConfig()" placeholder="8" aria-label="OT threshold hours">
           </div>
           <div>
             <label class="field-label">Night Diff Rate</label>
-            <input id="nightDiffRate" type="number" value="1.1" step="0.01" onchange="savePayrollConfig()" placeholder="1.1">
+            <input id="nightDiffRate" type="number" value="1.1" step="0.01" onchange="savePayrollConfig()" placeholder="1.1" aria-label="Night differential rate">
           </div>
         </div>
 
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;">
-            <input type="checkbox" id="govDeductionsEnabled" onchange="savePayrollConfig()" style="width:auto;min-height:auto;">
+            <input type="checkbox" id="govDeductionsEnabled" onchange="savePayrollConfig()" style="width:auto;min-height:auto;" aria-label="Gov Deductions Enabled">
             <span>&#x1F3DB;&#xFE0F; Enable Government Deductions (SSS / PhilHealth / Pag-IBIG)</span>
           </label>
           <div id="govDeductionsConfig" class="hidden" style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
             <div>
               <label class="field-label">SSS Employer Share (%)</label>
-              <input id="sssEmployerPct" type="number" value="8.5" step="0.1" onchange="savePayrollConfig()" placeholder="8.5">
+              <input id="sssEmployerPct" type="number" value="8.5" step="0.1" onchange="savePayrollConfig()" placeholder="8.5" aria-label="SSS employer share percent">
             </div>
             <div>
               <label class="field-label">PhilHealth (%)</label>
-              <input id="philhealthPct" type="number" value="3" step="0.1" onchange="savePayrollConfig()" placeholder="3">
+              <input id="philhealthPct" type="number" value="3" step="0.1" onchange="savePayrollConfig()" placeholder="3" aria-label="PhilHealth percent">
             </div>
             <div>
               <label class="field-label">Pag-IBIG Employer (&#x20B1;)</label>
-              <input id="pagibigEmployerAmt" type="number" value="100" onchange="savePayrollConfig()" placeholder="100">
+              <input id="pagibigEmployerAmt" type="number" value="100" onchange="savePayrollConfig()" placeholder="100" aria-label="Pag-IBIG employer amount">
             </div>
           </div>
         </div>
@@ -399,17 +436,17 @@ window.addEventListener('appinstalled', () => {
         <div class="card">
           <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">&#x1F3F7;&#xFE0F;</span> Trades</div>
           <div class="trade-input-row">
-            <input id="newTradeName" type="text" placeholder="e.g., Carpenter" onkeydown="if(event.key==='Enter')addTrade()">
-            <button class="btn-add-sm" onclick="addTrade()">+ Add</button>
+            <input id="newTradeName" type="text" placeholder="e.g., Carpenter" onkeydown="if(event.key==='Enter')addTrade()" aria-label="New trade name">
+            <button class="btn-add" onclick="addTrade()">+ Add</button>
           </div>
           <div id="tradeList"><p class="empty-hint">No trades yet.</p></div>
         </div>
         <div class="card gap">
           <div class="card-title"><span class="ct-icon" style="background:rgba(16,185,129,.1)">&#x1F477;</span> Staff Roster</div>
           <div class="worker-form">
-            <input id="workerName" type="text" placeholder="Worker name">
-            <input id="workerRate" type="number" placeholder="Daily rate (&#x20B1;)" inputmode="decimal">
-            <select id="workerTradeSelect"><option value=""> -  Select Trade  - </option></select>
+            <input id="workerName" type="text" placeholder="Worker name" aria-label="Worker name">
+            <input id="workerRate" type="number" placeholder="Daily rate (&#x20B1;)" inputmode="decimal" aria-label="Daily rate">
+            <select id="workerTradeSelect" aria-label="Worker Trade Select"><option value=""> -  Select Trade  - </option></select>
           </div>
           <button class="btn-add-worker" onclick="addWorker()">+ Deploy Worker to Roster</button>
           <div id="rosterList"></div>
@@ -433,18 +470,18 @@ window.addEventListener('appinstalled', () => {
           <div class="tc-date-row">
             <div class="tc-date-grp">
               <label>Week Start</label>
-              <input id="weekStart" type="date" onchange="handleWeekRangeChange()">
+              <input id="weekStart" type="date" onchange="handleWeekRangeChange()" aria-label="Week Start">
             </div>
             <div class="tc-date-grp">
               <label>Week End</label>
-              <input id="weekEnd" type="date" onchange="handleWeekRangeChange()">
+              <input id="weekEnd" type="date" onchange="handleWeekRangeChange()" aria-label="Week End">
             </div>
             <button class="btn-apply" onclick="applyWeek()">Apply</button>
             <button class="btn-reset-attendance" onclick="resetCurrentAttendance()">Reset Attendance</button>
           </div>
           <div class="tc-action-row">
             <button class="btn-rfp" onclick="generateRFP()">&#x1F4C4; RFP</button>
-            <button class="btn-compile" onclick="compilePayroll()">&#x2705; Compile Payroll</button>
+            <button class="btn-compile btn-lg" onclick="compilePayroll()">&#x2705; Compile Payroll</button>
             <button class="btn-ws-secondary" onclick="exportPayrollCSV()">&#x1F4CA; Export CSV</button>
           </div>
         </div>
@@ -486,11 +523,26 @@ window.addEventListener('appinstalled', () => {
       </summary>
       <div id="timecardHistoryList" style="margin-top:10px;"><p class="empty-hint">No archived attendance yet. Compile payroll to save records.</p></div>
     </details>
+    </div><!-- end panel-content-wrap -->
   </div>
 
 
   <!-- === MATERIALS PANEL ======================================== -->
   <div id="materialsPanel" class="panel hidden">
+    <div id="matSkeleton" class="panel-skeleton">
+      <div class="panel-skeleton-body">
+        <div class="panel-skeleton-kpis">
+          <div class="skeleton skeleton-kpi-card"></div>
+          <div class="skeleton skeleton-kpi-card"></div>
+          <div class="skeleton skeleton-kpi-card"></div>
+        </div>
+        <div class="skeleton skeleton-card" style="height:280px"></div>
+        <div class="skeleton skeleton-card" style="height:160px"></div>
+        <div class="skeleton skeleton-card" style="height:200px"></div>
+        <div class="skeleton skeleton-card" style="height:120px"></div>
+      </div>
+    </div>
+    <div class="panel-content-wrap">
     <div id="matBudgetWarn" class="hidden budget-warn-bar"></div>
     <div class="kpi-row">
       <div class="kpi-card kpi-purple">
@@ -515,27 +567,27 @@ window.addEventListener('appinstalled', () => {
       <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">&#x1F6D2;</span> New Purchase Order</div>
       <div class="po-meta-grid">
         <div>
-          <select id="poSupplierSelect" onchange="applySupplierSelection()" style="margin-bottom:8px">
+          <select id="poSupplierSelect" onchange="applySupplierSelection()" style="margin-bottom:8px" aria-label="PO Supplier Select">
             <option value=""> -  Quick-select supplier  - </option>
           </select>
           <input type="hidden" id="poSupplierId">
-          <input id="poSupplier" type="text" placeholder="Or type supplier name">
+          <input id="poSupplier" type="text" placeholder="Or type supplier name" aria-label="Supplier name">
         </div>
-        <input id="poDate" type="date">
-        <select id="poUrgency">
+        <input id="poDate" type="date" aria-label="PO Date">
+        <select id="poUrgency" aria-label="PO Urgency">
           <option value="normal">Normal Priority</option>
           <option value="urgent">&#x26A0;&#xFE0F; Urgent</option>
           <option value="critical">&#x1F534; Critical</option>
         </select>
-        <input id="poNotes" type="text" placeholder="Notes / reference (optional)" style="grid-column:1/-1">
+        <input id="poNotes" type="text" placeholder="Notes / reference (optional)" style="grid-column:1/-1" aria-label="PO notes">
       </div>
       <div class="po-item-form">
-        <input id="poItemDesc" type="text" placeholder="Item description">
-        <input id="poItemSize" type="text" placeholder="Size (e.g. 12mm)">
-        <input id="poItemQty" type="number" placeholder="Qty" inputmode="decimal">
-        <input id="poItemUnit" type="text" placeholder="Unit">
-        <input id="poItemCost" type="number" placeholder="Unit cost (&#x20B1;)" inputmode="decimal">
-        <button class="btn-add-sm" onclick="addDraftItem()">+ Add</button>
+        <input id="poItemDesc" type="text" placeholder="Item description" aria-label="Item description">
+        <input id="poItemSize" type="text" placeholder="Size (e.g. 12mm)" aria-label="Item size">
+        <input id="poItemQty" type="number" placeholder="Qty" inputmode="decimal" aria-label="Item quantity">
+        <input id="poItemUnit" type="text" placeholder="Unit" aria-label="Item unit">
+        <input id="poItemCost" type="number" placeholder="Unit cost (&#x20B1;)" inputmode="decimal" aria-label="Unit cost">
+        <button class="btn-add" onclick="addDraftItem()">+ Add</button>
       </div>
       <div id="draftList"><p class="empty-hint">No items yet. Fill the form and click + Add.</p></div>
       <div class="po-draft-footer">
@@ -543,7 +595,7 @@ window.addEventListener('appinstalled', () => {
           <span style="font-size:11px;color:var(--muted2)">PO Total</span>
           <span class="po-total-display" id="draftTotal">&#x20B1;0.00</span>
         </div>
-        <button class="btn-submit-po" onclick="submitPO()">Submit Purchase Order &#x2192;</button>
+        <button class="btn-submit-po btn-lg" onclick="submitPO()">Submit Purchase Order &#x2192;</button>
       </div>
     </div>
 
@@ -557,14 +609,14 @@ window.addEventListener('appinstalled', () => {
     <div class="card gap">
       <div class="card-title"><span class="ct-icon" style="background:rgba(59,130,246,.1)">&#x1F4E4;</span> Material Issuance</div>
       <div class="material-issue-form">
-        <select id="matIssueItem">
+        <select id="matIssueItem" aria-label="Material Issue Item">
           <option value="">Select stock item</option>
         </select>
-        <input id="matIssueQty" type="number" placeholder="Qty to issue" inputmode="decimal">
-        <input id="matIssueTo" type="text" placeholder="Issued to / receiver">
-        <input id="matIssueScope" type="text" placeholder="Scope / trade">
-        <input id="matIssuePurpose" type="text" placeholder="Purpose / location">
-        <button class="btn-add-sm" onclick="submitMaterialIssuance()">Issue Stock</button>
+        <input id="matIssueQty" type="number" placeholder="Qty to issue" inputmode="decimal" aria-label="Quantity to issue">
+        <input id="matIssueTo" type="text" placeholder="Issued to / receiver" aria-label="Issued to">
+        <input id="matIssueScope" type="text" placeholder="Scope / trade" aria-label="Scope or trade">
+        <input id="matIssuePurpose" type="text" placeholder="Purpose / location" aria-label="Purpose or location">
+        <button class="btn-add" onclick="submitMaterialIssuance()">Issue Stock</button>
       </div>
     </div>
 
@@ -619,29 +671,39 @@ window.addEventListener('appinstalled', () => {
     <div class="card gap">
       <div class="card-title"><span class="ct-icon" style="background:rgba(59,130,246,.1)">&#x1F5C2;&#xFE0F;</span> PO History</div>
       <div class="po-filter-row">
-        <input type="text" id="poFilterInput" placeholder="Filter by supplier or date..." oninput="filterPOHistory(this.value)">
+        <input type="text" id="poFilterInput" placeholder="Filter by supplier or date..." oninput="filterPOHistory(this.value)" aria-label="Filter purchase orders">
         <button class="btn-ws-secondary" onclick="exportLedgerCSV()">&#x1F4CA; Export Ledger</button>
       </div>
       <div id="poHistory"><p class="empty-hint" style="padding:10px 0">No purchase orders yet.</p></div>
     </div>
+    </div><!-- end panel-content-wrap -->
   </div>
 
 
   <!-- === BILLING PANEL ========================================== -->
   <div id="billingPanel" class="panel hidden">
 
+    <div id="billingSkeleton" class="panel-skeleton">
+      <div class="panel-skeleton-body">
+        <div class="skeleton skeleton-card" style="height:280px"></div>
+        <div class="skeleton skeleton-card" style="height:200px"></div>
+        <div class="skeleton skeleton-card" style="height:200px"></div>
+      </div>
+    </div>
+    <div class="panel-content-wrap">
+
     <div id="contractSetupForm" class="card">
       <div class="card-title"><span class="ct-icon" style="background:rgba(245,158,11,.1)">&#x1F4C4;</span> Setup Contract</div>
       <div class="contract-form-grid">
-        <input id="contractClient" type="text" placeholder="Client / Owner name" style="grid-column:1/-1">
-        <input id="contractAmount" type="number" placeholder="Contract Amount (&#x20B1;)" inputmode="decimal">
-        <input id="contractDownPct" type="number" placeholder="Down Payment %" inputmode="decimal">
-        <input id="contractRetention" type="number" placeholder="Retention % (e.g. 10)" inputmode="decimal">
-        <input id="contractStart" type="date">
-        <input id="contractEnd" type="date">
+        <input id="contractClient" type="text" placeholder="Client / Owner name" style="grid-column:1/-1" aria-label="Client name">
+        <input id="contractAmount" type="number" placeholder="Contract Amount (&#x20B1;)" inputmode="decimal" aria-label="Contract amount">
+        <input id="contractDownPct" type="number" placeholder="Down Payment %" inputmode="decimal" aria-label="Down payment percent">
+        <input id="contractRetention" type="number" placeholder="Retention % (e.g. 10)" inputmode="decimal" aria-label="Retention percent">
+        <input id="contractStart" type="date" aria-label="Contract Start">
+        <input id="contractEnd" type="date" aria-label="Contract End">
       </div>
       <div class="form-actions">
-        <button class="btn-add-sm" onclick="saveContract()">&#x1F4BE; Save Contract</button>
+        <button class="btn-add" onclick="saveContract()">&#x1F4BE; Save Contract</button>
       </div>
     </div>
 
@@ -688,12 +750,12 @@ window.addEventListener('appinstalled', () => {
             <option value="downpayment">Downpayment</option>
             <option value="mobilization">Mobilization</option>
           </select>
-          <input id="billDesc" type="text" placeholder="Description (e.g. 2nd tranche - roofing complete)">
-          <input id="billDate" type="date">
-          <input id="billAmount" type="number" placeholder="Amount (&#x20B1;)" inputmode="decimal">
-          <input id="billRetentionPct" type="number" placeholder="Retention %" inputmode="decimal">
-          <input id="billDeduction" type="number" placeholder="Deduction (&#x20B1;)" inputmode="decimal">
-          <button class="btn-add-sm" onclick="addBillingRequest()">+ Add</button>
+          <input id="billDesc" type="text" placeholder="Description (e.g. 2nd tranche - roofing complete)" aria-label="Billing description">
+          <input id="billDate" type="date" aria-label="Bill Date">
+          <input id="billAmount" type="number" placeholder="Amount (&#x20B1;)" inputmode="decimal" aria-label="Billing amount">
+          <input id="billRetentionPct" type="number" placeholder="Retention %" inputmode="decimal" aria-label="Retention percent">
+          <input id="billDeduction" type="number" placeholder="Deduction (&#x20B1;)" inputmode="decimal" aria-label="Deduction amount">
+          <button class="btn-add btn-lg" onclick="addBillingRequest()">+ Add</button>
         </div>
         <div class="overflow-scroll">
           <table class="hist-table">
@@ -712,12 +774,12 @@ window.addEventListener('appinstalled', () => {
           <select id="colBillingId" aria-label="Apply collection to billing">
             <option value="">Auto-allocate to oldest approved billing</option>
           </select>
-          <input id="colDesc" type="text" placeholder="Description (e.g. 2nd tranche payment received)">
-          <input id="colDate" type="date">
-          <input id="colAmount" type="number" placeholder="Amount received (&#x20B1;)" inputmode="decimal">
-          <input id="colRetentionReleased" type="number" placeholder="Retention released (&#x20B1;)" inputmode="decimal">
-          <input id="colReference" type="text" placeholder="Reference #">
-          <button class="btn-add-sm" onclick="addCollection()">+ Record</button>
+          <input id="colDesc" type="text" placeholder="Description (e.g. 2nd tranche payment received)" aria-label="Description">
+          <input id="colDate" type="date" aria-label="Col Date">
+          <input id="colAmount" type="number" placeholder="Amount received (&#x20B1;)" inputmode="decimal" aria-label="Amount received">
+          <input id="colRetentionReleased" type="number" placeholder="Retention released (&#x20B1;)" inputmode="decimal" aria-label="Retention released">
+          <input id="colReference" type="text" placeholder="Reference #" aria-label="Reference #">
+          <button class="btn-add" onclick="addCollection()">+ Record</button>
         </div>
         <div class="overflow-scroll">
           <table class="hist-table">
@@ -735,8 +797,8 @@ window.addEventListener('appinstalled', () => {
           <select id="outputBillingId" aria-label="Billing output source">
             <option value="">Select approved billing</option>
           </select>
-          <input id="outputTitle" type="text" placeholder="Output title">
-          <button class="btn-add-sm" onclick="generateBillingOutputFromUI()">Archive Output</button>
+          <input id="outputTitle" type="text" placeholder="Output title" aria-label="Output title">
+          <button class="btn-add" onclick="generateBillingOutputFromUI()">Archive Output</button>
         </div>
         <div class="overflow-scroll">
           <table class="hist-table">
@@ -748,6 +810,7 @@ window.addEventListener('appinstalled', () => {
         </div>
       </div>
     </div>
+    </div><!-- end panel-content-wrap -->
   </div>
 
 
@@ -779,23 +842,23 @@ window.addEventListener('appinstalled', () => {
     <div class="card gap">
       <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">&#x1F4CB;</span> New Change Order</div>
       <div class="co-form-grid">
-        <input id="coDesc" type="text" placeholder="Description of additional / change work" style="grid-column:1/-1">
-        <input id="coReqBy" type="text" placeholder="Requested by (client/owner name)">
-        <input id="coDate" type="date">
-        <input id="coNotes" type="text" placeholder="Notes (optional)">
+        <input id="coDesc" type="text" placeholder="Description of additional / change work" style="grid-column:1/-1" aria-label="Description of additional / change work">
+        <input id="coReqBy" type="text" placeholder="Requested by (client/owner name)" aria-label="Requested by">
+        <input id="coDate" type="date" aria-label="CO Date">
+        <input id="coNotes" type="text" placeholder="Notes (optional)" aria-label="Notes">
       </div>
       <div class="co-impact-row">
         <div class="co-impact-label-wrap">
           <label>&#x1F477; Labor Cost Impact (&#x20B1;) - use negative for deductions</label>
-          <input id="coLaborImpact" type="number" placeholder="0.00" inputmode="decimal">
+          <input id="coLaborImpact" type="number" placeholder="0.00" inputmode="decimal" aria-label="0.00">
         </div>
         <div class="co-impact-label-wrap">
           <label>&#x1F4E6; Materials Cost Impact (&#x20B1;)</label>
-          <input id="coMaterialsImpact" type="number" placeholder="0.00" inputmode="decimal">
+          <input id="coMaterialsImpact" type="number" placeholder="0.00" inputmode="decimal" aria-label="0.00">
         </div>
       </div>
       <div class="form-actions">
-        <button class="btn-add-sm" onclick="addChangeOrder()">+ Submit Change Order</button>
+        <button class="btn-add" onclick="addChangeOrder()">+ Submit Change Order</button>
       </div>
     </div>
 
@@ -819,33 +882,33 @@ window.addEventListener('appinstalled', () => {
       <div class="card-title"><span class="ct-icon" style="background:rgba(124,58,237,.15)">&#x1F4D2;</span> Daily Site Log</div>
       <div id="siteLogSummary" class="log-summary-bar"></div>
       <div class="log-filter-row">
-        <input type="text" id="logFilterInput" placeholder="Filter logs..." oninput="filterLogs(this.value)">
+        <input type="text" id="logFilterInput" placeholder="Filter logs..." oninput="filterLogs(this.value)" aria-label="Filter logs...">
       </div>
       <div class="log-form">
         <div class="log-date-row">
-          <input id="logDate" type="date">
-          <textarea id="logNotes" rows="3" placeholder="What happened on site today? Notes, progress, issues, deliveries..."></textarea>
+          <input id="logDate" type="date" aria-label="Log Date">
+          <textarea id="logNotes" rows="3" placeholder="What happened on site today? Notes, progress, issues, deliveries..." aria-label="What happened on site today? Notes, progress, issues, deliveries..."></textarea>
         </div>
         <div class="task-form-row">
-          <textarea id="logWork" rows="2" placeholder="Work accomplished"></textarea>
-          <textarea id="logManpower" rows="2" placeholder="Manpower / trades / foremen"></textarea>
+          <textarea id="logWork" rows="2" placeholder="Work accomplished" aria-label="Work accomplished"></textarea>
+          <textarea id="logManpower" rows="2" placeholder="Manpower / trades / foremen" aria-label="Manpower / trades / foremen"></textarea>
         </div>
         <div class="task-form-row">
-          <textarea id="logEquipment" rows="2" placeholder="Equipment used"></textarea>
-          <textarea id="logVisitors" rows="2" placeholder="Visitors"></textarea>
+          <textarea id="logEquipment" rows="2" placeholder="Equipment used" aria-label="Equipment used"></textarea>
+          <textarea id="logVisitors" rows="2" placeholder="Visitors" aria-label="Visitors"></textarea>
         </div>
         <div class="task-form-row">
-          <textarea id="logIssues" rows="2" placeholder="Issues, one per line"></textarea>
-          <textarea id="logDelays" rows="2" placeholder="Delays, one per line"></textarea>
+          <textarea id="logIssues" rows="2" placeholder="Issues, one per line" aria-label="Issues, one per line"></textarea>
+          <textarea id="logDelays" rows="2" placeholder="Delays, one per line" aria-label="Delays, one per line"></textarea>
         </div>
         <div class="task-form-row">
-          <textarea id="logSafety" rows="2" placeholder="Safety notes"></textarea>
-          <textarea id="logSafetyIncidents" rows="2" placeholder="Safety incidents"></textarea>
+          <textarea id="logSafety" rows="2" placeholder="Safety notes" aria-label="Safety notes"></textarea>
+          <textarea id="logSafetyIncidents" rows="2" placeholder="Safety incidents" aria-label="Safety incidents"></textarea>
         </div>
         <div class="log-actions-row">
-          <input id="logWeather" type="text" placeholder="Weather (e.g., Sunny 32&#xB0;C)" style="flex:1">
-          <textarea id="logPhotos" rows="2" placeholder="Photo URLs, one per line" style="flex:1"></textarea>
-          <button class="btn-add-sm" onclick="saveLog()">+ Save Entry</button>
+          <input id="logWeather" type="text" placeholder="Weather (e.g., Sunny 32&#xB0;C)" style="flex:1" aria-label="Weather">
+          <textarea id="logPhotos" rows="2" placeholder="Photo URLs, one per line" style="flex:1" aria-label="Photo URLs, one per line"></textarea>
+          <button class="btn-add" onclick="saveLog()">+ Save Entry</button>
           <button class="btn-ws-secondary" onclick="exportSiteLogs()">&#x2B07;&#xFE0F; Export</button>
         </div>
       </div>
@@ -859,18 +922,18 @@ window.addEventListener('appinstalled', () => {
     <div class="card">
       <div class="card-title"><span class="ct-icon" style="background:rgba(13,148,136,.15)">&#x1F3EA;</span> Supplier Directory</div>
       <div class="supplier-form">
-        <input id="supName" type="text" placeholder="Supplier name (required)">
-        <input id="supContact" type="text" placeholder="Contact / phone">
-        <input id="supSpecialty" type="text" placeholder="Specialty (e.g. Hardware)">
-        <button class="btn-add-sm" onclick="addSupplier()">+ Add</button>
+        <input id="supName" type="text" placeholder="Supplier name (required)" aria-label="Supplier name">
+        <input id="supContact" type="text" placeholder="Contact / phone" aria-label="Contact / phone">
+        <input id="supSpecialty" type="text" placeholder="Specialty (e.g. Hardware)" aria-label="Specialty">
+        <button class="btn-add" onclick="addSupplier()">+ Add</button>
       </div>
       <div class="supplier-form-row2">
-        <input id="supBank" type="text" placeholder="Bank Name (e.g. BPI)">
-        <input id="supAccNum" type="text" placeholder="Account Number">
-        <input id="supAccName" type="text" placeholder="Account Name">
+        <input id="supBank" type="text" placeholder="Bank Name (e.g. BPI)" aria-label="Bank Name">
+        <input id="supAccNum" type="text" placeholder="Account Number" aria-label="Account Number">
+        <input id="supAccName" type="text" placeholder="Account Name" aria-label="Account Name">
       </div>
       <div class="supplier-filter-row">
-        <input type="text" id="supplierFilter" placeholder="Filter suppliers..." oninput="filterSuppliers(this.value)" style="flex:1">
+        <input type="text" id="supplierFilter" placeholder="Filter suppliers..." oninput="filterSuppliers(this.value)" style="flex:1" aria-label="Filter suppliers...">
         <button class="btn-ws-secondary" onclick="exportSuppliersCSV()">&#x1F4CA; Export</button>
       </div>
       <div id="supplierList"><p class="empty-hint">No suppliers yet.</p></div>
@@ -892,26 +955,27 @@ window.addEventListener('appinstalled', () => {
         <div id="taskProgressBar" class="mini-fill"></div>
       </div>
       <div class="task-form-row">
-        <input id="taskTitle" type="text" placeholder="Task title">
-        <input id="taskDesc" type="text" placeholder="Description (optional)">
+        <input id="taskTitle" type="text" placeholder="Task title" aria-label="Task title">
+        <input id="taskDesc" type="text" placeholder="Description (optional)" aria-label="Description">
       </div>
       <div class="task-form-row">
-        <input id="taskAssignee" type="text" placeholder="Assignee">
-        <input id="taskDueDate" type="date">
-        <select id="taskPriority">
+        <input id="taskAssignee" type="text" list="taskAssigneeOptions" placeholder="Assignee" aria-label="Assignee">
+        <datalist id="taskAssigneeOptions"></datalist>
+        <input id="taskDueDate" type="date" aria-label="Task Due Date">
+        <select id="taskPriority" aria-label="Task Priority">
           <option value="low">Low</option>
           <option value="normal" selected>Normal</option>
           <option value="high">High</option>
           <option value="critical">Critical</option>
         </select>
-        <select id="taskCategory">
+        <select id="taskCategory" aria-label="Task Category">
           <option value="general">General</option>
           <option value="labor">Labor</option>
           <option value="materials">Materials</option>
           <option value="permits">Permits</option>
           <option value="design">Design</option>
         </select>
-        <input id="taskBudgetImpact" type="number" placeholder="Budget impact (optional)">
+        <input id="taskBudgetImpact" type="number" placeholder="Budget impact (optional)" aria-label="Budget impact">
         <button class="btn-ws-secondary" onclick="addTask()">+ Add Task</button>
       </div>
       <div id="ganttView" class="gantt-view"></div>
@@ -930,23 +994,23 @@ window.addEventListener('appinstalled', () => {
         <span>Overdue Service: <strong id="equipOverdue">0</strong></span>
       </div>
       <div class="task-form-row">
-        <input id="equipName" type="text" placeholder="Equipment name">
-        <select id="equipType">
+        <input id="equipName" type="text" placeholder="Equipment name" aria-label="Equipment name">
+        <select id="equipType" aria-label="Equipment Type">
           <option value="other">Other</option>
           <option value="heavy">Heavy Machinery</option>
           <option value="power">Power Tool</option>
           <option value="vehicle">Vehicle</option>
           <option value="scaffolding">Scaffolding</option>
         </select>
-        <input id="equipRate" type="number" placeholder="Rental rate">
-        <select id="equipRateUnit">
+        <input id="equipRate" type="number" placeholder="Rental rate" aria-label="Rental rate">
+        <select id="equipRateUnit" aria-label="Equipment Rate Unit">
           <option value="day">per day</option>
           <option value="hour">per hour</option>
           <option value="month">per month</option>
         </select>
       </div>
       <div class="task-form-row">
-        <input id="equipNotes" type="text" placeholder="Notes (optional)" style="flex:1">
+        <input id="equipNotes" type="text" placeholder="Notes (optional)" style="flex:1" aria-label="Notes">
         <button class="btn-ws-secondary" onclick="addEquipment()">+ Add Equipment</button>
       </div>
       <div id="equipmentList"><p class="empty-hint">No equipment tracked yet.</p></div>
@@ -963,16 +1027,16 @@ window.addEventListener('appinstalled', () => {
         <span>Expiring Soon (30d): <strong id="compExpiringSoon">0</strong></span>
       </div>
       <div class="task-form-row">
-        <select id="compDocType"></select>
-        <input id="compName" type="text" placeholder="Document name (e.g. Mayor's Permit 2026)">
-        <input id="compRefNo" type="text" placeholder="Ref / Permit No. (optional)">
+        <select id="compDocType" aria-label="Compliance Doc Type"></select>
+        <input id="compName" type="text" placeholder="Document name (e.g. Mayor's Permit 2026)" aria-label="Document name (e.g. Mayor">
+        <input id="compRefNo" type="text" placeholder="Ref / Permit No. (optional)" aria-label="Ref / Permit No.">
       </div>
       <div class="task-form-row">
-        <input id="compExpiryDate" type="date">
-        <input id="compLink" type="text" placeholder="Link (Google Drive URL, optional)" style="flex:1">
+        <input id="compExpiryDate" type="date" aria-label="Compliance Expiry Date">
+        <input id="compLink" type="text" placeholder="Link (Google Drive URL, optional)" style="flex:1" aria-label="Link">
       </div>
       <div class="task-form-row">
-        <input id="compNotes" type="text" placeholder="Notes (optional)" style="flex:1">
+        <input id="compNotes" type="text" placeholder="Notes (optional)" style="flex:1" aria-label="Notes">
         <button class="btn-ws-secondary" onclick="addCompliance()">+ Add Document</button>
       </div>
       <div id="complianceList"><p class="empty-hint">No documents tracked yet.</p></div>
@@ -990,17 +1054,17 @@ window.addEventListener('appinstalled', () => {
         <span>Closed: <strong id="defClosed">0</strong></span>
       </div>
       <div class="task-form-row">
-        <input id="defDesc" type="text" placeholder="Describe the defect" style="flex:2">
-        <input id="defLocation" type="text" placeholder="Location (e.g. 2F Unit B)">
+        <input id="defDesc" type="text" placeholder="Describe the defect" style="flex:2" aria-label="Describe the defect">
+        <input id="defLocation" type="text" placeholder="Location (e.g. 2F Unit B)" aria-label="Location">
       </div>
       <div class="task-form-row">
-        <select id="defSeverity">
+        <select id="defSeverity" aria-label="Defect Severity">
           <option value="minor" selected>Minor</option>
           <option value="major">Major</option>
           <option value="critical">Critical</option>
         </select>
-        <input id="defAssignee" type="text" placeholder="Assignee">
-        <input id="defPhotoLink" type="text" placeholder="Photo link (optional)" style="flex:1">
+        <input id="defAssignee" type="text" placeholder="Assignee" aria-label="Assignee">
+        <input id="defPhotoLink" type="text" placeholder="Photo link (optional)" style="flex:1" aria-label="Photo link">
         <button class="btn-ws-secondary" onclick="addDefect()">+ Add Item</button>
       </div>
       <div class="task-form-row">
@@ -1017,7 +1081,7 @@ window.addEventListener('appinstalled', () => {
     <div class="tab-scroll" style="margin-bottom:14px;">
       <div class="tab-group">
         <button id="adminTab_summary" class="tab-btn tab-active" onclick="switchAdminSection('summary')">&#x1F464; Summary</button>
-        <button id="adminTab_team" class="tab-btn" onclick="switchAdminSection('team')" data-boss-only>&#x1F465; Team</button>
+        <button id="adminTab_team" class="tab-btn" onclick="switchAdminSection('team')" data-project-manager>&#x1F465; Project Assignments</button>
         <button id="adminTab_requests" class="tab-btn" onclick="switchAdminSection('requests')" data-boss-only>&#x2709; Requests</button>
         <button id="adminTab_audit" class="tab-btn" onclick="switchAdminSection('audit')" data-boss-only>&#x1F4DC; Audit Log</button>
         <button id="adminTab_system" class="tab-btn" onclick="switchAdminSection('system')" data-boss-only>&#x2699;&#xFE0F; System</button>
@@ -1032,14 +1096,14 @@ window.addEventListener('appinstalled', () => {
 
     <!-- Section 2: TEAM ADMIN (boss only) -->
     <div id="adminSection_team" class="panel-card hidden">
-      <div class="panel-title">&#x1F465; Team Admin</div>
+      <div class="panel-title">&#x1F465; Project Assignments</div>
       <div class="task-stats-row">
         <span class="stat-chip">Total Users: <strong id="teamUserCount">0</strong></span>
         <span class="stat-chip">Admin / PM: <strong id="teamBossCount">0</strong></span>
         <span class="stat-chip">Assoc. PM: <strong id="teamApmCount">0</strong></span>
       </div>
       <div class="task-form-row">
-        <input id="userSearch" type="text" placeholder="Search users by name, email, or project..." oninput="filterTeamUsers(this.value)" style="flex:1">
+        <input id="userSearch" type="text" placeholder="Search users by name, email, or project..." oninput="filterTeamUsers(this.value)" style="flex:1" aria-label="Search users by name, email, or project...">
         <button class="btn-ws-secondary" onclick="refreshTeamAdmin()">&#x1F504; Refresh</button>
       </div>
       <div id="teamAdminList"><p class="empty-hint">Loading users...</p></div>
@@ -1056,7 +1120,7 @@ window.addEventListener('appinstalled', () => {
       <div class="section-divider"></div>
       <div class="panel-title">&#x1F501; Lifecycle Requests <span id="lifecycleRequestCount" class="badge badge-purple" style="font-size:11px;margin-left:6px;">0</span></div>
       <div class="task-form-row">
-        <select id="lifecycleRequestFilter" onchange="renderLifecycleRequests()" style="background:var(--surface2);border:1px solid var(--border2);color:#fff;border-radius:8px;padding:8px 10px;font-size:13px;">
+        <select id="lifecycleRequestFilter" onchange="renderLifecycleRequests()" style="background:var(--surface2);border:1px solid var(--border2);color:#fff;border-radius:8px;padding:8px 10px;font-size:13px;" aria-label="Lifecycle Request Filter">
           <option value="pending">Pending only</option>
           <option value="all">All requests</option>
           <option value="approved">Approved</option>
@@ -1071,9 +1135,9 @@ window.addEventListener('appinstalled', () => {
     <div id="adminSection_audit" class="panel-card hidden">
       <div class="panel-title">&#x1F4DC; Audit Log <span id="auditCountBadge" class="badge badge-purple" style="font-size:11px;margin-left:6px;">0</span></div>
       <div class="task-form-row">
-        <input id="auditFilterAction" type="text" placeholder="Filter by action (create, update, delete...)..." oninput="renderAuditLog()" style="flex:1;min-width:160px">
-        <input id="auditFilterUser" type="text" placeholder="Filter by user..." oninput="renderAuditLog()" style="flex:1;min-width:140px">
-        <select id="auditFilterProject" onchange="renderAuditLog()" style="background:var(--surface2);border:1px solid var(--border2);color:#fff;border-radius:8px;padding:8px 10px;font-size:13px;">
+        <input id="auditFilterAction" type="text" placeholder="Filter by action (create, update, delete...)..." oninput="renderAuditLog()" style="flex:1;min-width:160px" aria-label="Filter by action...">
+        <input id="auditFilterUser" type="text" placeholder="Filter by user..." oninput="renderAuditLog()" style="flex:1;min-width:140px" aria-label="Filter by user...">
+        <select id="auditFilterProject" onchange="renderAuditLog()" style="background:var(--surface2);border:1px solid var(--border2);color:#fff;border-radius:8px;padding:8px 10px;font-size:13px;" aria-label="Audit Filter Project">
           <option value="">All projects</option>
         </select>
         <button class="btn-ws-secondary" onclick="initAuditLog()">&#x1F504; Refresh</button>
@@ -1168,7 +1232,7 @@ window.addEventListener('appinstalled', () => {
 <div id="rfpModal" class="modal-overlay hidden">
   <div class="modal-box modal-wide">
     <div class="modal-title">&#x1F4C4; Request for Payment (RFP)</div>
-    <textarea id="rfpOutput" readonly></textarea>
+    <textarea id="rfpOutput" readonly aria-label="RFP Output"></textarea>
     <div class="modal-actions">
       <button class="btn-mc" onclick="closeRFP()">Close</button>
       <button class="btn-copy" onclick="copyRFP()">&#x1F4CB; Copy Text</button>
@@ -1206,6 +1270,7 @@ window.addEventListener('appinstalled', () => {
       <div class="pay-deductions">
         <div class="pay-row"><span class="pay-label">Cash Advance Deductions</span><span class="pay-val text-red" id="totalAdvances">&#x20B1;0.00</span></div>
         <div id="advanceDeductList"></div>
+        <div class="pay-row"><span class="pay-label">Other Deductions</span><span class="pay-val text-red" id="payrollOtherDed">&#x20B1;0.00</span></div>
         <div id="govDeductionsDisplay" class="hidden" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
           <div class="pay-row"><span class="pay-label">SSS (Employer Share)</span><span class="pay-val text-blue" id="sssEmployerDisplay">&#x20B1;0.00</span></div>
           <div class="pay-row"><span class="pay-label">PhilHealth (Employer Share)</span><span class="pay-val text-blue" id="philhealthEmployerDisplay">&#x20B1;0.00</span></div>
@@ -1213,16 +1278,45 @@ window.addEventListener('appinstalled', () => {
         </div>
         <div class="pay-deduct-row">
           <label>Additional Deductions (&#x20B1;)</label>
-          <input id="manualDeductInput" type="number" placeholder="0.00" oninput="updatePayrollNet()" inputmode="decimal">
+          <input id="manualDeductInput" type="number" placeholder="0.00" oninput="updatePayrollNet()" inputmode="decimal" aria-label="0.00">
         </div>
       </div>
       <div class="pay-net">Net Payroll: <span id="payrollNet">&#x20B1;0.00</span></div>
       <div class="pay-net" style="font-size:14px;color:var(--muted2);margin-top:4px;padding-top:0;border:none;" id="employerCostDisplay">Employer Total Cost: &#x20B1;0.00</div>
+      <div id="netWarnHint" class="hidden payroll-net-warn">Net would be negative. Reduce cash advance deductions or remove the additional deduction.</div>
     </div>
+    <div id="payrollWarnings" class="payroll-warnings hidden"></div>
+    <div id="payrollReviewWrap" class="payroll-review-wrap"></div>
     <div class="modal-actions">
       <button class="btn-mc" onclick="closePayrollModal()">Cancel</button>
       <button class="btn-save-payroll" onclick="confirmSavePayroll()">&#x1F4BE; Save Payroll Log</button>
       <button class="btn-pdf" onclick="generatePayslips()">&#x1F4C4; Generate Payslips</button>
+    </div>
+  </div>
+</div>
+
+<!-- === WORKER EDIT MODAL ===================================== -->
+<div id="workerEditModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-title">&#x270E; Edit Worker</div>
+    <div class="worker-edit-form">
+      <div>
+        <label class="field-label">Name</label>
+        <input id="workerEditName" type="text" maxlength="50" aria-label="Worker name">
+      </div>
+      <div>
+        <label class="field-label">Trade</label>
+        <select id="workerEditTrade" aria-label="Worker trade"></select>
+      </div>
+      <div>
+        <label class="field-label">Daily Rate (&#x20B1;)</label>
+        <input id="workerEditRate" type="number" inputmode="decimal" min="0" step="0.01" aria-label="Daily rate">
+      </div>
+    </div>
+    <p class="empty-hint">Released payroll logs are immutable snapshots — editing a rate never changes an already-released payroll.</p>
+    <div class="modal-actions">
+      <button class="btn-mc" onclick="closeWorkerEditModal()">Cancel</button>
+      <button class="btn-save-payroll" onclick="saveWorkerEdit()">Save Worker</button>
     </div>
   </div>
 </div>
@@ -1234,13 +1328,13 @@ window.addEventListener('appinstalled', () => {
     <div class="advance-form">
       <div>
         <label class="field-label">Date</label>
-        <input id="advanceDate" type="date">
+        <input id="advanceDate" type="date" aria-label="Advance Date">
       </div>
       <div>
         <label class="field-label">Amount (&#x20B1;)</label>
-        <input id="advanceAmount" type="number" placeholder="0.00" inputmode="decimal">
+        <input id="advanceAmount" type="number" placeholder="0.00" inputmode="decimal" aria-label="0.00">
       </div>
-      <input id="advanceNotes" type="text" placeholder="Notes (optional)" style="grid-column:1/-1">
+      <input id="advanceNotes" type="text" placeholder="Notes (optional)" style="grid-column:1/-1" aria-label="Notes">
     </div>
     <button class="btn-save-adv" onclick="saveAdvance()">+ Save Advance Record</button>
     <div id="advanceHistory"></div>
@@ -1262,11 +1356,11 @@ window.addEventListener('appinstalled', () => {
     <div class="delivery-form">
       <div>
         <label class="field-label">Delivery Date</label>
-        <input id="deliveryDate" type="date">
+        <input id="deliveryDate" type="date" aria-label="Delivery Date">
       </div>
       <div>
         <label class="field-label">Delivery Reference / DR No.</label>
-        <input id="deliveryRef" type="text" placeholder="DR-12345">
+        <input id="deliveryRef" type="text" placeholder="DR-12345" aria-label="DR-12345">
       </div>
     </div>
     <div id="deliveryItemsList"></div>
@@ -1285,15 +1379,15 @@ window.addEventListener('appinstalled', () => {
     <div class="invoice-form">
       <div>
         <label class="field-label">Invoice Number</label>
-        <input id="invoiceNo" type="text" placeholder="INV-2026-001">
+        <input id="invoiceNo" type="text" placeholder="INV-2026-001" aria-label="INV-2026-001">
       </div>
       <div>
         <label class="field-label">Invoice Date</label>
-        <input id="invoiceDate" type="date">
+        <input id="invoiceDate" type="date" aria-label="Invoice Date">
       </div>
       <div>
         <label class="field-label">Invoice Amount (&#x20B1;)</label>
-        <input id="invoiceAmount" type="number" placeholder="0.00" inputmode="decimal">
+        <input id="invoiceAmount" type="number" placeholder="0.00" inputmode="decimal" aria-label="0.00">
       </div>
     </div>
     <div id="threeWayMatchResult" class="match-result"></div>
@@ -1309,12 +1403,12 @@ window.addEventListener('appinstalled', () => {
   <div class="modal-box">
     <div class="modal-title">&#x270E; Edit Contract</div>
     <div class="contract-form-grid">
-      <input id="editContractClient" type="text" placeholder="Client / Owner name" style="grid-column:1/-1">
-      <input id="editContractAmount" type="number" placeholder="Contract Amount (&#x20B1;)" inputmode="decimal">
-      <input id="editContractDownPct" type="number" placeholder="Down Payment %" inputmode="decimal">
-      <input id="editContractRetention" type="number" placeholder="Retention % (e.g. 10)" inputmode="decimal">
-      <input id="editContractStart" type="date">
-      <input id="editContractEnd" type="date">
+      <input id="editContractClient" type="text" placeholder="Client / Owner name" style="grid-column:1/-1" aria-label="Client / Owner name">
+      <input id="editContractAmount" type="number" placeholder="Contract Amount (&#x20B1;)" inputmode="decimal" aria-label="Contract Amount">
+      <input id="editContractDownPct" type="number" placeholder="Down Payment %" inputmode="decimal" aria-label="Down Payment %">
+      <input id="editContractRetention" type="number" placeholder="Retention % (e.g. 10)" inputmode="decimal" aria-label="Retention %">
+      <input id="editContractStart" type="date" aria-label="Edit  Contract Start">
+      <input id="editContractEnd" type="date" aria-label="Edit  Contract End">
     </div>
     <div class="modal-actions">
       <button class="btn-mc" onclick="closeEditContractModal()">Cancel</button>
@@ -1329,12 +1423,12 @@ window.addEventListener('appinstalled', () => {
     <div class="modal-title">&#x270E; Edit Supplier</div>
     <input type="hidden" id="editSupKey">
     <div class="edit-supplier-form">
-      <input id="editSupName" type="text" placeholder="Supplier name" style="grid-column:1/-1">
-      <input id="editSupContact" type="text" placeholder="Contact / phone">
-      <input id="editSupSpec" type="text" placeholder="Specialty">
-      <input id="editSupBank" type="text" placeholder="Bank Name">
-      <input id="editSupAccNum" type="text" placeholder="Account Number">
-      <input id="editSupAccName" type="text" placeholder="Account Name">
+      <input id="editSupName" type="text" placeholder="Supplier name" style="grid-column:1/-1" aria-label="Supplier name">
+      <input id="editSupContact" type="text" placeholder="Contact / phone" aria-label="Contact / phone">
+      <input id="editSupSpec" type="text" placeholder="Specialty" aria-label="Specialty">
+      <input id="editSupBank" type="text" placeholder="Bank Name" aria-label="Bank Name">
+      <input id="editSupAccNum" type="text" placeholder="Account Number" aria-label="Account Number">
+      <input id="editSupAccName" type="text" placeholder="Account Name" aria-label="Account Name">
     </div>
     <div class="modal-actions">
       <button class="btn-mc" onclick="closeEditSupplier()">Cancel</button>
@@ -1349,24 +1443,24 @@ window.addEventListener('appinstalled', () => {
     <div class="modal-title">&#x270E; Edit Task</div>
     <input type="hidden" id="editTaskId">
     <div class="contract-form-grid">
-      <input id="editTaskTitle" type="text" placeholder="Task title" style="grid-column:1/-1">
-      <input id="editTaskDesc" type="text" placeholder="Description (optional)" style="grid-column:1/-1">
-      <input id="editTaskAssignee" type="text" placeholder="Assignee">
-      <input id="editTaskDueDate" type="date">
-      <select id="editTaskPriority">
+      <input id="editTaskTitle" type="text" placeholder="Task title" style="grid-column:1/-1" aria-label="Task title">
+      <input id="editTaskDesc" type="text" placeholder="Description (optional)" style="grid-column:1/-1" aria-label="Description">
+      <input id="editTaskAssignee" type="text" placeholder="Assignee" aria-label="Assignee">
+      <input id="editTaskDueDate" type="date" aria-label="Edit  Task Due Date">
+      <select id="editTaskPriority" aria-label="Edit  Task Priority">
         <option value="low">Low</option>
         <option value="normal">Normal</option>
         <option value="high">High</option>
         <option value="critical">Critical</option>
       </select>
-      <select id="editTaskCategory">
+      <select id="editTaskCategory" aria-label="Edit  Task Category">
         <option value="general">General</option>
         <option value="labor">Labor</option>
         <option value="materials">Materials</option>
         <option value="permits">Permits</option>
         <option value="design">Design</option>
       </select>
-      <input id="editTaskBudgetImpact" type="number" placeholder="Budget impact (optional)" inputmode="decimal">
+      <input id="editTaskBudgetImpact" type="number" placeholder="Budget impact (optional)" inputmode="decimal" aria-label="Budget impact">
     </div>
     <div class="modal-actions">
       <button class="btn-mc" onclick="closeEditTaskModal()">Cancel</button>
@@ -1382,15 +1476,15 @@ window.addEventListener('appinstalled', () => {
     <div class="edit-project-form">
       <div>
         <label class="field-label">Project Name</label>
-        <input id="editProjName" type="text" placeholder="Project name" style="grid-column:1/-1">
+        <input id="editProjName" type="text" placeholder="Project name" style="grid-column:1/-1" aria-label="Project name">
       </div>
       <div>
         <label class="field-label">Labor Budget (&#x20B1;)</label>
-        <input id="editProjLaborBudget" type="number" placeholder="Labor Budget" inputmode="decimal">
+        <input id="editProjLaborBudget" type="number" placeholder="Labor Budget" inputmode="decimal" aria-label="Labor Budget">
       </div>
       <div>
         <label class="field-label">Materials Budget (&#x20B1;)</label>
-        <input id="editProjMaterialBudget" type="number" placeholder="Materials Budget" inputmode="decimal">
+        <input id="editProjMaterialBudget" type="number" placeholder="Materials Budget" inputmode="decimal" aria-label="Materials Budget">
       </div>
     </div>
     <div class="modal-actions">

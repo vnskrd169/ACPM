@@ -217,7 +217,7 @@ async function main() {
       ...baseAdvance,
       workerName: 'QA Electrical Worker',
       trade: 'Electrical',
-      amount: 1200,
+      amount: 4000,
       notes: 'QA released electrical should deduct separately',
       status: 'released',
       releasedBy: auth.localId,
@@ -248,12 +248,14 @@ async function main() {
     const electricalDays = calcDays(Object.values(electricalAttendance));
     const carpenterGross = carpenterDays * 1000;
     const electricalGross = electricalDays * 800;
-    const carpenterDeduct = Math.min(carpenterGross * 0.2, 1000);
-    const electricalDeduct = Math.min(electricalGross * 0.2, 1200);
+    // VERIFIED RULE (2026-08): deduct the full eligible balance, capped at the
+    // worker's gross so NET never goes negative; remainder carries forward.
+    const carpenterDeduct = Math.min(1000, carpenterGross);
+    const electricalDeduct = Math.min(4000, electricalGross); // capped at gross, 1200 carries
     assertClose(carpenterGross, 5000, 'carpenter gross');
     assertClose(electricalGross, 2800, 'electrical gross');
     assertClose(carpenterDeduct, 1000, 'carpenter released deduction');
-    assertClose(electricalDeduct, 560, 'electrical released deduction');
+    assertClose(electricalDeduct, 2800, 'electrical released deduction (capped at gross)');
 
     await rest.update('', {
       [`projects/${projectId}/payrollLogs/${payrollLogId}`]: {
@@ -304,7 +306,7 @@ async function main() {
           [electricalWorkerId]: {
             name: 'QA Electrical Worker',
             trade: 'Electrical',
-            advances: [{ key: electricalReleasedAdvanceId, deductThisPayroll: electricalDeduct, remainingAfter: 640 }],
+            advances: [{ key: electricalReleasedAdvanceId, deductThisPayroll: electricalDeduct, remainingAfter: 1200 }],
             totalDeduct: electricalDeduct
           }
         },
@@ -372,9 +374,9 @@ async function main() {
     activeStep = 'verify saved archive and cash advance balances';
     const payrollLog = await rest.get(`projects/${projectId}/payrollLogs/${payrollLogId}`);
     assertClose(payrollLog.gross, 7800, 'payroll gross archive');
-    assertClose(payrollLog.cashAdvanceDeductions, 1560, 'payroll cash advance deductions');
+    assertClose(payrollLog.cashAdvanceDeductions, 3800, 'payroll cash advance deductions');
     assertClose(payrollLog.byTrade.Carpenter.cashAdvanceDeductions, 1000, 'carpenter-only deduction');
-    assertClose(payrollLog.byTrade.Electrical.cashAdvanceDeductions, 560, 'electrical-only deduction');
+    assertClose(payrollLog.byTrade.Electrical.cashAdvanceDeductions, 2800, 'electrical-only deduction');
     assertEqual(payrollLog.byTrade.Carpenter.foremanName, 'Foreman Carpenter QA', 'carpenter foreman archive');
     assertEqual(payrollLog.byTrade.Electrical.foremanName, 'Foreman Electrical QA', 'electrical foreman archive');
 
@@ -388,7 +390,7 @@ async function main() {
     assertEqual(advances[carpenterWorkerId][releasedAdvanceId].status, 'closed', 'fully deducted closes');
     assertClose(advances[carpenterWorkerId][releasedAdvanceId].deductedAmount, 1000, 'fully deducted amount');
     assertEqual(advances[electricalWorkerId][electricalReleasedAdvanceId].status, 'deducted', 'partial deduction status');
-    assertClose(advances[electricalWorkerId][electricalReleasedAdvanceId].deductedAmount, 560, 'partial deducted amount');
+    assertClose(advances[electricalWorkerId][electricalReleasedAdvanceId].deductedAmount, 2800, 'partial deducted amount');
     assertTruthy(advances[electricalWorkerId][electricalReleasedAdvanceId].statusHistory.payroll, 'partial deduction status history');
 
     const attendanceHistory = await rest.get(`projects/${projectId}/attendanceHistory/${payrollLogId}`);

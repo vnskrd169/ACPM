@@ -978,9 +978,12 @@ function initSystemStatus() {
 }
 
 function initTeamAdmin() {
-  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
+  const canManageAssignments = typeof canManageProjectAssignments === 'function'
+    ? canManageProjectAssignments(window._currentUser?.role)
+    : (typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss');
+  if (!canManageAssignments) {
     const el = $('teamAdminList');
-    if (el) el.innerHTML = '<p class="empty-hint">Team admin is available for admins only.</p>';
+    if (el) el.innerHTML = '<p class="empty-hint">Project assignment access is available to PM and Admin accounts.</p>';
     return;
   }
   if (_teamAdminListener) {
@@ -1361,7 +1364,11 @@ function closeProjectAssignModal() {
 }
 
 async function saveProjectAssignments() {
-  if (!(typeof isBoss === 'function' ? isBoss(window._currentUser?.role) : window._currentUser?.role === 'boss')) {
+  const actorRole = normalizeTeamRole(window._currentUser?.role);
+  const canManageAssignments = typeof canManageProjectAssignments === 'function'
+    ? canManageProjectAssignments(actorRole)
+    : (typeof isBoss === 'function' ? isBoss(actorRole) : actorRole === 'boss');
+  if (!canManageAssignments) {
     showToast('You do not have permission to manage users.', 'error');
     return;
   }
@@ -1369,21 +1376,28 @@ async function saveProjectAssignments() {
   if (!uid) return;
   const user = _teamUsersCache.find(u => u.uid === uid);
   if (!user) return;
+  if (actorRole === 'pm' && normalizeTeamRole(user.role) !== 'apm') {
+    showToast('Project Managers can assign projects to Associate Project Managers only.', 'error');
+    return;
+  }
   const knownProjects = new Set(_projectCache.map(p => p.id));
   const checkedProjectIds = Array.from(document.querySelectorAll('#assignProjectList input[type="checkbox"]:checked'), cb => cb.value);
   const projects = Array.from(new Set(checkedProjectIds))
     .filter(pid => pid && knownProjects.has(pid))
     .sort((a, b) => String(a).localeCompare(String(b)));
   try {
-    await firebase.database().ref(`users/${uid}`).update({
+    const assignmentUpdate = {
       assignedProjects: projects,
       projects: projectAccessMap(projects),
-      status: 'active',
-      approvedAt: Date.now(),
-      approvedBy: window._currentUser?.uid || null,
       updatedAt: Date.now(),
       updatedBy: window._currentUser?.uid || null
-    });
+    };
+    if (actorRole !== 'pm') {
+      assignmentUpdate.status = 'active';
+      assignmentUpdate.approvedAt = Date.now();
+      assignmentUpdate.approvedBy = window._currentUser?.uid || null;
+    }
+    await firebase.database().ref(`users/${uid}`).update(assignmentUpdate);
     auditLog('update', 'user', uid, { projects });
     if (window._currentUser && window._currentUser.uid === uid) {
       window._currentUser = { ...window._currentUser, projects, status: 'active' };
@@ -1779,6 +1793,8 @@ function renderTeamAdmin(users) {
     return;
   }
 
+  const actorRole = normalizeTeamRole(window._currentUser?.role);
+  const actorIsAdmin = typeof isBoss === 'function' ? isBoss(actorRole) : actorRole === 'boss';
   el.innerHTML = `<div style="overflow-x:auto"><table class="summary-table">
     <thead><tr>
       <th>Team Member</th><th>Status</th><th>Role / Projects</th><th>Admin Action</th>
@@ -1786,6 +1802,8 @@ function renderTeamAdmin(users) {
     <tbody>
       ${users.map(user => {
         const role = normalizeTeamRole(user.role);
+        const pmCanAssign = actorRole === 'pm' && role === 'apm';
+        const canAssignTarget = actorIsAdmin || pmCanAssign;
         const projects = reportProjectList(user.projects);
         const bossOf = reportProjectList(user.bossOf);
         const projectNames = projects.map(formatProjectLabel);
@@ -1813,21 +1831,21 @@ function renderTeamAdmin(users) {
           </td>
           <td>
             <div style="display:flex;flex-direction:column;gap:10px;min-width:220px">
-              <select onchange="updateUserRole('${user.uid}', this.value)" ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
+              <select onchange="updateUserRole('${user.uid}', this.value)" ${actorIsAdmin ? '' : 'disabled title="Only an Admin can change roles"'} ${user.uid === window._currentUser?.uid ? 'data-self-role="1"' : ''}>
                 ${teamRoleOptions(role)}
               </select>
               <div class="team-project-line">
                 <span class="team-project-pill">${projectCount ? `${projectCount} project${projectCount === 1 ? '' : 's'}` : 'No projects'}</span>
                 <span class="team-project-preview">${escapeHtml(projectPreview || 'Nothing assigned yet')}</span>
-                <button class="btn-ws-secondary team-project-btn" onclick="openProjectAssignModal('${user.uid}')">Edit projects</button>
+                ${canAssignTarget ? `<button class="btn-ws-secondary team-project-btn" onclick="openProjectAssignModal('${user.uid}')">Edit projects</button>` : ''}
               </div>
             </div>
           </td>
           <td>
             <div class="team-action-stack">
-              ${status === 'active'
+              ${actorIsAdmin && status === 'active'
                 ? `<button class="btn-ws-secondary team-status-btn" onclick="updateUserStatus('${user.uid}', 'suspended')">Suspend</button>`
-                : `<button class="btn-save-payroll team-status-btn" onclick="updateUserStatus('${user.uid}', 'active')">Reactivate</button>`}
+                : actorIsAdmin ? `<button class="btn-save-payroll team-status-btn" onclick="updateUserStatus('${user.uid}', 'active')">Reactivate</button>` : '<span class="empty-hint">Admin controlled</span>'}
               ${status !== 'archived'
                 ? `<button class="btn-mc team-status-btn" onclick="updateUserStatus('${user.uid}', 'archived')">Archive</button>`
                 : '<span class="empty-hint">Historical profile</span>'}

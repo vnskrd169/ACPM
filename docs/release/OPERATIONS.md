@@ -8,7 +8,8 @@ This is the low-maintenance checklist for running ACPM without keeping the whole
 - Realtime Database rules published from `database.rules.json`.
 - User profiles stored under `/users/{authUid}`.
 - Projects stored under `/projects/{projectId}`.
-- Service worker cache version bumped when app files change.
+- Service worker cache version bumped when app files change. Current staging
+  candidate: `acpm-v132`.
 
 ## Daily habits
 
@@ -34,22 +35,40 @@ This is the low-maintenance checklist for running ACPM without keeping the whole
 
 1. Update code.
 2. Bump `CACHE_NAME` in `sw.js` if any app file changed.
-3. Run `node scripts/firebase_rules_gate.js`.
-4. Publish Firebase rules if permissions changed.
-5. Test login, project open, create, edit, and notification flows.
+3. Run `npm run test:environments` and `node scripts/firebase_rules_gate.js`.
+4. Deploy to isolated Staging with `npm run deploy:staging`.
+5. Test login, project open, create, edit, and notification flows on Staging.
 6. Verify an assigned PM/APM account can only touch their allowed work with `node scripts/rc1_deployed_rules_security_qa.js`.
+7. Run `npm run test:pmos`, the production rules emulator suite, and
+   `npx playwright test`.
+8. Promote only the verified candidate:
+
+```powershell
+.\scripts\deploy-production.ps1 -ConfirmProduction
+```
+
+Add `-IncludeDatabase` only when reviewed Firebase rule changes must also be
+published. A normal Production promotion deploys Hosting only.
+
+## Current routes
+
+- `/login.html`: public authentication and access request.
+- `/dashboard.html`: Hub and portfolio command center.
+- `/workspace.html?projectId={id}`: selected project workspace.
+- `/pmos/`: PMOS Field interface.
+- `/index.html`: compatibility redirect only.
 
 ## Publishing Firebase Rules
 
 Local rules live in `database.rules.json`. RC1 also includes `firebase.json` and `.firebaserc` so rule deployment is repeatable.
 
-CLI path:
+CLI path (explicit projects only):
 
 ```powershell
 npm install -g firebase-tools
 firebase login
-firebase use acpm-project-system
-firebase deploy --only database
+npm run deploy:staging
+.\scripts\deploy-production.ps1 -ConfirmProduction
 ```
 
 Console path:
@@ -108,3 +127,6 @@ If the app starts rejecting legitimate work:
 - Do not leave permissive database rules in place longer than necessary.
 - Do not depend on client-side role checks as the only guard.
 - Do not change the Auth or rules model without updating this runbook.
+- Do not enable Foreman/Safety/Viewer until child-level data access rules exist.
+- Do not use Firebase Storage for PMOS photos unless the storage architecture is
+  explicitly approved; RC1 uses the configured Google Drive Apps Script.

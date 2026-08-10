@@ -21,6 +21,9 @@ const localCommands = [
   ['node', ['--check', 'compliance.js']],
   ['node', ['--check', 'defects.js']],
   ['node', ['--check', 'tasks.js']],
+  ['node', ['--check', 'pmos-task-adapter.js']],
+  ['node', ['--check', 'pmos.js']],
+  ['node', ['--check', 'scripts/pm_apm_task_workflow_static_qa.js']],
   ['node', ['--check', 'scripts/roles_rc1_matrix_qa.js']],
   ['node', ['--check', 'scripts/dashboard_static_qa.js']],
   ['node', ['--check', 'scripts/changeorder_static_qa.js']],
@@ -50,6 +53,8 @@ const localCommands = [
   ['node', ['scripts/rc1_static_gate.js']],
   ['node', ['scripts/firebase_rules_gate.js']]
 ];
+
+localCommands.splice(localCommands.length - 2, 0, ['node', ['scripts/pm_apm_task_workflow_static_qa.js']]);
 
 if (hasRoleCreds) {
   localCommands.push(['node', ['scripts/rc1_deployed_rules_security_qa.js']]);

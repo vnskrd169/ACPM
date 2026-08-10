@@ -8,13 +8,13 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ACPM PMOS">
 <meta name="application-name" content="ACPM PMOS">
-<meta name="mobile-web-app-capable" content="yes">
 <meta name="format-detection" content="telephone=no">
 <meta name="description" content="ACPM Project Mobile Operations System - Field data capture">
 <link rel="manifest" href="./pmos-manifest.json">
 <link rel="icon" type="image/svg+xml" href="../assets/brand/acpm/favicon.svg">
 <link rel="apple-touch-icon" href="../assets/brand/acpm/logo-mark.svg">
 <script>window.ACPM_PAGE = 'pmos';</script>
+<script src="../environment.js?v=1"></script>
 <title>ACPM PMOS — Field Operations</title>
 
 <!-- Firebase SDK -->
@@ -23,9 +23,12 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
 <!-- ACPM Core (shared from root) -->
-<script src="../utils.js?v=84"></script>
-<script src="../auth.js?v=95"></script>
-<script src="../main.js?v=102"></script>
+<script src="../utils.js?v=87"></script>
+<script src="../auth.js?v=98"></script>
+<script src="../main.js?v=106"></script>
+
+<!-- ACPM Design System -->
+<link rel="stylesheet" href="../style.css?v=107">
 
 <!-- PMOS App Shell -->
 <link rel="stylesheet" href="../assets/brand/acpm-brand.css">
@@ -33,9 +36,13 @@
 
 <!-- PMOS App -->
 <script src="../acpm-shell.js"></script>
-<script src="../pmos.js"></script>
+
+<!-- Task Adapter (bridges ACPM ↔ PMOS task formats) -->
+<script src="../pmos-task-adapter.js?v=2"></script>
+
+<script src="../pmos.js?v=3"></script>
 </head>
-<body class="auth-checking auth-locked pmos-body">
+<body class="auth-checking auth-locked pmos-body pmos-app">
   <!-- Loading Screen -->
   <div id="appLoading" class="app-loading" role="status" aria-live="polite">
     <div class="app-loading-card pmos-loading-animated">

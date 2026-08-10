@@ -56,6 +56,22 @@ function isBoss(role) {
   return !!ROLE_DEFINITIONS[normalized]?.admin;
 }
 
+function isProjectManager(role) {
+  return normalizeRole(role) === 'pm';
+}
+
+function canSeeAllProjects(role) {
+  return isBoss(role) || isProjectManager(role);
+}
+
+function canCreateProjects(role) {
+  return canSeeAllProjects(role);
+}
+
+function canManageProjectAssignments(role) {
+  return isBoss(role) || isProjectManager(role);
+}
+
 function isRc1ActiveRole(role) {
   const explicitRole = String(role || '').trim().toLowerCase();
   return RC1_ACTIVE_ROLES.has(explicitRole);
@@ -306,8 +322,32 @@ function unlockPrivateUi() {
 }
 
 function cleanupAuthScopedListeners() {
-  if (typeof detachReportsListeners === 'function') detachReportsListeners();
-  if (typeof detachNotifications === 'function') detachNotifications();
+  const detachFunctions = [
+    typeof detachHubListeners === 'function' ? detachHubListeners : null,
+    typeof detachProjectNotesListener === 'function' ? detachProjectNotesListener : null,
+    typeof detachProjectDashboardListener === 'function' ? detachProjectDashboardListener : null,
+    typeof detachLaborListeners === 'function' ? detachLaborListeners : null,
+    typeof detachMatListeners === 'function' ? detachMatListeners : null,
+    typeof detachBillingListeners === 'function' ? detachBillingListeners : null,
+    typeof detachCOListeners === 'function' ? detachCOListeners : null,
+    typeof detachSiteLogListeners === 'function' ? detachSiteLogListeners : null,
+    typeof detachSupplierListeners === 'function' ? detachSupplierListeners : null,
+    typeof detachEquipListeners === 'function' ? detachEquipListeners : null,
+    typeof detachComplianceListeners === 'function' ? detachComplianceListeners : null,
+    typeof detachDefectListeners === 'function' ? detachDefectListeners : null,
+    typeof detachTaskListeners === 'function' ? detachTaskListeners : null,
+    typeof detachReportsListeners === 'function' ? detachReportsListeners : null,
+    typeof detachNotifications === 'function' ? detachNotifications : null
+  ];
+
+  detachFunctions.forEach(detach => {
+    if (!detach) return;
+    try {
+      detach();
+    } catch (error) {
+      console.warn('Listener cleanup skipped:', error?.message || error);
+    }
+  });
 }
 
 function showPublicAuthUi() {
@@ -318,11 +358,11 @@ function showPublicAuthUi() {
 function currentAppPage() {
   if (typeof window.getAppPage === 'function') return window.getAppPage();
   if (window.ACPM_PAGE) return String(window.ACPM_PAGE).toLowerCase();
-  const path = window.location.pathname.toLowerCase();
-  if (path.endsWith('/login.html')) return 'login';
-  if (path.endsWith('/pmos.html')) return 'pmos';
-  if (path.endsWith('/dashboard.html')) return 'dashboard';
-  if (path.endsWith('/workspace.html')) return 'workspace';
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+  if (path.endsWith('/login.html') || path.endsWith('/login')) return 'login';
+  if (path.endsWith('/pmos.html') || path.endsWith('/pmos')) return 'pmos';
+  if (path.endsWith('/dashboard.html') || path.endsWith('/dashboard')) return 'dashboard';
+  if (path.endsWith('/workspace.html') || path.endsWith('/workspace')) return 'workspace';
   return 'app';
 }
 
@@ -331,10 +371,10 @@ function routeTo(page, params = {}) {
     window.location.replace(window.appUrl(page, params));
     return;
   }
-  if (page === 'login') window.location.replace('login.html');
-  else if (page === 'pmos') window.location.replace('pmos.html');
-  else if (page === 'workspace' && params.projectId) window.location.replace(`workspace.html?projectId=${encodeURIComponent(params.projectId)}`);
-  else window.location.replace('dashboard.html');
+  if (page === 'login') window.location.replace('/login.html');
+  else if (page === 'pmos') window.location.replace('/pmos.html');
+  else if (page === 'workspace' && params.projectId) window.location.replace(`/workspace.html?projectId=${encodeURIComponent(params.projectId)}`);
+  else window.location.replace('/dashboard.html');
 }
 
 function isProtectedPage() {
@@ -428,8 +468,8 @@ function showPendingAccessScreen(profile) {
       </div>
       ${profile.status !== 'approved' ? `
         <div class="auth-form auth-pending-recovery">
-          <input type="text" id="pendingRequestName" placeholder="Full name" value="${escapeHtml(profile.displayName || profile.name || '')}" autocomplete="name">
-          <input type="text" id="pendingRequestPosition" placeholder="Position" value="${escapeHtml(profile.position || '')}" autocomplete="organization-title">
+          <input type="text" id="pendingRequestName" placeholder="Full name" value="${escapeHtml(profile.displayName || profile.name || '')}" autocomplete="name" aria-label="Full name">
+          <input type="text" id="pendingRequestPosition" placeholder="Position" value="${escapeHtml(profile.position || '')}" autocomplete="organization-title" aria-label="Position">
           <button class="auth-btn" id="pendingRequestBtn" onclick="submitPendingAccessRequest()">Send Missing Request</button>
         </div>
         <div id="pendingRequestError" class="auth-error hidden"></div>
@@ -459,8 +499,10 @@ function showAuthScreen() {
       <form class="auth-form" id="loginForm" onsubmit="event.preventDefault(); handleAuthFormSubmit(); return false;" aria-label="Sign in">
         <input type="email" id="authUser" placeholder="Email address" autocomplete="email" aria-label="Email address">
         <input type="password" id="authPass" placeholder="Password" autocomplete="current-password" aria-label="Password">
-        <button class="auth-btn" id="authLoginBtn" type="submit">Sign In</button>
+        <button class="auth-btn btn-lg" id="authLoginBtn" type="submit">Sign In</button>
         <button class="auth-btn auth-btn-google" type="button" onclick="doGoogleSignIn()">Continue with Google</button>
+      </form>
+      <div class="auth-form" id="requestAccessSection" aria-label="Request access">
         <div class="auth-divider"><span>Request access</span></div>
         <input type="text" id="requestName" placeholder="Full name" autocomplete="name" aria-label="Full name">
         <input type="text" id="requestPosition" placeholder="Position" autocomplete="organization-title" aria-label="Position">
@@ -468,7 +510,7 @@ function showAuthScreen() {
         <input type="password" id="requestPass" placeholder="Password for email request" autocomplete="new-password" aria-label="Password for email request">
         <button class="auth-btn auth-btn-secondary" type="button" onclick="doRequestAccess()">Submit Request</button>
         <button class="auth-btn auth-btn-secondary" type="button" onclick="doGoogleAccessRequest()">Request with Google</button>
-      </form>
+      </div>
       <div class="auth-hint">Requests stay pending until an admin approves your role and projects.</div>
       <div id="authError" class="auth-error hidden"></div>
       <div class="auth-reset-row">
@@ -494,14 +536,19 @@ function showAuthScreen() {
 // -- Login ----------------------------------------------------
 
 async function handleAuthFormSubmit() {
-  // Detect which section is active: if request fields have values, call request access instead
-  const requestName = document.getElementById('requestName');
-  if (requestName && requestName.value.trim()) {
-    doRequestAccess();
-    return;
-  }
+  // Login form submission - standard sign-in flow
   doLogin();
 }
+
+// Add Enter-to-submit for request access section (outside the login form)
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter') return;
+  const requestSection = document.getElementById('requestAccessSection');
+  if (!requestSection) return;
+  if (!requestSection.contains(e.target)) return;
+  e.preventDefault();
+  doRequestAccess();
+});
 
 async function doLogin() {
   const userIn  = document.getElementById('authUser');
@@ -841,7 +888,7 @@ function showMyProfileSetup(profile = {}) {
       <div id="profileSetupError" class="auth-error hidden"></div>
       <div class="modal-actions">
         ${profile.profileComplete === false ? '' : '<button class="btn-mc" onclick="closeMyProfileSetup()">Close</button>'}
-        <button id="profileSaveBtn" class="btn-save-payroll" onclick="saveMyProfile()">Save Profile</button>
+        <button id="profileSaveBtn" class="btn-save-payroll btn-lg" onclick="saveMyProfile()">Save Profile</button>
       </div>
     </div>
   `;
@@ -1024,6 +1071,10 @@ async function initAppForUser() {
     el.style.display = isBoss(role) ? '' : 'none';
   });
 
+  document.querySelectorAll('[data-project-manager]').forEach(el => {
+    el.style.display = canManageProjectAssignments(role) ? '' : 'none';
+  });
+
   document.querySelectorAll('[data-role-visible]').forEach(el => {
     el.style.display = elementAllowsRole(el, role) ? '' : 'none';
   });
@@ -1052,7 +1103,7 @@ async function initAppForUser() {
   }
 
   const createCard = document.querySelector('.hub-create-card');
-  if (createCard) createCard.style.display = isBoss(role) ? '' : 'none';
+  if (createCard) createCard.style.display = canCreateProjects(role) ? '' : 'none';
 
   if (typeof initNotifications === 'function') initNotifications();
 
@@ -1096,7 +1147,10 @@ async function initAppForUser() {
 
 function filterProjectsByRole() {
   const user = _currentAuthUser;
-  if (!user || isBoss(user.role)) return;
+  if (!user || canSeeAllProjects(user.role)) {
+    window._allowedProjects = null;
+    return;
+  }
   const allowed = normalizeProjectList(user.projects);
   window._allowedProjects = new Set(allowed);
 }
@@ -1105,7 +1159,7 @@ function canAccessProject(pid) {
   const user = _currentAuthUser;
   if (!user) return false;
   if (!isRc1ActiveRole(user.role)) return false;
-  if (isBoss(user.role)) return true;
+  if (canSeeAllProjects(user.role)) return true;
   if (normalizeProjectList(user.bossOf).includes(pid)) return true;
   return normalizeProjectList(user.projects).includes(pid);
 }
@@ -1114,7 +1168,7 @@ function canEditProject(pid) {
   const user = _currentAuthUser;
   if (!user) return false;
   if (!isRc1ActiveRole(user.role)) return false;
-  if (isBoss(user.role)) return true;
+  if (canSeeAllProjects(user.role)) return true;
   if (normalizeProjectList(user.bossOf).includes(pid)) return true;
   if (!canEditAssignedProject(user.role)) return false;
   return normalizeProjectList(user.projects).includes(pid);
@@ -1124,7 +1178,7 @@ function canReadFullProject(pid) {
   const user = _currentAuthUser;
   if (!user) return false;
   if (!isRc1ActiveRole(user.role)) return false;
-  if (isBoss(user.role)) return true;
+  if (canSeeAllProjects(user.role)) return true;
   if (!canReadFullAssignedProject(user.role)) return false;
   return normalizeProjectList(user.projects).includes(pid) || normalizeProjectList(user.bossOf).includes(pid);
 }
@@ -1133,7 +1187,7 @@ function canWriteFieldLog(pid) {
   const user = _currentAuthUser;
   if (!user) return false;
   if (!isRc1ActiveRole(user.role)) return false;
-  if (isBoss(user.role)) return true;
+  if (canSeeAllProjects(user.role)) return true;
   if (isViewerRole(user.role)) return false;
   return normalizeProjectList(user.projects).includes(pid) || normalizeProjectList(user.bossOf).includes(pid);
 }
@@ -1155,6 +1209,10 @@ window.canEditProject    = canEditProject;
 window.getCurrentUser    = () => _currentAuthUser;
 window.normalizeRole     = normalizeRole;
 window.isBoss            = isBoss;
+window.isProjectManager  = isProjectManager;
+window.canSeeAllProjects = canSeeAllProjects;
+window.canCreateProjects = canCreateProjects;
+window.canManageProjectAssignments = canManageProjectAssignments;
 window.isRc1ActiveRole   = isRc1ActiveRole;
 window.canSeeFinancials  = canSeeFinancials;
 window.canEditAssignedProject = canEditAssignedProject;

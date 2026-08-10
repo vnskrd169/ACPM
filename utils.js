@@ -239,6 +239,96 @@ function preloadProjectData(pid) {
   }, () => { /* preload failures are non-critical */ });
 }
 
+// ════════════════════════════════════════════════════════════
+//  ONBOARDING STATE RENDERER
+//  Premium guided empty state with next-action prompts
+//  Usage: container.innerHTML = renderOnboardingState(options)
+//  Options: { icon, title, desc, steps[], ctaLabel, ctaAction,
+//             ctaHref, subText, variant: 'full'|'card'|'inline' }
+// ════════════════════════════════════════════════════════════
+function renderOnboardingState(opts = {}) {
+  const {
+    icon = '📋',
+    title = 'Get Started',
+    desc = '',
+    steps = [],
+    ctaLabel = '',
+    ctaAction = null,
+    ctaHref = '',
+    subText = '',
+    variant = 'full'
+  } = opts;
+
+  if (variant === 'card') {
+    return `<div class="onboarding-card" ${ctaAction ? `data-action="${escapeHtml(ctaAction)}"` : ''}>
+      <div class="onboarding-card-icon">${icon}</div>
+      <div class="onboarding-card-content">
+        <div class="onboarding-card-title">${escapeHtml(title)}</div>
+        <div class="onboarding-card-desc">${escapeHtml(desc)}</div>
+      </div>
+      <div class="onboarding-card-arrow">→</div>
+    </div>`;
+  }
+
+  if (variant === 'inline') {
+    return `<div class="empty-state-inline">
+      <div style="font-size:24px;margin-bottom:8px;opacity:0.5">${icon}</div>
+      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:4px">${escapeHtml(title)}</div>
+      ${desc ? `<div style="font-size:12px;color:var(--muted);line-height:1.4">${escapeHtml(desc)}</div>` : ''}
+      ${ctaLabel ? `<button class="btn-primary btn-sm mt-2" ${ctaAction ? `onclick="${escapeHtml(ctaAction)}"` : ''}>${escapeHtml(ctaLabel)}</button>` : ''}
+    </div>`;
+  }
+
+  // full variant
+  const stepsHtml = steps.length ? `<div class="onboarding-state-steps">
+    ${steps.map((s, i) => `<div class="onboarding-state-step">
+      <div class="onboarding-state-step-num">${i + 1}</div>
+      <span>${escapeHtml(s)}</span>
+    </div>`).join('')}
+  </div>` : '';
+
+  return `<div class="onboarding-state">
+    <div class="onboarding-state-icon">${icon}</div>
+    <div class="onboarding-state-title">${escapeHtml(title)}</div>
+    ${desc ? `<div class="onboarding-state-desc">${escapeHtml(desc)}</div>` : ''}
+    ${stepsHtml}
+    ${ctaLabel ? `<div class="onboarding-state-cta">
+      ${ctaHref ? `<a href="${escapeHtml(ctaHref)}" class="btn-primary btn-lg">${escapeHtml(ctaLabel)}</a>`
+        : `<button class="btn-primary btn-lg" ${ctaAction ? `onclick="${escapeHtml(ctaAction)}"` : ''}>${escapeHtml(ctaLabel)}</button>`}
+      ${subText ? `<span class="onboarding-state-sub">${escapeHtml(subText)}</span>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+
+window.renderOnboardingState = renderOnboardingState;
+
+// ════════════════════════════════════════════════════════════
+//  PANEL SKELETON → CONTENT TRANSITION
+//  When data arrives, fade out the skeleton and fade in the
+//  real panel content simultaneously. The content is wrapped
+//  in .panel-content-wrap (opacity: 0 initially).
+// ════════════════════════════════════════════════════════════
+function hidePanelSkeleton(skeletonId) {
+  const el = $(skeletonId);
+  if (!el) return;
+
+  // Find the content wrapper sibling and fade it in
+  const contentWrap = el.nextElementSibling?.classList.contains('panel-content-wrap')
+    ? el.nextElementSibling
+    : el.parentNode?.querySelector('.panel-content-wrap');
+  if (contentWrap) {
+    contentWrap.classList.add('loaded');
+  }
+
+  // Fade out skeleton then remove
+  el.classList.add('panel-skeleton-hidden');
+  setTimeout(() => {
+    if (el.parentNode) el.remove();
+  }, 250);
+}
+
+window.hidePanelSkeleton = hidePanelSkeleton;
+
 // ── Toast (kept here so all modules share one) ──────────────
 window.showToast = showToast;
 window.friendlyError = friendlyError;
@@ -249,6 +339,23 @@ window.optimisticUpdate = optimisticUpdate;
 window.preloadProjectData = preloadProjectData;
 
 window.PREF_KEYS = PREF_KEYS;
+
+// ════════════════════════════════════════════════════════════
+//  safeCounterIncrement — Atomic counter increment via transaction
+//  Prevents race conditions when two writes try to increment
+//  the same counter simultaneously.
+// ════════════════════════════════════════════════════════════
+function safeCounterIncrement(ref, amount) {
+  return ref.transaction(current => {
+    return (parseFloat(current) || 0) + amount;
+  }, (error, committed, snapshot) => {
+    if (error || !committed) {
+      console.warn('counter transaction failed/aborted', error);
+    }
+  }, true);
+}
+
+window.safeCounterIncrement = safeCounterIncrement;
 
 // ── Safe DB wrapper ─────────────────────────────────────────
 async function safeDb(fn, errMsg) {
@@ -264,7 +371,9 @@ async function safeDb(fn, errMsg) {
 // ── Audit log ────────────────────────────────────────────────
 function auditLog(action, entityType, entityId, details = {}) {
   const user = (typeof window !== 'undefined' && window._currentUser) ? window._currentUser : { uid: 'anonymous', role: 'apm', name: 'System' };
-  const pid = (typeof window !== 'undefined' && window._currentPid) ? window._currentPid : null;
+  const activePid = (typeof window !== 'undefined' && window._currentPid) ? window._currentPid : null;
+  const pid = details.projectId || activePid || null;
+  const now = Date.now();
   const logEntry = {
     action,
     entityType,
@@ -279,7 +388,7 @@ function auditLog(action, entityType, entityId, details = {}) {
     userName: user.name,
     userEmail: user.email || null,
     userRole: user.role,
-    timestamp: Date.now(),
+    timestamp: now,
     date: new Date().toLocaleDateString('en-PH'),
     projectId: pid
   };
@@ -293,6 +402,25 @@ function auditLog(action, entityType, entityId, details = {}) {
           persistAuditFallback(logEntry);
         }
       });
+      if (pid && entityType !== 'task') {
+        const activityEntry = {
+          type: `${entityType}.${action}`,
+          module: entityType,
+          action,
+          recordId: entityId || '',
+          projectId: pid,
+          title: details.title || details.name || details.description || '',
+          previousStatus: logEntry.previousStatus,
+          newStatus: logEntry.newStatus,
+          notes: logEntry.notes,
+          createdAt: now,
+          createdBy: user.uid || 'system',
+          createdByName: user.name || 'System'
+        };
+        firebase.database().ref(`projects/${pid}/activity`).push(activityEntry, activityError => {
+          if (activityError) console.warn('project activity write skipped:', activityError.code || activityError.message || activityError);
+        });
+      }
     }
   } catch (e) { /* never let audit logging break the calling action */ }
 }
@@ -512,4 +640,101 @@ function applySupplierSelection() {
   if (idInput) idInput.value = sel.value;
   if (nameInput) nameInput.value = opt.dataset.name || opt.textContent;
   sel.value = '';
+}
+
+// ════════════════════════════════════════════════════════════
+//  FORM FIELD VALIDATION HELPERS
+//  Inline error/success display without intrusive alerts.
+//  CSS classes: .input-error, .input-success, .form-error-text, .form-success-text
+// ════════════════════════════════════════════════════════════
+
+function setFieldError(el, message) {
+  if (!el) return;
+  clearFieldError(el);
+  el.classList.add('input-error');
+  const parent = el.parentElement;
+  if (!parent) return;
+  // Remove any existing success text from this field
+  const existingSuccess = parent.querySelector('.form-success-text');
+  if (existingSuccess) existingSuccess.remove();
+  const errorEl = document.createElement('div');
+  errorEl.className = 'form-error-text';
+  errorEl.role = 'alert';
+  errorEl.textContent = message || 'Invalid value.';
+  parent.insertBefore(errorEl, el.nextSibling);
+  el.focus();
+}
+
+function setFieldSuccess(el, message) {
+  if (!el) return;
+  clearFieldError(el);
+  el.classList.add('input-success');
+  if (!message) return;
+  const parent = el.parentElement;
+  if (!parent) return;
+  const successEl = document.createElement('div');
+  successEl.className = 'form-success-text';
+  successEl.textContent = message;
+  parent.insertBefore(successEl, el.nextSibling);
+}
+
+function clearFieldError(el) {
+  if (!el) return;
+  el.classList.remove('input-error', 'input-success');
+  const parent = el.parentElement;
+  if (!parent) return;
+  const existing = parent.querySelector('.form-error-text, .form-success-text');
+  if (existing) existing.remove();
+}
+
+function clearAllFieldErrors(container) {
+  if (!container) return;
+  container.querySelectorAll('.input-error, .input-success').forEach(el => {
+    el.classList.remove('input-error', 'input-success');
+  });
+  container.querySelectorAll('.form-error-text, .form-success-text, .field-status').forEach(el => {
+    el.remove();
+  });
+}
+
+window.setFieldError = setFieldError;
+window.setFieldSuccess = setFieldSuccess;
+window.clearFieldError = clearFieldError;
+window.clearAllFieldErrors = clearAllFieldErrors;
+
+// ════════════════════════════════════════════════════════════
+//  AUTO-CLEAR VALIDATION ERRORS ON INPUT
+//  When user types in a field with .input-error, clear it.
+// ════════════════════════════════════════════════════════════
+let _fvInitialized = false;
+
+function initFieldValidation() {
+  if (_fvInitialized) return;
+  _fvInitialized = true;
+
+  document.body.addEventListener('input', function(e) {
+    var target = e.target;
+    if (!target || !target.classList) return;
+    if (target.classList.contains('input-error')) {
+      clearFieldError(target);
+    }
+  });
+
+  // Also clear on change for select elements
+  document.body.addEventListener('change', function(e) {
+    var target = e.target;
+    if (!target || !target.classList) return;
+    if (target.classList.contains('input-error')) {
+      clearFieldError(target);
+    }
+  });
+}
+
+// Auto-init on DOMContentLoaded
+if (typeof document !== 'undefined') {
+  if (document.body && document.readyState !== 'loading') {
+    initFieldValidation();
+  } else {
+    document.addEventListener('DOMContentLoaded', initFieldValidation);
+  }
 }

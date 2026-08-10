@@ -9,7 +9,7 @@
 /* ---- Version Constants ---- */
 const APP_VERSION = '1.0.0';
 const PMOS_VERSION = '1.0.0';
-const CACHE_VERSION = 'acpm-pmos-v2';
+const CACHE_VERSION = 'acpm-pmos-v4';
 const BUILD_DATE = '2026-07-17';
 
 window.APP_VERSION = APP_VERSION;

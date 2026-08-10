@@ -88,10 +88,10 @@ function watchEquipment(pid) {
         </div>
         ${item.notes ? `<div class="equip-notes">${escapeHtml(item.notes)}</div>` : ''}
         <div class="equip-actions">
-          <button class="btn-equip-action" onclick="logEquipHours('${item.id}')">\u23F1 Log Hours</button>
-          <button class="btn-equip-action" onclick="logEquipExpense('${item.id}')">Log Expense</button>
-          <button class="btn-equip-action" onclick="scheduleEquipService('${item.id}')">\u2699 Service</button>
-          <button class="del-item-btn" onclick="deleteEquipment('${item.id}')">\u2715</button>
+          <button class="btn-equip-action" aria-label="Log hours for ${escapeHtml(item.name || item.id)}" onclick="logEquipHours('${item.id}')">\u23F1 Log Hours</button>
+          <button class="btn-equip-action" aria-label="Log expense for ${escapeHtml(item.name || item.id)}" onclick="logEquipExpense('${item.id}')">Log Expense</button>
+          <button class="btn-equip-action" aria-label="Schedule service for ${escapeHtml(item.name || item.id)}" onclick="scheduleEquipService('${item.id}')">\u2699 Service</button>
+          <button class="del-item-btn" aria-label="Delete equipment ${escapeHtml(item.name || item.id)}" onclick="deleteEquipment('${item.id}')">\u2715</button>
         </div>
       `;
       fragment.appendChild(card);
@@ -137,7 +137,7 @@ async function addEquipment() {
   const rateUnit = $('equipRateUnit')?.value || 'day';
   const notes = $('equipNotes')?.value.trim() || '';
 
-  if (!name) { showToast('Enter equipment name.', 'error'); return; }
+  if (!name) { setFieldError($('equipName'), 'Enter equipment name.'); return; }
 
   await safeDb(() => firebase.database().ref(`projects/${_epid}/equipment`).push({
     name, type, rentalRate, rateUnit, notes,

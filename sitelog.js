@@ -586,9 +586,9 @@ async function saveLog() {
   const notes = notesInp?.value.trim();
   const weather = weatherInp?.value.trim() || '';
   const workAccomplished = workInp?.value.trim() || '';
-  if (!date) { showToast('Select a date.', 'error'); return; }
-  if (!notes && !workAccomplished) { showToast('Write notes or work accomplished first.', 'error'); return; }
-  if (notes.length > 2000) { showToast('Notes too long (max 2000 chars).', 'error'); return; }
+  if (!date) { setFieldError($('logDate'), 'Select a date.'); return; }
+  if (!notes && !workAccomplished) { setFieldError($('logNotes'), 'Write notes or work accomplished first.'); return; }
+  if (notes.length > 2000) { setFieldError($('logNotes'), 'Notes too long (max 2000 chars).'); return; }
 
   // Validate date not in future
   const inputDate = new Date(date + 'T00:00:00');

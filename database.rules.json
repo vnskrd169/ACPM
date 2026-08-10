@@ -3,7 +3,7 @@
     ".read": false,
     ".write": false,
     "users": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       "$uid": {
         ".read": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
         ".write": "root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
@@ -38,14 +38,23 @@
         "profileUpdatedAt": {
           ".write": "auth.uid === $uid && root.child('users/' + $uid + '/status').val() === 'active'"
         },
-        "updatedAt": {
-          ".write": "auth.uid === $uid && root.child('users/' + $uid + '/status').val() === 'active'"
-        },
         "lastLoginAt": {
           ".write": "auth.uid === $uid && root.child('users/' + $uid + '/status').val() === 'active'"
         },
         "lastSeenAt": {
           ".write": "auth.uid === $uid && root.child('users/' + $uid + '/status').val() === 'active'"
+        },
+        "projects": {
+          ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'pm' && root.child('users/' + $uid + '/role').val() === 'apm'"
+        },
+        "assignedProjects": {
+          ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'pm' && root.child('users/' + $uid + '/role').val() === 'apm'"
+        },
+        "updatedBy": {
+          ".write": "auth != null && root.child('users/' + auth.uid + '/role').val() === 'pm' && root.child('users/' + $uid + '/role').val() === 'apm' && newData.val() === auth.uid"
+        },
+        "updatedAt": {
+          ".write": "auth != null && ((auth.uid === $uid && root.child('users/' + $uid + '/status').val() === 'active') || (root.child('users/' + auth.uid + '/role').val() === 'pm' && root.child('users/' + $uid + '/role').val() === 'apm'))"
         }
       }
     },
@@ -64,15 +73,15 @@
       }
     },
     "projects": {
-      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)",
       ".indexOn": [
         "status",
         "name",
         "createdAt"
       ],
       "$pid": {
-        ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
-        ".write": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (newData.exists() && data.child('status').val() === 'active' && newData.child('status').val() === data.child('status').val() && root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
+        ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || (root.child('users/' + auth.uid + '/role').val() === 'apm' && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
+        ".write": "auth != null && newData.exists() && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val() === 'pm' && (!data.exists() || (data.child('status').val() === 'active' && newData.child('status').val().matches(/^(active|completed)$/)) || (data.child('status').val() === 'completed' && newData.child('status').val() === 'active'))) || (data.child('status').val() === 'active' && newData.child('status').val() === data.child('status').val() && root.child('users/' + auth.uid + '/role').val() === 'apm' && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
         ".validate": "newData.hasChildren(['name', 'status', 'createdAt']) || !data.exists()",
         "name": {
           ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
@@ -81,7 +90,7 @@
         "status": {
           ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
           ".validate": "newData.isString() && newData.val().matches(/^(active|completed|archived)$/)",
-          ".write": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)"
+          ".write": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val() === 'pm' && ((data.val() === 'active' && newData.val() === 'completed') || (data.val() === 'completed' && newData.val() === 'active') || newData.val() === data.val())))"
         },
         "createdDate": {
           ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))"
@@ -122,6 +131,43 @@
         },
         "lifecycleRequests": {
           ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))"
+        },
+        "tasks": {
+          ".indexOn": [
+            "status",
+            "priority",
+            "dueDate",
+            "assignedToUid",
+            "createdAt",
+            "updatedAt"
+          ],
+          "$taskId": {
+            ".validate": "!newData.exists() || (newData.hasChildren(['title', 'status', 'createdAt', 'createdBy']) && newData.child('title').isString() && newData.child('title').val().length > 0 && newData.child('title').val().length <= 120 && newData.child('status').isString() && newData.child('status').val().matches(/^(pending|in_progress|blocked|for_verification|completed|cancelled|todo|review|done|archived)$/) && newData.child('createdAt').isNumber() && newData.child('createdBy').isString())"
+          }
+        },
+        "taskEvents": {
+          ".indexOn": [
+            "type",
+            "taskId",
+            "createdAt",
+            "createdBy",
+            "toStatus"
+          ],
+          "$eventId": {
+            ".validate": "newData.hasChildren(['type', 'taskId', 'projectId', 'createdAt', 'createdBy'])"
+          }
+        },
+        "activity": {
+          ".indexOn": [
+            "type",
+            "module",
+            "recordId",
+            "createdAt",
+            "createdBy"
+          ],
+          "$activityId": {
+            ".validate": "newData.hasChildren(['type', 'module', 'projectId', 'createdAt', 'createdBy'])"
+          }
         },
         "billingConfig": {
           ".indexOn": [
@@ -362,7 +408,15 @@
               "approvedBy",
               "releasedBy",
               "closedAt"
-            ]
+            ],
+            "$advanceId": {
+              "amount": {
+                ".validate": "!newData.exists() || (newData.isNumber() && newData.val() > 0)"
+              },
+              "deductedAmount": {
+                ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 0)"
+              }
+            }
           }
         },
         "cashAdvanceEvents": {
@@ -374,7 +428,7 @@
             "createdAt"
           ],
           "$eventId": {
-            ".validate": "newData.hasChildren(['type', 'workerId', 'advanceId', 'createdAt', 'createdBy'])"
+            ".validate": "newData.hasChildren(['type', 'workerId', 'advanceId', 'createdAt', 'createdBy']) && (!data.exists() || (newData.child('type').val() === data.child('type').val() && newData.child('advanceId').val() === data.child('advanceId').val() && newData.child('workerId').val() === data.child('workerId').val() && newData.child('amount').val() === data.child('amount').val()))"
           }
         },
         "notificationEvents": {
@@ -407,13 +461,19 @@
           ".indexOn": [
             "savedAt",
             "weekKey"
-          ]
+          ],
+          "$logId": {
+            ".validate": "!data.exists() || (newData.child('weekKey').val() === data.child('weekKey').val() && newData.child('savedAt').val() === data.child('savedAt').val())"
+          }
         },
         "payrollLogs": {
           ".indexOn": [
             "savedAt",
             "weekKey"
-          ]
+          ],
+          "$logId": {
+            ".validate": "!data.exists() || (newData.child('weekKey').val() === data.child('weekKey').val() && newData.child('gross').val() === data.child('gross').val() && newData.child('net').val() === data.child('net').val() && newData.child('cashAdvanceDeductions').val() === data.child('cashAdvanceDeductions').val() && newData.child('deductions').val() === data.child('deductions').val())"
+          }
         },
         "siteLogs": {
           ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
@@ -461,7 +521,7 @@
       }
     },
     "pmosUpdates": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".indexOn": [
         "category",
         "clientGeneratedId",
@@ -473,12 +533,13 @@
         "status"
       ],
       "$recordId": {
-        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || (root.child('users/' + auth.uid + '/role').val() === 'apm' && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val()))))",
+        ".write": "auth != null && newData.exists() && root.child('users/' + auth.uid + '/status').val() === 'active' && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
         ".validate": "newData.hasChildren(['projectId', 'projectName', 'category', 'note', 'priority', 'status', 'dueDate', 'createdAt', 'source'])"
       }
     },
     "pmosSiteLogs": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".indexOn": [
         "clientGeneratedId",
         "createdAt",
@@ -486,12 +547,13 @@
         "projectId"
       ],
       "$recordId": {
-        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || (root.child('users/' + auth.uid + '/role').val() === 'apm' && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val()))))",
+        ".write": "auth != null && newData.exists() && root.child('users/' + auth.uid + '/status').val() === 'active' && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
         ".validate": "newData.hasChildren(['projectId', 'date', 'weather', 'manpowerCount', 'accomplishment', 'remarks', 'createdAt'])"
       }
     },
     "pmosIssues": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".indexOn": [
         "assignedTo",
         "clientGeneratedId",
@@ -503,12 +565,13 @@
         "status"
       ],
       "$recordId": {
-        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || (root.child('users/' + auth.uid + '/role').val() === 'apm' && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val()))))",
+        ".write": "auth != null && newData.exists() && root.child('users/' + auth.uid + '/status').val() === 'active' && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
         ".validate": "newData.hasChildren(['projectId', 'location', 'issue', 'assignedTo', 'priority', 'status', 'dueDate', 'createdAt'])"
       }
     },
     "pmosMaterialRequests": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".indexOn": [
         "clientGeneratedId",
         "createdAt",
@@ -518,12 +581,13 @@
         "status"
       ],
       "$recordId": {
-        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || (root.child('users/' + auth.uid + '/role').val() === 'apm' && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val()))))",
+        ".write": "auth != null && newData.exists() && root.child('users/' + auth.uid + '/status').val() === 'active' && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
         ".validate": "newData.hasChildren(['projectId', 'item', 'quantity', 'unit', 'neededDate', 'purpose', 'status', 'createdAt'])"
       }
     },
     "pmosTasks": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".indexOn": [
         "clientGeneratedId",
         "createdAt",
@@ -534,12 +598,13 @@
         "status"
       ],
       "$recordId": {
-        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || (root.child('users/' + auth.uid + '/role').val() === 'apm' && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val()))))",
+        ".write": "auth != null && newData.exists() && root.child('users/' + auth.uid + '/status').val() === 'active' && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
         ".validate": "newData.hasChildren(['projectId', 'task', 'person', 'dueDate', 'priority', 'status', 'createdAt'])"
       }
     },
     "pmosMeetingNotes": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".indexOn": [
         "clientGeneratedId",
         "createdAt",
@@ -550,12 +615,13 @@
         "status"
       ],
       "$recordId": {
-        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || (root.child('users/' + auth.uid + '/role').val() === 'apm' && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val()))))",
+        ".write": "auth != null && newData.exists() && root.child('users/' + auth.uid + '/status').val() === 'active' && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
         ".validate": "newData.hasChildren(['projectId', 'meetingTitle', 'attendees', 'notes', 'actionItems', 'createdAt'])"
       }
     },
     "pmosPhotoLogs": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".indexOn": [
         "category",
         "clientGeneratedId",
@@ -565,7 +631,8 @@
         "uploadStatus"
       ],
       "$recordId": {
-        ".write": "auth != null && newData.exists() && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
+        ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || (root.child('users/' + auth.uid + '/role').val() === 'apm' && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val()))))",
+        ".write": "auth != null && newData.exists() && root.child('users/' + auth.uid + '/status').val() === 'active' && (((!data.exists() && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val()))) || (data.exists() && data.child('projectId').isString() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) || root.child('users/' + auth.uid + '/projects').hasChild(data.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(data.child('projectId').val())))))",
         ".validate": "newData.hasChildren(['projectId', 'caption', 'location', 'category', 'createdAt'])"
       }
     },
@@ -603,7 +670,7 @@
       }
     },
     "attendanceDailyCodes": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       "$pid": {
         "$date": {
           ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))",
@@ -612,11 +679,11 @@
       }
     },
     "faceSettings": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".write": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)"
     },
     "suppliers": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".write": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
       ".indexOn": [
         "name",
@@ -639,7 +706,7 @@
       }
     },
     "supplierRollups": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".write": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
       ".indexOn": [
         "supplierId",
@@ -698,7 +765,7 @@
       }
     },
     "complianceAlertsSent": {
-      ".read": "auth != null",
+      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       ".write": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)"
     },
     "sessions": {

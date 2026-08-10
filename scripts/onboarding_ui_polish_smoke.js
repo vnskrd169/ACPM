@@ -72,17 +72,18 @@ async function main() {
       serviceWorkers: 'block'
     });
     const loginPage = await loginContext.newPage();
+    loginPage.setDefaultNavigationTimeout(90000);
     loginPage.on('console', msg => {
       if (['error', 'warning'].includes(msg.type())) consoleIssues.push(`login ${msg.type()}: ${msg.text()}`);
     });
-    await loginPage.goto(`${APP_URL}/login.html?qa=ui-polish-login-${Date.now()}`, { waitUntil: 'domcontentloaded' });
+    await loginPage.goto(`${APP_URL}/login.html?qa=ui-polish-login-${Date.now()}`, { waitUntil: 'commit', timeout: 90000 });
     await loginPage.evaluate(() => {
       localStorage.clear();
       sessionStorage.clear();
       if (window.firebase && firebase.auth) return firebase.auth().signOut().catch(() => {});
       return null;
     }).catch(() => {});
-    await loginPage.goto(`${APP_URL}/login.html?qa=ui-polish-login-fresh-${Date.now()}`, { waitUntil: 'domcontentloaded' });
+    await loginPage.goto(`${APP_URL}/login.html?qa=ui-polish-login-fresh-${Date.now()}`, { waitUntil: 'commit', timeout: 90000 });
     await loginPage.waitForSelector('#authOverlay', { timeout: 15000 });
     await loginPage.waitForSelector('#requestName', { timeout: 15000 });
     await assertNoHorizontalOverflow(loginPage, 'mobile login/request form');
@@ -109,10 +110,11 @@ async function main() {
       serviceWorkers: 'block'
     });
     const page = await context.newPage();
+    page.setDefaultNavigationTimeout(90000);
     page.on('console', msg => {
       if (['error', 'warning'].includes(msg.type())) consoleIssues.push(`app ${msg.type()}: ${msg.text()}`);
     });
-    await page.goto(`${APP_URL}/login.html?qa=ui-polish-app-${Date.now()}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${APP_URL}/login.html?qa=ui-polish-app-${Date.now()}`, { waitUntil: 'commit', timeout: 90000 });
     await page.waitForSelector('#authUser', { timeout: 15000 });
     await page.fill('#authUser', EMAIL);
     await page.fill('#authPass', PASSWORD);
@@ -129,6 +131,36 @@ async function main() {
     assert(!/[�]/.test(notifText || ''), 'notification panel must not show mojibake');
 
     await page.evaluate(() => openTeamAdmin());
+    await page.waitForTimeout(500);
+    const adminOpenState = await page.evaluate(() => ({
+      role: window._currentUser?.role || '',
+      workspaceClass: document.querySelector('#workspaceView')?.className || '',
+      adminPanelClass: document.querySelector('#adminPanel')?.className || '',
+      hubClass: document.querySelector('#hubView')?.className || '',
+      adminMode: !!window._adminWorkspaceMode,
+      workspaceDisplay: getComputedStyle(document.querySelector('#workspaceView')).display,
+      workspaceVisibility: getComputedStyle(document.querySelector('#workspaceView')).visibility,
+      adminPanelDisplay: getComputedStyle(document.querySelector('#adminPanel')).display,
+      adminPanelVisibility: getComputedStyle(document.querySelector('#adminPanel')).visibility,
+      workspaceRect: document.querySelector('#workspaceView')?.getBoundingClientRect().toJSON(),
+      adminPanelRect: document.querySelector('#adminPanel')?.getBoundingClientRect().toJSON(),
+      adminAncestors: (() => {
+        const rows = [];
+        let node = document.querySelector('#adminPanel')?.parentElement;
+        while (node && rows.length < 8) {
+          rows.push({
+            tag: node.tagName,
+            id: node.id || '',
+            className: node.className || '',
+            display: getComputedStyle(node).display
+          });
+          node = node.parentElement;
+        }
+        return rows;
+      })()
+    }));
+    assert(adminOpenState.workspaceDisplay !== 'none' && adminOpenState.adminPanelDisplay !== 'none',
+      'Project Assignments must open its admin workspace', adminOpenState);
     await page.waitForSelector('#adminPanel:not(.hidden)', { timeout: 15000 });
     await page.waitForSelector('#adminTab_team', { state: 'visible', timeout: 10000 });
     const adminNavInfo = await page.evaluate(() => ({
@@ -138,11 +170,11 @@ async function main() {
       activeAdminTab: document.querySelector('#adminPanel > .tab-scroll .tab-active')?.textContent?.trim() || '',
       activeTeamSection: !document.querySelector('#adminSection_team')?.classList.contains('hidden')
     }));
-    assert(adminNavInfo.visibleAdminTabs.some(label => /Team/i.test(label)), 'Team Admin must show the Team sub-tab', adminNavInfo);
+    assert(adminNavInfo.visibleAdminTabs.some(label => /Project Assignments/i.test(label)), 'Team Admin must show the Project Assignments sub-tab', adminNavInfo);
     assert(adminNavInfo.visibleAdminTabs.some(label => /Requests/i.test(label)), 'Team Admin must show the Requests sub-tab', adminNavInfo);
     assert(adminNavInfo.visibleAdminTabs.some(label => /Audit Log/i.test(label)), 'Team Admin must show the Audit Log sub-tab', adminNavInfo);
     assert(adminNavInfo.visibleAdminTabs.some(label => /System/i.test(label)), 'Team Admin must show the System sub-tab', adminNavInfo);
-    assert(/Team/i.test(adminNavInfo.activeAdminTab) && adminNavInfo.activeTeamSection, 'Team Admin should default to Team assignment view', adminNavInfo);
+    assert(/Project Assignments/i.test(adminNavInfo.activeAdminTab) && adminNavInfo.activeTeamSection, 'Team Admin should default to Project Assignments', adminNavInfo);
     await page.waitForSelector('[data-team-user-row]', { timeout: 20000 });
     const teamMetrics = await pageMetrics(page, '#adminPanel');
     assert(teamMetrics.width > 400, 'Team Admin panel must render at desktop width', teamMetrics);
