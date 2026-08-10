@@ -1,5 +1,46 @@
 # ACPM Changelog
 
+## Production deployment — PO RFP export (2026-08-10)
+
+### Deployed
+- Added a copy-pasteable **RFP (Request for Payment) for purchase orders** and
+  promoted it to Production `acpm-project-system` via the guarded
+  `scripts/deploy-production.ps1 -ConfirmProduction` path (hosting only — the
+  database rules are unchanged since the last release). All pre-deploy gates
+  passed; 26 files uploaded, version finalized, release complete.
+- Every PO card in Materials → Orders now shows a **📋 RFP** button next to the
+  existing Image export. It opens the same RFP modal used by payroll with
+  **Copy Text** and **Download PDF**, showing the RFP header, project name, PO
+  number, date, supplier, status, each line item (qty × unit cost = total),
+  `TOTAL AMOUNT`, and an "Approved by" signature line.
+
+### Live verification (real PO, read-only)
+- `scripts/production_po_rfp_live_check.js` signed in as the boss QA account
+  and verified the deployed feature against the real **Angeles Residence**
+  **PO-001** (RRJM Construction supply, 9 items): **14/14 PASS** — the RFP
+  button renders on the PO card; the modal opens; the RFP text carries the
+  header, project name, PO-001, supplier, line-item math, and
+  `TOTAL AMOUNT: ₱10,100.00`; **Copy Text** puts the full document on the
+  clipboard; **Download PDF** produces
+  `RFP_Angeles_Residence_..._2026-08-04.pdf`. No data was written.
+- The payroll RFP (Payroll card → 📄 RFP) is unchanged and shares the same
+  modal with the new PO RFP.
+
+## Production pilot smoke — Task lifecycle in live UI (2026-08-10)
+
+### Verified
+- `scripts/production_pilot_smoke.js` drove the real Production web app
+  through the full task lifecycle with the dedicated QA accounts and a
+  dedicated QA-only project (seeded and deleted around the run; the two real
+  active pilot projects were never touched).
+- **12/12 PASS**: APM create -> start -> submit for verification; APM menu
+  correctly hides `Verify and Complete`; PM login -> verify -> complete;
+  task lands in the Completed column.
+- Live DB verified the deployed rules end-to-end: task created by APM uid,
+  completed by PM uid, with `taskEvents` `created -> started ->
+  submitted_for_verification -> verified`. All QA project data was deleted
+  after the run.
+
 ## Production deployment — Task transition rules (2026-08-10)
 
 ### Deployed

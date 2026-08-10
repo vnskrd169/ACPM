@@ -111,9 +111,58 @@ node scripts/staging_rules_tasks_live_qa.js
 The script deletes the test project, user records, and Auth accounts on exit
 (verified no `rulesqa-*` residue remains).
 
+## Production Pilot Smoke (live UI) — 2026-08-10
+
+Ran `scripts/production_pilot_smoke.js` against the live Production web app
+with the dedicated QA accounts (`apm.qa@lebuild.test`, `pm.qa@lebuild.test`)
+and a dedicated QA-only project (seeded + deleted around the run; real pilot
+projects untouched). **12/12 PASS**:
+
+- APM: login, open Tasks tab, create task (Pending), Start Work (In Progress),
+  Submit for Verification (For Verification).
+- APM denied completion: task menu showed only `Return to In Progress | Mark
+  Blocked | Set Progress | Edit Details | Cancel Task` — no `Verify and
+  Complete`.
+- PM: login, see task in For Verification, `Verify and Complete` available,
+  task moves to Completed.
+- DB verified: task created by APM uid, completed by PM uid, taskEvents
+  `created -> started -> submitted_for_verification -> verified`.
+
+Run:
+
+```powershell
+node scripts/production_pilot_smoke.js
+```
+
+The script reads the QA project id from `pilotsmoke-project.txt` (or
+`SMOKE_PROJECT_ID` env) and takes a `pilotsmoke-final.png` screenshot on exit.
+
 Deliberate boundary: the state machine runs when a task already exists. On
 create, the transition order is not enforced (any non-completion status in the
 vocabulary may be used) and the app itself always creates tasks as `pending`;
 metadata edits on terminal tasks are likewise allowed at the rules layer while
 the app layer blocks them. None of these bypasses PM completion because the
 verifier-role gate applies to every write, completion alias included.
+
+## Production PO RFP (live UI) — 2026-08-10
+
+Deployed the **PO RFP export** to Production `acpm-project-system` via the
+guarded `scripts/deploy-production.ps1 -ConfirmProduction` path (hosting only;
+rules unchanged). Every PO card in Materials → Orders now has a **📋 RFP**
+button that opens the shared RFP modal (same as payroll) with **Copy Text** and
+**Download PDF**.
+
+Verified live against a **real** purchase order — Angeles Residence PO-001
+(RRJM Construction supply, 9 items) — with `scripts/production_po_rfp_live_check.js`:
+
+```powershell
+node scripts/production_po_rfp_live_check.js
+```
+
+**14/14 PASS**: boss login → Materials tab → RFP button renders on the PO card;
+modal opens; text carries `REQUEST FOR PAYMENT (RFP) - PURCHASE ORDER`, project
+name, PO-001, supplier, line items (qty × unit cost = total) and
+`TOTAL AMOUNT: ₱10,100.00`; **Copy Text** writes the full document to the
+clipboard; **Download PDF** saves `RFP_Angeles_Residence_..._2026-08-04.pdf`.
+Read-only — no data was written. The payroll RFP is unchanged and shares the
+same modal.

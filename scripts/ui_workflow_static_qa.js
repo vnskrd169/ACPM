@@ -20,6 +20,8 @@ function main() {
   const main = read('main.js');
   const changeorders = read('changeorders.js');
   const sitelog = read('sitelog.js');
+  const materials = read('materials.js');
+  const labor = read('labor.js');
 
   assertIncludes(workspace, 'id="tab_changeorders"', 'Change Orders tab must exist');
   assertIncludes(workspace, 'onclick="switchTab(\'changeorders\')"', 'Change Orders tab must call switchTab');
@@ -77,6 +79,16 @@ function main() {
   assertIncludes(sitelog, 'voidSiteLog(_slpid, key, reason.trim())', 'Site Log void UI must call voidSiteLog');
   assertIncludes(sitelog, 'async function exportSiteLogs()', 'Site Log export handler must exist');
 
+  // Materials — PO RFP (Request for Payment) export wiring
+  assertIncludes(materials, 'data-action="rfp"', 'PO cards must expose an RFP action');
+  assertIncludes(materials, "else if (action === 'rfp') generatePORFP(poId)", 'PO card RFP action must call generatePORFP');
+  assertIncludes(materials, 'async function generatePORFP(poId)', 'generatePORFP UI handler must exist');
+  assertIncludes(materials, 'REQUEST FOR PAYMENT (RFP) - PURCHASE ORDER', 'PO RFP text must carry the RFP header');
+  assertIncludes(materials, 'TOTAL AMOUNT:', 'PO RFP text must include the total amount');
+  assertIncludes(materials, 'window.generatePORFP = generatePORFP', 'generatePORFP must be exported');
+  assertIncludes(labor, "if (data.source === 'po') { downloadPORFP(doc, data); return; }", 'downloadRFP must route PO RFPs to downloadPORFP');
+  assertIncludes(labor, 'function downloadPORFP(doc, data)', 'downloadPORFP PDF helper must exist');
+
   assertIncludes(main, "'changeorders'", 'Workspace switcher must include Change Orders');
   assertIncludes(main, "'sitelog'", 'Workspace switcher must include Site Log');
 
@@ -87,6 +99,8 @@ function main() {
       'Change Orders visible approve/reject/revert/void actions call workflow helpers',
       'Site Log tab/panel/form/save/export actions are wired in current workspace shell',
       'Site Log visible save/void/export actions call workflow helpers',
+      'Materials PO cards expose an RFP action wired to generatePORFP (copy text + PDF)',
+      'downloadRFP routes PO RFPs to the downloadPORFP PDF helper',
       'Workspace switcher includes Change Orders and Site Log modules'
     ]
   }, null, 2));

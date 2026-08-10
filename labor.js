@@ -2253,9 +2253,10 @@ function downloadRFP() {
   if (!window._rfpData) return;
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const data = window._rfpData;
+  if (data.source === 'po') { downloadPORFP(doc, data); return; }
   const lm = 20, rm = 190;
   let y = 20;
-  const data = window._rfpData;
   const verified = data.source === 'archive';
   const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
   const projectName = data.projectName || _lpid;
@@ -2314,6 +2315,52 @@ function downloadRFP() {
   });
   const safeName = (projectName || _lpid).replace(/[^\w\-]+/g, '_');
   doc.save(`RFP_${safeName}_${data.start}.pdf`);
+}
+
+// PO RFP PDF (used by downloadRFP when source === 'po')
+function downloadPORFP(doc, data) {
+  const lm = 20, rm = 190;
+  let y = 20;
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  doc.setFontSize(14).setFont('helvetica', 'bold');
+  doc.text('REQUEST FOR PAYMENT - PURCHASE ORDER', lm, y); y += 7;
+  doc.setFontSize(9).setFont('helvetica', 'normal');
+  doc.text(`Project        : ${data.projectName}`, lm, y); y += 5;
+  doc.text(`PO Number      : ${data.poNo}`, lm, y); y += 5;
+  doc.text(`Date           : ${data.date}`, lm, y); y += 5;
+  doc.text(`Supplier       : ${data.supplier}`, lm, y); y += 5;
+  doc.text(`Date Prepared  : ${today}`, lm, y); y += 5;
+  doc.setDrawColor(60, 80, 120).setLineWidth(0.4);
+  doc.line(lm, y, rm, y); y += 6;
+
+  doc.setFont('helvetica', 'bold').setFontSize(8);
+  doc.text('ITEM / SIZE', lm + 2, y);
+  doc.text('QTY', lm + 92, y);
+  doc.text('UNIT COST', lm + 122, y);
+  doc.text('TOTAL', rm - 2, y, { align: 'right' });
+  y += 5;
+  doc.setFont('helvetica', 'normal');
+  (data.items || []).forEach((it) => {
+    const desc = String(it.desc || it.description || '').slice(0, 42);
+    const qty = it.qtyOrdered ?? it.qty;
+    doc.text(desc, lm + 2, y);
+    doc.text(`${qty} ${it.unit || ''}`, lm + 92, y);
+    doc.text(peso(it.cost), lm + 122, y);
+    doc.text(peso(it.totalCost ?? it.total), rm - 2, y, { align: 'right' });
+    y += 5;
+    if (y > 270) { doc.addPage(); y = 20; }
+  });
+  y += 4;
+  doc.setFont('helvetica', 'bold').setFontSize(9);
+  doc.text('TOTAL AMOUNT', lm + 2, y);
+  doc.text(peso(data.total), rm - 2, y, { align: 'right' });
+  y += 12;
+  doc.setFont('helvetica', 'normal').setFontSize(8);
+  doc.text('Approved by: ___________________________', lm, y);
+
+  const safeName = String(data.projectName || 'PO').replace(/[^\w\-]+/g, '_');
+  doc.save(`RFP_${safeName}_${String(data.date || new Date().toISOString().slice(0, 10)).replace(/[^\w\-]+/g, '_')}.pdf`);
 }
 
 function watchPayrollLogs(pid) {

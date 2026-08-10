@@ -1519,6 +1519,7 @@ function watchPOHistory(pid) {
               <span class="po-total">${peso(po.total)}</span>
               <div class="po-btns">
                 ${actions}
+                <button class="po-rfp-btn" data-po="${po.id}" data-action="rfp">&#x1F4C4; RFP</button>
                 <button class="po-export-btn" data-po="${po.id}" data-action="export">Image</button>
               </div>
             </div>
@@ -1536,6 +1537,7 @@ function watchPOHistory(pid) {
             if (action === 'approve') approvePO(poId);
             else if (action === 'delivery') openDeliveryModal(poId);
             else if (action === 'invoice') openInvoiceModal(poId);
+            else if (action === 'rfp') generatePORFP(poId);
             else if (action === 'export') exportPOImage(poId);
           });
         });
@@ -1629,6 +1631,52 @@ async function exportPOImage(poId) {
   }
 }
 
+// ── RFP (Request for Payment) text for a PO ──────────────────
+async function generatePORFP(poId) {
+  if (!_mpid) return;
+  const [po, nameSnap] = await Promise.all([
+    getPurchaseOrder(_mpid, poId),
+    firebase.database().ref(`projects/${_mpid}/name`).once('value').catch(() => null)
+  ]);
+  if (!po) { showToast('Purchase order not found.', 'error'); return; }
+
+  const projectName = (nameSnap && nameSnap.val()) || _mpid;
+
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+  const items = materialItemsArray(po.items).map(buildPoItem);
+  const total = items.reduce((sum, it) => sum + (parseFloat(it.totalCost ?? it.total) || 0), 0);
+  const poNo = po.poNo || `PO-${String(po.seq || '???').padStart(3, '0')}`;
+  const supplier = po.supplier || po.supplierName || '';
+
+  const lines = [];
+  lines.push(
+    'REQUEST FOR PAYMENT (RFP) - PURCHASE ORDER',
+    `Project        : ${projectName}`,
+    `PO Number      : ${poNo}`,
+    `Date           : ${po.date || po.createdDate || ''}`,
+    `Supplier       : ${supplier}`,
+    `Date Prepared  : ${today}`,
+    `Status         : ${poStatusLabel(po.status)}`,
+    po.notes ? `Notes          : ${po.notes}` : '',
+    '─'.repeat(54)
+  );
+  items.forEach(it => {
+    const qty = it.qtyOrdered ?? it.qty;
+    const unit = it.unit ? ` ${it.unit}` : '';
+    lines.push(`  ${String(it.desc || '').slice(0, 26).padEnd(28)} ${String(qty).padStart(6)}${unit.padEnd(9)} x ${peso(it.cost).padStart(10)} = ${peso(it.totalCost ?? it.total).padStart(11)}`);
+  });
+  lines.push('', '─'.repeat(54));
+  lines.push(`TOTAL AMOUNT: ${peso(total)}`);
+  lines.push('', 'Approved by: ___________________________');
+
+  window._rfpData = { lines, source: 'po', projectName, poNo, date: po.date || '', supplier, items, total };
+  const ta = $('rfpOutput');
+  if (!ta) { showToast('RFP output is not available on this page.', 'error'); return; }
+  ta.value = lines.join('\n');
+  const modal = $('rfpModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
 // Export ledger to CSV
 async function exportLedgerCSV() {
   if (!_mpid) return;
@@ -1696,3 +1744,4 @@ window.deleteLedgerItem = deleteLedgerItem;
 window.exportLedgerCSV = exportLedgerCSV;
 window.filterPOHistory = filterPOHistory;
 window.exportPOImage = exportPOImage;
+window.generatePORFP = generatePORFP;
