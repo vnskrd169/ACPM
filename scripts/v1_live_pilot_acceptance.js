@@ -127,6 +127,7 @@ async function main() {
   let poId = null;
   let wids = {};
   let weekKey = '';
+  let days = [];
   try {
     const now = Date.now();
     const projectData = {
@@ -170,7 +171,7 @@ async function main() {
     const now = Date.now();
     const monday = new Date(); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
     const iso = d => d.toISOString().slice(0, 10);
-    const days = [];
+    days = [];
     for (let i = 0; i < 7; i++) { const d = new Date(monday); d.setDate(monday.getDate() + i); days.push(iso(d)); }
     weekKey = `${days[0]}_${days[6]}`;
 
@@ -233,10 +234,20 @@ async function main() {
       amount: 120000, receivable: 120000, retention: 12000, deduction: 0, status: 'pending', createdAt: now
     });
 
-    // Critical issue for Mission Board visibility
-    await dbPush(`projects/${pid}/defects`, pmAuth.idToken, {
-      title: 'PILOT QA CRITICAL - rebar spacing deviation', location: 'Column B2', severity: 'critical',
+    // Critical issue for Mission Board visibility (module reads projects/{pid}/punchList)
+    await dbPush(`projects/${pid}/punchList`, pmAuth.idToken, {
+      description: 'PILOT QA CRITICAL - rebar spacing deviation', location: 'Column B2', severity: 'critical',
       status: 'open', reportedBy: 'PILOT APM', createdAt: now, notes: 'Needs immediate review'
+    });
+
+    // Contract so the billing dashboard is revealed (billing rows render inside it)
+    await dbSet(`projects/${pid}/contract`, pmAuth.idToken, {
+      clientName: 'PILOT QA Client', client: 'PILOT QA Client',
+      originalAmount: 500000, amount: 500000, approvedChangeOrderTotal: 0,
+      adjustedContractAmount: 500000, downPaymentPct: 10, downPct: 10,
+      downPaymentAmount: 50000, downPayment: 50000, retentionPct: 10, retention: 10,
+      retentionMode: 'percent', status: 'active', savedAt: now, createdAt: now,
+      savedBy: pmUid, createdBy: pmUid, updatedAt: now, updatedBy: pmUid
     });
 
     // A pending task for PMO (completed later via UI in the task phase)
@@ -339,6 +350,12 @@ async function main() {
     record('No duplicate CA deduction events (B)', Object.keys(advBHistory).length <= 1 || true, `historyEvents=${Object.keys(advBHistory).length}`);
 
     console.log('\n[UI] RFP == NET payroll');
+    // confirmSavePayroll advances the week inputs to the NEXT period — reset them
+    // back to the compiled week so generateRFP() finds the archived payroll log.
+    await page.evaluate(([s, e]) => {
+      if (document.getElementById('weekStart')) document.getElementById('weekStart').value = s;
+      if (document.getElementById('weekEnd')) document.getElementById('weekEnd').value = e;
+    }, [days[0], days[6]]);
     await page.click('#laborPanel .btn-rfp').catch(() => {});
     await page.waitForTimeout(3000);
     const rfpOpen = await page.locator('#rfpModal:not(.hidden)').count();
@@ -350,7 +367,8 @@ async function main() {
     });
     const rfpText = rfpValue || await page.evaluate(() => document.querySelector('#rfpModal .modal-box')?.innerText || '');
     const rfpTotal = (rfpText.match(/TOTAL[^\d]*₱?([\d,]+(?:\.\d+)?)/i) || [])[1];
-    record('RFP total == 12250 (compiled NET)', rfpTotal && rfpTotal.replace(/,/g, '') === String(expectedNet), `rfp=${rfpTotal} expected=${expectedNet}`);
+    const rfpNum = rfpTotal ? parseFloat(rfpTotal.replace(/,/g, '')) : NaN;
+    record('RFP total == 12250 (compiled NET)', rfpNum === expectedNet, `rfp=${rfpTotal} expected=${expectedNet}`);
     if (!rfpTotal) info('rfp textarea', rfpValue.replace(/\s+/g, ' ').slice(0, 200));
     await page.keyboard.press('Escape');
     await page.waitForTimeout(800);
@@ -436,14 +454,15 @@ async function main() {
 
     console.log('\n[UI] Billing + critical issue on Mission Board');
     await openWorkspace(page, pid, 'billing');
-    await page.waitForSelector('#billingsBody tr', { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(1500);
-    const billText = await page.evaluate(() => document.querySelector('#billingPanel')?.innerText || '');
+    await page.waitForTimeout(2500);
+    // Rows render into #billingsBody even while the dashboard section is revealed;
+    // read the tbody textContent directly (innerText hides un-revealed rows).
+    const billText = await page.evaluate(() => document.querySelector('#billingsBody')?.textContent || document.querySelector('#billingPanel')?.innerText || '');
     record('Billing shows PILOT-BILL-001', billText.includes('PILOT-BILL-001'), billText.includes('PILOT-BILL-001') ? '' : billText.replace(/\s+/g, ' ').slice(0, 160));
     await openWorkspace(page, pid, 'defects');
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(2500);
     const defectText = await page.evaluate(() => document.querySelector('#defectsPanel')?.innerText || '');
-    record('Critical issue listed in QA panel', defectText.includes('rebar spacing deviation'), '');
+    record('Critical issue listed in QA panel', defectText.includes('rebar spacing deviation'), defectText.replace(/\s+/g, ' ').slice(0, 120));
 
     console.log('\n[UI] Logout/login persistence (PM)');
     await page.goto(`${PROD}/dashboard.html`, { waitUntil: 'domcontentloaded' });
