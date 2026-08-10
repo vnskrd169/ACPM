@@ -48,8 +48,8 @@ function main() {
   const indexHtml = read('index.html');
   const loginHtml = read('login.html');
 
-  assert(/const CACHE_NAME = 'acpm-v137'/.test(sw), 'service worker cache must be acpm-v137');
-  assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=110">'), 'login.html must load style.css?v=110');
+  assert(/const CACHE_NAME = 'acpm-v138'/.test(sw), 'service worker cache must be acpm-v138');
+  assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=111">'), 'login.html must load style.css?v=111');
   assert(extractScriptVersion(loginHtml, 'environment.js') === '1', 'login.html must load environment.js?v=1');
   assert(extractScriptVersion(loginHtml, 'utils.js') === '87', 'login.html must load utils.js?v=87');
   assert(extractScriptVersion(loginHtml, 'auth.js') === '98', 'login.html must load auth.js?v=98');
@@ -57,7 +57,7 @@ function main() {
   assert(indexHtml.includes("window.location.replace('./login.html' + suffix)"), 'legacy index.html must redirect to the maintained login route');
   assert(!/<script\s+src=/.test(indexHtml), 'legacy index.html must not duplicate the private app shell');
   for (const [file, content] of Object.entries(html)) {
-    assert(content.includes('<link rel="stylesheet" href="style.css?v=110">'), `${file} must load style.css?v=110`);
+    assert(content.includes('<link rel="stylesheet" href="style.css?v=111">'), `${file} must load style.css?v=111`);
     assert(extractScriptVersion(content, 'environment.js') === '1', `${file} must load environment.js?v=1`);
     assert(extractScriptVersion(content, 'utils.js') === '87', `${file} must load utils.js?v=87`);
     assert(extractScriptVersion(content, 'auth.js') === '98', `${file} must load auth.js?v=98`);
@@ -72,7 +72,7 @@ function main() {
   }
   assert(sw.includes('./utils.js?v=87'), 'service worker must cache utils.js?v=87');
   assert(sw.includes('./environment.js?v=1'), 'service worker must cache environment.js?v=1');
-  assert(sw.includes('./style.css?v=110'), 'service worker must cache style.css?v=110');
+  assert(sw.includes('./style.css?v=111'), 'service worker must cache style.css?v=111');
   assert(sw.includes('./auth.js?v=98'), 'service worker must cache auth.js?v=98');
   assert(sw.includes('./main.js?v=109'), 'service worker must cache main.js?v=109');
   assert(sw.includes('./payroll-math.js?v=2'), 'service worker must cache payroll-math.js?v=2');

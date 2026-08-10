@@ -6738,11 +6738,29 @@ table.table-compact td { padding: 8px 10px; font-size: 11px; }
   gap: 10px;
 }
 
+#deliveryModal .modal-box {
+  /* Flex-column frame: header + form + list + footer. The box caps at the
+     viewport and must NOT scroll itself — the item list owns the vertical
+     scroll so every delivery row stays reachable (see #deliveryItemsList). */
+  overflow: hidden;
+}
+
+#deliveryModal .modal-title,
+#deliveryModal .delivery-form,
+#deliveryModal .modal-actions {
+  flex-shrink: 0;
+}
+
 #deliveryItemsList {
   border: 1px solid var(--border2);
   border-radius: var(--radius-sm);
   background: var(--surface2);
-  overflow: hidden;
+  /* min-height:0 lets the flex child shrink below content size so it can
+     become the internal scroll container instead of clipping its rows. */
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .delivery-item-row {

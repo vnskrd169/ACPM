@@ -552,6 +552,70 @@ const IN_PAGE = `
       const scrollable = cs.overflowY === 'auto' || cs.overflowY === 'scroll';
       return { ok: fits, reason: fits ? '' : 'box ' + Math.round(r.top) + '..' + Math.round(r.bottom) + ' vh=' + vh, rect: { top: Math.round(r.top), bottom: Math.round(r.bottom), h: Math.round(r.height) }, overflowY: cs.overflowY, maxHeight: cs.maxHeight };
     },
+    // Delivery receipt modal: with many line items the modal must never exceed
+    // the viewport, the item list must own the vertical scroll (not clip rows),
+    // and every row + the footer action must stay reachable. 30 rows are
+    // injected into the live list container so the check is deterministic.
+    deliveryScrollBody(modalSel, rowCount) {
+      const modal = document.querySelector(modalSel);
+      const box = modal && modal.querySelector('.modal-box');
+      const list = modal && modal.querySelector('#deliveryItemsList');
+      if (!modal || !box || !list) return { ok: false, reason: 'delivery modal/list not found' };
+      const header = modal.querySelector('.modal-title');
+      const footer = modal.querySelector('.modal-actions');
+      const listStyle = getComputedStyle(list);
+      const boxStyle = getComputedStyle(box);
+      const vh = window.innerHeight;
+      // Seed rows so the list content always exceeds the smallest tested viewport.
+      const rows = rowCount || 30;
+      let html = '';
+      for (let i = 0; i < rows; i++) {
+        html += '<div class="delivery-item-row">' +
+          '<span class="delivery-item-name">QA Delivery Item ' + (i + 1) +
+          ' - Extra long material description that wraps nicely and must never clip on any viewport</span>' +
+          '<span class="delivery-item-ordered">Ordered: 100 pcs · Remaining: 100 pcs</span>' +
+          '<input type="number" class="delivery-qty-received" value="">' +
+          '<select><option>Good</option></select></div>';
+      }
+      list.innerHTML = html;
+      // Force the layout to settle, then measure the real scroll geometry.
+      const br = box.getBoundingClientRect();
+      const fits = br.top >= -2 && br.bottom <= vh + 2;
+      const listH = list.clientHeight;
+      const scrollH = list.scrollHeight;
+      const canScroll = listStyle.overflowY === 'auto' || listStyle.overflowY === 'scroll';
+      const boxOwnsScroll = (boxStyle.overflowY === 'auto' || boxStyle.overflowY === 'scroll');
+      // The list must actually be the scroll container: it clips only when it
+      // has content larger than itself AND is scrollable (not overflow:hidden).
+      const listScrolls = canScroll && scrollH > listH + 1;
+      // Scroll the list to the bottom and confirm the LAST row is fully visible.
+      list.scrollTop = list.scrollHeight;
+      const rowsEls = Array.from(list.querySelectorAll('.delivery-item-row'));
+      const lastRow = rowsEls[rowsEls.length - 1];
+      const lr = lastRow ? lastRow.getBoundingClientRect() : null;
+      const lastReachable = !!lr && lr.bottom <= br.bottom + 2 && lr.bottom > br.top - 2;
+      const lastRowId = lastRow && lastRow.querySelector('.delivery-item-name') && lastRow.querySelector('.delivery-item-name').textContent.trim();
+      // Footer actions must stay visible (never pushed below the viewport).
+      const fr = footer ? footer.getBoundingClientRect() : null;
+      const footerVisible = !!fr && fr.top >= -2 && fr.bottom <= vh + 2 && fr.bottom > 0;
+      // Header must stay visible too.
+      const hdr = header ? header.getBoundingClientRect() : null;
+      const headerVisible = !!hdr && hdr.top >= -2 && hdr.bottom <= vh + 2;
+      const result = {
+        ok: fits && listScrolls && lastReachable && footerVisible && headerVisible && !boxOwnsScroll,
+        reason: [
+          fits ? '' : 'box ' + Math.round(br.top) + '..' + Math.round(br.bottom) + ' vh=' + vh,
+          listScrolls ? '' : 'list not scrollable overflowY=' + listStyle.overflowY + ' scrollH=' + scrollH + ' clientH=' + listH,
+          lastReachable ? '' : 'last row unreachable',
+          footerVisible ? '' : 'footer off-viewport',
+          headerVisible ? '' : 'header off-viewport',
+          boxOwnsScroll ? 'box still scrolls (overflowY=' + boxStyle.overflowY + ')' : ''
+        ].filter(Boolean).join('; ') || 'all rows + footer + header reachable',
+        metrics: { boxTop: Math.round(br.top), boxBottom: Math.round(br.bottom), listH, scrollH, rows: rowsEls.length, lastRow: lastRowId, listOverflowY: listStyle.overflowY }
+      };
+      list.innerHTML = '';
+      return result;
+    },
     panelVisible(panelId) {
       const el = document.getElementById(panelId);
       if (!el) return false;
@@ -779,7 +843,8 @@ async function auditWorkspaceViewport(browser, vp) {
     const submitBtn = await page.evaluate(() => window.__audit.actionReachable('#materialsPanel .btn-submit-po'));
     record(name, 'materials: Submit PO reachable with 30 items', submitBtn.ok, submitBtn.reason);
 
-    /* delivery modal with many line items */
+    /* delivery modal with many line items (30-item regression: every row must
+       remain reachable, the list owns the scroll, footer+header stay visible) */
     const openedAny = await page.evaluate(() => {
       const btns = Array.from(document.querySelectorAll('#materialsPanel button'));
       const del = btns.find(b => /deliver|receive/i.test(b.textContent || ''));
@@ -788,8 +853,10 @@ async function auditWorkspaceViewport(browser, vp) {
     });
     if (openedAny) {
       await page.waitForTimeout(400);
-      const fit = await page.evaluate(() => window.__audit.modalFit('.modal-overlay'));
+      const fit = await page.evaluate(() => window.__audit.modalFit('#deliveryModal'));
       record(name, 'delivery modal fits viewport', fit.ok, fit.reason);
+      const scrollBody = await page.evaluate(() => window.__audit.deliveryScrollBody('#deliveryModal', 30));
+      record(name, 'delivery modal: 30 items all reachable, list scrolls, header+footer visible', scrollBody.ok, scrollBody.reason + (scrollBody.metrics ? ' [' + JSON.stringify(scrollBody.metrics).slice(0, 140) + ']' : ''));
       await page.keyboard.press('Escape');
     } else {
       record(name, 'delivery modal opened', false, 'no deliver/receive button found in materials panel');
