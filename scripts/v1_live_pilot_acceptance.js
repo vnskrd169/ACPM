@@ -60,9 +60,9 @@ async function signIn(email, password) {
 }
 const enc = p => String(p || '').split('/').filter(Boolean).map(encodeURIComponent).join('/');
 const dbUrl = (path, token) => `${DB_URL}/${enc(path)}.json?auth=${token}`;
-async function dbGet(path, token) { return httpJson(dbUrl(path, token)); }
-async function dbSet(path, token, value) { return httpJson(dbUrl(path, token), { method: 'PUT', body: JSON.stringify(value) }); }
-async function dbPatch(path, token, value) { return httpJson(dbUrl(path, token), { method: 'PATCH', body: JSON.stringify(value) }); }
+async function dbGet(path, token, expectFailure = false) { return httpJson(dbUrl(path, token), {}, expectFailure); }
+async function dbSet(path, token, value, expectFailure = false) { return httpJson(dbUrl(path, token), { method: 'PUT', body: JSON.stringify(value) }, expectFailure); }
+async function dbPatch(path, token, value, expectFailure = false) { return httpJson(dbUrl(path, token), { method: 'PATCH', body: JSON.stringify(value) }, expectFailure); }
 async function dbPush(path, token, value) {
   const key = 'qa' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   await dbSet(`${path}/${key}`, token, value);
@@ -339,13 +339,19 @@ async function main() {
     record('No duplicate CA deduction events (B)', Object.keys(advBHistory).length <= 1 || true, `historyEvents=${Object.keys(advBHistory).length}`);
 
     console.log('\n[UI] RFP == NET payroll');
-    await page.click('.btn-rfp').catch(() => {});
-    await page.waitForTimeout(2500);
+    await page.click('#laborPanel .btn-rfp').catch(() => {});
+    await page.waitForTimeout(3000);
     const rfpOpen = await page.locator('#rfpModal:not(.hidden)').count();
     record('RFP modal opens', rfpOpen > 0, '');
-    const rfpText = await page.evaluate(() => document.querySelector('#rfpModal .modal-box')?.innerText || '');
+    // RFP content lives in the #rfpOutput textarea — read its .value, not innerText.
+    const rfpValue = await page.evaluate(() => {
+      const t = document.querySelector('#rfpOutput');
+      return t ? (t.value || '') : '';
+    });
+    const rfpText = rfpValue || await page.evaluate(() => document.querySelector('#rfpModal .modal-box')?.innerText || '');
     const rfpTotal = (rfpText.match(/TOTAL[^\d]*₱?([\d,]+(?:\.\d+)?)/i) || [])[1];
     record('RFP total == 12250 (compiled NET)', rfpTotal && rfpTotal.replace(/,/g, '') === String(expectedNet), `rfp=${rfpTotal} expected=${expectedNet}`);
+    if (!rfpTotal) info('rfp textarea', rfpValue.replace(/\s+/g, ' ').slice(0, 200));
     await page.keyboard.press('Escape');
     await page.waitForTimeout(800);
 
@@ -430,9 +436,10 @@ async function main() {
 
     console.log('\n[UI] Billing + critical issue on Mission Board');
     await openWorkspace(page, pid, 'billing');
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('#billingsBody tr', { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(1500);
     const billText = await page.evaluate(() => document.querySelector('#billingPanel')?.innerText || '');
-    record('Billing shows PILOT-BILL-001', billText.includes('PILOT-BILL-001'), '');
+    record('Billing shows PILOT-BILL-001', billText.includes('PILOT-BILL-001'), billText.includes('PILOT-BILL-001') ? '' : billText.replace(/\s+/g, ' ').slice(0, 160));
     await openWorkspace(page, pid, 'defects');
     await page.waitForTimeout(2000);
     const defectText = await page.evaluate(() => document.querySelector('#defectsPanel')?.innerText || '');
