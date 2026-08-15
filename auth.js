@@ -18,8 +18,11 @@
 
 const AUTH_VERSION = '2';
 const EMAIL_DOMAIN = '@acpm.local';
-const PROFILE_PHOTO_STORAGE_ENABLED = false;
+// Profile photos are stored in Google Drive (full-access links) via the same
+// approved Apps Script transport PMOS/Site Log use. No Firebase Storage.
 const PROFILE_PHOTO_MAX_INLINE_BYTES = 180 * 1024;
+const PROFILE_PHOTO_DRIVE_URL = (typeof window !== 'undefined' && window.PMOS_CONFIG && window.PMOS_CONFIG.driveUploadUrl)
+  || 'https://script.google.com/macros/s/AKfycbxNQ1PunSoV2gCpdfrHs10D7kNC5YUnIyq0IHmFsI4MrDq3wHsJZaCiEcxP2RkHNA5P/exec';
 let _currentAuthUser = null;
 let _profileListener = null;
 let _accessRequestInProgress = false;
@@ -879,7 +882,7 @@ function showMyProfileSetup(profile = {}) {
           <input id="profilePosition" type="text" value="${escapeHtml(profile.position || '')}" placeholder="Project Manager">
           <label class="field-label" for="profileMobile">Mobile number</label>
           <input id="profileMobile" type="tel" value="${escapeHtml(profile.mobile || '')}" placeholder="09xx xxx xxxx">
-          <label class="field-label" for="profilePhoto">Profile photo</label>
+          <label class="field-label" for="profilePhoto">Profile photo <span class="profile-drive-hint">&#x1F4C1; saved to Google Drive</span></label>
           <input id="profilePhoto" type="file" accept="image/*">
           <label class="field-label" for="profileSignature">Signature / initials (optional)</label>
           <input id="profileSignature" type="text" value="${escapeHtml(profile.signature || '')}" placeholder="Signature name or initials">
@@ -894,24 +897,59 @@ function showMyProfileSetup(profile = {}) {
   `;
 }
 
+async function uploadProfilePhotoToDrive(uid, dataUrl, safeName) {
+  if (!PROFILE_PHOTO_DRIVE_URL || typeof fetch !== 'function') return null;
+  const base64 = String(dataUrl || '').split(',')[1] || '';
+  if (!base64) return null;
+  const ts = Date.now();
+  const fileName = `${ts}_${safeName || 'avatar.jpg'}`;
+  const response = await fetch(PROFILE_PHOTO_DRIVE_URL, {
+    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      localId: uid, projectId: 'profiles', projectName: 'Profiles',
+      projectFolderName: 'profiles',
+      date: new Date(ts).toISOString().slice(0, 10), fileName, thumbnailFileName: fileName,
+      photoMimeType: 'image/jpeg', thumbnailMimeType: 'image/jpeg',
+      photoBase64: base64, thumbnailBase64: base64
+    })
+  });
+  const text = await response.text();
+  let data = {};
+  try { data = JSON.parse(text); } catch (e) { throw new Error(`Drive upload invalid response: ${text.slice(0, 120)}`); }
+  const url = data.photoUrl || data.fileUrl || data.viewUrl || data.downloadUrl || '';
+  const fileId = data.fileId || data.photoFileId || '';
+  const folderId = data.folderId || data.driveFolderId || '';
+  if (!response.ok || data.ok === false || !url) {
+    const driveError = String(data.error || '');
+    if (/access|denied|authorization|permission/i.test(driveError)) throw new Error('Drive upload access denied.');
+    throw new Error(driveError || `Drive upload failed with HTTP ${response.status}`);
+  }
+  return {
+    avatarUrl: url,
+    avatarPath: `profilePhotos/${uid}/${fileName}`,
+    avatarDriveFileId: fileId,
+    avatarDriveFolderId: folderId,
+    avatarStorageProvider: 'Google Drive',
+    avatarUpdatedAt: ts
+  };
+}
+
 async function uploadProfilePhoto(uid, file) {
   if (!file) return {};
   if (!String(file.type || '').startsWith('image/')) throw new Error('Profile photo must be an image file.');
   if (file.size > 5 * 1024 * 1024) throw new Error('Profile photo must be 5 MB or smaller.');
   const safeName = String(file.name || 'avatar.jpg').replace(/[^a-z0-9._-]/gi, '_').slice(0, 80);
-  if (!PROFILE_PHOTO_STORAGE_ENABLED || !firebase.storage) {
-    return {
-      avatarUrl: await inlineProfilePhotoDataUrl(file),
-      avatarPath: `inline:${safeName}`,
-      avatarUpdatedAt: Date.now()
-    };
+  const dataUrl = await inlineProfilePhotoDataUrl(file);
+  try {
+    const drive = await uploadProfilePhotoToDrive(uid, dataUrl, safeName);
+    if (drive) return drive;
+  } catch (e) {
+    console.warn('Profile photo Drive upload unavailable, using inline avatar:', e?.message || e);
   }
-  const path = `profilePhotos/${uid}/${Date.now()}_${safeName}`;
-  const ref = firebase.storage().ref(path);
-  await ref.put(file, { contentType: file.type || 'image/jpeg' });
   return {
-    avatarUrl: await ref.getDownloadURL(),
-    avatarPath: path,
+    avatarUrl: dataUrl,
+    avatarPath: `inline:${safeName}`,
+    avatarStorageProvider: 'Inline',
     avatarUpdatedAt: Date.now()
   };
 }
@@ -991,7 +1029,7 @@ async function saveMyProfile() {
         photoUpdates = await uploadProfilePhoto(user.uid, photo);
       } catch (photoError) {
         console.warn('profile photo upload skipped:', photoError?.code || photoError?.message || photoError);
-        photoWarning = 'Profile saved, but photo upload is unavailable. Initials will be used until Firebase Storage is set up.';
+        photoWarning = 'Profile saved, but the photo could not be uploaded. Your initials will be used for now.';
       }
     }
     const updates = {

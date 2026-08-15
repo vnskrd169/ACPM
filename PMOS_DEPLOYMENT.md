@@ -120,7 +120,7 @@ The feature is disabled by default. No models, camera access, or Firebase listen
 3. Verify:
    - Authentication and project access
    - All 7 PMOS modules (Quick Update, Site Log, Issue, Material Request, Follow-up, Meeting Notes, Photos)
-   - Photo upload to Firebase Storage
+   - Photo upload to Google Drive (Apps Script transport, no Firebase Storage)
    - Offline mode + sync
    - Office Hub review
 4. If stable, get owner approval for production deployment
@@ -130,7 +130,7 @@ The feature is disabled by default. No models, camera access, or Firebase listen
 - **Firebase project**: `acpm-project-system`
 - **Firebase Hosting**: `acpm-project-system.web.app`
 - **Firebase Database**: `acpm-project-system-default-rtdb.asia-southeast1`
-- **Firebase Storage**: `acpm-project-system.firebasestorage.app`
+- **Firebase Storage**: locked to Drive-only policy — no uploads; authenticated reads only for legacy links
 
 ## Emulator Test Setup (for Development/QA)
 

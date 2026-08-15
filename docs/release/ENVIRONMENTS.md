@@ -71,8 +71,9 @@ The command uses `firebase.auth.staging.json`, explicitly targets
 `acpm-project-system-qa`, and provisions the Staging OAuth brand/client when
 needed. It does not change Production Authentication.
 
-Firebase Storage is not required. Do not enable Storage for PMOS photos; the
-existing Google Drive Apps Script remains the approved transport.
+Firebase Storage is fully disabled. `storage.rules` denies all writes across
+PMOS, Site Log, Face Attendance, and profile photos; the existing Google Drive
+Apps Script is the only photo transport.
 
 ## Recovery
 

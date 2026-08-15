@@ -31,7 +31,7 @@ Live QA also found two production race/stability issues:
 - PASS: JavaScript syntax checks pass for `auth.js` and `report.js`.
 - PASS: Firebase Realtime Database rules were published; Boss can read `/accessRequests`.
 - WARNING: Existing orphan Auth accounts created before the rules publish must use Send Missing Request once.
-- PASS: profile photos save as compressed inline avatars when Firebase Storage is unavailable; initials fallback remains available when no photo is selected.
+- PASS: profile photos upload to Google Drive (full-access link) with a compressed inline avatar fallback; initials fallback remains available when no photo is selected.
 
 ## Manual Browser QA Required After Rules Publish
 
@@ -62,7 +62,7 @@ Result: `PASS`
 - PASS: Approval wrote `users/{uid}` with `status: active`, `profileComplete: false`, role, project map, approval metadata, audit record, global notification event, and direct user notification.
 - PASS: First approved login displayed My Profile setup.
 - PASS: Profile fields saved and persisted after refresh/sign-out/sign-in.
-- PASS: profile photo saved and persisted as an inline compressed avatar because Firebase Storage is not set up.
+- PASS: profile photo saved and persisted to Google Drive (or compressed inline avatar if the Drive endpoint is unreachable).
 - PASS: user self-write attempts for role, projects, and status were denied by Firebase rules.
 - PASS: Team Admin suspend, reactivate, and archive status workflow updated history without hard delete.
 - PASS: suspended and archived users were blocked at login with clear status messages.
@@ -74,7 +74,7 @@ Evidence:
 result: PASS
 profilePhotoSaved: true
 profilePhotoUploadedToStorage: false
-profilePhotoWarning: Profile photo was saved inline because Firebase Storage is not set up.
+profilePhotoWarning: Profile photo was saved inline because Google Drive upload was unavailable.
 selfRoleWriteDenied: true
 selfProjectWriteDenied: true
 selfStatusWriteDenied: true
@@ -116,5 +116,5 @@ Result: `PASS`
 
 - Browser UI cannot delete Firebase Auth accounts. Suspended/archived user state is preferred over hard delete.
 - RC1 supports one primary role per user. Multi-role permissions are future work.
-- Profile photos are stored inline in `users/{uid}/avatarUrl` for RC1 when Firebase Storage is unavailable. This is suitable for small team avatars only; use Firebase Storage later if large/high-resolution profile media becomes required.
+- Profile photos are stored in Google Drive (shareable `avatarUrl`) via the Apps Script transport, falling back to a compressed inline avatar in `users/{uid}/avatarUrl` when the Drive endpoint is unreachable. This keeps avatars small and full-access without any Firebase Storage dependency.
 - Firebase Auth account deletion remains a console/admin task; ACPM only controls app-level access in `users/{uid}`.

@@ -27,6 +27,14 @@
   const STRONG_DEFAULT = 0.40;
   const POSSIBLE_DEFAULT = 0.55;
 
+  /* ---- Google Drive upload transport (no Firebase Storage) ----
+     Reuses the same approved Apps Script endpoint as PMOS and Site Log
+     (PMOS_CONFIG.driveUploadUrl). Photos are compressed client-side,
+     base64-encoded, and POSTed to the Apps Script endpoint which stores
+     them in Google Drive with full-access shareable links. */
+  const FACE_DRIVE_UPLOAD_URL = (typeof window !== 'undefined' && window.PMOS_CONFIG && window.PMOS_CONFIG.driveUploadUrl)
+    || 'https://script.google.com/macros/s/AKfycbxNQ1PunSoV2gCpdfrHs10D7kNC5YUnIyq0IHmFsI4MrDq3wHsJZaCiEcxP2RkHNA5P/exec';
+
   const faceState = {
     initialized: false,
     active: false,
@@ -356,22 +364,85 @@
     return { best, topMatches, enrolledCount: workers.length };
   }
 
-  function uploadBlob(path, blob, contentType = 'image/jpeg') {
+  /* ---- Google Drive upload helpers (Firebase Storage-free) ---- */
+  function faceBlobToBase64(blob) {
     return new Promise((resolve, reject) => {
-      if (!firebase.storage) {
-        reject(new Error('Firebase Storage SDK is not loaded.'));
-        return;
-      }
-      const ref = firebase.storage().ref(path);
-      const task = ref.put(blob, { contentType });
-      task.on(firebase.storage.TaskEvent.STATE_CHANGED, null, reject, async () => {
-        try {
-          resolve({ path, url: await ref.getDownloadURL() });
-        } catch (e) {
-          reject(e);
-        }
-      });
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+      reader.onerror = () => reject(reader.error || new Error('Could not read face photo.'));
+      reader.readAsDataURL(blob);
     });
+  }
+
+  function faceDriveThumbnailUrl(fileId, size) {
+    return fileId ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${size || 800}` : '';
+  }
+
+  function faceDriveAvailable() {
+    try {
+      return typeof fetch === 'function' && !!FACE_DRIVE_UPLOAD_URL;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function normalizeDriveField(data, field) {
+    for (let i = 2; i < arguments.length; i++) {
+      if (data[arguments[i]]) return data[arguments[i]];
+    }
+    return data[field] || '';
+  }
+
+  /* Upload a photo + thumbnail pair to Google Drive via Apps Script.
+     Returns { photoUrl, thumbnailUrl, photoFileId, thumbnailFileId,
+     driveFolderId, storagePath, thumbnailStoragePath }. */
+  async function uploadFaceBlobPair(photoBlob, thumbBlob, storagePath, thumbnailStoragePath, meta = {}) {
+    if (!faceDriveAvailable()) throw new Error('Face photo upload is not available on this device.');
+    const [photoBase64, thumbnailBase64] = await Promise.all([
+      faceBlobToBase64(photoBlob),
+      faceBlobToBase64(thumbBlob)
+    ]);
+    const fileName = storagePath.split('/').pop() || 'face-photo.jpg';
+    const thumbnailFileName = thumbnailStoragePath.split('/').pop() || `thumb_${fileName}`;
+    const response = await fetch(FACE_DRIVE_UPLOAD_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        localId: meta.localId || '', projectId: meta.projectId || '',
+        projectName: meta.projectName || meta.projectId || '',
+        projectFolderName: meta.projectFolderName || meta.projectId || 'face',
+        date: meta.date || todayKey(), fileName, thumbnailFileName,
+        photoMimeType: 'image/jpeg', thumbnailMimeType: 'image/jpeg',
+        photoBase64, thumbnailBase64
+      })
+    });
+    const text = await response.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch (e) { throw new Error(`Drive upload invalid response: ${text.slice(0, 120)}`); }
+
+    data.photoUrl = normalizeDriveField(data, 'photoUrl', 'fileUrl', 'viewUrl', 'downloadUrl');
+    data.fileId = normalizeDriveField(data, 'fileId', 'photoFileId');
+    data.thumbnailUrl = normalizeDriveField(data, 'thumbnailUrl', 'thumbUrl');
+    data.thumbnailFileId = normalizeDriveField(data, 'thumbnailFileId', 'thumbFileId');
+    data.folderId = normalizeDriveField(data, 'folderId', 'driveFolderId');
+
+    if (!response.ok || data.ok === false) {
+      const driveError = String(data.error || '');
+      if (driveError.includes('getFolderById')) throw new Error('Drive folder not accessible.');
+      if (/access|denied|authorization|permission/i.test(driveError)) throw new Error('Drive upload access denied.');
+      throw new Error(driveError || `Drive upload failed with HTTP ${response.status}`);
+    }
+    if (!data.photoUrl || !data.thumbnailUrl) throw new Error('Drive upload did not return photo links.');
+    const thumbnailUrl = data.thumbnailFileId ? faceDriveThumbnailUrl(data.thumbnailFileId, 800) : data.thumbnailUrl;
+    return {
+      photoUrl: data.photoUrl,
+      thumbnailUrl: thumbnailUrl,
+      photoFileId: data.fileId || '',
+      thumbnailFileId: data.thumbnailFileId || '',
+      driveFolderId: data.folderId || '',
+      storagePath,
+      thumbnailStoragePath,
+      storageProvider: 'Google Drive'
+    };
   }
 
   function writeAudit(action, entityType, entityId, details = {}) {
@@ -508,7 +579,7 @@
         <div><h3>${h(worker.name || worker.id)}</h3><p>${h(worker.trade || 'No trade')} - ${worker.dailyRate ? h(typeof peso === 'function' ? peso(worker.dailyRate) : worker.dailyRate) + '/day' : 'No rate'}</p></div>
         <span class="badge badge-purple">${h(e.faceEnrollmentStatus || 'Not Enrolled')}</span>
       </div>
-      <div class="face-notice">Consent is required before enrollment and matching. Reference images and selfies are stored in Firebase Storage; only URLs, storage paths, descriptors, status, and audit records are stored in RTDB.</div>
+      <div class="face-notice">Consent is required before enrollment and matching. Reference images and selfies are stored in Google Drive (full-access links); only URLs, storage paths, descriptors, status, and audit records are stored in RTDB.</div>
       <div class="face-form-grid">
         <label><span>Consent Recorded</span><select id="faceConsent"><option value="false">No</option><option value="true" ${e.consentRecorded ? 'selected' : ''}>Yes</option></select></label>
         <label><span>Consent Method</span><select id="faceConsentMethod">
@@ -578,16 +649,20 @@
         const filename = `${Date.now()}_${safeName(file.name)}`;
         const photoPath = `faceEnrollment/${globalWorkerId}/${filename}`;
         const thumbPath = `faceEnrollment/${globalWorkerId}/thumb_${filename}`;
-        const [photoUpload, thumbUpload] = await Promise.all([
-          uploadBlob(photoPath, compressed),
-          uploadBlob(thumbPath, thumb)
-        ]);
+        const photoUpload = await uploadFaceBlobPair(compressed, thumb, photoPath, thumbPath, {
+          localId: globalWorkerId, projectId: pid, projectName: pid,
+          projectFolderName: pid, date: todayKey()
+        });
         referencePhotos.push({
           photoId,
-          photoUrl: photoUpload.url,
-          thumbnailUrl: thumbUpload.url,
-          storagePath: photoUpload.path,
-          thumbnailStoragePath: thumbUpload.path,
+          photoUrl: photoUpload.photoUrl,
+          thumbnailUrl: photoUpload.thumbnailUrl,
+          storagePath: photoUpload.storagePath,
+          thumbnailStoragePath: photoUpload.thumbnailStoragePath,
+          driveFileId: photoUpload.photoFileId,
+          thumbnailDriveFileId: photoUpload.thumbnailFileId,
+          driveFolderId: photoUpload.driveFolderId,
+          storageProvider: photoUpload.storageProvider,
           uploadedAt: Date.now(),
           uploadedBy: window._currentUser?.uid || ''
         });
@@ -676,16 +751,8 @@
   async function deleteFaceData(workerId) {
     const pid = window._currentPid;
     if (!pid || !workerId || !canManageFaces()) return;
-    if (!confirm('Delete stored face descriptors and reference metadata for this worker? Storage files may also be removed when rules permit.')) return;
+    if (!confirm('Delete stored face descriptors and reference metadata for this worker? Google Drive photo links are revoked from ACPM; Drive-hosted files may still exist for audit.')) return;
     const globalWorkerId = `${pid}_${workerId}`;
-    const snap = await db.ref(`projects/${pid}/workers/${workerId}/faceEnrollment/referencePhotos`).once('value');
-    const deletePaths = [];
-    snap.forEach(child => {
-      const p = child.val() || {};
-      if (p.storagePath) deletePaths.push(p.storagePath);
-      if (p.thumbnailStoragePath) deletePaths.push(p.thumbnailStoragePath);
-    });
-    await Promise.all(deletePaths.map(path => firebase.storage?.().ref(path).delete().catch(() => null)));
     const updates = {};
     updates[`projects/${pid}/workers/${workerId}/faceEnrollment`] = {
       workerId: globalWorkerId,
@@ -803,15 +870,26 @@
     try {
       const result = faceState.labResult;
       const testRef = db.ref('faceMatchTests').push();
-      let upload = { url: '', path: '' };
+      let upload = { photoUrl: '', thumbnailUrl: '', storagePath: '', thumbnailStoragePath: '', photoFileId: '', thumbnailFileId: '', driveFolderId: '', storageProvider: 'Google Drive' };
       if (result.compressed) {
-        upload = await uploadBlob(`faceMatchTests/${testRef.key}_${safeName(result.file?.name || 'test-selfie.jpg')}`, result.compressed);
+        const testPath = `faceMatchTests/${testRef.key}_${safeName(result.file?.name || 'test-selfie.jpg')}`;
+        const thumbPath = `faceMatchTests/thumb_${testRef.key}_${safeName(result.file?.name || 'test-selfie.jpg')}`;
+        upload = await uploadFaceBlobPair(result.compressed, result.compressed, testPath, thumbPath, {
+          localId: testRef.key, projectId: '', projectName: 'Face Lab',
+          projectFolderName: 'faceMatchTests', date: todayKey()
+        });
       }
       const best = result.best || {};
       const record = {
         testId: testRef.key,
-        testPhotoUrl: upload.url,
-        testStoragePath: upload.path,
+        testPhotoUrl: upload.photoUrl,
+        testThumbnailUrl: upload.thumbnailUrl,
+        testStoragePath: upload.storagePath,
+        testThumbnailStoragePath: upload.thumbnailStoragePath,
+        testDriveFileId: upload.photoFileId,
+        testThumbnailDriveFileId: upload.thumbnailFileId,
+        testDriveFolderId: upload.driveFolderId,
+        testStorageProvider: upload.storageProvider,
         faceDetected: !!result.detection?.faceDetected,
         multipleFacesDetected: !!result.detection?.multipleFacesDetected,
         bestMatchWorkerId: best.workerId || '',
@@ -1458,16 +1536,21 @@
     const storagePath = `${folder}/${filename}`;
     const thumbnailStoragePath = `${folder}/thumb_${filename}`;
     try {
-      const [photoUpload, thumbUpload] = await Promise.all([
-        uploadBlob(storagePath, current.imageBlob),
-        uploadBlob(thumbnailStoragePath, current.thumbnailBlob)
-      ]);
+      const photoUpload = await uploadFaceBlobPair(current.imageBlob, current.thumbnailBlob, storagePath, thumbnailStoragePath, {
+        localId: meta.attendanceId || current.localId, projectId: meta.projectId,
+        projectName: meta.projectName || meta.projectId,
+        projectFolderName: meta.projectId, date: meta.date
+      });
       current = await updateFaceQueueItem(current, {
         uploadProgress: 82,
-        selfieUrl: photoUpload.url,
-        thumbnailUrl: thumbUpload.url,
-        storagePath: photoUpload.path,
-        thumbnailStoragePath: thumbUpload.path
+        selfieUrl: photoUpload.photoUrl,
+        thumbnailUrl: photoUpload.thumbnailUrl,
+        storagePath: photoUpload.storagePath,
+        thumbnailStoragePath: photoUpload.thumbnailStoragePath,
+        driveFileId: photoUpload.photoFileId,
+        thumbnailDriveFileId: photoUpload.thumbnailFileId,
+        driveFolderId: photoUpload.driveFolderId,
+        storageProvider: photoUpload.storageProvider
       });
       const existing = await db.ref(`pmosSelfieAttendance/${meta.projectId}/${meta.date}`).once('value');
       let duplicateWarning = '';
@@ -1478,10 +1561,14 @@
       });
       const record = {
         ...meta,
-        selfieUrl: photoUpload.url,
-        thumbnailUrl: thumbUpload.url,
-        storagePath: photoUpload.path,
-        thumbnailStoragePath: thumbUpload.path,
+        selfieUrl: photoUpload.photoUrl,
+        thumbnailUrl: photoUpload.thumbnailUrl,
+        storagePath: photoUpload.storagePath,
+        thumbnailStoragePath: photoUpload.thumbnailStoragePath,
+        driveFileId: photoUpload.photoFileId,
+        thumbnailDriveFileId: photoUpload.thumbnailFileId,
+        driveFolderId: photoUpload.driveFolderId,
+        storageProvider: photoUpload.storageProvider,
         uploadStatus: 'Synced',
         uploadedAt: Date.now(),
         duplicateWarning,

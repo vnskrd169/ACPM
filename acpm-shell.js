@@ -61,17 +61,16 @@ function pmosSyncStatus(message, type = 'idle') {
 }
 window.pmosSyncStatus = pmosSyncStatus;
 
-/* ---- Photo Upload Provider Interface ---- */
+/* ---- Photo Upload Provider (Google Drive only) ---- */
 const PHOTO_PROVIDERS = {
-  firebaseStorage: 'firebase-storage',
   googleDrive: 'google-drive'
 };
 
 const PMOS_CONFIG = {
   /* ---- Photo upload provider ---- */
-  photoStorageProvider: 'googleDrive',       // 'googleDrive' | 'firebaseStorage' (firebaseStorage inactive)
-  useFirebaseStoragePhotos: false,           // Must remain false until explicitly enabled
-  useGoogleDrivePhotos: true,                // Primary upload path
+  photoStorageProvider: 'googleDrive',       // Google Drive only — Firebase Storage is fully disabled
+  useFirebaseStoragePhotos: false,           // Must remain false — Firebase Storage accepts no writes (storage.rules)
+  useGoogleDrivePhotos: true,                // Sole upload path
 
   /* ---- Google Drive Apps Script endpoint ---- */
   driveUploadUrl: 'https://script.google.com/macros/s/AKfycbxNQ1PunSoV2gCpdfrHs10D7kNC5YUnIyq0IHmFsI4MrDq3wHsJZaCiEcxP2RkHNA5P/exec',

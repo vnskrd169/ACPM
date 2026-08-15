@@ -127,17 +127,16 @@ View Original opens photoUrl
 
 ---
 
-## 4. Firebase Storage — Confirmed Disabled
+## 4. Firebase Storage — Confirmed Disabled (Drive-only)
 
 | Check | Status |
 |---|---|
-| `uploadToFirebaseStorage()` function | ✅ **REMOVED** from `pmos.js` |
-| `uploadBlobResumable()` function | 🟡 **Dead code** remains (never called) |
-| `firebase.storage` calls in active photo path | ✅ **Zero** |
-| `storageProvider` in final record | ✅ **Always `'Google Drive'`** |
+| `firebase.storage` calls in PMOS photo path | ✅ **Zero** |
+| `firebase.storage` calls in Face Attendance | ✅ **Zero** (enrollment, lab, selfie queue now Google Drive) |
+| `firebase.storage` calls in auth.js profile photo | ✅ **Zero** (Drive-first with inline fallback) |
+| `storageProvider` in final records | ✅ **Always `'Google Drive'`** |
 | `useFirebaseStoragePhotos` config | ✅ **`false`** |
-| `storage.rules` deployed | ✅ **Not deployed** (not modified) |
-| Firebase Storage SDK loaded | 🟡 May still load (not gated) — harmless |
+| `storage.rules` | ✅ **Locked down**: denies all writes; authenticated reads only for legacy links |
 
 ---
 

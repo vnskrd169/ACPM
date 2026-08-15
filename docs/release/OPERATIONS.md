@@ -128,5 +128,5 @@ If the app starts rejecting legitimate work:
 - Do not depend on client-side role checks as the only guard.
 - Do not change the Auth or rules model without updating this runbook.
 - Do not enable Foreman/Safety/Viewer until child-level data access rules exist.
-- Do not use Firebase Storage for PMOS photos unless the storage architecture is
-  explicitly approved; RC1 uses the configured Google Drive Apps Script.
+- Do not use Firebase Storage for any photos — `storage.rules` denies all
+  writes. The configured Google Drive Apps Script is the only upload transport.

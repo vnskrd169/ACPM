@@ -141,7 +141,8 @@
       const uploadDate = photo.uploadedAt ? new Date(photo.uploadedAt).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
       const projectName = photo.projectName || photo.projectId || '';
       const uploader = photo.createdByName || '';
-      const provider = photo.storageProvider || (photo.photoUrl?.includes('drive.google.com') ? 'Google Drive' : 'Firebase Storage');
+      const provider = photo.storageProvider || (photo.photoUrl?.includes('drive.google.com') ? 'Google Drive' : 'Legacy / Inline');
+      const isDrive = String(provider).toLowerCase() === 'google drive' || String(photo.photoUrl || '').includes('drive.google.com');
 
       infoEl.innerHTML = `
         <div class="pmos-lightbox-counter">${counter}</div>
@@ -152,7 +153,7 @@
         ${uploader ? `<div class="pmos-lightbox-meta"><span>Uploaded by:</span> ${h(uploader)}</div>` : ''}
         ${date ? `<div class="pmos-lightbox-meta"><span>Date:</span> ${date}</div>` : ''}
         ${uploadDate ? `<div class="pmos-lightbox-meta"><span>Uploaded:</span> ${uploadDate}</div>` : ''}
-        <div class="pmos-lightbox-meta"><span>Provider:</span> ${h(provider)}</div>
+        <div class="pmos-lightbox-meta"><span>Storage:</span> ${isDrive ? '<span class="pmos-drive-badge">&#x1F4C1; Google Drive</span>' : `<span>${h(provider)}</span>`}</div>
         <div class="pmos-lightbox-meta"><span>Status:</span> <span class="badge badge-${lightboxStatusBadge(photo.status || 'New')}">${h(photo.status || 'New')}</span></div>
         ${photo.photoUrl ? `<a class="pmos-lightbox-link" href="${h(photo.photoUrl)}" target="_blank" rel="noopener noreferrer">Open Original</a>` : ''}
       `;

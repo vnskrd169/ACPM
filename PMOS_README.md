@@ -77,7 +77,7 @@ projects/{pid}/pmosSelfieAttendance
 
 | Provider | Status | Notes |
 |---|---|---|
-| Firebase Storage | Primary | Default upload provider |
+| Google Drive | Primary | Default upload provider (Apps Script transport) |
 | Google Drive | Fallback | Optional, via Apps Script endpoint |
 
 ## Offline Mode
@@ -176,7 +176,7 @@ See `PMOS_DEPLOYMENT.md` for full deployment instructions.
 | Issue | Cause | Solution |
 |---|---|---|
 | "Select an assigned active project" | User not assigned | Ask admin to assign projects |
-| Photo upload fails | Drive script expired | Check Drive deployment; Firebase Storage should still work |
+| Photo upload fails | Drive script expired | Check Drive deployment; photos stay queued locally and retry |
 | "Firebase rules need deployment" | Proposed rules not deployed | Owner must review and approve proposed rules |
 | Offline records not syncing | Connection issue | Check connection; tap "Sync Now" in More tab |
 | PMOS not loading offline | First load required | Visit `/pmos/` once while online to cache the shell |

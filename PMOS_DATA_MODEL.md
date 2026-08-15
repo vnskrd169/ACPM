@@ -101,9 +101,9 @@
 | caption | string | ✓ Required |
 | location | string | ✓ Required |
 | category | string | Progress, Issue, Delivery, Safety, Quality, Before, After |
-| photoUrl | string | Firebase Storage or Drive URL |
+| photoUrl | string | Google Drive shareable URL |
 | thumbnailUrl | string | Small preview |
-| storageProvider | string | Firebase Storage or Google Drive |
+| storageProvider | string | `Google Drive` (Drive-only policy) |
 | uploadStatus | string | Queued, Uploading, Synced, Failed |
 
 ## Schema Version

@@ -77,6 +77,18 @@ function main() {
   assert(pmosApp.includes('Google Drive only'), 'PMOS photo upload code must document Drive-only upload path');
   assert(pmosApp.includes("storageProvider: 'Google Drive'"), 'PMOS photo records must store Google Drive as provider');
 
+  const faceAttendance = read('face-attendance.js');
+  assert(!/firebase\.storage\s*\(/.test(faceAttendance), 'Face Attendance must not call firebase.storage()');
+  assert(!faceAttendance.includes('uploadBlob('), 'Face Attendance must not use legacy Firebase Storage upload helpers');
+  assert(faceAttendance.includes('FACE_DRIVE_UPLOAD_URL'), 'Face Attendance must use the Google Drive Apps Script transport');
+  assert(faceAttendance.includes('drive.google.com/thumbnail?id='), 'Face Attendance thumbnails must use Google Drive thumbnail URLs');
+  assert(faceAttendance.includes("storageProvider: 'Google Drive'"), 'Face Attendance records must store Google Drive as provider');
+
+  const authSource = read('auth.js');
+  assert(!/firebase\.storage\s*\(/.test(authSource), 'auth.js must not call firebase.storage()');
+  assert(authSource.includes('uploadProfilePhotoToDrive'), 'auth.js must upload profile photos to Google Drive');
+  assert(authSource.includes('avatarStorageProvider: \'Google Drive\''), 'auth.js must record Google Drive as profile photo provider');
+
   assert(pmosSw.includes("pmos-cache-v6"), 'scoped PMOS service worker must use pmos-cache-v6');
   assert(rootPmosSw.includes("pmos-cache-v6"), 'legacy PMOS service worker must use pmos-cache-v6');
   assert(pmosShell.includes("const CACHE_VERSION = 'acpm-pmos-v4'"), 'PMOS shell cache label must be acpm-pmos-v4');
@@ -97,6 +109,35 @@ function main() {
     assetMatches
       .filter(ref => !ref.endsWith('/') && !ref.includes('firebase') && !ref.includes('google'))
       .forEach(ref => assertLocalRefExists(file, ref));
+  });
+
+  // Company-deploy gate: NO test artifacts may ship to the deployed site.
+  // firebase.json must ignore every test path, and no deployable page may
+  // reference any test harness (pmos-tests.js, tests/, test-results/, spec
+  // files, playwright/vitest configs).
+  const hostingIgnore = parseJson('firebase.json').hosting.ignore.join('\n');
+  [
+    'tests/**',
+    'test-results/**',
+    'pmos-tests.js',
+    'playwright.config.ts',
+    'vitest.config.ts',
+    'scripts/**',
+    'docs/**'
+  ].forEach(entry => {
+    assert(hostingIgnore.includes(entry), `firebase.json hosting.ignore must exclude ${entry} from company deploys`);
+  });
+  const deployableHtml = ['dashboard.html', 'workspace.html', 'login.html', 'pmos.html', 'index.html']
+    .map(f => read(f))
+    .join('\n');
+  [
+    'pmos-tests.js',
+    'tests/',
+    'test-results/',
+    '.spec.',
+    '.test.'
+  ].forEach(needle => {
+    assert(!deployableHtml.includes(needle), `deployable pages must not reference test artifact ${needle}`);
   });
 
   [
@@ -120,7 +161,8 @@ function main() {
       'PMOS cache versions are bumped',
       'ACPM and PMOS manifest parameters parse and align',
       'PMOS local asset references exist',
-      'Brand/PMOS shell text has no mojibake'
+      'Brand/PMOS shell text has no mojibake',
+      'Company deploy ships zero test artifacts'
     ],
     pmosCache: 'pmos-cache-v6',
     pmosShellCache: 'acpm-pmos-v4',

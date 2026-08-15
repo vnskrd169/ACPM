@@ -73,7 +73,7 @@ All modules support offline operation:
 1. **Capture** → Camera or gallery selection
 2. **Compress** → 1600px resize @ 0.82 quality; 400px thumbnail @ 0.78
 3. **Queue** → IndexedDB with upload status tracking
-4. **Upload** → Firebase Storage (primary) → Google Drive (fallback)
+4. **Upload** → Google Drive (only) via the approved Apps Script transport
 5. **Sync** → Firebase RTDB record created with photo URL
 6. **Cleanup** → IndexedDB entry removed on success
 

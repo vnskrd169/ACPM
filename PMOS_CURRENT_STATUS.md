@@ -1,9 +1,9 @@
 # PMOS Current Status
 
-**Date:** 2026-08-10
-**Status:** RC6 PAYROLL INTEGRITY + LOCAL DEV SHELL — FULL REGRESSION VERIFIED
-**Photo storage policy:** Google Drive Apps Script only for PMOS RC1
-**Firebase Storage:** Not used by the PMOS sendout shell
+**Date:** 2026-08-15
+**Status:** DRIVE-ONLY MIGRATION COMPLETE + QA HARDENING — FULL REGRESSION VERIFIED
+**Photo storage policy:** Google Drive Apps Script only (PMOS, Site Log, Face Attendance, profile photos)
+**Firebase Storage:** Fully disabled — `storage.rules` denies all writes (authenticated reads only for legacy links)
 
 ## Summary
 
@@ -25,10 +25,10 @@ pushed to origin (`vnskrd169/ACPM`).
 
 | Parameter | Current Value | Status |
 |---|---|---:|
-| Root app cache | `acpm-v134` | PASS |
-| Main shell script | `main.js?v=106` | PASS |
+| Root app cache | `acpm-v139` | PASS |
+| Main shell script | `main.js?v=109` | PASS |
 | PMOS shell cache | `acpm-pmos-v4` | PASS |
-| PMOS scoped cache | `pmos-cache-v4` | PASS |
+| PMOS scoped cache | `pmos-cache-v6` | PASS |
 | PMOS manifest start URL | `./` | PASS |
 | Root manifest start URL | `./login.html` | PASS |
 | PMOS theme color | `#0f766e` | PASS |

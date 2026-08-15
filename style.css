@@ -2900,6 +2900,21 @@ table.table-compact td { padding: 8px 10px; font-size: 11px; }
   border-color: var(--red);
   box-shadow: 0 0 0 3px var(--red-glow);
 }
+
+/* Google Drive hint on profile photo field */
+.profile-drive-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--teal, #0f766e);
+  background: var(--teal-bg, rgba(15, 118, 110, 0.12));
+  vertical-align: middle;
+}
 .field-error .field-error-text {
   color: var(--red);
   font-size: 11px;
@@ -3858,6 +3873,39 @@ table.table-compact td { padding: 8px 10px; font-size: 11px; }
   cursor: pointer; transition: all var(--transition-fast);
 }
 .log-photo:hover { transform: scale(1.05); border-color: var(--purple); }
+
+/* Site log photo upload row + previews */
+.log-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.log-photo-hint { font-size: 11px; color: var(--muted); line-height: 1.4; flex: 1; min-width: 180px; }
+.log-photo-count {
+  font-size: 11px; font-weight: 600;
+  color: var(--teal-t); background: var(--teal-d);
+  border-radius: 999px; padding: 3px 10px;
+}
+.log-photo-preview { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.log-photo-thumb {
+  position: relative; width: 76px; height: 76px;
+  border-radius: var(--radius-sm); overflow: hidden;
+  border: 1px solid var(--border2);
+  transition: border-color var(--transition-fast), transform var(--transition-fast);
+}
+.log-photo-thumb:hover { border-color: var(--teal); transform: translateY(-1px); }
+.log-photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.log-photo-remove {
+  position: absolute; top: 3px; right: 3px;
+  min-width: 20px; height: 20px; min-height: 20px; padding: 0;
+  border-radius: 50%; background: rgba(0,0,0,0.65); color: #fff;
+  font-size: 11px; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+.log-photo-remove:hover { background: var(--red); transform: scale(1.1); }
 
 /* ══════════════════════════════════════════════════════════════
    ═══ SUPPLIERS ════════════════════════════════════════════

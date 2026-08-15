@@ -68,7 +68,7 @@ PMOS notifications use the existing `createNotificationEvent()` system. No chang
 
 ## 7. Photo Upload Provider
 
-Firebase Storage is the **primary** photo upload provider. Google Drive is an optional fallback.
+Google Drive is the **only** photo upload provider (Apps Script transport). Firebase Storage is fully disabled — `storage.rules` denies all writes.
 
 **Configuration**: `PMOS_CONFIG.photoProvider` in `acpm-shell.js`
 

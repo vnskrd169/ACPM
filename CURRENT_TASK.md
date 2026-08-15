@@ -7,30 +7,43 @@ construction operations system for PM and APM use.
 
 ## Current Status
 
-Status: RC6 PAYROLL INTEGRITY + LOCAL DEV SHELL — FULL REGRESSION VERIFIED
+Status: DRIVE-ONLY MIGRATION COMPLETE + QA HARDENING — FULL REGRESSION VERIFIED
 
 Branch: `feature/pmos-official-app` (pushed to origin, 2026-08-10)
 
-Latest production release state (2026-08-10):
+Latest release state (2026-08-15):
 
-- Task transition rules deployed to **Staging + Production** via the guarded
-  release paths (commit `6edff0a`); deployed rules byte-identical to local and
-  live-verified (Staging role matrix 12/12, Production enforcement probes).
-- **PO RFP export** deployed to Production (commit `118545e`); every PO card in
-  Materials has a 📋 RFP button (Copy Text + Download PDF) verified live on the
-  real Angeles Residence PO-001 (**14/14 PASS**).
+- **Full Google Drive migration** — Firebase Storage is gone from every upload
+  path (PMOS photos, Site Log photos, Face Attendance enrollment/lab/selfie,
+  profile photos). All uploads use the approved Apps Script transport
+  (`PMOS_CONFIG.driveUploadUrl`); `storage.rules` denies all writes.
+- **Storage rules emulator suite now RUNS**: `firebase.emulator.json` declares
+  the storage emulator (port 9199) with `storage.rules`; 3 unauthenticated
+  read/download-denial checks pass, 4 write-denial checks stay `describe.skip`
+  because the pinned `cloud-storage-rules-runtime-v1.1.3` cannot process `put`
+  (verified — returns `storage/unknown` even with rules disabled).
+- **QA hardening**: fixed a top-level `window.PMOS_CONFIG` reference in
+  `auth.js` (and the same pattern in `sitelog.js`, `face-attendance.js`,
+  `pmos.js`) that crashed Node VM-based static gates; fixed dead empty-state
+  CTAs (`pmosCapturePhoto()` / `pmosOpenCreate()`) and unexposed handlers
+  (`uploadQueuedPhotos`, `syncOfflineQueue`) in the PMOS field app; added
+  permanent UI regression audits (layout, tap targets, unlabeled buttons,
+  broken images, dead inline handlers) — 32/32 Playwright, 12/12 static gates.
+- **Repo hygiene**: untracked the standalone `line17-face-attendance/`
+  prototype (10,730 committed node_modules files, unreferenced, undeployed;
+  preserved on `feature/pmos-face-attendance-assist`) and gitignored it.
 
 Deployed release:
 
-- Service worker: `acpm-v134`
-- Stylesheet: `style.css?v=108`
-- Office main: `main.js?v=106`
+- Service worker: `acpm-v139`
+- Stylesheet: `style.css?v=112`
+- Office main: `main.js?v=109`
 - Auth: `auth.js?v=98`
 - Labor: `labor.js?v=98`
 - Payroll math: `payroll-math.js?v=2`
 - Utils: `utils.js?v=87`
 - PMOS: app v3 with task adapter v2, office v4
-- PMOS caches: `pmos-cache-v4` and `acpm-pmos-v4`
+- PMOS caches: scoped worker `pmos-cache-v6`, shell label `acpm-pmos-v4`
 
 ## Completed Work
 
@@ -95,7 +108,7 @@ Deployed release:
 - Task transitions create `taskEvents` and project `activity` atomically.
 - Mission Board excludes completed work and prioritizes operational actions.
 - Foreman/Safety/Viewer remain disabled for RC1.
-- Firebase Storage is not used by PMOS RC1; photo transport is Google Drive
+- Firebase Storage is fully disabled across the app (PMOS, Site Log, Face Attendance, profile photos); all photo transport is Google Drive via the Apps Script endpoint. `storage.rules` denies all writes.
   Apps Script.
 - Production and Staging use separate Firebase projects and databases.
 - Hostname selection cannot redirect the public production hostname to
@@ -163,14 +176,18 @@ Deployed release:
   projects (boss/owner/admin are never blocked); ordering or payroll in a
   closed project fails with a permission error by design — reactivate the
   project or use a boss account.
-- The storage rules emulator suite remains skipped: `cloud-storage-rules-`
-  `runtime-v1.1.3` cannot compile cross-service `database()` access in
-  `storage.rules.pmos-proposed`. Re-enable after the emulator runtime upgrade.
+- The storage rules suite now runs under the storage emulator: unauthenticated
+  read/download denial checks PASS. Write-denial and seeded-read assertions
+  remain `describe.skip` because the pinned `cloud-storage-rules-runtime-v1.1.3`
+  cannot process `put` at all (even with rules disabled); re-enable after the
+  emulator runtime upgrade. Rules are Drive-only: `allow write: if false`.
 - Browser push notifications are future scope.
 - Automated recurring task scheduling is future scope.
 - PMOS photos depend on the configured Google Drive Apps Script.
-- Live role-account QA (PM/APM/Boss) still needs dedicated credentials; the
-  final readiness gate reports these as warnings.
+- Live role-account QA (PM/APM/Boss): DONE — provisioned
+  `admin/pm/apm.qa@lebuild.test` on 2026-08-15 and passed
+  `roles_live_account_qa`, `rc1_deployed_rules_security_qa`, and
+  `rc1_final_readiness_gate` (PASS_RC1_READY, zero failures).
 
 ## Remaining Steps
 

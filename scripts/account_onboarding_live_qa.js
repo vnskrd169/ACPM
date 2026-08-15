@@ -338,7 +338,7 @@ async function main() {
     );
     assert(accountStatusEvents.length >= 3, 'status workflow must create notification events');
 
-    const severeIssues = consoleIssues.filter(line => !/favicon|manifest|service worker|404|profile photo upload skipped|Assigned project skipped/i.test(line));
+    const severeIssues = consoleIssues.filter(line => !/favicon|manifest|service worker|404|profile photo upload skipped|profile photo Drive upload unavailable|Assigned project skipped/i.test(line));
     assert(!severeIssues.length, 'browser console must not contain severe onboarding errors', { severeIssues });
 
     console.log(JSON.stringify({
@@ -356,7 +356,7 @@ async function main() {
       initialsFallbackVerified: true,
       profilePhotoSaved,
       profilePhotoUploadedToStorage: storagePhotoUploaded,
-      profilePhotoWarning: storagePhotoUploaded ? '' : 'Profile photo was saved inline because Firebase Storage is not set up.',
+      profilePhotoWarning: storagePhotoUploaded ? '' : 'Profile photo was saved inline because Google Drive upload was unavailable.',
       selfRoleWriteDenied: true,
       selfProjectWriteDenied: true,
       selfStatusWriteDenied: true,

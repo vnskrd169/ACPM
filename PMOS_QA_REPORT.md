@@ -111,7 +111,7 @@ Firebase database dry-run result:
 ## Known Limitations
 
 - Real Google Drive photo upload was not live-write tested in this pass to avoid creating company test uploads. The configured Apps Script endpoint is present and the PMOS app is wired to use it.
-- Firebase Storage remains present in the repository for future/non-PMOS paths, but the PMOS sendout shell does not load or use it.
+- Firebase Storage is fully disabled across the app — `storage.rules` denies all writes (authenticated reads only for legacy links). PMOS, Site Log, Face Attendance, and profile photos all upload to Google Drive via the Apps Script transport.
 - Face Attendance remains intentionally disabled for PMOS RC1 sendout.
 - RC1 active roles are Boss/Owner, Admin, PM, and APM. Viewer, Foreman, and Safety stay documented as future roles until child-level Firebase read rules are designed.
 

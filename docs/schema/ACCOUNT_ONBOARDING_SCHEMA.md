@@ -82,7 +82,7 @@ Admin-only fields:
 
 RC1 stores small compressed profile avatars inline in `users/{uid}/avatarUrl` as a data URL, with `avatarPath` set to an `inline:{fileName}` marker and `avatarUpdatedAt` set to the save timestamp.
 
-Future Firebase Storage path for larger user-uploaded profile images:
+Profile photos are uploaded to Google Drive (full-access link) via the Apps Script transport; fallback stores a compressed inline avatar. Historical note — the former Firebase Storage path for larger user-uploaded profile images:
 
 ```text
 profilePhotos/{uid}/{fileName}

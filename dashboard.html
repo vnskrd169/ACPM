@@ -16,7 +16,7 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+<!-- Firebase Storage SDK intentionally NOT loaded: all photo uploads use the Google Drive Apps Script transport (Drive-only policy) -->
 
 <!-- LOCAL DEV SHELL HOOK (fail-closed, never active on remote hosts) -->
 <script>
@@ -44,7 +44,7 @@
 <script src="payroll-math.js?v=2"></script>
 <script src="labor.js?v=98"></script>
 <script src="materials.js?v=96"></script>
-<script src="sitelog.js?v=94"></script>
+<script src="sitelog.js?v=95"></script>
 <script src="suppliers.js?v=94"></script>
 <script src="billing.js?v=76"></script>
 <script src="changeorders.js?v=95"></script>
@@ -62,7 +62,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<link rel="stylesheet" href="style.css?v=111">
+<link rel="stylesheet" href="style.css?v=112">
 <link rel="stylesheet" href="assets/brand/acpm-brand.css">
 
 <script>
@@ -1000,9 +1000,16 @@ window.addEventListener('appinstalled', () => {
           <textarea id="logSafety" rows="2" placeholder="Safety notes" aria-label="Safety notes"></textarea>
           <textarea id="logSafetyIncidents" rows="2" placeholder="Safety incidents" aria-label="Safety incidents"></textarea>
         </div>
+        <div class="log-photo-row">
+          <input id="logPhotoFiles" type="file" accept="image/*" multiple class="hidden" onchange="onLogPhotoSelected(this)" aria-label="Add site log photos">
+          <label class="btn-ws-secondary" for="logPhotoFiles" style="cursor:pointer;margin:0;">&#x1F4F7; Add Photos</label>
+          <span class="log-photo-hint">Max 10 MB each &middot; auto-resized &middot; stored in Google Drive</span>
+          <span id="logPhotoCount" class="log-photo-count hidden"></span>
+        </div>
+        <div id="logPhotoPreview" class="log-photo-preview hidden"></div>
         <div class="log-actions-row">
           <input id="logWeather" type="text" placeholder="Weather (e.g., Sunny 32&#xB0;C)" style="flex:1" aria-label="Weather">
-          <textarea id="logPhotos" rows="2" placeholder="Photo URLs, one per line" style="flex:1" aria-label="Photo URLs, one per line"></textarea>
+          <textarea id="logPhotos" rows="2" placeholder="Or paste photo URLs, one per line" style="flex:1" aria-label="Photo URLs, one per line"></textarea>
           <button class="btn-add" onclick="saveLog()">+ Save Entry</button>
           <button class="btn-ws-secondary" onclick="exportSiteLogs()">&#x2B07;&#xFE0F; Export</button>
         </div>

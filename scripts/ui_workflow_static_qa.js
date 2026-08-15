@@ -69,16 +69,28 @@ function main() {
   }
   assertIncludes(workspace, 'onclick="saveLog()"', 'Site Log save action must exist');
   assertIncludes(workspace, 'onclick="exportSiteLogs()"', 'Site Log export action must exist');
+  assertIncludes(workspace, 'id="logPhotoFiles"', 'Site Log photo file input must exist');
+  assertIncludes(workspace, 'onchange="onLogPhotoSelected(this)"', 'Site Log photo picker must call onLogPhotoSelected');
+  assertIncludes(workspace, 'id="logPhotoPreview"', 'Site Log photo preview container must exist');
 
   assertIncludes(sitelog, 'async function saveLog()', 'saveLog UI handler must exist');
   assertIncludes(sitelog, "setFieldError($('logDate'), 'Select a date.')", 'saveLog must validate date');
   assertIncludes(sitelog, 'Write notes or work accomplished first.', 'saveLog must require notes or work accomplished');
   assertIncludes(sitelog, 'Log date cannot be in the future.', 'saveLog must reject future dates');
-  assertIncludes(sitelog, 'createSiteLog(_slpid, data)', 'saveLog must call createSiteLog helper');
+  assertIncludes(sitelog, 'createSiteLog(_slpid, saveData)', 'saveLog must call createSiteLog helper');
   assertIncludes(sitelog, 'async function deleteLog(key)', 'Site Log void UI handler must exist');
   assertIncludes(sitelog, 'Void this log entry?', 'Site Log destructive UI must be void, not delete');
   assertIncludes(sitelog, 'voidSiteLog(_slpid, key, reason.trim())', 'Site Log void UI must call voidSiteLog');
   assertIncludes(sitelog, 'async function exportSiteLogs()', 'Site Log export handler must exist');
+  assertIncludes(sitelog, 'async function uploadSiteLogPhoto(pid, logId, file, index = 0)', 'Site Log photo upload helper must exist');
+  assertIncludes(sitelog, 'SITE_LOG_DRIVE_UPLOAD_URL', 'Site Log photo uploads must use the Google Drive Apps Script transport');
+  assertIncludes(sitelog, 'script.google.com/macros/s/', 'Site Log Drive upload URL must be a Google Apps Script endpoint');
+  assertIncludes(sitelog, 'photoBase64', 'Site Log photos must be base64-encoded for the Drive endpoint');
+  assertIncludes(sitelog, 'async function compressSiteLogImage(file', 'Site Log photos must be compressed before upload');
+  assertIncludes(sitelog, 'function onLogPhotoSelected(input)', 'Site Log photo selection handler must exist');
+  assertIncludes(sitelog, 'window.addSiteLogMedia = addSiteLogMedia', 'addSiteLogMedia must be exported');
+  assertIncludes(sitelog, 'window.uploadSiteLogPhoto = uploadSiteLogPhoto', 'uploadSiteLogPhoto must be exported');
+  assertIncludes(sitelog, 'window.siteLogDriveAvailable = siteLogDriveAvailable', 'siteLogDriveAvailable must be exported');
 
   // Materials — PO RFP (Request for Payment) export wiring
   assertIncludes(materials, 'data-action="rfp"', 'PO cards must expose an RFP action');
@@ -118,6 +130,7 @@ function main() {
       'Change Orders tab/panel/form/actions are wired in current workspace shell',
       'Change Orders visible approve/reject/revert/void actions call workflow helpers',
       'Site Log tab/panel/form/save/export actions are wired in current workspace shell',
+      'Site Log photo picker, preview, compression, and Google Drive upload are wired in the current workspace shell',
       'Site Log visible save/void/export actions call workflow helpers',
       'Materials PO cards expose an RFP action wired to generatePORFP (copy text + PDF)',
       'Materials PO cards with a supplier invoice expose an Invoice RFP wired to generateInvoiceRFP',

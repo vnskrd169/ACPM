@@ -54,8 +54,8 @@
 |---|---|---|---|
 | B1 | Firebase Realtime Database **enabled** | ☐ | Check Firebase Console → Realtime Database |
 | B2 | PMOS RTDB paths allowed by **active rules** | ☐ | Deployed `database.rules.json` must include PMOS paths (see Section D) |
-| B3 | **Firebase Storage NOT required** | ✅ | No `firebase.storage()` calls in active PMOS photo path |
-| B4 | **Firebase Storage rules NOT deployed** | ✅ | `storage.rules` unchanged — `database.rules.json` only |
+| B3 | **Firebase Storage NOT required** | ✅ | No `firebase.storage()` calls anywhere (PMOS, Site Log, Face Attendance, profile photos) |
+| B4 | **Firebase Storage rules locked to Drive-only** | ✅ | `storage.rules` denies all writes; authenticated reads only for legacy links |
 | B5 | Existing ACPM rules **preserved** | ☐ | Merge PMOS paths into existing `database.rules.json` — do not replace |
 | B6 | `pmosPhotoLogs` path **has `.indexOn`** | ✅ | `projectId`, `clientGeneratedId`, `location`, `category`, `uploadStatus`, `createdAt` |
 | B7 | **Dry run** validates before deploy | ☐ | Run `firebase deploy --only database --dry-run` |

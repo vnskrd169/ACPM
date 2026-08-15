@@ -95,24 +95,27 @@ Live v123 account/admin QA on 2026-07-13:
 - First approved login forced My Profile setup; profile fields and inline profile photo persisted.
 - User self-write attempts for role/projects/status were denied.
 - Team Admin suspend/reactivate/archive preserved history and blocked suspended/archived logins.
-- Profile photo support uses compressed inline avatars for RC1 when Firebase Storage is unavailable.
+- Profile photo support uses Google Drive uploads with compressed inline avatar fallback (no Firebase Storage).
 - UI polish smoke passed for mobile login/request pending, notification dropdown, Team Admin avatars/actions, and My Profile modal.
 - Team Admin navigation smoke after cache v125 confirmed Admin sub-tabs remain visible in Admin mode, Team Admin opens directly to the Team assignment view, and project module tabs stay hidden.
 | Hosting hygiene | PASS | Firebase Hosting ignore rules exclude root and nested Markdown files, test scripts, package metadata, and `nul`. Live static verification confirms private paths return 404 and cache v130 serves the corrected dashboard and report styles. |
 
 ## Stop Condition
 
-Final live module and role security verification passed on 2026-07-02:
+Final live module and role security verification passed on 2026-07-02 and re-verified live on 2026-08-15 (pre-company-deploy):
 
 ```text
 RUN_REAL_QA=1 node scripts/rc1_post_deploy_gate.js
-Result: PASS
+Result: PASS (2026-07-02)
 
 ACPM_ROLE_QA_ACCOUNTS=[admin,pm,apm] node scripts/roles_live_account_qa.js
-Result: PASS
+Result: PASS (2026-08-15) — admin/pm/apm live role+project access verified
 
 ACPM_ROLE_QA_ACCOUNTS=[pm,apm] node scripts/rc1_deployed_rules_security_qa.js
-Result: PASS
+Result: PASS (2026-08-15) — PM root access / APM root-deny verified against live rules
+
+node scripts/rc1_final_readiness_gate.js
+Result: PASS_RC1_READY (2026-08-15) — zero failures, zero warnings
 ```
 
 Foreman/Safety/Viewer are deferred and must not be activated until a future child-level read model and deployed-rule deny QA pass.

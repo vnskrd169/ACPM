@@ -1,5 +1,167 @@
 # ACPM Changelog
 
+## Company deployment — Staging + Production (2026-08-15)
+
+- **Staging** `acpm-project-system-qa`: deployed via guarded
+  `npm run deploy:staging` (database + hosting, 552 files). All three
+  pre-deploy gates passed (environment isolation, PWA cache, RC1 static).
+  Verified live: HTTP 200, `acpm-v139`, `pmos-cache-v6`, auth.js window guard
+  present, zero test artifacts (`pmos-tests.js`, `tests/`, `scripts/` all 404).
+- **Production** `acpm-project-system`: promoted via guarded
+  `npm run deploy:production -- -ConfirmProduction` (hosting-only — database
+  rules unchanged since the last release; 25 changed files uploaded).
+  Verified live: HTTP 200, `acpm-v139`, `pmos-cache-v6`, auth.js fix live,
+  zero test artifacts.
+- **Live post-deploy security re-verified against production**:
+  `rc1_deployed_rules_security_qa.js` PASS (PM project-root allow, APM
+  project-root deny, assigned-project allow against the deployed rules).
+
+## Live RC1 readiness gate passed (2026-08-15) — deploy blocker cleared
+
+- Provisioned/verified the RC1 QA role accounts against **live production**
+  (`acpm-project-system`) using the documented owner sign-in path:
+  `scripts/provision_rc1_role_qa_accounts.js` created/updated
+  `admin.qa@lebuild.test`, `pm.qa@lebuild.test`, `apm.qa@lebuild.test` with
+  admin/pm/apm roles; PM and APM assigned to an active project.
+- `scripts/roles_live_account_qa.js`: **PASS** — admin/pm/apm self-profile
+  reads and project-root access checks against live Firebase.
+- `scripts/rc1_deployed_rules_security_qa.js`: **PASS** — PM project-root
+  allow, APM project-root deny, assigned-project allow against the deployed
+  rules.
+- `scripts/rc1_final_readiness_gate.js`: **PASS_RC1_READY** — zero failures,
+  zero warnings. This was the only remaining release blocker (previously
+  failed on `Missing PM QA credentials`).
+- `rc1_post_deploy_gate.js`: local chain **PASS_WITH_REAL_QA_SKIPPED**; the
+  7 live-write module QA scripts are intentionally not re-run against
+  production — they passed live on 2026-07-02 per the readiness evidence.
+
+## QA hardening + storage suite enabled (2026-08-15)
+
+### Fixes
+- **Static-gate regression fixed**: `auth.js` gained a top-level
+  `window.PMOS_CONFIG` reference (profile photo Drive transport) that crashed
+  Node VM-based gates (`roles_rc1_matrix_qa.js`, `rc1_post_deploy_gate.js`)
+  with `window is not defined`. Guarded with `typeof window !== 'undefined'`;
+  the same guard was applied to the identical pattern in `sitelog.js`,
+  `face-attendance.js`, and `pmos.js`.
+- **Dead empty-state CTAs fixed** (PMOS field app): the onboarding state
+  buttons called undefined `pmosCapturePhoto()` / `pmosOpenCreate()` — clicking
+  them threw. Now call `pmosOpenModule("photo")` / `pmosShowCreateSheet()`.
+- **Un-exposed handlers fixed** (PMOS field app): `uploadQueuedPhotos` and
+  `syncOfflineQueue` were used in inline `onclick` but never attached to
+  `window`, so the More-screen buttons threw on click. Both are now exported.
+
+### QA tooling
+- **Storage rules emulator suite now RUNS**: `firebase.emulator.json` declares
+  the storage emulator (port 9199) plus `storage.rules`; unauthenticated
+  read/download-denial checks pass. Write-denial + seeded-read assertions stay
+  `describe.skip` — verified that the pinned
+  `cloud-storage-rules-runtime-v1.1.3` cannot process `put` at all (returns
+  `storage/unknown` even with rules disabled), a toolchain limit, not an app
+  defect.
+- **New permanent UI regression audits** (`tests/e2e/ui-audit*.spec.ts`,
+  `ui-handlers-audit.spec.ts`): no horizontal overflow, no unlabeled buttons,
+  no tiny tap targets, no broken images, no dead inline `onclick` handlers
+  across the PMOS field app, dashboard hub, all workspace tabs, PMOS office,
+  and a 390px phone viewport.
+
+### Repo hygiene
+- Untracked the standalone `line17-face-attendance/` prototype (10,730
+  committed `node_modules` files, unreferenced, excluded from hosting) and
+  added it to `.gitignore`. Preserved on
+  `feature/pmos-face-attendance-assist`.
+- **Company-deploy gate**: `pmos_release_static_qa` now asserts the deployable
+  site ships zero test artifacts — `firebase.json` hosting.ignore must exclude
+  `tests/**`, `test-results/**`, `pmos-tests.js`, Playwright/Vitest configs,
+  `scripts/**`, and `docs/**`, and no deployable page may reference any test
+  harness. Verified against the hosting snapshot: 0 test files in the
+  549-file company deploy set. Staging-only `manifest-staging.json` (selected
+  by `environment.js` on the QA hostname) is the only staging artifact that
+  ships, by design.
+
+### Verification (2026-08-15)
+- Playwright: 32/32 PASS (24 existing + 8 new UI audits).
+- Unit: 74/74 PASS. Emulator rule suites: 82 PASS / 4 documented skips
+  (database 24, financial 13, tasks 22, production roles 13, storage 3 run +
+  4 toolchain skips).
+- Static gates 12/12 PASS: rc1_static, pwa_cache, pmos_release, ui_layout,
+  ui_workflow, environment, pm_apm_task_workflow, historical_integrity,
+  rc1_docs, firebase_rules_gate, roles_rc1_matrix, dev_shell.
+
+## Full Google Drive migration — no Firebase Storage anywhere (2026-08-15)
+
+### Feature
+- **Face Attendance is now Google Drive-only.** Worker enrollment reference
+  photos + thumbnails, Face Engine Lab test selfies, and the PMOS selfie
+  queue all upload through the approved Google Drive Apps Script transport
+  (`PMOS_CONFIG.driveUploadUrl`) instead of Firebase Storage. Records store
+  `storageProvider: 'Google Drive'` plus Drive file/folder IDs; the
+  enrollment panel and delete-flow notices were updated to match. All
+  `firebase.storage()` calls are gone from `face-attendance.js`.
+- **Profile photos are Drive-first.** `auth.js` uploads the compressed avatar
+  to Google Drive (full-access link) via the same Apps Script endpoint, with
+  the existing inline data-URL avatar as an offline/unreachable fallback. The
+  dead Firebase Storage path and misleading "until Firebase Storage is set up"
+  warnings were removed; the profile form now shows a `saved to Google Drive`
+  hint.
+- **Firebase Storage rules locked to Drive-only.** `storage.rules` and
+  `storage.rules.pmos-proposed` now deny all writes and keep authenticated
+  reads so any legacy Firebase Storage URLs stored before migration still
+  render. The storage rules emulator suite now RUNS (the old cross-service
+  `database()` access that the pinned emulator could not compile is gone):
+  unauthenticated read/download denial checks pass; write-denial + seeded-read
+  assertions stay `describe.skip` because the pinned
+  `cloud-storage-rules-runtime-v1.1.3` cannot process `put` at all.
+- **UI/UX**: photo gallery cards (PMOS Office) and the lightbox show a
+  `📁 Google Drive` badge on Drive-hosted photos; the PMOS More/About screen
+  shows the storage badge; upload toasts say "uploaded to Google Drive".
+
+### Files
+- `face-attendance.js`, `auth.js`, `pmos.js`, `pmos-office.js`,
+  `pmos-photo-lightbox.js`, `assets/brand/pmos-app.css`, `style.css`,
+  `storage.rules`, `storage.rules.pmos-proposed`, `pmos-tests.js`,
+  `tests/pmos/rules-storage.test.ts`, `scripts/pmos_release_static_qa.js`,
+  `scripts/account_onboarding_live_qa.js`, and the PMOS/storage docs.
+
+### Verification
+- Static gates PASS: rc1_static, pwa_cache, ui_layout, ui_workflow,
+  pmos_release (now also asserts face-attendance + auth are Firebase
+  Storage-free and Drive-only), environment.
+- Emulator-backed rules suites: 82 passed / 4 skipped (storage runtime
+  limitation documented above) — database, financial, production-roles,
+  tasks, storage.
+- Unit suites: 74/74 PASS.
+
+## Site Log photo upload — Google Drive Apps Script (no card, no Storage) (2026-08-10)
+
+### Feature
+- The office Site Log form (dashboard + workspace) now has an **Add Photos**
+  picker (multiple, images only). Selected photos are auto-compressed
+  client-side (max 1600 px, JPEG ~0.75, plus a 400 px thumbnail) and uploaded
+  through the **approved Google Drive Apps Script transport**
+  (`PMOS_CONFIG.driveUploadUrl` — the same endpoint PMOS already uses) via
+  `uploadSiteLogPhoto()` / `addSiteLogMedia()`.
+- The log is created with the same client-generated `logId` so photos and the
+  record stay linked; the Drive photo URL + thumbnail + `driveFileId` are
+  stored under `media` and `photos`, rendering in the log feed exactly like
+  pasted URLs.
+- **No Firebase Storage, no payment, no console setup**: photos live in Google
+  Drive (the transport the project already approved for PMOS). Firebase
+  Storage remains unused — `storage.rules` and `environment.js` are unchanged
+  from the previous release.
+- The photo-URL textarea remains as a fallback when the Drive endpoint is
+  unavailable (graceful degradation).
+
+### Verification
+- `node --check` clean; `firebase.json` parses.
+- Unit suites: 74/74 PASS.
+- Static gates PASS: rc1_static, pwa_cache, ui_layout, ui_workflow (extended
+  with photo picker/preview/Drive upload wiring), pmos_release,
+  historical_integrity, environment, dev_shell.
+- PWA: `sw.js` `acpm-v139`, `sitelog.js?v=95`, `style.css?v=112`.
+- Storage rules emulator suite remains `describe.skip` (pinned emulator
+  runtime limitation, unrelated to this change).
+
 ## ACPM OS v1.0 — Company Pilot (2026-08-10)
 
 ### Delivery Receipt modal scroll fix (post-release hotfix)

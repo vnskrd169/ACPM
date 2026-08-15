@@ -95,9 +95,10 @@ request still shows ₱850 and NET ₱3,750 even though `w1`'s current rate is
    clear the session flag and return to the real login flow.
 
 > ⚠️ **Storage note:** only the Realtime Database is redirected to the
-> emulator. `firebase.storage()` (profile photos, etc.) still points at the
-> real **staging** bucket while the shell is active. Avoid uploading real
-> files during dev-shell debugging, or wire up the storage emulator as well.
+> emulator. All photo uploads (PMOS, Site Log, Face Attendance, profile
+> photos) go to **Google Drive** through the configured Apps Script endpoint,
+> which is not redirected by the shell. Avoid uploading real files during
+> dev-shell debugging unless that is intended.
 
 ## QA gate
 

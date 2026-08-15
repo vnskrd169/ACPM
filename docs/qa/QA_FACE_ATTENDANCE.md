@@ -30,7 +30,7 @@ The path can be changed in ACPM > Face Attendance > Face Settings. Until the fil
 - Confirm `consentRecorded = true` is required before enrollment.
 - Confirm revoked, inactive, disabled, or descriptorless workers are excluded.
 - Confirm no base64 images are written to Realtime Database.
-- Confirm reference photos, selfies, and test photos upload to Firebase Storage paths only.
+- Confirm reference photos, selfies, and test photos upload to Google Drive only (Apps Script transport, `storageProvider: 'Google Drive'`).
 - Confirm every selfie attendance starts with `reviewStatus: "For Review"` and `payrollStatus: "Not Posted"`.
 - Confirm payroll posting is blocked until review status is `Approved`.
 - Confirm audit rows are created for enrollment, descriptor generation, selfie submission, match suggestion, correction, approval, rejection, deletion, revocation, and payroll posting.

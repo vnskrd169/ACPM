@@ -33,7 +33,7 @@
   const OFFLINE_STORE = 'offlineQueue';
 
   /* ---- Drive upload URL (from PMOS_CONFIG, falls back to hardcoded default) ---- */
-  const PMOS_DRIVE_UPLOAD_URL = (window.PMOS_CONFIG && window.PMOS_CONFIG.driveUploadUrl) || 'https://script.google.com/macros/s/AKfycbxNQ1PunSoV2gCpdfrHs10D7kNC5YUnIyq0IHmFsI4MrDq3wHsJZaCiEcxP2RkHNA5P/exec';
+  const PMOS_DRIVE_UPLOAD_URL = (typeof window !== 'undefined' && window.PMOS_CONFIG && window.PMOS_CONFIG.driveUploadUrl) || 'https://script.google.com/macros/s/AKfycbxNQ1PunSoV2gCpdfrHs10D7kNC5YUnIyq0IHmFsI4MrDq3wHsJZaCiEcxP2RkHNA5P/exec';
   const MODULE_ORDER = ['home', 'quick', 'sitelog', 'photo', 'issue', 'material', 'task', 'meeting'];
 
   const MODULES = {
@@ -756,12 +756,12 @@
           '<span>New Task</span>' +
         '</div>' +
       '</div>' +
-      (topTasks.length ? '<div class="pmos-today-task-list">' + topTasks.map(taskCardMini).join('') + '</div>' : window.renderOnboardingState({variant:'inline',icon:'📋',title:'No tasks yet',desc:'Tap the + button below to add your first task for this project.',ctaLabel:'Create Task',ctaAction:'pmosOpenCreate()'})) +
+      (topTasks.length ? '<div class="pmos-today-task-list">' + topTasks.map(taskCardMini).join('') + '</div>' : window.renderOnboardingState({variant:'inline',icon:'📋',title:'No tasks yet',desc:'Tap the + button below to add your first task for this project.',ctaLabel:'Create Task',ctaAction:'pmosShowCreateSheet()'})) +
     '</div>';
   }
 
   function renderHomeRecent(records) {
-    if (!records.length) return window.renderOnboardingState({variant:'inline',icon:'📸',title:'No recent updates',desc:'Capture a photo, log an issue, or complete a task to see your activity here.',ctaLabel:'Take Photo',ctaAction:'pmosCapturePhoto()'});
+    if (!records.length) return window.renderOnboardingState({variant:'inline',icon:'📸',title:'No recent updates',desc:'Capture a photo, log an issue, or complete a task to see your activity here.',ctaLabel:'Take Photo',ctaAction:'pmosOpenModule("photo")'});
     return records.map(r => {
       const label = r.note || r.issue || r.item || r.task || r.meetingTitle || r.caption || r.accomplishment || 'Record';
       const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-PH') : '';
@@ -1825,8 +1825,8 @@
         await db.ref(`projects/${meta.projectId}/${MODULES.photo.collection}/${finalRef.key}`).set({ ...finalRecord, globalPathDenied: true });
       }
       await idbDeletePhoto(current.localId);
-      setSync('Photo uploaded.', 'ok');
-      pmosToast('Photo uploaded');
+      setSync('Photo uploaded to Google Drive.', 'ok');
+      pmosToast('Photo uploaded to Google Drive');
     } catch (e) {
       console.error('Photo upload failed:', e);
       await updateQueuedPhoto(current, { uploadStatus: 'Failed', uploadProgress: 0, errorMessage: e.message || e.code || 'Upload failed' });
@@ -1969,7 +1969,7 @@
             ${items.slice(0, 10).map(r => updateRecordRow(r)).join('')}
             ${items.length > 10 ? `<button class="pmos-load-more" onclick="pmosOpenModule('${key}')">View all ${items.length} records</button>` : ''}
           </section>
-        `).join('') : window.renderOnboardingState({variant:'inline',icon:'📝',title:'No records yet',desc:'Tap Create below to add your first field record — photo, issue, material, or update.',ctaLabel:'Create Record',ctaAction:'pmosOpenCreate()'})}
+        `).join('') : window.renderOnboardingState({variant:'inline',icon:'📝',title:'No records yet',desc:'Tap Create below to add your first field record — photo, issue, material, or update.',ctaLabel:'Create Record',ctaAction:'pmosShowCreateSheet()'})}
       </div>
     `;
   }
@@ -2107,7 +2107,7 @@
         <section class="pmos-task-section">
           <h3>Open (${open.length})</h3>
           ${open.slice(0, 20).map(function (t) { return taskRow(t); }).join('')}
-          ${!open.length && !overdue.length ? window.renderOnboardingState({variant:'inline',icon:'📋',title:'No tasks in this view',desc:'Tasks you create or get assigned will appear here. Tap the + button to create one.',ctaLabel:'Create Task',ctaAction:'pmosOpenCreate()'}) : ''}
+          ${!open.length && !overdue.length ? window.renderOnboardingState({variant:'inline',icon:'📋',title:'No tasks in this view',desc:'Tasks you create or get assigned will appear here. Tap the + button to create one.',ctaLabel:'Create Task',ctaAction:'pmosShowCreateSheet()'}) : ''}
         </section>
         </div>
       </div>
@@ -2247,7 +2247,7 @@
           <div class="pmos-more-row"><span>Cache</span><strong>${typeof CACHE_VERSION !== 'undefined' ? CACHE_VERSION : 'acpm-pmos-v1'}</strong></div>
           <div class="pmos-more-row"><span>Schema</span><strong>${typeof PMOS_SCHEMA_VERSION !== 'undefined' ? PMOS_SCHEMA_VERSION : '1.0'}</strong></div>
           <div class="pmos-more-row"><span>Face Attendance</span><strong>${faceEnabled ? 'Enabled' : 'Disabled'}</strong></div>
-          <div class="pmos-more-row"><span>Photo Provider</span><strong>Google Drive</strong></div>
+          <div class="pmos-more-row"><span>Photo Storage</span><span class="pmos-drive-badge">&#x1F4C1; Google Drive</span></div>
           ${navigator.onLine && 'beforeinstallprompt' in window ? `<button class="pmos-more-btn" onclick="pmosInstallApp()">Install App</button>` : ''}
           <a class="pmos-more-link" href="dashboard.html">&#x1F3E0; Open ACPM Office</a>
         </section>
@@ -2507,6 +2507,8 @@
     await uploadQueuedPhotos(true);
   }
   window.pmosRetryPhoto = pmosRetryPhoto;
+  window.uploadQueuedPhotos = uploadQueuedPhotos;
+  window.syncOfflineQueue = syncOfflineQueue;
 
   /* ============================================================
      INIT

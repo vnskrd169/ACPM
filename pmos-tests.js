@@ -93,7 +93,7 @@ if (typeof escapeHtml !== 'function') {
 if (typeof window === 'undefined') {
   global.window = {
     _currentUser: { uid: 'test-uid', name: 'Test User', role: 'apm', projects: { 'project-1': true } },
-    PMOS_CONFIG: { faceAttendanceEnabled: false, photoProvider: 'firebase-storage' },
+    PMOS_CONFIG: { faceAttendanceEnabled: false, photoProvider: 'google-drive', driveUploadUrl: 'https://script.google.com/macros/s/test/exec' },
     APP_VERSION: '1.0.0',
     PMOS_VERSION: '1.0.0',
     CACHE_VERSION: 'acpm-pmos-v1',

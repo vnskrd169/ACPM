@@ -1203,6 +1203,14 @@
     '</div>';
   }
 
+  function isDrivePhoto(r) {
+    return String(r.storageProvider || '').toLowerCase() === 'google drive' || String(r.photoUrl || '').includes('drive.google.com');
+  }
+
+  function driveBadge(r) {
+    return isDrivePhoto(r) ? '<span class="pmos-drive-badge">&#x1F4C1; Google Drive</span>' : '';
+  }
+
   function photoLogCard(r, compact = false) {
     const date = r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : '';
     const thumb = r.thumbnailUrl || r.photoUrl || '';
@@ -1216,6 +1224,7 @@
           <div class="pmos-row-title">${h(title)}</div>
           <div class="pmos-row-meta">${h(projectName(r.projectId, r.projectName))} - ${h(date)}${r.createdByName ? ` - ${h(r.createdByName)}` : ''}</div>
           <div class="pmos-row-detail">${h([r.category ? `Category: ${r.category}` : '', r.location ? `Location: ${r.location}` : '', `Upload: ${status}`].filter(Boolean).join(' | '))}</div>
+          ${driveBadge(r)}
         </div>
         <div class="pmos-row-actions">
           <span class="badge badge-purple">${h(r.status || 'New')}</span>
@@ -1231,6 +1240,7 @@
         <strong>${h(title)}</strong>
         <span>${h(r.location || 'No location')} - ${h(r.category || 'Photo')} - ${h(date)}</span>
         <span>${h(projectName(r.projectId, r.projectName))}</span>
+        ${driveBadge(r)}
         <div class="pmos-photo-card-actions">
           <b>${h(status)}</b>
           ${original}
