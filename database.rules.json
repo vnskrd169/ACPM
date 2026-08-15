@@ -475,6 +475,11 @@
             ".validate": "(root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)) && (!data.exists() || (newData.child('weekKey').val() === data.child('weekKey').val() && newData.child('gross').val() === data.child('gross').val() && newData.child('net').val() === data.child('net').val() && newData.child('cashAdvanceDeductions').val() === data.child('cashAdvanceDeductions').val() && newData.child('deductions').val() === data.child('deductions').val()))"
           }
         },
+        "payrollWeeks": {
+          "$weekKey": {
+            ".validate": "(root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)) && !data.exists()"
+          }
+        },
         "siteLogs": {
           ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
           ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid)))",

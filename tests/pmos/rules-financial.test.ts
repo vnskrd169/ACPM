@@ -159,6 +159,30 @@ describe('Financial record protection (production database.rules.json)', () => {
     });
   });
 
+  describe('payrollWeeks — one finalized log per weekKey (server-enforced)', () => {
+    it('a weekKey marker can be created once by PM/boss', async () => {
+      const dbPm = testEnv.authenticatedContext(USERS.pm).database();
+      await assertSucceeds(dbPm.ref(`projects/${ACTIVE_PROJECT}/payrollWeeks/2026-06-22_2026-06-27`).set({ logId: 'log-pm', savedAt: Date.now(), savedBy: USERS.pm }));
+    });
+    it('the SAME weekKey marker cannot be created a second time (double-compile race closed)', async () => {
+      const dbPm = testEnv.authenticatedContext(USERS.pm).database();
+      await assertFails(dbPm.ref(`projects/${ACTIVE_PROJECT}/payrollWeeks/2026-06-22_2026-06-27`).set({ logId: 'log-second', savedAt: Date.now(), savedBy: USERS.pm }));
+      // a different weekKey is still allowed
+      await assertSucceeds(dbPm.ref(`projects/${ACTIVE_PROJECT}/payrollWeeks/2026-07-06_2026-07-11`).set({ logId: 'log-other', savedAt: Date.now(), savedBy: USERS.pm }));
+    });
+    it('an existing marker cannot be overwritten with a different claim', async () => {
+      // `.validate` enforces create-only while `newData` exists; a delete is a
+      // deliberate privileged action (ancestor `.write` grants short-circuit
+      // child `.write` denials — documented RTDB semantics above).
+      const db = testEnv.authenticatedContext(USERS.boss).database();
+      await assertFails(db.ref(`projects/${ACTIVE_PROJECT}/payrollWeeks/2026-06-22_2026-06-27`).set({ logId: 'overwrite' }));
+    });
+    it('APM cannot claim a payroll week marker (payroll finalization is PM+)', async () => {
+      const dbApm = testEnv.authenticatedContext(USERS.apm).database();
+      await assertFails(dbApm.ref(`projects/${ACTIVE_PROJECT}/payrollWeeks/2026-07-13_2026-07-18`).set({ logId: 'apm-claim', savedAt: Date.now(), savedBy: USERS.apm }));
+    });
+  });
+
   describe('attendanceHistory — period identity is frozen', () => {
     it('weekKey and savedAt cannot be modified', async () => {
       const db = testEnv.authenticatedContext(USERS.pm).database();

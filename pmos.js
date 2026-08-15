@@ -207,14 +207,14 @@
   function pmosProjectAllowed(pid) {
     const user = window._currentUser || {};
     if (!pid) return false;
-    if (typeof isBoss === 'function' && isBoss(user.role)) return true;
+    if (typeof canSeeAllProjects === 'function' && canSeeAllProjects(user.role)) return true;
     return projectList(user.projects).includes(pid) || projectList(user.bossOf).includes(pid);
   }
 
   function canEditPmosRecord(record) {
     const user = window._currentUser || {};
     if (!record || !user) return false;
-    if (typeof isBoss === 'function' && isBoss(user.role)) return true;
+    if (typeof canSeeAllProjects === 'function' && canSeeAllProjects(user.role)) return true;
     const isOwner = record.createdBy === user.uid;
     const isDraftOrQueued = record.draft === true || record.syncStatus === 'queued' || record.syncStatus === 'failed';
     const isNotReviewed = !record.reviewedAt && !['Reviewed', 'Done', 'Archived'].includes(String(record.status || ''));
@@ -224,7 +224,7 @@
   function canArchiveRecord(record) {
     const user = window._currentUser || {};
     if (!record) return false;
-    if (typeof isBoss === 'function' && isBoss(user.role)) return true;
+    if (typeof canSeeAllProjects === 'function' && canSeeAllProjects(user.role)) return true;
     if (record.archived) return false;
     return record.createdBy === user.uid && !['Done', 'Archived'].includes(String(record.status || ''));
   }
@@ -434,7 +434,7 @@
   async function loadPmosProjects() {
     const user = window._currentUser || {};
     const projects = [];
-    if (typeof isBoss === 'function' && isBoss(user.role)) {
+    if (typeof canSeeAllProjects === 'function' && canSeeAllProjects(user.role)) {
       const snap = await db.ref('projects').once('value');
       snap.forEach(child => {
         const p = child.val() || {};

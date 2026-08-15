@@ -239,7 +239,7 @@
   function officeCanSeeProject(pid) {
     const user = window._currentUser || {};
     if (!pid) return true;
-    if (typeof isBoss === 'function' && isBoss(user.role)) return true;
+    if (typeof canSeeAllProjects === 'function' && canSeeAllProjects(user.role)) return true;
     return projectList(user.projects).includes(pid) || projectList(user.bossOf).includes(pid);
   }
 
@@ -269,7 +269,7 @@
   async function loadOfficeProjects() {
     const user = window._currentUser || {};
     const projects = [];
-    if (typeof isBoss === 'function' && isBoss(user.role)) {
+    if (typeof canSeeAllProjects === 'function' && canSeeAllProjects(user.role)) {
       const snap = await db.ref('projects').once('value');
       snap.forEach(child => projects.push({ ...(child.val() || {}), id: child.key }));
     } else {

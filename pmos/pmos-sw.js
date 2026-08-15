@@ -7,7 +7,7 @@
 //  Only deletes caches starting with 'pmos-cache-'.
 // -----------------------------------------------------------------------------
 
-var PMOS_CACHE = 'pmos-cache-v6';
+var PMOS_CACHE = 'pmos-cache-v7';
 
 var PMOS_ASSETS = [
   './',

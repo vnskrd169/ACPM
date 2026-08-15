@@ -22,6 +22,21 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
+<!-- LOCAL DEV SHELL HOOK (fail-closed, never active on remote hosts) -->
+<script>
+  (function () {
+    try {
+      var h = (window.location.hostname || '').toLowerCase();
+      var isLocal = h === 'localhost' || h === '127.0.0.1' || h === '' || h === '::1';
+      var optIn = new URLSearchParams(window.location.search).get('dev') === '1' ||
+        sessionStorage.getItem('acpm_dev_shell') === '1';
+      if (isLocal && optIn) {
+        document.write('<script src="../dev/dev-bypass.js?v=1"><\/script>');
+      }
+    } catch (e) {}
+  })();
+</script>
+
 <!-- ACPM Core (shared from root) -->
 <script src="../utils.js?v=87"></script>
 <script src="../auth.js?v=98"></script>

@@ -48,7 +48,7 @@ function main() {
   const indexHtml = read('index.html');
   const loginHtml = read('login.html');
 
-  assert(/const CACHE_NAME = 'acpm-v139'/.test(sw), 'service worker cache must be acpm-v139');
+  assert(/const CACHE_NAME = 'acpm-v140'/.test(sw), 'service worker cache must be acpm-v140');
   assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=112">'), 'login.html must load style.css?v=112');
   assert(extractScriptVersion(loginHtml, 'environment.js') === '1', 'login.html must load environment.js?v=1');
   assert(extractScriptVersion(loginHtml, 'utils.js') === '87', 'login.html must load utils.js?v=87');

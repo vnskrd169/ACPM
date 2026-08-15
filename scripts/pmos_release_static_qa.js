@@ -89,8 +89,8 @@ function main() {
   assert(authSource.includes('uploadProfilePhotoToDrive'), 'auth.js must upload profile photos to Google Drive');
   assert(authSource.includes('avatarStorageProvider: \'Google Drive\''), 'auth.js must record Google Drive as profile photo provider');
 
-  assert(pmosSw.includes("pmos-cache-v6"), 'scoped PMOS service worker must use pmos-cache-v6');
-  assert(rootPmosSw.includes("pmos-cache-v6"), 'legacy PMOS service worker must use pmos-cache-v6');
+  assert(pmosSw.includes("pmos-cache-v7"), 'scoped PMOS service worker must use pmos-cache-v7');
+  assert(rootPmosSw.includes("pmos-cache-v7"), 'legacy PMOS service worker must use pmos-cache-v7');
   assert(pmosShell.includes("const CACHE_VERSION = 'acpm-pmos-v4'"), 'PMOS shell cache label must be acpm-pmos-v4');
   assert(pmosIndex.includes('../environment.js?v=1'), 'PMOS shell must load the shared environment selector');
   assert(!pmosSw.includes('../face-attendance.js'), 'scoped PMOS SW must not cache Face Attendance for Drive-only rollout');
@@ -164,7 +164,7 @@ function main() {
       'Brand/PMOS shell text has no mojibake',
       'Company deploy ships zero test artifacts'
     ],
-    pmosCache: 'pmos-cache-v6',
+    pmosCache: 'pmos-cache-v7',
     pmosShellCache: 'acpm-pmos-v4',
     photoProvider: 'Google Drive'
   }, null, 2));

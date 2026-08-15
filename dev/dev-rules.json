@@ -1,6 +1,21 @@
 {
   "rules": {
     ".read": true,
-    ".write": true
+    ".write": true,
+    "projects": {
+      "$pid": {
+        "payrollWeeks": {
+          "$weekKey": {
+            // Create-only marker (matches production rules): a weekKey may be
+            // claimed by exactly ONE finalized payroll log. Written in the
+            // same atomic update as the log, so a second concurrent compile
+            // of the same week fails the whole update. `.validate` is used
+            // because an ancestor `.write` grant short-circuits child
+            // `.write` rules; `.validate` always evaluates.
+            ".validate": "!data.exists()"
+          }
+        }
+      }
+    }
   }
 }

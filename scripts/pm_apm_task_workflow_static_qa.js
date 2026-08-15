@@ -23,6 +23,7 @@ function run() {
   const tasks = read('tasks.js');
   const adapter = read('pmos-task-adapter.js');
   const pmos = read('pmos.js');
+  const pmosOffice = read('pmos-office.js');
   const notifications = read('notifications.js');
   const report = read('report.js');
   const workspace = read('workspace.html');
@@ -88,6 +89,18 @@ function run() {
   assert(pmos.includes("pmosTransitionTask(\\'for_verification\\')"), 'PMOS must expose Submit for Verification');
   assert(pmos.includes("pmosTransitionTask(\\'completed\\')"), 'PMOS must expose PM verification completion');
 
+  // PM/company-wide roles must see all projects in PMOS (same central
+  // capability as the office app) — a PM with no explicit assignments must
+  // still get the full project list, not zero projects.
+  assert(/function loadPmosProjects\(\)[\s\S]*canSeeAllProjects\(user\.role\)/.test(pmos),
+    'PMOS project loading must use company-wide visibility (PM sees all projects)');
+  assert(/function pmosProjectAllowed\(pid\)[\s\S]*canSeeAllProjects\(user\.role\)/.test(pmos),
+    'PMOS project access must use company-wide visibility');
+  assert(/function loadOfficeProjects\(\)[\s\S]*canSeeAllProjects\(user\.role\)/.test(pmosOffice),
+    'PMOS Office project loading must use company-wide visibility');
+  assert(/function officeCanSeeProject\(pid\)[\s\S]*canSeeAllProjects\(user\.role\)/.test(pmosOffice),
+    'PMOS Office project access must use company-wide visibility');
+
   console.log(JSON.stringify({
     result: 'PASS',
     checks: [
@@ -95,6 +108,7 @@ function run() {
       'PM verification authority',
       'single Office task listener with exact cleanup',
       'PMOS listener cleanup',
+      'PMOS company-wide project visibility (PM sees all projects, office + mobile)',
       'task event and project activity writes',
       'central PM project and assignment capabilities',
       'PM-to-APM assignment restriction',

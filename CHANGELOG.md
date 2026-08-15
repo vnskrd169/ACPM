@@ -1,5 +1,137 @@
 # ACPM Changelog
 
+## FIX: PM/company-wide roles saw ZERO projects in PMOS mobile + office (2026-08-15)
+
+Found while extending the live check to exercise PMOS on the production site:
+`loadPmosProjects`/`pmosProjectAllowed` (pmos.js) and `loadOfficeProjects`/
+`officeCanSeeProject` (pmos-office.js) gated company-wide project visibility on
+`isBoss` (boss/owner/admin only). A **PM with no explicit assignments saw an
+empty project selector in PMOS Mobile and PMOS Office** — but the office app
+(`canSeeAllProjects` = boss/owner/admin/PM) grants PMs company-wide access.
+
+### Fix
+- `pmos.js` + `pmos-office.js`: all four project-visibility gates now use the
+  central `canSeeAllProjects(role)` capability (PM included), matching the
+  office app.
+- `pmos/index.html`: added the same **fail-closed local dev-shell hook** the
+  other three pages have (localhost + `?dev=1`/session flag only, never active
+  on remote hosts) — PMOS was the one page the dev shell could not drive.
+- Regression guard: `scripts/pm_apm_task_workflow_static_qa.js` now asserts
+  PMOS project loading/access uses `canSeeAllProjects`, so a PM regression is
+  caught at gate time.
+- PWA caches bumped so clients pick up the fix: root `acpm-v140`, PMOS
+  `pmos-cache-v7` (both sw.js + pmos/pmos-sw.js).
+
+### Verified
+- `dev/pmos-pm-verify.mjs` (real app, emulator, phone viewport): **PM sees
+  all 10 projects (was 0), APM still sees exactly 2 assigned, zero console
+  errors — 5/5 PASS**.
+- Full regression: Playwright **32/32**, rules suites **27 passed / 4 skips**,
+  all static gates PASS.
+- **Deployed to production** (with the payroll-race database rules, both via
+  `deploy-production.ps1 -ConfirmProduction -IncludeDatabase`); live site
+  serves `acpm-v140` / `pmos-cache-v7` with the fixed pmos.js/pmos-office.js.
+- **Live production re-check: 33/33 PASS** — the extended PMOS mobile section
+  now shows the PM's project selector populated with real projects
+  (previously empty), field view renders after selection, zero severe console
+  errors on the phone.
+
+## Live production load check — 21/21 PASS with real QA accounts (2026-08-15)
+
+- Read-only browser check against the **deployed production site**
+  (acpm-project-system.web.app) using the real QA role accounts:
+  `pm.qa@lebuild.test` (company-wide) and `apm.qa@lebuild.test` (assigned-only).
+- **PM session**: signs in and reaches the hub (~2.4s), hub renders the real
+  project cards, opens a project workspace, renders content — zero severe
+  console errors, horizontal overflow, broken images, or dead handlers.
+- **APM session**: signs in (~2.3s), hub renders, opens an assigned project
+  workspace — same clean audits.
+- **Script**: `scripts/live_production_load_check.mjs` — reusable, read-only,
+  env-driven (`ACPM_QA_PM_EMAIL`/`ACPM_QA_PM_PASSWORD`/`ACPM_QA_APM_*`).
+  Blocks the service worker because a fresh context installing the PWA SW
+  triggers `controllerchange -> reload`, which aborts the in-flight auth
+  request — an artifact of first-visit install, not a production defect
+  (existing users already have the SW installed).
+
+## CRITICAL FIX: concurrent payroll compile race — one log per week, server-enforced (2026-08-15)
+
+### Bug found by the multi-user concurrency drive
+Two sessions compiling the SAME payroll week simultaneously both passed the
+client-side "no existing log" check (a read-then-write TOCTOU race) and the
+server accepted **two finalized payroll logs for one weekKey** — reproduced
+live with boss + pm racing: `2026-08-10_2026-08-16` written twice at the same
+second. Consequences: cash advances double-deducted and `laborSpent`
+double-counted. The old server rule allowed a new log at any push key and
+enforced nothing about weekKey uniqueness.
+
+### Fix
+- **Server**: new `projects/$pid/payrollWeeks/{weekKey}` **create-only marker**
+  (`.validate … && !data.exists()`) in `database.rules.json`. A weekKey may be
+  claimed by exactly ONE finalized log. `.validate` (not `.write`) is used
+  because an ancestor `.write` grant short-circuits child `.write` rules.
+- **Client**: `labor.js confirmSavePayroll` writes the marker in the **same
+  atomic multi-path update** as the log. If another session already claimed
+  the week, the marker write fails and the whole update is rejected — the
+  server, not the client, guarantees one-log-per-week.
+- **Dev parity**: `dev/dev-rules.json` enforces the same create-only marker so
+  the local emulator behaves like production for this invariant.
+- **Tests**: 4 new rule tests in `tests/pmos/rules-financial.test.ts` (create
+  once, same-week duplicate rejected, overwrite rejected, APM cannot claim) —
+  24/24 financial rules PASS.
+
+### Re-verified
+- Concurrency drive: **37/37 PASS** — `EXACTLY ONE new payroll log (12 → 13)`,
+  no duplicate weekKey, all realtime sync checks green.
+- Max-load drive: **98/98 PASS**. Emulator suites: **138 passed / 4 documented
+  skips**. Playwright: **32/32 PASS**. All static gates PASS
+  (rc1_static, pmos_release, firebase_rules_gate included).
+
+### Tooling (dev only, never deployed)
+- `dev/stress-concurrency.mjs` — 4-session race drive (worker adds, attendance
+  last-write-wins, PO atomic sequence, payroll compile race, realtime sync,
+  role visibility). Run: `node dev/stress-concurrency.mjs`
+- `dev/seed-stress-data.js` extended: role users (`dev-pm`, `dev-apm1`,
+  `dev-apm2`), `trades` node (the real add-worker form populates its select
+  from it), attendance targeting the current week, and payroll history
+  stopping BEFORE the current week so the compile path is real.
+- `dev/dev-bypass.js` multi-user support: `?devUser=boss|pm|apm1|apm2` or
+  `sessionStorage.acpm_dev_user` selects the mock identity (default boss;
+  fail-closed on remote hosts as before).
+
+## Max-load stress simulation — 10 projects pushed to the limit (2026-08-15)
+
+### Scenario
+Seeded the local emulator with a production-scale workload and drove the
+**real app** (dashboard hub + workspace, boss session, dev shell bypass) in a
+browser against it:
+- 10 active projects × 50 workers each = **500 workers** (10 per trade × 5
+  trades: Electrician, Plumbing, Structural, Installer, Paint)
+- **12 weekly Saturday payroll logs** per project (120 total), each carrying
+  full 50-worker per-trade detail in the real compiled `byTrade` shape
+- **20 daily PO requests** per project (200 total) with items, deliveries,
+  DR numbers, plus 40 materials lines, 25 tasks, 20 site logs, 8 billings,
+  advances, equipment, compliance, defects per project
+
+### Result — 98/98 PASS, zero failures
+- Hub renders all 10 projects; every workspace boots and renders all **50
+  workers** (verified by DOM row count, not text regex)
+- Payroll history renders **12 weekly logs** with **600 worker detail rows**
+  (12 × 50 — every worker present in every log)
+- Materials tab renders all **20 PO cards** per project
+- **Zero** severe console errors, horizontal overflow, or dead inline
+  handlers across all 10 projects, the materials view, and the 390px phone
+  viewport
+- Performance: hub render ~2.2s; workspace load mean **~1.0s** (n=11, real
+  emulator reads of 50 workers + 12 payroll logs + 20 POs + 40 materials
+  + 25 tasks + 20 site logs per project)
+
+### Tooling (dev only, never deployed)
+- `dev/seed-stress-data.js` — deterministic max-load seed (same emulator
+  isolation as `seed-dev-data.js`; all records flagged `STRESS`, local-only)
+- `dev/stress-max-load.mjs` — boots server + emulator, seeds, drives the app
+  across all projects, audits health/overflow/handlers/console, reports
+  render timings. Run: `node dev/stress-max-load.mjs`
+
 ## Company deployment — Staging + Production (2026-08-15)
 
 - **Staging** `acpm-project-system-qa`: deployed via guarded

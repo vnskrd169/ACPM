@@ -1681,6 +1681,16 @@ async function confirmSavePayroll() {
     compiledBy: window._currentUser.uid
   };
 
+  // Claim this weekKey BEFORE the log write — the same atomic update also
+  // writes payrollWeeks/{weekKey} (create-only server rule). If another
+  // session already compiled this week, the marker write fails and the whole
+  // update is rejected: the server, not the client, guarantees one log per week.
+  updates[`projects/${_lpid}/payrollWeeks/${d.weekKey}`] = {
+    logId: logKey,
+    savedAt: Date.now(),
+    savedBy: window._currentUser.uid
+  };
+
   // Save payroll log with gov deductions
   const logData = {
     projectId: _lpid,

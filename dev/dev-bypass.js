@@ -81,14 +81,25 @@
     return app;
   };
 
-  // ── Mock Firebase Auth (immediate boss session) ───────────
-  var DEV_USER = {
-    uid: 'dev-boss',
-    email: 'dev@acpm.local',
-    displayName: 'DEV Boss',
+  // ── Mock Firebase Auth (immediate session) ────────────────
+  // Multi-user dev support: `?devUser=boss|pm|apm1|apm2` or
+  // sessionStorage.acpm_dev_user selects a mock identity (all against the
+  // same local emulator). Defaults to the original dev-boss for back-compat.
+  var DEV_USERS = {
+    boss: { uid: 'dev-boss', email: 'dev@acpm.local', displayName: 'DEV Boss' },
+    pm:   { uid: 'dev-pm',   email: 'pm@acpm.local',   displayName: 'DEV PM' },
+    apm1: { uid: 'dev-apm1', email: 'apm1@acpm.local', displayName: 'DEV APM 1' },
+    apm2: { uid: 'dev-apm2', email: 'apm2@acpm.local', displayName: 'DEV APM 2' }
+  };
+  var DEV_USER_KEY = 'boss';
+  try {
+    var userKey = new URLSearchParams(window.location.search).get('devUser') || sessionStorage.getItem('acpm_dev_user') || 'boss';
+    if (DEV_USERS[userKey]) DEV_USER_KEY = userKey;
+  } catch (e) { /* ignore */ }
+  var DEV_USER = Object.assign({}, DEV_USERS[DEV_USER_KEY], {
     emailVerified: true,
     isAnonymous: false
-  };
+  });
 
   var mockAuth = {
     currentUser: DEV_USER,
