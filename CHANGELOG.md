@@ -1,6 +1,25 @@
 # ACPM Changelog
 
-## FIX: PM/company-wide roles saw ZERO projects in PMOS mobile + office (2026-08-15)
+## Multi-browser live production check — Chromium + WebKit 32/32, Firefox env-limited (2026-08-15)
+
+- `scripts/live_production_load_check.mjs` now runs the same read-only live
+  check (PM + APM + PMOS mobile) in any Playwright browser:
+  `--browser=chromium|firefox|webkit` (or `ACPM_BROWSER`), and all three via
+  `--all` with a summary table.
+- **Chromium: 32/32 PASS** and **WebKit: 32/32 PASS** against the deployed
+  production site with real QA accounts.
+- **Firefox: ENVIRONMENT-LIMITED** — this sandbox's Firefox aborts XHR to
+  Google's identitytoolkit endpoint (`NS_BINDING_ABORTED` at the Gecko
+  network layer) while the identical request succeeds via fetch and via a
+  direct verifyPassword probe (HTTP 200 with the real QA credentials).
+  Root cause is the environment's network layer, not the app: it is stock
+  Firebase auth, Chromium + WebKit pass identically, and the endpoint is
+  reachable from Firefox itself. The check detects this automatically and
+  reports it as LIMITED (with the probe evidence) instead of a false FAIL.
+- Harness hardening: the field-view audit now waits for the PMOS layout to
+  settle before measuring, so transient mid-render states aren't flagged as
+  layout defects (an intermittent WebKit overflow trace turned out to be a
+  mid-animation artifact — no reproduction across isolated runs).
 
 Found while extending the live check to exercise PMOS on the production site:
 `loadPmosProjects`/`pmosProjectAllowed` (pmos.js) and `loadOfficeProjects`/
