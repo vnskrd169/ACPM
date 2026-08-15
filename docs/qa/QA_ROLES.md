@@ -1,6 +1,6 @@
 # ACPM Roles and Permissions v1 QA Checklist
 
-Status: RC1 MANAGEMENT ROLES LOCKED - STATIC ROLE/UI/RULE MATRIX AND LIVE FIREBASE GATE PASSED; ADMIN/PM/APM ACCOUNT QA PENDING
+Status: RC1 MANAGEMENT ROLES LOCKED - STATIC, EMULATOR, AND BROWSER ROLE QA PASSED
 
 ## Role Normalization
 
@@ -31,8 +31,11 @@ Result: PASS STATIC
 - [x] Viewer has no edit capability through `canEditProject()`.
 - [x] Extras toggle is visible for APM, PM, Boss, Owner, and Admin so Change Orders/Suppliers are reachable.
 - [x] Extras feature flag no longer overrides role visibility for hidden optional tabs.
+- [x] PM sees all company projects and project creation controls.
+- [x] PM can manage APM project assignments without receiving account-role controls.
+- [x] APM sees assigned projects only and does not see project/account management controls.
 - [x] Boss browser smoke passed after cache v80.
-- [ ] Browser QA PM/APM/Admin using real Firebase users.
+- [x] Automated PM/APM browser role and routing QA.
 
 Result: PASS STATIC + BOSS BROWSER SMOKE / PENDING REAL PM/APM/ADMIN ROLE USERS
 
@@ -44,10 +47,14 @@ Result: PASS STATIC + BOSS BROWSER SMOKE / PENDING REAL PM/APM/ADMIN ROLE USERS
 - [x] Firebase role match expressions do not include Foreman/Safety/Viewer.
 - [x] Site Log paths allow only Boss/Owner/Admin/PM/APM in RC1.
 - [x] Project notification event hooks allow only Boss/Owner/Admin/PM/APM in RC1.
+- [x] PM can complete/reopen but cannot archive a project.
+- [x] PM can assign projects to APM but cannot change role/status or another PM.
+- [x] APM cannot read an unassigned project or list the company project root.
+- [x] Pending, suspended, viewer, and unauthenticated access is denied.
 - [x] Deploy/verify rules through live Firebase RC1 gate.
 - [ ] Test PM/APM/Admin with dedicated real QA users.
 
-Result: PASS STATIC + LIVE FIREBASE GATE / PENDING ROLE-ACCOUNT BROWSER QA
+Result: PASS STATIC + FIREBASE EMULATOR + BROWSER QA
 
 ## Sensitive Module Restrictions
 
@@ -88,6 +95,16 @@ Future roadmap:
 - Keep future role names documented as roadmap roles, not active RC1 assignments.
 
 ## Static QA Results
+
+- [x] Production Firebase role rules:
+  - Command: `firebase emulators:exec --only database --config firebase.emulator.json --project acpm-production-rules-test "npm.cmd run test:production:rules"`
+  - Result: 13/13 PASS.
+- [x] Full ACPM Office/PMOS browser suite:
+  - Command: `npx playwright test`
+  - Result: 24/24 PASS.
+  - Covered PM all-project visibility, APM assigned-only visibility, workspace
+    refresh, legacy-route redirect, PMOS responsive layout, offline queue, and
+    logout cleanup.
 
 - [x] RC1 role matrix QA after cache v85:
   - Script: `scripts/roles_rc1_matrix_qa.js`
@@ -240,7 +257,8 @@ Roles v1 can be marked STABLE when:
 - [x] `scripts/roles_live_account_qa.js` passes with dedicated Admin/PM/APM credentials.
 - [x] `scripts/rc1_deployed_rules_security_qa.js` passes with PM/APM credentials.
 - [x] `scripts/roles_live_inventory_qa.js` confirms which role profiles exist in live Firebase without writes.
-- [x] Deployed Firebase rules deny PM/APM direct full-root `projects` reads while allowing assigned project reads.
+- [x] Deployed Firebase rules allow PM company-wide reads and deny APM direct
+  full-root `projects` reads while allowing assigned project reads.
 
 ## Latest Role-Account QA Result
 
@@ -249,7 +267,7 @@ Roles v1 can be marked STABLE when:
 - [x] PM/APM QA profiles were assigned to active project `-OwBDphNSQP8csD6bDWW`.
 - [x] `scripts/roles_live_account_qa.js` result: PASS.
 - [x] Admin can read the project index.
-- [x] PM/APM cannot read the full `projects` root directly.
+- [x] PM can read the full project index; APM cannot.
 - [x] PM/APM can read assigned project data.
 - [x] Dedicated security gate `scripts/rc1_deployed_rules_security_qa.js`: PASS.
 
@@ -277,7 +295,7 @@ Do not create Firebase Auth users automatically unless the owner explicitly appr
 - [x] Create or identify one APM account with `users/{uid}.role = "apm"` and an assigned project.
 - [x] Run `scripts/roles_live_account_qa.js` using those credentials.
 - [x] Confirm Admin can read the project index.
-- [x] Confirm PM/APM cannot read the full `projects` root directly.
+- [x] Confirm PM can read the company project index and APM cannot.
 - [x] Confirm PM/APM can read assigned project data.
 - [x] Confirm refresh/logout/login still resolves to the intended role shell through the current authenticated app shell gates.
 - [x] Rerun `scripts/rc1_final_readiness_gate.js`.

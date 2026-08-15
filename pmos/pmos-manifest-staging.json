@@ -1,0 +1,21 @@
+{
+  "name": "ACPM PMOS Staging",
+  "short_name": "PMOS QA",
+  "description": "Isolated PMOS staging environment for field workflow verification",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111318",
+  "theme_color": "#d97706",
+  "orientation": "portrait",
+  "categories": ["business", "productivity", "construction"],
+  "lang": "en-PH",
+  "icons": [
+    {
+      "src": "../assets/brand/acpm/logo-mark.svg",
+      "sizes": "256x256",
+      "type": "image/svg+xml",
+      "purpose": "any monochrome"
+    }
+  ]
+}

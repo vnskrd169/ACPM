@@ -1,38 +1,47 @@
-// ════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
 //  ACPM Service Worker
 //  Self-clearing: purges ALL old caches on activate and forces
 //  the new version to take over immediately (clients.claim).
 //  This guarantees users get fresh code after ONE page refresh,
 //  without needing to manually unregister the SW.
-// ════════════════════════════════════════════════════════════
+// -----------------------------------------------------------------------------
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v97';
+const CACHE_NAME = 'acpm-v140';
 
 const ASSETS = [
   './',
   './index.html',
   './login.html',
+  './pmos.html',
   './dashboard.html',
   './workspace.html',
-  './style.css?v=92',
-  './utils.js?v=84',
-  './auth.js?v=85',
-  './main.js?v=95',
-  './labor.js?v=94',
-  './materials.js?v=93',
-  './billing.js?v=74',
+  './environment.js?v=1',
+  './style.css?v=112',
+  './utils.js?v=87',
+  './auth.js?v=98',
+  './main.js?v=109',
+  './payroll-math.js?v=2',
+  './labor.js?v=98',
+  './materials.js?v=96',
+  './billing.js?v=76',
   './changeorders.js?v=95',
-  './sitelog.js?v=94',
+  './sitelog.js?v=95',
   './suppliers.js?v=94',
   './equipment.js?v=94',
   './compliance.js?v=88',
   './defects.js?v=94',
-  './tasks.js?v=94',
-  './notifications.js?v=79',
-  './report.js?v=86',
-  './manifest.json'
-  // CDN assets (Firebase, jsPDF, html2canvas) are not cached — let browser handle
+  './tasks.js?v=95',
+  './notifications.js?v=86',
+  './ux-palette.js?v=1',
+  './report.js?v=97',
+  './pmos.js?v=3',
+  './pmos-office.js?v=4',
+  './face-attendance.js?v=1',
+  './pmos-task-adapter.js?v=2',
+  './manifest.json',
+  './manifest-staging.json'
+  // CDN assets (Firebase, jsPDF, html2canvas) are not cached; let browser handle them.
 ];
 
 // Install: pre-cache the app shell. skipWaiting() makes the new SW
@@ -48,7 +57,7 @@ self.addEventListener('install', e => {
 });
 
 // Activate: DELETE EVERY cache that isn't the current version.
-// This is the key fix — old 'acpm-v2'/'acpm-v3' caches (with the
+// This is the key fix: old 'acpm-v2'/'acpm-v3' caches (with the
 // broken main.js) get wiped on every version bump.
 // clients.claim() forces the new SW to control the page immediately.
 self.addEventListener('activate', e => {
@@ -74,6 +83,9 @@ self.addEventListener('fetch', e => {
 
   // Skip Firebase API calls (Realtime DB uses WebSockets)
   const url = new URL(e.request.url);
+  if (url.pathname === '/pmos/' || url.pathname.startsWith('/pmos/')) {
+    return;
+  }
   if (url.hostname.includes('firebaseio.com') ||
       url.hostname.includes('googleapis.com') ||
       url.hostname.includes('gstatic.com')) {
@@ -92,7 +104,7 @@ self.addEventListener('fetch', e => {
       .catch(() => {
         return caches.match(e.request).then(cached => {
           if (cached) return cached;
-          return new Response('Offline — no cached data available. Please connect to the internet.', {
+          return new Response('Offline: no cached data available. Please connect to the internet.', {
             status: 503,
             headers: { 'Content-Type': 'text/plain' }
           });

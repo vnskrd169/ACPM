@@ -77,7 +77,7 @@ function roleCredentials(role) {
   return null;
 }
 
-async function verifyAssignedRole(role) {
+async function verifyProjectRole(role) {
   const account = roleCredentials(role);
   assert(account?.email && account?.password, `Missing ${role.toUpperCase()} QA credentials`, {
     expectedEnv: [`ACPM_${role.toUpperCase()}_QA_EMAIL`, `ACPM_${role.toUpperCase()}_QA_PASSWORD`]
@@ -91,24 +91,32 @@ async function verifyAssignedRole(role) {
   });
 
   const assignedProjects = normalizeAssignedProjects(profile);
-  assert(assignedProjects.length > 0, `${role.toUpperCase()} QA account must have an assigned project`);
-
   const rootRead = await readDb('projects', auth.idToken, { shallow: 'true' }, true);
-  assert(rootRead.ok === false, `${role.toUpperCase()} must not read full projects root`, {
-    status: rootRead.status,
-    assignedProjects,
-    exposedProjectKeyCount: rootRead.body && typeof rootRead.body === 'object'
-      ? Object.keys(rootRead.body).length
-      : 0,
-    exposedProjectKeys: rootRead.body && typeof rootRead.body === 'object'
-      ? Object.keys(rootRead.body).slice(0, 20)
-      : []
-  });
+  if (role === 'pm') {
+    assert(rootRead.ok === true && (rootRead.body === null || typeof rootRead.body === 'object'), 'PM must read the company project index', {
+      status: rootRead.status
+    });
+  } else {
+    assert(rootRead.ok === false, 'APM must not read full projects root', {
+      status: rootRead.status,
+      assignedProjects,
+      exposedProjectKeyCount: rootRead.body && typeof rootRead.body === 'object'
+        ? Object.keys(rootRead.body).length
+        : 0,
+      exposedProjectKeys: rootRead.body && typeof rootRead.body === 'object'
+        ? Object.keys(rootRead.body).slice(0, 20)
+        : []
+    });
+  }
 
-  const assignedRead = await readDb(`projects/${assignedProjects[0]}`, auth.idToken, { shallow: 'true' });
-  assert(assignedRead === null || typeof assignedRead === 'object', `${role.toUpperCase()} must read assigned project`, {
-    projectId: assignedProjects[0]
-  });
+  if (assignedProjects.length) {
+    const assignedRead = await readDb(`projects/${assignedProjects[0]}`, auth.idToken, { shallow: 'true' });
+    assert(assignedRead === null || typeof assignedRead === 'object', `${role.toUpperCase()} must read assigned project`, {
+      projectId: assignedProjects[0]
+    });
+  } else if (role === 'apm') {
+    throw new Error('APM QA account must have an assigned project');
+  }
 
   return {
     role,
@@ -116,8 +124,8 @@ async function verifyAssignedRole(role) {
     assignedProjectCount: assignedProjects.length,
     checks: [
       'self profile role matches',
-      'projects root denied',
-      'assigned project allowed'
+      role === 'pm' ? 'projects root allowed' : 'projects root denied',
+      assignedProjects.length ? 'assigned project allowed' : 'assigned project not required'
     ]
   };
 }
@@ -125,15 +133,15 @@ async function verifyAssignedRole(role) {
 async function main() {
   const results = [];
   for (const role of ['pm', 'apm']) {
-    results.push(await verifyAssignedRole(role));
+    results.push(await verifyProjectRole(role));
   }
 
   console.log(JSON.stringify({
     result: 'PASS',
     writesAttempted: false,
     checks: [
-      'PM projects root denied',
-      'PM assigned project allowed',
+      'PM projects root allowed',
+      'PM company-wide project visibility confirmed',
       'APM projects root denied',
       'APM assigned project allowed'
     ],

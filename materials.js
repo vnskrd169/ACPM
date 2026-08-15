@@ -36,6 +36,7 @@ function matListen(ref, cb) {
 function watchMatBudget(pid) {
   const ref = firebase.database().ref(`projects/${pid}`);
   matListen(ref, snap => {
+    hidePanelSkeleton('matSkeleton');
     const d = snap.val() || {};
     const budget = (parseFloat(d.materialBudget) || 0) + (parseFloat(d.materialBudgetDelta) || 0);
     const spent = parseFloat(d.materialSpent) || 0;
@@ -226,10 +227,10 @@ function addDraftItem() {
   const qty = parseFloat($('poItemQty')?.value) || 0;
   const unit = $('poItemUnit')?.value.trim() || '';
   const cost = parseFloat($('poItemCost')?.value) || 0;
-  if (!desc) { showToast('Enter item description.', 'error'); return; }
-  if (qty <= 0) { showToast('Enter valid quantity.', 'error'); return; }
-  if (cost <= 0) { showToast('Enter valid unit cost.', 'error'); return; }
-  if (desc.length > 100) { showToast('Description too long (max 100).', 'error'); return; }
+  if (!desc) { setFieldError($('draftItemDesc'), 'Enter item description.'); return; }
+  if (qty <= 0) { setFieldError($('draftItemQty'), 'Enter valid quantity.'); return; }
+  if (cost <= 0) { setFieldError($('draftItemCost'), 'Enter valid unit cost.'); return; }
+  if (desc.length > 100) { setFieldError($('draftItemDesc'), 'Description too long (max 100).'); return; }
 
   _draftItems.push({ desc, size, qty, unit, cost, total: qty * cost });
   ['poItemDesc', 'poItemSize', 'poItemQty', 'poItemUnit', 'poItemCost'].forEach(id => {
@@ -253,6 +254,10 @@ function canTouchMaterialsProject() {
 
 function materialUserId() {
   return window._currentUser?.uid || 'unknown';
+}
+
+function materialUserName() {
+  return window._currentUser?.name || window._currentUser?.email || 'System';
 }
 
 function materialItemsArray(items) {
@@ -331,6 +336,29 @@ async function createMaterialMovement(pid, movement) {
   const payload = materialMovementPayload(movement);
   await safeDb(() => ref.set(payload), 'Failed to create material movement');
   return { id: ref.key, ...payload };
+}
+
+async function createMaterialNotificationEvent(pid, type, payload = {}) {
+  if (!pid || !type) return null;
+  const ref = firebase.database().ref(`projects/${pid}/notificationEvents`).push();
+  const event = {
+    module: 'materials',
+    type,
+    status: 'pending',
+    consumed: false,
+    projectId: pid,
+    createdAt: Date.now(),
+    createdBy: materialUserId(),
+    createdByName: materialUserName(),
+    ...payload
+  };
+  try {
+    await ref.set(event);
+    return { id: ref.key, ...event };
+  } catch (error) {
+    console.warn('Materials notification hook skipped:', error?.code || error?.message || error);
+    return null;
+  }
 }
 
 function addMaterialMovementUpdate(pid, updates, movement) {
@@ -851,9 +879,9 @@ async function submitPO() {
   const notes = $('poNotes')?.value.trim() || '';
   const urgency = $('poUrgency')?.value || 'normal';
 
-  if (!supplier) { showToast('Enter supplier name.', 'error'); return; }
-  if (!date) { showToast('Enter PO date.', 'error'); return; }
-  if (supplier.length > 50) { showToast('Supplier name too long.', 'error'); return; }
+  if (!supplier) { setFieldError($('poSupplier'), 'Enter supplier name.'); return; }
+  if (!date) { setFieldError($('poDate'), 'Enter PO date.'); return; }
+  if (supplier.length > 50) { setFieldError($('poSupplier'), 'Supplier name too long.'); return; }
 
   // Validate date not in future
   const inputDate = new Date(date + 'T00:00:00');
@@ -937,6 +965,13 @@ async function approvePO(poId) {
       supplierName: po?.supplierName || po?.supplier || '',
       movementCost: parseFloat(po?.total) || 0
     });
+    await createMaterialNotificationEvent(_mpid, 'po_approved', {
+      poId,
+      poNo: po?.poNo || '',
+      supplierId: po?.supplierId || '',
+      supplierName: po?.supplierName || po?.supplier || '',
+      amount: parseFloat(po?.total) || 0
+    });
 
     const orders = await listPurchaseOrders(_mpid);
     const committed = orders
@@ -973,8 +1008,8 @@ async function openDeliveryModal(poId) {
         <div class="delivery-item-row">
           <span class="delivery-item-name">${escapeHtml(item.desc)} ${item.size ? `[${escapeHtml(item.size)}]` : ''}</span>
           <span class="delivery-item-ordered">Ordered: ${item.qty} ${escapeHtml(item.unit)} &middot; Remaining: ${remaining} ${escapeHtml(item.unit)}</span>
-          <input type="number" class="delivery-qty-received" id="delQty_${i}" placeholder="Qty Received" inputmode="decimal" max="${remaining}" ${remaining <= 0 ? 'disabled' : ''}>
-          <select id="delCondition_${i}">
+          <input type="number" class="delivery-qty-received" id="delQty_${i}" placeholder="Qty Received" inputmode="decimal" max="${remaining}" ${remaining <= 0 ? 'disabled' : ''} aria-label="Qty received for line ${i + 1}">
+          <select id="delCondition_${i}" aria-label="Delivery condition for line ${i + 1}">
             <option value="good">Good</option>
             <option value="damaged">Damaged</option>
             <option value="incomplete">Incomplete</option>
@@ -1245,7 +1280,7 @@ function updateMaterialsSummary(snap) {
 
   if (!Object.keys(grouped).length) { el.innerHTML = '<p class="empty-hint">No active items.</p>'; return; }
 
-  el.innerHTML = `<div style="overflow-x:auto"><table class="summary-table">
+  el.innerHTML = `<div class="overflow-scroll"><table class="summary-table">
     <thead><tr>
       <th>Item</th><th>Size</th><th style="text-align:center">Total Qty</th><th>Unit</th>
       <th style="text-align:right">Total Cost</th><th style="text-align:right">PO Count</th>
@@ -1461,7 +1496,7 @@ function watchPOHistory(pid) {
         // Action buttons based on status
         let actions = '';
         if (po.status === 'pending_approval') {
-          actions = `<button class="po-approve-btn" data-po="${po.id}" data-action="approve">\u2713 Approve PO</button>`;
+          actions = `<button class="po-approve-btn btn-lg" data-po="${po.id}" data-action="approve">\u2713 Approve PO</button>`;
         } else if (po.status === 'approved' || po.status === 'ordered' || po.status === 'partially_delivered') {
           actions = `
             <button class="po-mark-btn" data-po="${po.id}" data-action="delivery">Record Delivery</button>
@@ -1484,6 +1519,8 @@ function watchPOHistory(pid) {
               <span class="po-total">${peso(po.total)}</span>
               <div class="po-btns">
                 ${actions}
+                ${po.invoiceNo || po.invoiceStatus === 'matched' || po.threeWayMatch ? `<button class="po-rfp-btn" data-po="${po.id}" data-action="inv-rfp">&#x1F4C4; Invoice RFP</button>` : ''}
+                <button class="po-rfp-btn" data-po="${po.id}" data-action="rfp">&#x1F4C4; RFP</button>
                 <button class="po-export-btn" data-po="${po.id}" data-action="export">Image</button>
               </div>
             </div>
@@ -1501,6 +1538,8 @@ function watchPOHistory(pid) {
             if (action === 'approve') approvePO(poId);
             else if (action === 'delivery') openDeliveryModal(poId);
             else if (action === 'invoice') openInvoiceModal(poId);
+            else if (action === 'inv-rfp') generateInvoiceRFP(poId);
+            else if (action === 'rfp') generatePORFP(poId);
             else if (action === 'export') exportPOImage(poId);
           });
         });
@@ -1594,6 +1633,114 @@ async function exportPOImage(poId) {
   }
 }
 
+// ── RFP (Request for Payment) text for a PO ──────────────────
+async function generatePORFP(poId) {
+  if (!_mpid) return;
+  const [po, nameSnap] = await Promise.all([
+    getPurchaseOrder(_mpid, poId),
+    firebase.database().ref(`projects/${_mpid}/name`).once('value').catch(() => null)
+  ]);
+  if (!po) { showToast('Purchase order not found.', 'error'); return; }
+
+  const projectName = (nameSnap && nameSnap.val()) || _mpid;
+
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+  const items = materialItemsArray(po.items).map(buildPoItem);
+  const total = items.reduce((sum, it) => sum + (parseFloat(it.totalCost ?? it.total) || 0), 0);
+  const poNo = po.poNo || `PO-${String(po.seq || '???').padStart(3, '0')}`;
+  const supplier = po.supplier || po.supplierName || '';
+
+  const lines = [];
+  lines.push(
+    'REQUEST FOR PAYMENT (RFP) - PURCHASE ORDER',
+    `Project        : ${projectName}`,
+    `PO Number      : ${poNo}`,
+    `Date           : ${po.date || po.createdDate || ''}`,
+    `Supplier       : ${supplier}`,
+    `Date Prepared  : ${today}`,
+    `Status         : ${poStatusLabel(po.status)}`,
+    po.notes ? `Notes          : ${po.notes}` : '',
+    '─'.repeat(54)
+  );
+  items.forEach(it => {
+    const qty = it.qtyOrdered ?? it.qty;
+    const unit = it.unit ? ` ${it.unit}` : '';
+    lines.push(`  ${String(it.desc || '').slice(0, 26).padEnd(28)} ${String(qty).padStart(6)}${unit.padEnd(9)} x ${peso(it.cost).padStart(10)} = ${peso(it.totalCost ?? it.total).padStart(11)}`);
+  });
+  lines.push('', '─'.repeat(54));
+  lines.push(`TOTAL AMOUNT: ${peso(total)}`);
+  lines.push('', 'Approved by: ___________________________');
+
+  window._rfpData = { lines, source: 'po', projectName, poNo, date: po.date || '', supplier, items, total };
+  const ta = $('rfpOutput');
+  if (!ta) { showToast('RFP output is not available on this page.', 'error'); return; }
+  ta.value = lines.join('\n');
+  const modal = $('rfpModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+// ── RFP (Request for Payment) for a supplier invoice (3-way matched) ──
+async function generateInvoiceRFP(poId) {
+  if (!_mpid) return;
+  const [po, nameSnap] = await Promise.all([
+    getPurchaseOrder(_mpid, poId),
+    firebase.database().ref(`projects/${_mpid}/name`).once('value').catch(() => null)
+  ]);
+  if (!po) { showToast('Purchase order not found.', 'error'); return; }
+  if (!po.invoiceNo || !po.invoiceAmount) {
+    showToast('No supplier invoice on this PO yet. Approve the invoice first.', 'warn');
+    return;
+  }
+
+  const projectName = (nameSnap && nameSnap.val()) || _mpid;
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+  const poNo = po.poNo || `PO-${String(po.seq || '???').padStart(3, '0')}`;
+  const supplier = po.supplier || po.supplierName || '';
+  const matchLabel = po.invoiceStatus === 'matched' ? '3-WAY MATCHED' : (po.invoiceStatus === 'mismatch' ? 'MISMATCH \u2014 REVIEW NEEDED' : 'RECORDED');
+
+  const lines = [];
+  lines.push(
+    'REQUEST FOR PAYMENT (RFP) - SUPPLIER INVOICE',
+    `Project        : ${projectName}`,
+    `PO Number      : ${poNo}`,
+    `Invoice Number : ${po.invoiceNo}`,
+    `Invoice Date   : ${po.invoiceDate || ''}`,
+    `Supplier       : ${supplier}`,
+    `Date Prepared  : ${today}`,
+    `3-Way Match    : ${matchLabel}`,
+    '─'.repeat(54)
+  );
+  const items = materialItemsArray(po.items).map(buildPoItem);
+  items.forEach(it => {
+    const qty = it.qtyOrdered ?? it.qty;
+    const unit = it.unit ? ` ${it.unit}` : '';
+    lines.push(`  ${String(it.desc || '').slice(0, 26).padEnd(28)} ${String(qty).padStart(6)}${unit.padEnd(9)} x ${peso(it.cost).padStart(10)} = ${peso(it.totalCost ?? it.total).padStart(11)}`);
+  });
+  lines.push('', '─'.repeat(54));
+  lines.push(`INVOICE AMOUNT: ${peso(po.invoiceAmount)}`);
+  lines.push(`PO TOTAL      : ${peso(po.total)}`);
+  lines.push('', 'Approved by: ___________________________');
+
+  window._rfpData = {
+    lines,
+    source: 'invoice',
+    projectName,
+    poNo,
+    invoiceNo: po.invoiceNo,
+    invoiceDate: po.invoiceDate || '',
+    supplier,
+    items,
+    total: po.invoiceAmount,
+    poTotal: po.total,
+    matchLabel
+  };
+  const ta = $('rfpOutput');
+  if (!ta) { showToast('RFP output is not available on this page.', 'error'); return; }
+  ta.value = lines.join('\n');
+  const modal = $('rfpModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
 // Export ledger to CSV
 async function exportLedgerCSV() {
   if (!_mpid) return;
@@ -1661,3 +1808,5 @@ window.deleteLedgerItem = deleteLedgerItem;
 window.exportLedgerCSV = exportLedgerCSV;
 window.filterPOHistory = filterPOHistory;
 window.exportPOImage = exportPOImage;
+window.generatePORFP = generatePORFP;
+window.generateInvoiceRFP = generateInvoiceRFP;

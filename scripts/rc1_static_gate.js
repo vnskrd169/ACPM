@@ -22,6 +22,8 @@ function main() {
   const report = read('report.js');
   const auth = read('auth.js');
   const style = read('style.css');
+  const mainSource = read('main.js');
+  const notifications = read('notifications.js');
   const appSources = [
     'auth.js',
     'main.js',
@@ -41,39 +43,62 @@ function main() {
   ];
   const materials = read('materials.js');
   const sw = read('sw.js');
-  const htmlFiles = ['index.html', 'dashboard.html', 'workspace.html'];
+  const htmlFiles = ['dashboard.html', 'workspace.html'];
   const html = Object.fromEntries(htmlFiles.map(file => [file, read(file)]));
+  const indexHtml = read('index.html');
   const loginHtml = read('login.html');
 
-  assert(/const CACHE_NAME = 'acpm-v97'/.test(sw), 'service worker cache must be acpm-v97');
-  assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=92">'), 'login.html must load style.css?v=92');
-  assert(extractScriptVersion(loginHtml, 'utils.js') === '84', 'login.html must load utils.js?v=84');
-  assert(extractScriptVersion(loginHtml, 'auth.js') === '85', 'login.html must load auth.js?v=85');
-  assert(extractScriptVersion(loginHtml, 'main.js') === '95', 'login.html must load main.js?v=95');
+  assert(/const CACHE_NAME = 'acpm-v140'/.test(sw), 'service worker cache must be acpm-v140');
+  assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=112">'), 'login.html must load style.css?v=112');
+  assert(extractScriptVersion(loginHtml, 'environment.js') === '1', 'login.html must load environment.js?v=1');
+  assert(extractScriptVersion(loginHtml, 'utils.js') === '87', 'login.html must load utils.js?v=87');
+  assert(extractScriptVersion(loginHtml, 'auth.js') === '98', 'login.html must load auth.js?v=98');
+  assert(extractScriptVersion(loginHtml, 'main.js') === '109', 'login.html must load main.js?v=109');
+  assert(indexHtml.includes("window.location.replace('./login.html' + suffix)"), 'legacy index.html must redirect to the maintained login route');
+  assert(!/<script\s+src=/.test(indexHtml), 'legacy index.html must not duplicate the private app shell');
   for (const [file, content] of Object.entries(html)) {
-    assert(content.includes('<link rel="stylesheet" href="style.css?v=92">'), `${file} must load style.css?v=92`);
-    assert(extractScriptVersion(content, 'utils.js') === '84', `${file} must load utils.js?v=84`);
-    assert(extractScriptVersion(content, 'auth.js') === '85', `${file} must load auth.js?v=85`);
-    assert(extractScriptVersion(content, 'main.js') === '95', `${file} must load main.js?v=95`);
+    assert(content.includes('<link rel="stylesheet" href="style.css?v=112">'), `${file} must load style.css?v=112`);
+    assert(extractScriptVersion(content, 'environment.js') === '1', `${file} must load environment.js?v=1`);
+    assert(extractScriptVersion(content, 'utils.js') === '87', `${file} must load utils.js?v=87`);
+    assert(extractScriptVersion(content, 'auth.js') === '98', `${file} must load auth.js?v=98`);
+    assert(extractScriptVersion(content, 'main.js') === '109', `${file} must load main.js?v=109`);
     assert(extractScriptVersion(content, 'suppliers.js') === '94', `${file} must load suppliers.js?v=94`);
-    assert(extractScriptVersion(content, 'labor.js') === '94', `${file} must load labor.js?v=94`);
-    assert(extractScriptVersion(content, 'materials.js') === '93', `${file} must load materials.js?v=93`);
-    assert(extractScriptVersion(content, 'notifications.js') === '79', `${file} must load notifications.js?v=79`);
-    assert(extractScriptVersion(content, 'report.js') === '86', `${file} must load report.js?v=86`);
+    assert(extractScriptVersion(content, 'payroll-math.js') === '2', `${file} must load payroll-math.js?v=2`);
+    assert(extractScriptVersion(content, 'labor.js') === '98', `${file} must load labor.js?v=98`);
+    assert(extractScriptVersion(content, 'materials.js') === '96', `${file} must load materials.js?v=96`);
+    assert(extractScriptVersion(content, 'billing.js') === '76', `${file} must load billing.js?v=76`);
+    assert(extractScriptVersion(content, 'notifications.js') === '86', `${file} must load notifications.js?v=86`);
+    assert(extractScriptVersion(content, 'report.js') === '97', `${file} must load report.js?v=97`);
   }
-  assert(sw.includes('./utils.js?v=84'), 'service worker must cache utils.js?v=84');
-  assert(sw.includes('./style.css?v=92'), 'service worker must cache style.css?v=92');
-  assert(sw.includes('./auth.js?v=85'), 'service worker must cache auth.js?v=85');
-  assert(sw.includes('./main.js?v=95'), 'service worker must cache main.js?v=95');
-  assert(sw.includes('./labor.js?v=94'), 'service worker must cache labor.js?v=94');
-  assert(sw.includes('./materials.js?v=93'), 'service worker must cache materials.js?v=93');
+  assert(sw.includes('./utils.js?v=87'), 'service worker must cache utils.js?v=87');
+  assert(sw.includes('./environment.js?v=1'), 'service worker must cache environment.js?v=1');
+  assert(sw.includes('./style.css?v=112'), 'service worker must cache style.css?v=112');
+  assert(sw.includes('./auth.js?v=98'), 'service worker must cache auth.js?v=98');
+  assert(sw.includes('./main.js?v=109'), 'service worker must cache main.js?v=109');
+  assert(sw.includes('./payroll-math.js?v=2'), 'service worker must cache payroll-math.js?v=2');
+  assert(sw.includes('./labor.js?v=98'), 'service worker must cache labor.js?v=98');
+  assert(sw.includes('./materials.js?v=96'), 'service worker must cache materials.js?v=96');
+  assert(sw.includes('./billing.js?v=76'), 'service worker must cache billing.js?v=76');
   assert(sw.includes('./suppliers.js?v=94'), 'service worker must cache suppliers.js?v=94');
-  assert(sw.includes('./report.js?v=86'), 'service worker must cache report.js?v=86');
+  assert(sw.includes('./report.js?v=97'), 'service worker must cache report.js?v=97');
   assert(sw.includes('./changeorders.js?v=95'), 'service worker must cache changeorders.js?v=95');
-  assert(sw.includes('./sitelog.js?v=94'), 'service worker must cache sitelog.js?v=94');
+  assert(sw.includes('./sitelog.js?v=95'), 'service worker must cache sitelog.js?v=95');
   assert(sw.includes('./equipment.js?v=94'), 'service worker must cache equipment.js?v=94');
   assert(sw.includes('./defects.js?v=94'), 'service worker must cache defects.js?v=94');
-  assert(sw.includes('./tasks.js?v=94'), 'service worker must cache tasks.js?v=94');
+  assert(sw.includes('./tasks.js?v=95'), 'service worker must cache tasks.js?v=95');
+  assert(sw.includes('./notifications.js?v=86'), 'service worker must cache notifications.js?v=86');
+  assert(sw.includes("url.pathname === '/pmos/'") && sw.includes("url.pathname.startsWith('/pmos/')"), 'root service worker must leave /pmos/ routes to the scoped PMOS service worker');
+  assert(auth.includes("typeof detachHubListeners === 'function'"), 'auth logout cleanup must detach Hub Firebase listeners');
+  assert(auth.includes("typeof detachLaborListeners === 'function'"), 'auth logout cleanup must detach Labor Firebase listeners');
+  assert(auth.includes("typeof detachMatListeners === 'function'"), 'auth logout cleanup must detach Materials Firebase listeners');
+  assert(auth.includes("typeof detachReportsListeners === 'function'"), 'auth logout cleanup must detach report/admin Firebase listeners');
+  assert(auth.includes("typeof detachNotifications === 'function'"), 'auth logout cleanup must detach notification Firebase listeners');
+
+  assert(mainSource.includes('...normalize(user.assignedProjects)'), 'dashboard assigned-project loading must support assignedProjects and project maps');
+  assert(notifications.includes('...normalize(user.assignedProjects)'), 'notification listeners must support map-shaped assigned projects');
+  assert(report.includes('function updateUserStatus'), 'Team Admin must expose suspend/reactivate/archive status workflow');
+  assert(report.includes('window.updateUserStatus = updateUserStatus'), 'Team Admin user status workflow must be exported');
+  assert(!report.includes('UID ${escapeHtml(uid)}'), 'Access request cards must not expose raw UID in normal admin scanning');
 
   const activeRolePattern = 'boss|owner|admin|pm|apm';
   assert(rulesText.includes(activeRolePattern), 'rules must include RC1 active role pattern');
@@ -102,6 +127,8 @@ function main() {
   assert(read('main.js').includes('registration.update()'), 'main.js must actively check for service worker updates');
   assert(read('main.js').includes("addEventListener('controllerchange'"), 'main.js must reload on service worker controller changes');
   assert(/#adminPanel\.read-only\s*\{[\s\S]*pointer-events:\s*auto/.test(style), 'Admin panel must remain clickable while completed projects are read-only');
+  assert(/\[data-theme="light"\][\s\S]*--surface-hover:\s*#f7f5ff/.test(style), 'Light theme must define a readable hover surface');
+  assert(/#systemReportsView \.health-name[\s\S]*color:\s*var\(--text\)/.test(style), 'System Report project names must use theme text color');
   assert(read('main.js').includes("const sections = ['summary', 'team', 'requests', 'audit', 'system'];"), 'main Admin switcher must include lifecycle requests and audit sections');
   appSources.forEach(sourceFile => {
     assert(!/\\u1F[0-9A-Fa-f]{3}/.test(read(sourceFile)), `${sourceFile} must not use invalid \\u1Fxxx emoji escapes`);
@@ -127,9 +154,10 @@ function main() {
   console.log(JSON.stringify({
     result: 'PASS',
     checks: [
-      'v97 cache/style and script references',
+      'v133 cache/style and script references',
       'login shell uses current auth/routing scripts',
       'service worker update/reload path',
+      'auth logout detaches project and module listeners',
       'RC1 active role validation',
       'explicit RC1 role gate',
       'field roles excluded from active access patterns',

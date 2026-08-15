@@ -109,6 +109,15 @@ Result: PASS LIVE FIREBASE QA WITH GLOBAL AUDIT FALLBACK WARNING
   - Project fallback audit rows were confirmed for Change Order create/update at `projects/qa_mr342wcu_8satiur8/auditLogs`.
   - Included `scripts/audit_notifications_v1_real_qa.js` PASS.
   - Included supplier fallback/canonical audit-path verification through `scripts/suppliers_v1_real_qa.js` PASS.
+- [x] PM workload clarity pass after cache v116:
+  - Admin Audit Log renders clear action cards with module pill, action label, actor identity, project label, record summary, source, and details.
+  - Actor display prefers user profile name/email/position/avatar when available and does not require PMs to decode UID first.
+  - No audit schema, write paths, or listeners changed.
+  - Static syntax and RC1 gates passed for `report.js?v=95` and `style.css?v=100`.
+- [x] Live browser smoke after cache v116:
+  - Boss opened Team Admin, switched to Audit Log, and rendered 128 audit cards.
+  - First card showed module/action, actor identity, project name, record id, source, and details.
+  - Console errors/warnings: none in the fresh v116 smoke.
 
 ## Known Limitations
 

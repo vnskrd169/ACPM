@@ -62,6 +62,10 @@ function billingUserId() {
   return (window._currentUser && window._currentUser.uid) || 'unknown';
 }
 
+function billingUserName() {
+  return window._currentUser?.name || window._currentUser?.email || 'System';
+}
+
 function billingProjectRef(pid, path = '') {
   return firebase.database().ref(`projects/${pid}${path ? `/${path}` : ''}`);
 }
@@ -441,6 +445,7 @@ async function approveBilling(pid, billingId) {
     updatedBy: billingUserId()
   }), 'Failed to approve billing');
   await createBillingEvent(pid, { type: 'billing_approve', billingId, status: 'approved' });
+  await createBillingNotificationEvent(pid, 'billing_approved', { billingId });
   await rebuildBillingRollups(pid);
 }
 
@@ -715,6 +720,15 @@ async function recordCollection(pid, input = {}) {
     amount: netCashReceived,
     description: payload.description,
     status: payload.status
+  });
+  await createBillingNotificationEvent(pid, 'collection_received', {
+    billingId: payload.billingId,
+    billingNo: payload.billingNo || '',
+    collectionId,
+    collectionNo: payload.collectionNo || '',
+    amount: netCashReceived,
+    paymentMethod: payload.paymentMethod || '',
+    referenceNo: payload.referenceNo || ''
   });
   await rebuildBillingRollups(pid);
   return { id: collectionId, ...payload };
@@ -1175,9 +1189,33 @@ async function createBillingEvent(pid, event = {}) {
   return { id: ref.key, ...payload };
 }
 
+async function createBillingNotificationEvent(pid, type, payload = {}) {
+  if (!pid || !type) return null;
+  const ref = billingProjectRef(pid, 'notificationEvents').push();
+  const event = {
+    module: 'billing',
+    type,
+    status: 'pending',
+    consumed: false,
+    projectId: pid,
+    createdAt: billingNow(),
+    createdBy: billingUserId(),
+    createdByName: billingUserName(),
+    ...payload
+  };
+  try {
+    await ref.set(event);
+    return { id: ref.key, ...event };
+  } catch (error) {
+    console.warn('Billing notification hook skipped:', error?.code || error?.message || error);
+    return null;
+  }
+}
+
 function watchContract(pid) {
   _contractListener = firebase.database().ref(`projects/${pid}/contract`);
   _contractListener.on('value', snap => {
+    hidePanelSkeleton('billingSkeleton');
     const c = snap.val() || {};
     const hasContract = !!c.amount;
 
@@ -1235,9 +1273,9 @@ async function saveContract(pidOrInput, maybeInput) {
   const startDate = $('contractStart').value;
   const endDate = $('contractEnd').value;
 
-  if (amount <= 0) { showToast('Enter contract amount.', 'error'); return; }
-  if (!client) { showToast('Enter client name.', 'error'); return; }
-  if (client.length > 100) { showToast('Client name too long.', 'error'); return; }
+  if (amount <= 0) { setFieldError($('contractAmt'), 'Enter contract amount.'); return; }
+  if (!client) { setFieldError($('contractClient'), 'Enter client name.'); return; }
+  if (client.length > 100) { setFieldError($('contractClient'), 'Client name too long.'); return; }
 
   // Validate dates
   if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
@@ -1402,6 +1440,7 @@ function billingActionHtml(record) {
   const retentionBalance = billingAmount(record.retentionReceivable);
   return `
     <span class="billing-actions">
+      ${active ? `<button class="billing-mini-btn" data-action="rfp" data-bid="${record.id}">&#x1F4CB; RFP</button>` : ''}
       ${active ? `<button class="billing-mini-btn" data-action="deduct" data-bid="${record.id}">Deduct</button>` : ''}
       ${active && retentionBalance > 0 ? `<button class="billing-mini-btn" data-action="retention" data-bid="${record.id}">Release</button>` : ''}
       ${approved ? `<button class="billing-mini-btn" data-action="snapshot" data-bid="${record.id}">Snapshot</button>` : ''}
@@ -1415,12 +1454,89 @@ function bindBillingRowActions(tr) {
     const id = button.getAttribute('data-bid');
     const action = button.getAttribute('data-action');
     button.addEventListener('click', () => {
+      if (action === 'rfp') generateBillingRFP(id);
       if (action === 'deduct') addBillingDeductionFromUI(id);
       if (action === 'retention') releaseRetentionFromUI(id);
       if (action === 'snapshot') generateBillingOutputForBilling(id);
       if (action === 'void') deleteBilling(id);
     });
   });
+}
+
+// ── RFP (Request for Payment) text for a client billing ──────
+async function generateBillingRFP(billingId) {
+  if (!_bpid) return;
+  const [billingSnap, nameSnap, contractSnap] = await Promise.all([
+    billingProjectRef(_bpid, `billings/${billingId}`).once('value').catch(() => null),
+    firebase.database().ref(`projects/${_bpid}/name`).once('value').catch(() => null),
+    billingProjectRef(_bpid, 'contract').once('value').catch(() => null)
+  ]);
+  const raw = billingSnap ? billingSnap.val() : null;
+  if (!raw) { showToast('Billing not found.', 'error'); return; }
+  const record = { id: billingId, ...raw };
+
+  const projectName = (nameSnap && nameSnap.val()) || _bpid;
+  const contract = (contractSnap && contractSnap.val()) || {};
+  const clientName = contract.clientName || contract.client || '';
+  const today = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+  const gross = billingGross(record);
+  const deductions = billingDeductionTotal(record);
+  const retention = calculateBillingRetentionAmount(record, gross, deductions);
+  const net = billingNet(record);
+  const collected = billingAmount(record.allocatedCollectionTotal ?? record.collectedAmount);
+  const receivable = billingReceivableDisplay(record);
+  const billingNo = billingDisplayNo(record);
+  const statusLabel = String(record.status || 'submitted').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+  const lines = [];
+  lines.push(
+    'REQUEST FOR PAYMENT (RFP) - CLIENT BILLING',
+    `Project        : ${projectName}`,
+    `Client         : ${clientName || '\u2014'}`,
+    `Billing No     : ${billingNo}`,
+    `Type           : ${billingTypeLabel(record.type)}`,
+    `Billing Date   : ${record.date || ''}`,
+    record.dueDate ? `Due Date       : ${record.dueDate}` : '',
+    record.periodStart && record.periodEnd ? `Period         : ${record.periodStart} to ${record.periodEnd}` : '',
+    `Status         : ${statusLabel}`,
+    record.description ? `Description    : ${record.description}` : '',
+    record.percentComplete ? `Progress       : ${record.percentComplete}% complete` : '',
+    `Date Prepared  : ${today}`,
+    '\u2500'.repeat(54)
+  );
+  lines.push(`GROSS AMOUNT        : ${peso(gross)}`);
+  if (deductions > 0) lines.push(`Less Deductions     : -${peso(deductions)}`);
+  if (retention > 0) lines.push(`Retention (${record.retentionPct || 0}%)      : -${peso(retention)}`);
+  lines.push(`NET BILLABLE        : ${peso(net)}`);
+  lines.push('\u2500'.repeat(54));
+  if (collected > 0) lines.push(`Collected           : ${peso(collected)}`);
+  lines.push(`Receivable Balance  : ${peso(receivable)}`);
+  lines.push('', 'Approved by: ___________________________');
+
+  window._rfpData = {
+    lines,
+    source: 'billing',
+    projectName,
+    billingNo,
+    clientName,
+    billingType: billingTypeLabel(record.type),
+    date: record.date || '',
+    dueDate: record.dueDate || '',
+    description: record.description || '',
+    gross,
+    deductions,
+    retention,
+    retentionPct: billingAmount(record.retentionPct),
+    net,
+    collected,
+    receivable,
+    status: record.status || 'submitted'
+  };
+  const ta = $('rfpOutput');
+  if (!ta) { showToast('RFP output is not available on this page.', 'error'); return; }
+  ta.value = lines.join('\n');
+  const modal = $('rfpModal');
+  if (modal) modal.classList.remove('hidden');
 }
 
 function watchBillings(pid) {
@@ -1468,7 +1584,7 @@ function watchBillings(pid) {
         <td class="b-cell b-right b-bold">${peso(billingGross(b))}</td>
         <td class="b-cell b-right b-bold">${peso(billingReceivableDisplay(b))}</td>
         <td class="b-cell">
-          <select class="status-sel ${statusClass}" onchange="updateBillingStatus('${b.id}',this.value)">
+          <select class="status-sel ${statusClass}" aria-label="Billing status for ${b.id}" onchange="updateBillingStatus('${b.id}',this.value)">
             <option value="pending" ${b.status === 'pending' ? 'selected' : ''}>Pending</option>
             <option value="submitted" ${b.status === 'submitted' ? 'selected' : ''}>Submitted</option>
             <option value="approved" ${b.status === 'approved' ? 'selected' : ''}>Approved</option>
@@ -1503,12 +1619,12 @@ async function addBillingRequest() {
   const type = ($('billType') && $('billType').value) || 'progress';
   const retentionPct = parseFloat(($('billRetentionPct') && $('billRetentionPct').value) || '') || 0;
   const deductionTotal = parseFloat(($('billDeduction') && $('billDeduction').value) || '') || 0;
-  if (!date) { showToast('Enter billing date.', 'error'); return; }
-  if (!desc) { showToast('Enter description.', 'error'); return; }
-  if (amount <= 0) { showToast('Enter billing amount.', 'error'); return; }
-  if (retentionPct < 0 || retentionPct > 100) { showToast('Retention must be from 0% to 100%.', 'error'); return; }
-  if (deductionTotal < 0 || deductionTotal >= amount) { showToast('Deduction must be lower than billing amount.', 'error'); return; }
-  if (desc.length > 200) { showToast('Description too long (max 200).', 'error'); return; }
+  if (!date) { setFieldError($('billDate'), 'Enter billing date.'); return; }
+  if (!desc) { setFieldError($('billDesc'), 'Enter description.'); return; }
+  if (amount <= 0) { setFieldError($('billAmount'), 'Enter billing amount.'); return; }
+  if (retentionPct < 0 || retentionPct > 100) { setFieldError($('billRetentionPct'), 'Retention must be from 0% to 100%.'); return; }
+  if (deductionTotal < 0 || deductionTotal >= amount) { setFieldError($('billDeduction'), 'Deduction must be lower than billing amount.'); return; }
+  if (desc.length > 200) { setFieldError($('billDesc'), 'Description too long (max 200).'); return; }
 
   // Validate date not in future
   const inputDate = new Date(date + 'T00:00:00');
@@ -1905,6 +2021,7 @@ async function exportBillingSummary() {
 }
 
 // ── Expose to global scope ────────────────────────────────────
+window.generateBillingRFP = generateBillingRFP;
 window.initBilling = initBilling;
 window.detachBillingListeners = detachBillingListeners;
 window.getContract = getContract;

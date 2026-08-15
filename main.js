@@ -1,60 +1,61 @@
-//  ACPM — main.js (Enhanced v3.0)
+//  ACPM - main.js (Enhanced v3.0)
 //  Firebase v8 compat init, Hub, Workspace lifecycle,
 //  Offline cache, Data compression, Health scores
-// ════════════════════════════════════════════════════════════
+// ============================================================
 
-// ── Firebase Config (v8 compat) ─────────────────────────────
-const firebaseConfig = {
-  apiKey: "AIzaSyA7xFArtly4jCZZEt34TTmfNfK94RoWMaA",
-  authDomain: "acpm-project-system.firebaseapp.com",
-  databaseURL: "https://acpm-project-system-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "acpm-project-system",
-  storageBucket: "acpm-project-system.firebasestorage.app",
-  messagingSenderId: "330800177544",
-  appId: "1:330800177544:web:8f29dcd81ca39976849a3d"
-};
+// -- Firebase Config (v8 compat) -----------------------------
+// environment.js selects an isolated backend before this file loads.
+const firebaseConfig = window.ACPM_FIREBASE_CONFIG;
+if (!firebaseConfig || !firebaseConfig.projectId || !firebaseConfig.databaseURL) {
+  throw new Error('ACPM environment configuration did not load before main.js.');
+}
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 window._db = db;
+window._firebaseProjectId = firebaseConfig.projectId;
 
-// ── Globals ───────────────────────────────────────────────
+// -- Globals -----------------------------------------------
 window._currentPid = null;
 let _hubListeners = [];
 let _projectNotesListener = null;
+let _projectDashboardListener = null;
 window._isReadOnly = false;
 window._currentProjectStatus = null;
-// Overwritten by auth.js once Firebase Auth resolves — this is only
+window._adminWorkspaceMode = false;
+// Overwritten by auth.js once Firebase Auth resolves - this is only
 // a pre-auth fallback so other modules don't crash on null access.
 window._currentUser = { uid: 'anonymous', role: 'apm', name: 'System', projects: [], bossOf: [] };
 window._allowedProjects = null;
 
 function getAppPage() {
   if (window.ACPM_PAGE) return String(window.ACPM_PAGE).toLowerCase();
-  const path = window.location.pathname.toLowerCase();
-  if (path.endsWith('/login.html')) return 'login';
-  if (path.endsWith('/dashboard.html')) return 'dashboard';
-  if (path.endsWith('/workspace.html')) return 'workspace';
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+  if (path.endsWith('/login.html') || path.endsWith('/login')) return 'login';
+  if (path.endsWith('/pmos.html') || path.endsWith('/pmos')) return 'pmos';
+  if (path.endsWith('/dashboard.html') || path.endsWith('/dashboard')) return 'dashboard';
+  if (path.endsWith('/workspace.html') || path.endsWith('/workspace')) return 'workspace';
   return 'app';
 }
 
 function appUrl(page, params = {}) {
-  if (page === 'login') return 'login.html';
+  if (page === 'login') return '/login.html';
+  if (page === 'pmos') return '/pmos.html';
   if (page === 'workspace') {
     const pid = encodeURIComponent(params.projectId || '');
-    return pid ? `workspace.html?projectId=${pid}` : 'workspace.html';
+    return pid ? `/workspace.html?projectId=${pid}` : '/workspace.html';
   }
-  return 'dashboard.html';
+  return '/dashboard.html';
 }
 
 function getRouteProjectId() {
   return new URLSearchParams(window.location.search).get('projectId') || '';
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  Offline Cache Layer (IndexedDB)
 //  Stores project data locally for instant load + offline work
-// ════════════════════════════════════════════════════════════
+// ============================================================
 const DB_NAME = 'acpm_offline';
 const DB_VERSION = 1;
 let _idb = null;
@@ -101,9 +102,9 @@ async function queueOfflineWrite(path, data) {
   await store.put({ path, data, timestamp: Date.now() });
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  Effective-budget helper (unchanged)
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function effectiveBudget(p) {
   const laborBase = parseFloat(p.laborBudget) || 0;
   const matBase = parseFloat(p.materialBudget) || 0;
@@ -189,6 +190,19 @@ function dashboardRecentItems(projects = []) {
         projectId: p.id,
         projectName,
         label: String(event.type || event.module || 'Project event').replace(/_/g, ' '),
+        module: event.module || event.type || '',
+        actor: event.createdByName || event.byName || event.userName || event.requestedByName || '',
+        createdAt: parseFloat(event.createdAt) || 0
+      });
+    });
+    Object.entries(p.activity || {}).forEach(([id, event]) => {
+      items.push({
+        id,
+        projectId: p.id,
+        projectName,
+        label: String(event.type || `${event.module || 'project'}.${event.action || 'updated'}`).replace(/[._]/g, ' '),
+        module: event.module || '',
+        actor: event.createdByName || '',
         createdAt: parseFloat(event.createdAt) || 0
       });
     });
@@ -198,9 +212,29 @@ function dashboardRecentItems(projects = []) {
     .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 }
 
-// ════════════════════════════════════════════════════════════
-//  HUB — Project Dashboard
-// ════════════════════════════════════════════════════════════
+function dashboardActivityLabel(item = {}) {
+  const raw = String(item.label || item.status || 'Project update').replace(/_/g, ' ').trim();
+  return raw.replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function dashboardActivityClass(item = {}) {
+  const text = `${item.module || ''} ${item.type || ''} ${item.label || ''}`.toLowerCase();
+  if (text.includes('billing') || text.includes('collection')) return 'activity-finance';
+  if (text.includes('material') || text.includes('po') || text.includes('delivery')) return 'activity-materials';
+  if (text.includes('labor') || text.includes('payroll') || text.includes('cash')) return 'activity-labor';
+  if (text.includes('complete') || text.includes('archive')) return 'activity-status';
+  return 'activity-project';
+}
+
+function dashboardActivityWhen(ts) {
+  if (!ts) return '-';
+  if (typeof timeAgo === 'function') return timeAgo(ts);
+  return new Date(ts).toLocaleDateString('en-PH');
+}
+
+// ============================================================
+//  HUB - Project Dashboard
+// ============================================================
 
 window.addEventListener('DOMContentLoaded', () => {
   initOfflineDB().then(() => {
@@ -208,6 +242,11 @@ window.addEventListener('DOMContentLoaded', () => {
   }).catch(() => {
     // Fallback: run without offline cache
     initAuth();
+  }).finally(() => {
+    // UX enhancements: command palette, preference restoration
+    setTimeout(() => {
+      if (typeof initUXEnhancements === 'function') initUXEnhancements();
+    }, 500);
   });
 
   try {
@@ -226,7 +265,9 @@ window.addEventListener('DOMContentLoaded', () => {
     console.error('Firebase connection check failed:', e);
   }
 
-  initPWA();
+  if (getAppPage() !== 'pmos') {
+    initPWA();
+  }
 });
 
 async function syncOfflineQueue() {
@@ -251,6 +292,7 @@ async function syncOfflineQueue() {
 }
 
 function initPWA() {
+  if (window.__ACPM_DISABLE_SW_FOR_E2E__ === true) return;
   if ('serviceWorker' in navigator) {
     let refreshedForNewWorker = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -261,8 +303,12 @@ function initPWA() {
 
     navigator.serviceWorker.register('sw.js')
       .then(registration => {
+        if (!registration || typeof registration.update !== 'function') {
+          console.warn('Service Worker registration unavailable');
+          return;
+        }
         registration.update().catch(console.warn);
-        registration.addEventListener('updatefound', () => {
+        registration.addEventListener?.('updatefound', () => {
           const worker = registration.installing;
           if (!worker) return;
           worker.addEventListener('statechange', () => {
@@ -310,9 +356,9 @@ function showHubTab(tab) {
 }
 
 function canListAllProjects(user = window._currentUser || {}) {
-  return typeof isBoss === 'function'
-    ? isBoss(user.role)
-    : String(user.role || '').toLowerCase() === 'boss';
+  return typeof canSeeAllProjects === 'function'
+    ? canSeeAllProjects(user.role)
+    : ['boss', 'owner', 'admin', 'pm'].includes(String(user.role || '').toLowerCase());
 }
 
 function canDeleteProject(pid) {
@@ -324,15 +370,27 @@ function canDeleteProject(pid) {
 
 function canManageProjectLifecycle(pid) {
   const user = window._currentUser || {};
-  return typeof isBoss === 'function'
-    ? isBoss(user.role)
-    : String(user.role || '').toLowerCase() === 'boss';
+  return typeof canSeeAllProjects === 'function'
+    ? canSeeAllProjects(user.role)
+    : ['boss', 'owner', 'admin', 'pm'].includes(String(user.role || '').toLowerCase());
 }
 
 function assignedProjectIds(user = window._currentUser || {}) {
+  const normalize = typeof normalizeProjectList === 'function'
+    ? normalizeProjectList
+    : value => {
+      if (Array.isArray(value)) return value.filter(Boolean).map(String);
+      if (value && typeof value === 'object') {
+        return Object.entries(value)
+          .filter(([, enabled]) => enabled !== false && enabled !== null)
+          .map(([key]) => String(key));
+      }
+      return [];
+    };
   return Array.from(new Set([
-    ...(Array.isArray(user.projects) ? user.projects : []),
-    ...(Array.isArray(user.bossOf) ? user.bossOf : [])
+    ...normalize(user.projects),
+    ...normalize(user.assignedProjects),
+    ...normalize(user.bossOf)
   ].filter(Boolean)));
 }
 
@@ -354,6 +412,37 @@ function projectMatchesHubTab(project, tab, isAll) {
   }
   if (isAll) return true;
   return (project.status || 'active') === tab;
+}
+
+function refreshWorkspaceTabVisibility() {
+  const role = typeof normalizeRole === 'function'
+    ? normalizeRole(window._currentUser?.role || 'apm')
+    : (window._currentUser?.role || 'apm');
+  const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true;
+  document.querySelectorAll('#workspaceView > .tab-scroll > .tab-group > .tab-btn').forEach(el => {
+    if (el.id === 'tab_admin') {
+      el.classList.add('hidden');
+      el.style.display = 'none';
+      return;
+    }
+    const roleAllowed = typeof elementAllowsRole === 'function' ? elementAllowsRole(el, role) : true;
+    const featureAllowed = el.dataset.featureVisible === 'extras' ? extrasEnabled : true;
+    el.style.display = roleAllowed && featureAllowed ? '' : 'none';
+  });
+}
+
+function setAdminWorkspaceMode(enabled) {
+  window._adminWorkspaceMode = !!enabled;
+  $('workspaceView')?.classList.toggle('workspace-admin-mode', !!enabled);
+  if (enabled) {
+    document.querySelectorAll('#workspaceView > .tab-scroll > .tab-group > .tab-btn').forEach(el => {
+      const keep = el.id === 'tab_admin' || el.id === 'tab_reports';
+      el.style.display = keep ? '' : 'none';
+      if (el.id === 'tab_admin') el.classList.remove('hidden');
+    });
+  } else {
+    refreshWorkspaceTabVisibility();
+  }
 }
 
 function sortProjectsNewest(projects) {
@@ -396,6 +485,7 @@ function renderProjectHubList(projects, gridId, tab, isAll) {
     renderDashboardAlerts(visibleProjects);
   } else if (tab === 'active') {
     renderDashboardSummary(visibleProjects);
+    renderAttentionProjects(visibleProjects);
     renderComparison(visibleProjects);
     renderRecentActivity(visibleProjects);
     renderDashboardAlerts(visibleProjects);
@@ -415,13 +505,25 @@ function watchAssignedProjects(user, gridId, tab, isAll) {
   }
 
   const projectMap = new Map();
-  const render = () => renderProjectHubList(Array.from(projectMap.values()), gridId, tab, isAll);
+  const deniedIds = new Set();
+  let warningShown = false;
+  const render = () => {
+    renderProjectHubList(Array.from(projectMap.values()), gridId, tab, isAll);
+    if (deniedIds.size && grid && !projectMap.size) {
+      grid.innerHTML = '<p class="hub-empty">No accessible assigned projects. Ask an admin to review Team Admin project assignments.</p>';
+    }
+  };
 
   ids.forEach(pid => {
     const onError = error => {
-      console.error('Firebase project load error:', error);
-      if (grid) grid.innerHTML = '<p class="hub-empty">Error loading assigned projects. Check console.</p>';
-      showToast('Error loading assigned projects: ' + error.message, 'error');
+      console.warn('Assigned project skipped:', pid, error?.code || error?.message || error);
+      deniedIds.add(pid);
+      projectMap.delete(pid);
+      render();
+      if (!warningShown) {
+        warningShown = true;
+        showToast('Some assigned projects could not be opened. Ask an admin to review project access.', 'warn');
+      }
     };
     const projectRef = db.ref(`projects/${pid}`);
     projectRef.on('value', snap => {
@@ -511,7 +613,7 @@ function budgetMetricRow(label, budget, spent) {
       </div>
       <div class="budget-metric-foot">
         <span class="budget-health ${health.className}">${health.text}</span>
-        <span>${used}% used · ${peso(remaining)} remaining</span>
+        <span>${used}% used | ${peso(remaining)} remaining</span>
       </div>
     </div>`;
 }
@@ -623,7 +725,8 @@ function renderDashboardSummary(projects, context = '') {
   const el = context === 'All' ? $('dashSummaryAll') : $('dashSummary');
   if (!el) return;
 
-  const active = projects.filter(p => p.status === 'active').length;
+  const active = projects.filter(p => p.status === 'active');
+  const activeCount = active.length;
   const completed = projects.filter(p => p.status === 'completed').length;
   const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
   const totalSpent = projects.reduce((s, p) => s + dashboardTotalSpent(p), 0);
@@ -633,22 +736,24 @@ function renderDashboardSummary(projects, context = '') {
   const critical = projects.filter(p => {
     const eff = effectiveBudget(p);
     const spent = dashboardTotalSpent(p);
-    return pct(spent, eff.total) >= 95;
-  }).length;
+    return eff.total > 0 && pct(spent, eff.total) >= 95;
+  });
+  const criticalCount = critical.length;
 
   const warning = projects.filter(p => {
     const eff = effectiveBudget(p);
     const spent = dashboardTotalSpent(p);
     const pUsed = pct(spent, eff.total);
     return pUsed >= 80 && pUsed < 95;
-  }).length;
+  });
 
   if (context === 'All') {
     setText('dsAllSumTotal', projects.length);
-    setText('dsAllSumActive', active);
+    setText('dsAllSumActive', activeCount);
     setText('dsAllSumCompleted', completed);
     setText('dsAllSumBudget', peso(totalBudget));
     setText('dsAllSumSpent', peso(totalSpent));
+    setText('dsAllSumCritical', criticalCount);
     const remEl = $('dsAllSumRemaining');
     if (remEl) {
       remEl.textContent = peso(remaining);
@@ -659,34 +764,186 @@ function renderDashboardSummary(projects, context = '') {
       progEl.textContent = overallPct + '%';
       progEl.className = `dash-stat-val ${overallPct >= 95 ? 'text-red' : overallPct >= 80 ? 'text-amber' : 'text-green'}`;
     }
-  } else {
-    setText('dsSumActive', active);
-    setText('dsSumBudget', peso(totalBudget));
-    setText('dsSumSpent', peso(totalSpent));
-    const remEl = $('dsSumRemaining');
-    if (remEl) {
-      remEl.textContent = peso(remaining);
-      remEl.className = `dash-stat-val ${remaining < 0 ? 'text-red' : 'text-green'}`;
-    }
-    const progEl = $('dsSumProgress');
-    if (progEl) {
-      progEl.textContent = overallPct + '%';
-      progEl.className = `dash-stat-val ${overallPct >= 95 ? 'text-red' : overallPct >= 80 ? 'text-amber' : 'text-green'}`;
+    return;
+  }
+
+  /* --- New KPI layout --- */
+  setText('dsSumCritical', criticalCount);
+  setText('dsSumActive', activeCount);
+
+  /* Overdue tasks count */
+  var overdueCount = 0;
+  active.forEach(function (p) {
+    var rollup = dashboardRollup(p);
+    var pOverdue = parseFloat(rollup.overdueTasks ?? p.openTaskCount?.overdue) || 0;
+    overdueCount += pOverdue;
+  });
+  setText('dsSumOverdue', overdueCount);
+
+  /* Pending approvals */
+  const pendingApprovals = dashboardPendingApprovalItems(projects);
+  setText('dsSumPending', pendingApprovals.length);
+
+  /* At-risk project names */
+  const criticalNames = criticalCount ? critical.map(function (p) { return p.name || p.id; }).join(', ') : '';
+  const subEl = $('dsCriticalNames');
+  if (subEl) subEl.textContent = criticalNames ? '&#x2192; ' + criticalNames : 'No projects at risk';
+
+  /* Active projects sub text */
+  const budgetPct = pct(totalSpent, totalBudget);
+  setText('dsSumActiveSub', budgetPct + '% of budget used');
+
+  /* Budget Health Card */
+  setText('dsBudgetTotal', peso(totalBudget));
+  setText('dsSumSpent', peso(totalSpent));
+  var remEl = $('dsSumRemaining');
+  if (remEl) {
+    remEl.textContent = peso(remaining);
+    remEl.className = remaining < 0 ? 'text-red' : remaining < totalBudget * 0.2 ? 'text-amber' : 'text-green';
+  }
+  setText('dsSumProgress', overallPct + '%');
+
+  var fillEl = $('dsBudgetFill');
+  if (fillEl) {
+    var pctVal = Math.min(100, Math.max(0, overallPct));
+    fillEl.style.width = pctVal + '%';
+    fillEl.style.background = pctVal >= 95
+      ? 'linear-gradient(90deg, var(--red), #f87171)'
+      : pctVal >= 80
+        ? 'linear-gradient(90deg, var(--amber), #fbbf24)'
+        : 'linear-gradient(90deg, var(--green), #34d399)';
+  }
+
+  /* Inline alert banner below budget health */
+  var alertBanner = $('dsAlertBanner');
+  if (alertBanner) {
+    if (criticalCount > 0) {
+      alertBanner.className = 'dash-alert-banner alert-critical';
+      alertBanner.innerHTML = '<span class="alert-icon">&#x1F525;</span> <strong>' + criticalCount + '</strong> project' + (criticalCount !== 1 ? 's' : '') + ' over budget &mdash; immediate attention required';
+      alertBanner.style.display = '';
+    } else if (warning.length > 0) {
+      alertBanner.className = 'dash-alert-banner alert-warning';
+      alertBanner.innerHTML = '<span class="alert-icon">&#x26A0;&#xFE0F;</span> <strong>' + warning.length + '</strong> project' + (warning.length !== 1 ? 's' : '') + ' approaching budget limit';
+      alertBanner.style.display = '';
+    } else {
+      alertBanner.className = 'dash-alert-banner alert-ok';
+      alertBanner.innerHTML = '<span class="alert-icon">&#x2705;</span> All projects within budget limits';
+      alertBanner.style.display = '';
     }
   }
 
-  let warn = el.querySelector('#dashWarnLine');
-  if (!warn) {
-    warn = document.createElement('div');
-    warn.id = 'dashWarnLine';
-    el.appendChild(warn);
+  /* Warning line in section label */
+  var warnLine = $('dashWarnLine');
+  if (warnLine) {
+    warnLine.textContent = criticalCount > 0 ? criticalCount + ' at risk' : '';
   }
-  warn.innerHTML =
-    critical > 0
-      ? `<div class="budget-warn-bar warn-critical">Warning: ${critical} project${critical !== 1 ? 's' : ''} over budget.</div>`
-      : warning > 0
-        ? `<div class="budget-warn-bar warn-high">Warning: ${warning} project${warning !== 1 ? 's are' : ' is'} approaching budget limit.</div>`
-        : `<div style="font-size:12px;color:var(--green);padding:8px 0">All projects are within budget limits.</div>`;
+}
+
+/* ---- Attention Projects Section (between KPIs and project grid) ---- */
+function renderAttentionProjects(projects) {
+  var el = $('attentionGrid');
+  if (!el) return;
+
+  var active = projects.filter(function (p) { return p.status === 'active'; });
+
+  /* Collect all items needing attention */
+  var items = [];
+
+  active.forEach(function (p) {
+    var eff = effectiveBudget(p);
+    var spent = dashboardTotalSpent(p);
+    var pctUsed = eff.total > 0 ? pct(spent, eff.total) : 0;
+    var rollup = dashboardRollup(p);
+    var openIssues = parseFloat(rollup.openIssues ?? p.siteLogRollups?.openIssues) || 0;
+    var openDelays = parseFloat(rollup.openDelays ?? p.siteLogRollups?.openDelays) || 0;
+    var overdueTasks = parseFloat(rollup.overdueTasks ?? p.openTaskCount?.overdue) || 0;
+
+    /* Critical: over budget */
+    if (pctUsed >= 95) {
+      items.push({
+        level: 'critical',
+        project: p,
+        icon: '&#x1F525;',
+        title: (p.name || p.id) + ' &mdash; Over Budget',
+        desc: pctUsed + '% of budget used (' + peso(spent) + ' spent)',
+        action: 'Open Project'
+      });
+    }
+
+    /* Warning: approaching limit */
+    if (pctUsed >= 80 && pctUsed < 95) {
+      items.push({
+        level: 'warning',
+        project: p,
+        icon: '&#x26A0;&#xFE0F;',
+        title: (p.name || p.id) + ' &mdash; Approaching Budget Limit',
+        desc: pctUsed + '% of budget used &middot; ' + peso(eff.total - spent) + ' remaining',
+        action: 'View Budget'
+      });
+    }
+
+    /* Open issues */
+    if (openIssues > 0) {
+      items.push({
+        level: 'warning',
+        project: p,
+        icon: '&#x26A0;&#xFE0F;',
+        title: (p.name || p.id) + ' &mdash; ' + openIssues + ' Open Issue' + (openIssues !== 1 ? 's' : ''),
+        desc: 'Unresolved site issues need attention',
+        action: 'View Log'
+      });
+    }
+
+    /* Overdue tasks */
+    if (overdueTasks > 0) {
+      items.push({
+        level: 'warning',
+        project: p,
+        icon: '&#x23F3;',
+        title: (p.name || p.id) + ' &mdash; ' + overdueTasks + ' Overdue Task' + (overdueTasks !== 1 ? 's' : ''),
+        desc: 'Tasks past their due date',
+        action: 'View Tasks'
+      });
+    }
+
+    /* Delays */
+    if (openDelays > 0) {
+      items.push({
+        level: 'warning',
+        project: p,
+        icon: '&#x1F4C5;',
+        title: (p.name || p.id) + ' &mdash; ' + openDelays + ' Delay' + (openDelays !== 1 ? 's' : '') + ' Reported',
+        desc: 'Schedule delays logged in site reports',
+        action: 'View Site Log'
+      });
+    }
+  });
+
+  /* Sort: critical first, then by severity */
+  items.sort(function (a, b) {
+    var order = { critical: 0, warning: 1 };
+    return (order[a.level] || 1) - (order[b.level] || 1);
+  });
+
+  if (!items.length) {
+    el.innerHTML = '';
+    el.style.display = 'none';
+    return;
+  }
+
+  el.style.display = '';
+  el.innerHTML = '<div class="sec-label">&#x1F514; Attention Required</div>' +
+    items.slice(0, 6).map(function (item) {
+      return '<div class="dash-attention-projects-card dash-attn-card-' + item.level + '" onclick="openProjectFromHub(\'' + escapeHtml(item.project.id) + '\')">' +
+        '<span class="dash-attn-card-icon">' + item.icon + '</span>' +
+        '<div class="dash-attn-card-body">' +
+          '<div class="dash-attn-card-title">' + item.title + '</div>' +
+          '<div class="dash-attn-card-desc">' + item.desc + '</div>' +
+        '</div>' +
+        '<span class="dash-attn-card-action">' + item.action + ' &#x2192;</span>' +
+      '</div>';
+    }).join('') +
+    (items.length > 6 ? '<div class="dash-attention-projects-card" style="background:var(--surface2);border:1px solid var(--border);cursor:default;"><div class="dash-attn-card-body" style="text-align:center;color:var(--muted2);font-size:12px;">+' + (items.length - 6) + ' more items needing attention</div></div>' : '');
 }
 
 function renderComparison(projects, targetId = 'comparisonView') {
@@ -729,24 +986,27 @@ function renderRecentActivity(projects, targetId = 'recentActivityView') {
     .map(p => {
       if (p.label) {
         const time = p.createdAt || null;
-        const date = time ? new Date(time).toLocaleDateString('en-PH') : '-';
+        const date = dashboardActivityWhen(time);
+        const actor = p.actor ? ` by ${p.actor}` : '';
         return `
-        <div class="activity-row">
-          <div>
+        <div class="activity-row ${dashboardActivityClass(p)}">
+          <span class="activity-dot"></span>
+          <div class="activity-copy">
             <strong>${escapeHtml(p.projectName || 'Untitled')}</strong>
-            <span>${escapeHtml(p.label)} - ${escapeHtml(date)}</span>
+            <span>${escapeHtml(dashboardActivityLabel(p))}${escapeHtml(actor)} | ${escapeHtml(date)}</span>
           </div>
           <button class="btn-equip-action" onclick="openProjectFromHub('${escapeHtml(p.projectId)}')">Open</button>
         </div>`;
       }
       const status = p.status === 'completed' ? 'Completed' : p.status === 'archived' ? 'Archived' : 'Active';
       const time = p.completedAt || p.archivedAt || p.updatedAt || p.createdAt || null;
-      const date = time ? new Date(time).toLocaleDateString('en-PH') : (p.createdDate || '-');
+      const date = time ? dashboardActivityWhen(time) : (p.createdDate || '-');
       return `
-        <div class="activity-row">
-          <div>
+        <div class="activity-row activity-project">
+          <span class="activity-dot"></span>
+          <div class="activity-copy">
             <strong>${escapeHtml(p.name || 'Untitled')}</strong>
-            <span>${status} - ${escapeHtml(date)}</span>
+            <span>${status} | ${escapeHtml(date)}</span>
           </div>
           <button class="btn-equip-action" onclick="openProjectFromHub('${escapeHtml(p.id)}')">Open</button>
         </div>`;
@@ -770,8 +1030,11 @@ async function createProject(evt) {
   const btn = evt?.currentTarget || document.querySelector('.btn-create');
   await withBusy(btn, async () => {
     const user = window._currentUser || {};
-    if (normalizeRole(user.role) !== 'boss') {
-      showToast('Boss access required to create projects.', 'error');
+    const allowedToCreate = typeof canCreateProjects === 'function'
+      ? canCreateProjects(user.role)
+      : ['boss', 'owner', 'admin', 'pm'].includes(normalizeRole(user.role));
+    if (!allowedToCreate) {
+      showToast('Project creation is available to PM and Admin accounts.', 'error');
       return;
     }
 
@@ -803,20 +1066,11 @@ async function createProject(evt) {
     const newRef = await safeDb(() => db.ref('projects').push(projectData), 'Failed to create project');
     const newPid = newRef.key;
 
-    // Auto-assign to creator
-    if (user && user.role === "apm") {
-      const currentProjects = Array.from(new Set(user.projects || [])).sort((a, b) => String(a).localeCompare(String(b)));
-      const uniqueProjects = Array.from(new Set([...currentProjects, newPid])).sort((a, b) => String(a).localeCompare(String(b)));
-      await db.ref(`users/${user.uid}/projects`).set(uniqueProjects);
-      user.projects = uniqueProjects;
-      window._currentUser = user;
-    }
-
     $('newName').value = ''; $('newLaborBudget').value = ''; $('newMaterialBudget').value = '';
     const search = $('projectSearch');
     if (search) search.value = '';
     showHubTab('active');
-    auditLog('create', 'project', null, { name, laborBudget, materialBudget });
+    auditLog('create', 'project', newPid, { name, laborBudget, materialBudget, projectId: newPid });
     showToast(`Project "${name}" created!`);
   });
 }
@@ -1007,6 +1261,238 @@ function detachProjectNotesListener() {
   }
 }
 
+function detachProjectDashboardListener() {
+  if (_projectDashboardListener) {
+    _projectDashboardListener.off();
+    _projectDashboardListener = null;
+  }
+}
+
+function ensureProjectDashboardUi() {
+  if (!$('tab_dashboard')) {
+    const tabs = document.querySelector('#workspaceView .tab-group');
+    tabs?.insertAdjacentHTML('afterbegin', '<button id="tab_dashboard" class="tab-btn" onclick="switchTab(\'dashboard\')" data-role-visible="apm,pm,boss,owner,admin">&#x2302; Mission Board</button>');
+  }
+  if (!$('dashboardPanel')) {
+    const laborPanel = $('laborPanel');
+    laborPanel?.insertAdjacentHTML('beforebegin', `
+      <div id="dashboardPanel" class="panel hidden">
+        <div class="project-dash-grid">
+          <section class="panel-card project-dash-hero">
+            <div>
+              <div class="panel-title">Project Workspace</div>
+              <h2 id="pdName">Project</h2>
+              <div id="pdMeta" class="project-dash-meta">Loading project details...</div>
+            </div>
+            <div id="pdStatus" class="badge badge-purple">Active</div>
+          </section>
+
+          <section class="panel-card project-budget-card">
+            <div class="project-dash-section-head">
+              <div>
+                <div class="panel-title">Running Budget</div>
+                <p class="empty-hint">Labor + material cost against current approved budget.</p>
+              </div>
+              <strong id="pdBudgetUsed">0%</strong>
+            </div>
+            <div class="project-budget-bar"><i id="pdBudgetBar"></i></div>
+            <div class="project-dash-kpis">
+              <div><span>Total Budget</span><strong id="pdTotalBudget">0</strong></div>
+              <div><span>Total Cost</span><strong id="pdTotalCost">0</strong></div>
+              <div><span>Remaining</span><strong id="pdRemaining">0</strong></div>
+              <div><span>Committed</span><strong id="pdCommitted">0</strong></div>
+            </div>
+          </section>
+
+          <section class="panel-card">
+            <div class="panel-title">Project Profile</div>
+            <div id="pdProfile" class="project-profile-list"></div>
+          </section>
+
+          <section class="panel-card">
+            <div class="panel-title">Field Team</div>
+            <div id="pdFieldTeam" class="project-profile-list"></div>
+          </section>
+
+          <section class="panel-card project-dash-wide">
+            <div class="panel-title">Mission Board</div>
+            <div id="pdOperations" class="project-dash-kpis"></div>
+            <div id="pdMissionList" class="project-mission-list"></div>
+          </section>
+
+          <section class="panel-card project-dash-wide">
+            <div class="panel-title">Recent Activity</div>
+            <div id="pdRecentActivity" class="project-mission-list"></div>
+          </section>
+
+          <section class="panel-card project-dash-wide">
+            <div class="panel-title">Quick Open</div>
+            <div class="project-dash-actions">
+              <button class="btn-ws-secondary" type="button" onclick="switchTab('labor')">Labor</button>
+              <button class="btn-ws-secondary" type="button" onclick="switchTab('materials')">Materials</button>
+              <button class="btn-ws-secondary" type="button" onclick="switchTab('sitelog')">Site Log</button>
+              <button class="btn-ws-secondary" type="button" onclick="switchTab('tasks')">Tasks</button>
+              <button class="btn-ws-secondary" type="button" onclick="openPmosOffice()">PMOS</button>
+              <button class="btn-ws-secondary" type="button" onclick="switchTab('reports')">Reports</button>
+            </div>
+          </section>
+        </div>
+      </div>`);
+  }
+}
+
+function projectAmount(value) {
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function projectPeso(value) {
+  return typeof peso === 'function' ? peso(value) : `PHP ${projectAmount(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function objectRows(obj = {}) {
+  return Object.entries(obj || {}).map(([id, value]) => ({ id, ...(value || {}) }));
+}
+
+function projectDateLabel(project = {}) {
+  if (project.startDate) return project.startDate;
+  if (project.dateStarted) return project.dateStarted;
+  if (project.createdDate) return project.createdDate;
+  if (project.createdAt) return new Date(project.createdAt).toLocaleDateString('en-PH');
+  return '-';
+}
+
+function renderProjectDashboard(projectId, project = {}) {
+  ensureProjectDashboardUi();
+  const trades = objectRows(project.trades).filter(t => t.active !== false && t.status !== 'inactive' && t.archived !== true);
+  const workers = objectRows(project.workers).filter(w => w.active !== false && w.status !== 'inactive' && w.status !== 'archived');
+  const foremen = Array.from(new Set(trades.map(t => t.foremanName).filter(Boolean)));
+  const siteLogs = objectRows(project.siteLogs);
+  const tasks = objectRows(project.tasks).map(task => ({
+    ...task,
+    status: typeof normalizeTaskStatus === 'function'
+      ? normalizeTaskStatus(task.status)
+      : String(task.status || 'pending').toLowerCase()
+  }));
+  const activeTasks = tasks.filter(task => !['completed', 'cancelled', 'done', 'archived'].includes(task.status));
+  const blockedTasks = activeTasks.filter(task => task.status === 'blocked');
+  const verificationTasks = activeTasks.filter(task => task.status === 'for_verification' || task.status === 'review');
+  const materialRequests = [
+    ...objectRows(project.purchaseRequests),
+    ...objectRows(project.pmosMaterialRequests)
+  ].filter(request => !['delivered', 'closed', 'cancelled', 'archived', 'rejected'].includes(String(request.status || '').toLowerCase()));
+  const criticalIssues = [
+    ...objectRows(project.defects),
+    ...objectRows(project.pmosIssues)
+  ].filter(issue => {
+    const status = String(issue.status || '').toLowerCase();
+    const priority = String(issue.priority || issue.severity || '').toLowerCase();
+    return !['done', 'closed', 'completed', 'archived', 'cancelled'].includes(status) &&
+      ['critical', 'high', 'major'].includes(priority);
+  });
+  const payrollLogs = objectRows(project.payrollLogs);
+  const pmosLogs = ['pmosUpdates', 'pmosSiteLogs', 'pmosIssues', 'pmosMaterialRequests', 'pmosTasks', 'pmosPhotoLogs']
+    .reduce((sum, key) => sum + objectRows(project[key]).length, 0);
+
+  const laborBudget = projectAmount(project.laborBudget);
+  const materialBudget = projectAmount(project.materialBudget);
+  const totalBudget = laborBudget + materialBudget;
+  const laborSpent = projectAmount(project.laborSpent);
+  const materialSpent = projectAmount(project.materialSpent);
+  const committed = projectAmount(project.materialCommitted) + projectAmount(project.laborCommitted);
+  const totalCost = laborSpent + materialSpent;
+  const remaining = totalBudget - totalCost - committed;
+  const usedPct = totalBudget ? Math.round(((totalCost + committed) / totalBudget) * 100) : 0;
+  const address = project.address || project.projectAddress || project.siteAddress || project.location || 'Not set yet';
+  const lastLog = siteLogs
+    .map(log => log.date || log.savedDate || (log.savedAt ? new Date(log.savedAt).toISOString().slice(0, 10) : ''))
+    .filter(Boolean)
+    .sort()
+    .pop() || '-';
+
+  setText('pdName', project.name || projectId || 'Project');
+  setText('pdMeta', `${address} - Started ${projectDateLabel(project)}`);
+  setText('pdStatus', project.status || 'active');
+  setText('pdBudgetUsed', `${usedPct}%`);
+  setText('pdTotalBudget', projectPeso(totalBudget));
+  setText('pdTotalCost', projectPeso(totalCost));
+  setText('pdRemaining', projectPeso(remaining));
+  setText('pdCommitted', projectPeso(committed));
+  const budgetBar = $('pdBudgetBar');
+  if (budgetBar) {
+    budgetBar.style.width = `${Math.max(0, Math.min(100, usedPct))}%`;
+    budgetBar.classList.toggle('is-over', usedPct > 100);
+  }
+
+  setHTML('pdProfile', `
+    <div><span>Project Name</span><strong>${escapeHtml(project.name || projectId || '-')}</strong></div>
+    <div><span>Project Address</span><strong>${escapeHtml(address)}</strong></div>
+    <div><span>Date Started</span><strong>${escapeHtml(projectDateLabel(project))}</strong></div>
+    <div><span>Status</span><strong>${escapeHtml(project.status || 'active')}</strong></div>
+  `);
+
+  const workerPreview = workers.slice(0, 8).map(w => w.name).filter(Boolean).join(', ') || 'No active workers yet';
+  setHTML('pdFieldTeam', `
+    <div><span>Active Workers</span><strong>${workers.length}</strong></div>
+    <div><span>Trades</span><strong>${trades.length}</strong></div>
+    <div><span>Foremen / Leaders</span><strong>${escapeHtml(foremen.join(', ') || 'Not set yet')}</strong></div>
+    <div><span>Workers</span><strong>${escapeHtml(workerPreview)}</strong></div>
+  `);
+
+  setHTML('pdOperations', `
+    <div><span>Pending Works</span><strong>${activeTasks.length}</strong></div>
+    <div><span>For PM Verification</span><strong>${verificationTasks.length}</strong></div>
+    <div><span>Material Requests Waiting</span><strong>${materialRequests.length}</strong></div>
+    <div><span>Critical Issues</span><strong>${criticalIssues.length}</strong></div>
+  `);
+  const missionRows = [
+    blockedTasks.length ? { level: 'danger', label: `${blockedTasks.length} blocked task${blockedTasks.length === 1 ? '' : 's'} need resolution`, tab: 'tasks' } : null,
+    verificationTasks.length ? { level: 'warn', label: `${verificationTasks.length} task${verificationTasks.length === 1 ? '' : 's'} waiting for PM verification`, tab: 'tasks' } : null,
+    materialRequests.length ? { level: 'warn', label: `${materialRequests.length} material request${materialRequests.length === 1 ? '' : 's'} waiting`, tab: 'materials' } : null,
+    criticalIssues.length ? { level: 'danger', label: `${criticalIssues.length} critical site issue${criticalIssues.length === 1 ? '' : 's'} open`, tab: 'defects' } : null,
+    !payrollLogs.length ? { level: 'info', label: 'No payroll has been compiled for this project yet', tab: 'labor' } : null,
+    !siteLogs.length ? { level: 'info', label: 'No site log has been submitted yet', tab: 'sitelog' } : null
+  ].filter(Boolean);
+  setHTML('pdMissionList', missionRows.length
+    ? missionRows.map(row => `<button type="button" class="project-mission-row is-${row.level}" onclick="switchTab('${row.tab}')">
+        <span>${escapeHtml(row.label)}</span><strong>Open</strong>
+      </button>`).join('')
+    : '<div class="project-mission-clear">No urgent action items. Project records are up to date.</div>');
+
+  const recentActivity = objectRows(project.activity)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .slice(0, 6);
+  setHTML('pdRecentActivity', recentActivity.length
+    ? recentActivity.map(item => `<div class="project-activity-row">
+        <span>${escapeHtml(dashboardActivityLabel({ label: item.type || `${item.module || 'project'} updated` }))}</span>
+        <small>${escapeHtml(item.createdByName || 'System')} | ${escapeHtml(dashboardActivityWhen(item.createdAt))}</small>
+      </div>`).join('')
+    : `<div class="project-mission-clear">No project activity recorded yet. Latest site log: ${escapeHtml(lastLog)}.</div>`);
+}
+
+function countProjectOpenItems(project = {}) {
+  const rows = ['tasks', 'defects', 'pmosIssues', 'pmosTasks', 'pmosMaterialRequests']
+    .flatMap(key => objectRows(project[key]).map(item => ({ ...item, sourceKey: key })));
+  return rows.filter(item => {
+    const status = String(item.status || '').toLowerCase();
+    return !['done', 'closed', 'completed', 'archived', 'delivered', 'cancelled'].includes(status);
+  }).length;
+}
+
+function initProjectDashboard(projectId = window._currentPid) {
+  ensureProjectDashboardUi();
+  detachProjectDashboardListener();
+  if (!projectId) return;
+  const ref = db.ref(`projects/${projectId}`);
+  _projectDashboardListener = ref;
+  ref.on('value', snap => {
+    renderProjectDashboard(projectId, snap.val() || {});
+  }, err => {
+    console.warn('Project dashboard listener failed:', err);
+    setHTML('pdProfile', '<p class="empty-hint">Could not load project dashboard.</p>');
+  });
+}
+
 function openProjectFromHub(pid) {
   if (getAppPage() === 'dashboard') {
     window.location.href = appUrl('workspace', { projectId: pid });
@@ -1015,9 +1501,9 @@ function openProjectFromHub(pid) {
   enterProject(pid);
 }
 
-// ════════════════════════════════════════════════════════════
-//  WORKSPACE — Enter / Exit
-// ════════════════════════════════════════════════════════════
+// ============================================================
+//  WORKSPACE - Enter / Exit
+// ============================================================
 
 async function enterProject(pid) {
   if (!canAccessProject(pid)) {
@@ -1029,8 +1515,14 @@ async function enterProject(pid) {
   if (!p) { showToast('Project not found.', 'error'); return false; }
 
   window._currentPid = pid;
+  window._adminWorkspaceMode = false;
   setText('wsName', p.name || 'Untitled');
+  setText('wsContextLabel', 'Active Site');
+  ensureProjectDashboardUi();
+  setAdminWorkspaceMode(false);
   $('hubView').classList.add('hidden');
+  $('systemReportsView')?.classList.add('hidden');
+  $('pmosOfficeView')?.classList.add('hidden');
   $('workspaceView').classList.remove('hidden');
 
   window._currentProjectStatus = p.status || 'active';
@@ -1050,11 +1542,29 @@ async function enterProject(pid) {
   initDefects(pid);
   initNotifications();
   loadProjectNotes(pid);
-  const role = typeof normalizeRole === 'function' ? normalizeRole(window._currentUser?.role || 'apm') : (window._currentUser?.role || 'apm');
-  switchTab(typeof canSeeFinancials === 'function' && canSeeFinancials(role) ? 'reports' : 'labor');
+  switchTab('dashboard');
+  handleNotificationRouteFocus();
 
   auditLog('enter', 'project', pid, { name: p.name });
   return true;
+}
+
+function handleNotificationRouteFocus() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('fromNotif') !== '1') return;
+  const tab = params.get('tab') || 'dashboard';
+  const allowedTabs = ['dashboard', 'labor', 'materials', 'billing', 'changeorders', 'sitelog', 'tasks', 'reports'];
+  const targetTab = allowedTabs.includes(tab) ? tab : 'dashboard';
+  setTimeout(() => {
+    switchTab(targetTab);
+    const panel = $(`${targetTab}Panel`) || $('workspaceView');
+    if (!panel) return;
+    panel.classList.remove('notif-route-highlight');
+    void panel.offsetWidth;
+    panel.classList.add('notif-route-highlight');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => panel.classList.remove('notif-route-highlight'), 2600);
+  }, 250);
 }
 
 function exitHub() {
@@ -1073,32 +1583,42 @@ function exitHub() {
   detachComplianceListeners();
   detachDefectListeners();
   detachProjectNotesListener();
+  detachProjectDashboardListener();
   if (typeof detachNotifications === 'function') detachNotifications();
 
   $('workspaceView').classList.add('hidden');
+  setAdminWorkspaceMode(false);
+  $('systemReportsView')?.classList.add('hidden');
+  $('pmosOfficeView')?.classList.add('hidden');
   $('hubView').classList.remove('hidden');
   window._currentPid = null;
   window._currentProjectStatus = null;
   window._isReadOnly = false;
-  renderHub();
+  setText('wsContextLabel', 'Active Site');
+  showHubTab('active');
 }
 
 function switchTab(tab) {
+  if (window._adminWorkspaceMode && !['admin', 'reports'].includes(tab)) {
+    tab = 'admin';
+  }
+  $('systemReportsView')?.classList.add('hidden');
+  if (tab !== 'pmos') $('pmosOfficeView')?.classList.add('hidden');
   document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('tab-active'));
   $(`tab_${tab}`)?.classList.add('tab-active');
   document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
   $(`${tab}Panel`)?.classList.remove('hidden');
 
   // Trigger view-specific renders
+  if (tab === 'dashboard') initProjectDashboard();
   if (tab === 'tasks') renderGanttView();
   if (tab === 'admin' && typeof initTeamAdmin === 'function') initTeamAdmin();
   if (tab === 'reports') initReports();
 }
 
 function toggleExtraTabs(forceValue) {
-  const next = typeof forceValue === 'boolean'
-    ? forceValue
-    : !(typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', false) : false);
+  const current = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true;
+  const next = typeof forceValue === 'boolean' ? forceValue : !current;
   if (typeof setFeatureFlag === 'function') setFeatureFlag('extras', next);
 
   const role = typeof normalizeRole === 'function'
@@ -1131,17 +1651,28 @@ function toggleExtraTabs(forceValue) {
 }
 
 function openTeamAdmin() {
+  const canManage = typeof canManageProjectAssignments === 'function'
+    ? canManageProjectAssignments(window._currentUser?.role)
+    : (typeof isBoss === 'function' && isBoss(window._currentUser?.role));
+  if (!canManage) {
+    showToast('Project assignment access is available to PM and Admin accounts.', 'error');
+    return;
+  }
   $('hubView')?.classList.add('hidden');
+  $('systemReportsView')?.classList.add('hidden');
+  $('pmosOfficeView')?.classList.add('hidden');
   $('workspaceView')?.classList.remove('hidden');
-  window._currentPid = window._currentPid || null;
-  const wsName = $('wsName');
-  if (wsName) wsName.textContent = 'Team Admin';
+  setAdminWorkspaceMode(true);
+  window._currentPid = null;
+  setText('wsContextLabel', 'Admin Area');
+  setText('wsName', 'Team Admin');
   document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
   $('adminPanel')?.classList.remove('hidden');
   document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('tab-active'));
+  $('tab_admin')?.classList.remove('hidden');
   $('tab_admin')?.classList.add('tab-active');
   if (typeof initTeamAdmin === 'function') initTeamAdmin();
-  if (typeof switchAdminSection === 'function') switchAdminSection('summary');
+  if (typeof switchAdminSection === 'function') switchAdminSection('team');
 }
 
 function switchAdminSection(section) {
@@ -1226,9 +1757,9 @@ async function exportDatabaseBackup() {
   showToast(failed.length ? 'Backup downloaded with some unreadable paths noted.' : 'Database backup downloaded.');
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  PROJECT NOTES
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function loadProjectNotes(pid) {
   detachProjectNotesListener();
   _projectNotesListener = db.ref(`projects/${pid}/notes`);
@@ -1253,13 +1784,83 @@ async function saveProjectNotes() {
 
 // Keyboard shortcuts
 window.addEventListener('keydown', e => {
-  if (e.ctrlKey && e.key >= '1' && e.key <= '8') {
-    const tabs = ['labor', 'materials', 'billing', 'changeorders', 'sitelog', 'suppliers', 'tasks', 'equipment', 'compliance', 'defects', 'reports'];
+  // Escape: Go back to hub from workspace or close overlays
+  if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    // Don't escape from form inputs
+    const tag = document.activeElement?.tagName || '';
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) {
+      document.activeElement?.blur();
+      e.preventDefault();
+      return;
+    }
+    // Close notification dropdown if open
+    const notifDropdown = document.getElementById('notifDropdown');
+    if (notifDropdown && !notifDropdown.classList.contains('hidden')) {
+      e.preventDefault();
+      notifDropdown.classList.add('hidden');
+      return;
+    }
+    // Close the VISIBLE modal overlay (if any). Modals toggle `.hidden` —
+    // never remove them from the DOM (reopening would break). Only act on
+    // overlays that are actually open; the first `.modal-overlay` in the DOM
+    // is usually a hidden one, so we scan for the visible instance.
+    let openModal = null;
+    document.querySelectorAll('.modal-overlay, .dialog-overlay').forEach(m => {
+      if (openModal) return;
+      const inlineStyle = m.getAttribute('style') || '';
+      if (!m.classList.contains('hidden') && !/display\s*:\s*none/i.test(inlineStyle)) openModal = m;
+    });
+    if (openModal) {
+      e.preventDefault();
+      openModal.classList.add('hidden');
+      return;
+    }
+    // Exit workspace views back to hub
+    const workspace = $('workspaceView');
+    if (workspace && !workspace.classList.contains('hidden')) {
+      const hub = $('hubView');
+      if (hub && !hub.classList.contains('hidden')) {
+        // Already looking at hub, don't exit
+        return;
+      }
+      e.preventDefault();
+      exitHub();
+      return;
+    }
+    // Close sub-views
+    const systemReports = $('systemReportsView');
+    if (systemReports && !systemReports.classList.contains('hidden')) {
+      e.preventDefault();
+      systemReports.classList.add('hidden');
+      $('hubView')?.classList.remove('hidden');
+      return;
+    }
+    const pmosOffice = $('pmosOfficeView');
+    if (pmosOffice && !pmosOffice.classList.contains('hidden')) {
+      e.preventDefault();
+      pmosOffice.classList.add('hidden');
+      $('hubView')?.classList.remove('hidden');
+    }
+  }
+  // Ctrl+1-8: Switch workspace tabs
+  if ((e.ctrlKey || e.metaKey) && e.key >= '1' && e.key <= '8') {
+    const tabs = ['dashboard', 'labor', 'materials', 'billing', 'sitelog', 'changeorders', 'suppliers', 'reports'];
     const idx = parseInt(e.key) - 1;
     const workspace = $('workspaceView');
     if (tabs[idx] && workspace && !workspace.classList.contains('hidden')) {
-      switchTab(tabs[idx]);
+      const tabBtn = $(`tab_${tabs[idx]}`);
+      if (tabBtn && tabBtn.style.display !== 'none') {
+        switchTab(tabs[idx]);
+        e.preventDefault();
+      }
+    }
+  }
+  // ? Show keyboard shortcuts help
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+    const active = document.activeElement;
+    if (!active || active === document.body || active === $('hubView')) {
       e.preventDefault();
+      showShortcutsHelp();
     }
   }
   if (e.ctrlKey && e.key === 's') {
@@ -1268,11 +1869,11 @@ window.addEventListener('keydown', e => {
   }
 });
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  GLOBAL ERROR HANDLER
 //  Catches unhandled errors and shows a user-friendly message.
 //  Prevents the app from silently breaking.
-// ════════════════════════════════════════════════════════════
+// ============================================================
 window.addEventListener('error', e => {
   console.error('Global error:', e.error);
   showToast('Something went wrong. Please refresh the page if problems persist.', 'error');
@@ -1283,9 +1884,9 @@ window.addEventListener('unhandledrejection', e => {
   showToast('A background task failed. Please try again.', 'error');
 });
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  PROGRESS RING (SVG Donut)
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function buildProgressRing(pctUsed, isCritical, isWarning) {
   const circumference = 2 * Math.PI * 18;
   const offset = circumference - (Math.min(pctUsed, 100) / 100) * circumference;
@@ -1302,13 +1903,17 @@ function buildProgressRing(pctUsed, isCritical, isWarning) {
   </svg>`;
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  EDIT PROJECT
-// ════════════════════════════════════════════════════════════
+// ============================================================
 window._editProjectId = null;
 
 function openEditProjectModal(pid) {
   if (typeof requireEdit === 'function' ? !requireEdit(pid) : !canEditProject(pid)) return;
+  if (typeof canSeeFinancials === 'function' && !canSeeFinancials(window._currentUser?.role)) {
+    showToast('Budget editing is available to PM and Admin accounts only.', 'error');
+    return;
+  }
   const snap = db.ref(`projects/${pid}`).once('value').then(snap => {
     const p = snap.val();
     if (!p) { showToast('Project not found.', 'error'); return; }
@@ -1329,6 +1934,10 @@ async function editProject() {
   const pid = window._editProjectId;
   if (!pid) return;
   if (typeof requireEdit === 'function' ? !requireEdit(pid) : !canEditProject(pid)) return;
+  if (typeof canSeeFinancials === 'function' && !canSeeFinancials(window._currentUser?.role)) {
+    showToast('Budget editing is available to PM and Admin accounts only.', 'error');
+    return;
+  }
   const vName = validateProjectName($('editProjName')?.value);
   if (!vName.ok) { showToast(vName.msg, 'error'); return; }
   const name = vName.value;
@@ -1360,52 +1969,98 @@ async function editProject() {
   showToast(`Project "${name}" updated!`);
 }
 
-// ════════════════════════════════════════════════════════════
-//  DASHBOARD ALERTS BAR
-// ════════════════════════════════════════════════════════════
-function renderDashboardAlerts(projects) {
-  const el = $('dashboardAlerts');
-  if (!el) return;
+// ============================================================
+//  SCROLL TO SECTION HELPER
+// ============================================================
+function scrollToSection(id) {
+  var el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
-  const critical = projects.filter(p => {
+// ============================================================
+//  DASHBOARD ALERTS BAR
+// ============================================================
+function renderDashboardAlerts(projects) {
+  const active = projects.filter(p => p.status === 'active');
+  const activeCount = active.length;
+
+  /* --- Critical: projects at risk (95%+ budget used) --- */
+  const criticalProjects = active.filter(p => {
     const eff = effectiveBudget(p);
     const spent = dashboardTotalSpent(p);
-    return pct(spent, eff.total) >= 95;
-  }).length;
+    return eff.total > 0 && pct(spent, eff.total) >= 95;
+  });
 
-  const warning = projects.filter(p => {
+  /* --- Warning: projects approaching limit or with open issues/delays --- */
+  const warningProjects = active.filter(p => {
     const eff = effectiveBudget(p);
     const spent = dashboardTotalSpent(p);
     const pUsed = pct(spent, eff.total);
-    return pUsed >= 80 && pUsed < 95;
-  }).length;
+    const rollup = dashboardRollup(p);
+    const openIssues = parseFloat(rollup.openIssues ?? p.siteLogRollups?.openIssues) || 0;
+    const openDelays = parseFloat(rollup.openDelays ?? p.siteLogRollups?.openDelays) || 0;
+    return (pUsed >= 80 && pUsed < 95) || openIssues > 0 || openDelays > 0;
+  });
 
-  const active = projects.filter(p => p.status === 'active').length;
-  const totalBudget = projects.reduce((s, p) => s + effectiveBudget(p).total, 0);
-  const totalSpent = projects.reduce((s, p) => s + dashboardTotalSpent(p), 0);
-  const pendingApprovals = dashboardPendingApprovalItems(projects).length;
-  const openIssues = projects.reduce((sum, p) => sum + (parseFloat(dashboardRollup(p).openIssues ?? p.siteLogRollups?.openIssues) || 0), 0);
-  const openDelays = projects.reduce((sum, p) => sum + (parseFloat(dashboardRollup(p).openDelays ?? p.siteLogRollups?.openDelays) || 0), 0);
-  const opsLine = ` &nbsp;|&nbsp; Pending: ${pendingApprovals} &nbsp;|&nbsp; Issues: ${openIssues} &nbsp;|&nbsp; Delays: ${openDelays}`;
+  const pendingApprovals = dashboardPendingApprovalItems(projects);
+  const warningCount = warningProjects.length + pendingApprovals.length;
 
-  if (critical > 0) {
-    el.className = 'dashboard-alerts warn-critical';
-    el.innerHTML = `<strong>${critical} project${critical !== 1 ? 's' : ''}</strong> over budget &nbsp;|&nbsp; ${warning} warning &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}${opsLine}`;
-  } else if (warning > 0) {
-    el.className = 'dashboard-alerts warn-high';
-    el.innerHTML = `<strong>${warning} project${warning !== 1 ? 's' : ''}</strong> approaching budget limit &nbsp;|&nbsp; ${active} active &nbsp;|&nbsp; Budget: ${peso(totalSpent)} / ${peso(totalBudget)}${opsLine}`;
-  } else if (projects.length) {
-    el.className = (pendingApprovals || openIssues || openDelays) ? 'dashboard-alerts warn-high' : 'dashboard-alerts warn-ok';
-    el.innerHTML = `All ${active} active project${active !== 1 ? 's' : ''} within budget &nbsp;|&nbsp; Total: ${peso(totalSpent)} / ${peso(totalBudget)}${opsLine}`;
-  } else {
-    el.className = 'dashboard-alerts';
-    el.innerHTML = '';
+  /* Build attention lists */
+  function attnItem(icon, name, detail, projectId) {
+    const wsLink = projectId ? ` onclick="openProjectFromHub('${escapeHtml(projectId)}')"` : '';
+    return `<div class="dash-attn-item"${wsLink}><span>${icon}</span> <strong>${escapeHtml(name || '')}</strong> ${detail ? '&middot; ' + escapeHtml(detail) : ''}</div>`;
   }
+
+  /* Critical list */
+  var criticalHtml = criticalProjects.length
+    ? criticalProjects.map(p => attnItem('&#x1F525;', p.name, pct(dashboardTotalSpent(p), effectiveBudget(p).total) + '% used', p.id)).join('')
+    : '<span class="dash-attn-item" style="opacity:0.6">All projects within budget</span>';
+
+  /* Warning list */
+  var warningItems = [];
+  warningProjects.forEach(p => {
+    const eff = effectiveBudget(p);
+    const spent = dashboardTotalSpent(p);
+    const pUsed = pct(spent, eff.total);
+    if (pUsed >= 80 && pUsed < 95) {
+      warningItems.push(attnItem('&#x1F4B0;', p.name, pUsed + '% budget used', p.id));
+    }
+    const rollup = dashboardRollup(p);
+    const openIssues = parseFloat(rollup.openIssues ?? p.siteLogRollups?.openIssues) || 0;
+    const openDelays = parseFloat(rollup.openDelays ?? p.siteLogRollups?.openDelays) || 0;
+    if (openIssues > 0) warningItems.push(attnItem('&#x26A0;&#xFE0F;', p.name, openIssues + ' open issues', p.id));
+    if (openDelays > 0) warningItems.push(attnItem('&#x23F3;', p.name, openDelays + ' delays', p.id));
+  });
+  pendingApprovals.forEach(a => {
+    warningItems.push(attnItem('&#x1F4CB;', a.projectName, a.label));
+  });
+  var warningHtml = warningItems.length ? warningItems.slice(0, 6).join('') : '<span class="dash-attn-item" style="opacity:0.6">No warnings</span>';
+
+  /* Info list */
+  var infoHtml = activeCount
+    ? active.slice(0, 5).map(p => {
+        const eff = effectiveBudget(p);
+        const spent = dashboardTotalSpent(p);
+        const statusIcon = p.status === 'active' ? '&#x1F7E2;' : '&#x1F534;';
+        return attnItem(statusIcon, p.name, peso(spent) + ' / ' + peso(eff.total), p.id);
+      }).join('') + (activeCount > 5 ? '<span class="dash-attn-item" style="opacity:0.6">+' + (activeCount - 5) + ' more projects</span>' : '')
+    : '<span class="dash-attn-item" style="opacity:0.6">No active projects</span>';
+
+  setText('dashAttnCriticalCount', criticalProjects.length);
+  setText('dashAttnWarningCount', warningCount);
+  setText('dashAttnInfoCount', activeCount);
+  setHTML('dashAttnCriticalList', criticalHtml);
+  setHTML('dashAttnWarningList', warningHtml);
+  setHTML('dashAttnInfoList', infoHtml);
+
+  /* Toggle visibility of attention groups */
+  var criticalEl = $('dashAttnCritical');
+  if (criticalEl) criticalEl.style.display = criticalProjects.length ? '' : 'none';
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  COMPLETED PROJECTS SUMMARY
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function renderCompletedSummary(projects) {
   const count = projects.length;
   setText('dsCompCount', count);
@@ -1427,9 +2082,9 @@ function renderCompletedSummary(projects) {
   }
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  HUB CSV EXPORT
-// ════════════════════════════════════════════════════════════
+// ============================================================
 async function exportHubCSV() {
   const btn = event?.currentTarget;
   await withBusy(btn, async () => {
@@ -1457,9 +2112,9 @@ async function exportHubCSV() {
   });
 }
 
-// ════════════════════════════════════════════════════════════
+// ============================================================
 //  MANUAL REFRESH
-// ════════════════════════════════════════════════════════════
+// ============================================================
 function refreshHub() {
   const btn = $('refreshBtn');
   if (btn) {
@@ -1470,7 +2125,7 @@ function refreshHub() {
   showToast('Dashboard refreshed', 'success');
 }
 
-// ── Expose ──────────────────────────────────────────────────
+// -- Expose --------------------------------------------------
 window.createProject = createProject;
 window.markComplete = markComplete;
 window.reopenProject = reopenProject;

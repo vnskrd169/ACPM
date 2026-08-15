@@ -73,6 +73,15 @@ Result: PASS DATA QA + BOSS BROWSER SMOKE
   - Confirmed `login.html` loads current `utils.js?v=84`, `auth.js?v=85`, and `main.js?v=95`.
   - Confirmed service worker caches the current login shell scripts.
   - Confirmed `main.js` actively checks for service worker updates and reloads once a new worker controls the page.
+- [x] PM workload clarity pass after cache v116:
+  - Recent Activity now renders project name, action label, optional actor, relative time/date, and module-colored status dot.
+  - No new Firebase reads, writes, paths, or listeners were added.
+  - Static syntax and PWA shell gates passed for `main.js?v=99` and `style.css?v=100`.
+- [x] Live browser smoke after cache v116:
+  - Signed-in Boss reached `dashboard.html` with Hub visible and System Reports hidden.
+  - Hub button from Team Admin returned to the Hub, not System Reports.
+  - Served dashboard shell had no mojibake markers in visible body text.
+  - Console errors/warnings: none after the defensive service-worker registration fix.
 - [x] Browser PWA update smoke after cache v96:
   - First signed-in redirected dashboard load reproduced the old cached shell.
   - Follow-up route after the service-worker update loaded current `main.js?v=95`, `labor.js?v=94`, `materials.js?v=93`, `changeorders.js?v=94`, `sitelog.js?v=94`, `suppliers.js?v=94`, `equipment.js?v=94`, `defects.js?v=94`, and `tasks.js?v=94`.
@@ -82,5 +91,5 @@ Result: PASS DATA QA + BOSS BROWSER SMOKE
 
 - Pending approvals appear as dashboard alert counts. A dedicated approvals panel is future UI polish because Boss Lifecycle Requests already has the actionable approval view.
 - Manual QA requires QA-safe project rollups to avoid polluting live records.
-- PM/APM/Admin role-specific browser QA still needs real QA accounts.
+- PM/APM/Admin role-specific browser QA still needs periodic real QA account reruns after major rules changes.
 - Browser automation logs may retain old warning entries; use fresh timestamps and real Firebase gate output for deployed-rule status.

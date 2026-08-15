@@ -1,0 +1,28 @@
+node_modules/
+.tmp_jdk/
+tmp_jdk/
+firebase-debug.log
+database-debug.log
+test-results/
+playwright-report/
+*.tsbuildinfo
+.DS_Store
+
+# Firebase service account keys (NEVER commit)
+*service-account*.json
+*ServiceAccount*.json
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Firebase cache
+.firebase/*.cache
+
+# Build artifacts
+dist/
+build/
+
+# Standalone experimental face-attendance prototype (kept on feature/pmos-face-attendance-assist branch)
+line17-face-attendance/

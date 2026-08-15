@@ -1,0 +1,23 @@
+rules_version = '2';
+
+/*
+   ACPM — Firebase Storage rules (Drive-only policy)
+
+   Photo storage was fully migrated to Google Drive via the approved Apps
+   Script transport (PMOS_CONFIG.driveUploadUrl). Firebase Storage is no
+   longer used for any upload path (PMOS photos, Site Log photos, Face
+   Attendance enrollment/lab/selfie queue, or profile photos).
+
+   Policy:
+     - All writes are DENIED (no new Firebase Storage objects).
+     - Reads remain allowed for authenticated users so any legacy Firebase
+       Storage URLs stored before migration still render.
+*/
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}

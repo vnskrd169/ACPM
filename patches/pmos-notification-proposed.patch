@@ -1,0 +1,21 @@
+From: PMOS Task
+Date: 2026-07-17
+Subject: [PROPOSED] PMOS notification integration for ACPM core
+
+This patch is NOT applied. PMOS notification events are created via
+createNotificationEvent() which is part of the ACPM notification system.
+If ACPM core notifications.js ever changes, the PMOS notification type
+strings may need updating.
+
+PMOS notification types used:
+- quick_update_submitted
+- site_log_submitted
+- issue_submitted
+- material_request_submitted
+- follow_up_created
+- meeting_notes_created
+- photo_proof_uploaded
+
+These types are compatible with the existing createNotificationEvent()
+API in notifications.js. No core changes to notifications.js are needed
+for PMOS functionality.

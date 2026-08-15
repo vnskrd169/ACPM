@@ -1,6 +1,6 @@
 # ACPM Site Log v1 Workflow and Firebase Schema
 
-Status: SITE LOG V1 RC1 WORKFLOW/DATA STABLE - REAL FIREBASE QA PASSED; MEDIA UPLOAD/OFFLINE QUEUE FUTURE
+Status: SITE LOG V1 RC1 WORKFLOW/DATA STABLE - REAL FIREBASE QA PASSED; PHOTO UPLOAD LIVE (GOOGLE DRIVE APPS SCRIPT); OFFLINE QUEUE FUTURE
 
 Site Log v1 must support real daily construction documentation while staying future-ready for offline use and media upload.
 
@@ -22,7 +22,17 @@ Existing behavior:
 - Lists logs grouped by month and date.
 - Exports text report.
 - Delete action now voids a log instead of permanently removing it.
-- Photos can be rendered if a `photos` array exists, but upload flow is not implemented.
+- Photos can be rendered from a `photos` array or `media` metadata.
+- **Photo upload IS implemented (cache v139)**: the Site Log form has an
+  "Add Photos" picker (multiple, images only, max 10 MB each). Selected
+  photos are auto-compressed client-side (max 1600 px, JPEG ~0.75) and
+  uploaded through the **approved Google Drive Apps Script transport**
+  (`PMOS_CONFIG.driveUploadUrl` — the same endpoint PMOS uses) via
+  `uploadSiteLogPhoto()`. The log is created with the same client-generated
+  `logId` and stores the Drive photo URL + thumbnail in `media` and `photos`.
+  No Firebase Storage, no payment, no console setup. If the Drive endpoint is
+  unavailable, the form falls back to the photo-URL textarea (existing
+  behavior) with a warning toast.
 
 Production gaps fixed in v1 data foundation:
 
@@ -33,8 +43,11 @@ Production gaps fixed in v1 data foundation:
 
 Remaining RC1 limitations:
 
-- Firebase Storage upload is not implemented; RC1 supports photo/media URL metadata only.
-- Offline Site Log queueing is not implemented; generic PWA caching remains separate from field-entry retry.
+- Offline Site Log queueing is not implemented in the office web app; the
+  PMOS field shell already has full offline queueing for all modules.
+- Storage emulator rules test stays skipped (pinned emulator runtime
+  limitation, not an app defect); site log photos use Google Drive, so no
+  Firebase Storage rules are involved.
 
 ## Target Workflow
 
@@ -222,7 +235,7 @@ Site Log should be designed for field use:
 | `updateSiteLog(projectId, logId, data)` | Updates log and writes revision metadata. |
 | `voidSiteLog(projectId, logId, reason)` | Voids instead of deleting. |
 | `createSiteLogEvent(projectId, event)` | Appends site-log event history. |
-| `addSiteLogMedia(projectId, logId, file)` | Uploads media and writes metadata. |
+| `addSiteLogMedia(projectId, logId, file)` | Uploads media and writes metadata. (implemented — wraps `uploadSiteLogPhoto`, Google Drive transport) |
 | `queueSiteLogOffline(projectId, data)` | Stores pending log while offline. |
 | `syncPendingSiteLogs(projectId)` | Replays local pending logs safely. |
 | `rebuildSiteLogRollups(projectId)` | Rebuilds summary counts from history. |
@@ -236,6 +249,9 @@ Implemented helper functions in `sitelog.js`:
 - `voidSiteLog(projectId, logId, reason)`
 - `createSiteLogEvent(projectId, event)`
 - `rebuildSiteLogRollups(projectId)`
+- `uploadSiteLogPhoto(pid, logId, file, index)` (Google Drive Apps Script)
+- `addSiteLogMedia(projectId, logId, file)`
+- `compressSiteLogImage(file)` / `onLogPhotoSelected(input)` (UI)
 
 Real Firebase QA helper:
 
@@ -291,8 +307,8 @@ Existing permanent delete behavior must be replaced by `status = voided`.
 ## Known Limitations
 
 - Site Log now has structured text fields, but not a full dedicated editor for each nested item.
-- Media metadata can be stored through photo URLs, but Firebase Storage upload is not implemented in RC1.
-- Offline log queue is not implemented in RC1.
+- Offline log queue is not implemented in the office web app in RC1 (PMOS field shell already queues all modules offline).
+- Photo upload requires the configured Google Drive Apps Script endpoint (same as PMOS).
 - Weather is manually entered; no weather API integration is planned for v1.
 - GPS availability depends on browser/device permission.
 - Real Firebase QA creates permanent historical QA records, so QA projects are archived after each run.
@@ -308,5 +324,5 @@ Site Log v1 RC1 gate:
 - [x] Events and notification hooks are written for posted/revised/voided.
 - [x] Rollups rebuild from historical logs and exclude voided logs from active totals.
 - [x] Reports can read historical `siteLogs` and `siteLogRollups`.
-- [ ] Firebase Storage upload is future work before media-heavy field deployment.
-- [ ] Offline pending-log queue is future work before offline field deployment.
+- [x] Google Drive photo upload (site log photos) implemented and wired (cache v139, Apps Script transport, no card).
+- [ ] Offline pending-log queue is future work before offline field deployment (PMOS field shell already covers field offline entry).

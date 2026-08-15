@@ -1,0 +1,569 @@
+/* ==========================================================================
+   ACPM Brand Design Tokens
+   Centralized design variables for ACPM, PMOS, and future ACPM modules.
+
+   Usage: @import url('assets/brand/acpm-brand.css');
+   Or:    <link rel="stylesheet" href="assets/brand/acpm-brand.css">
+
+   These tokens are additive. They do not replace existing styles but
+   provide a shared foundation for new and upgraded components.
+   ========================================================================== */
+
+:root {
+  /* ---- Primary Brand ---- */
+  --acpm-brand-primary: #7c3aed;
+  --acpm-brand-primary-strong: #6d28d9;
+  --acpm-brand-primary-muted: #a78bfa;
+  --acpm-brand-primary-subtle: rgba(124, 58, 237, 0.08);
+  --acpm-brand-primary-glow: rgba(124, 58, 237, 0.15);
+
+  /* ---- PMOS Brand ---- */
+  --acpm-pmos-primary: #0f766e;
+  --acpm-pmos-strong: #115e59;
+  --acpm-pmos-muted: #14b8a6;
+  --acpm-pmos-subtle: #ccfbf1;
+  --acpm-pmos-glow: rgba(15, 118, 110, 0.15);
+
+  /* ---- Accent Colors ---- */
+  --acpm-accent-blue: #3b82f6;
+  --acpm-accent-cyan: #06b6d4;
+  --acpm-accent-indigo: #6366f1;
+  --acpm-accent-amber: #f59e0b;
+  --acpm-accent-rose: #f43f5e;
+
+  /* ---- Semantic Colors ---- */
+  --acpm-success: #10b981;
+  --acpm-success-subtle: rgba(16, 185, 129, 0.08);
+  --acpm-success-strong: #059669;
+  --acpm-warning: #f59e0b;
+  --acpm-warning-subtle: rgba(245, 158, 11, 0.08);
+  --acpm-warning-strong: #d97706;
+  --acpm-danger: #ef4444;
+  --acpm-danger-subtle: rgba(239, 68, 68, 0.08);
+  --acpm-danger-strong: #dc2626;
+  --acpm-info: #3b82f6;
+  --acpm-info-subtle: rgba(59, 130, 246, 0.08);
+
+  /* ---- Neutral / Surface ---- */
+  --acpm-surface: #111318;
+  --acpm-surface-elevated: #1a1d24;
+  --acpm-surface-raised: #22262e;
+  --acpm-surface-overlay: #272b34;
+  --acpm-surface-card: #1e2128;
+  --acpm-surface-input: #1a1d24;
+  --acpm-surface-hover: #22262e;
+  --acpm-border: #2e3340;
+  --acpm-border-light: #383d4a;
+  --acpm-border-focus: #7c3aed;
+
+  /* ---- Text Colors ---- */
+  --acpm-text: #e2e8f0;
+  --acpm-text-strong: #f1f5f9;
+  --acpm-text-muted: #94a3b8;
+  --acpm-text-dim: #64748b;
+  --acpm-text-inverse: #0f172a;
+
+  /* ---- Shadows ---- */
+  --acpm-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --acpm-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --acpm-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2);
+  --acpm-shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4), 0 4px 6px rgba(0, 0, 0, 0.2);
+  --acpm-shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5), 0 10px 10px rgba(0, 0, 0, 0.2);
+
+  /* ---- Border Radius ---- */
+  --acpm-radius-xs: 4px;
+  --acpm-radius-sm: 6px;
+  --acpm-radius-md: 8px;
+  --acpm-radius-lg: 12px;
+  --acpm-radius-xl: 16px;
+  --acpm-radius-full: 9999px;
+
+  /* ---- Spacing Scale ---- */
+  --acpm-space-1: 4px;
+  --acpm-space-2: 8px;
+  --acpm-space-3: 12px;
+  --acpm-space-4: 16px;
+  --acpm-space-5: 20px;
+  --acpm-space-6: 24px;
+  --acpm-space-8: 32px;
+  --acpm-space-10: 40px;
+  --acpm-space-12: 48px;
+  --acpm-space-16: 64px;
+
+  /* ---- Typography ---- */
+  --acpm-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --acpm-font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  --acpm-text-xs: 11px;
+  --acpm-text-sm: 13px;
+  --acpm-text-base: 14px;
+  --acpm-text-lg: 16px;
+  --acpm-text-xl: 20px;
+  --acpm-text-2xl: 24px;
+  --acpm-text-3xl: 30px;
+
+  /* ---- Animation ---- */
+  --acpm-duration-fast: 150ms;
+  --acpm-duration-normal: 250ms;
+  --acpm-duration-slow: 400ms;
+  --acpm-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --acpm-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --acpm-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --acpm-ease-bounce: cubic-bezier(0.68, -0.55, 0.27, 1.55);
+
+  /* ---- Z-Index Scale ---- */
+  --acpm-z-base: 0;
+  --acpm-z-dropdown: 100;
+  --acpm-z-sticky: 200;
+  --acpm-z-overlay: 300;
+  --acpm-z-modal: 400;
+  --acpm-z-toast: 500;
+
+  /* ---- Safe Areas ---- */
+  --acpm-safe-top: env(safe-area-inset-top, 0px);
+  --acpm-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --acpm-safe-left: env(safe-area-inset-left, 0px);
+  --acpm-safe-right: env(safe-area-inset-right, 0px);
+
+  /* ---- PMOS Shell Specific ---- */
+  --acpm-nav-height: 60px;
+  --acpm-bottom-nav-height: 56px;
+  --acpm-header-height: 52px;
+  --acpm-touch-target: 44px;
+}
+
+/* ---- Keyframe Animations ---- */
+@keyframes acpm-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes acpm-fade-in-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes acpm-fade-in-scale {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes acpm-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes acpm-slide-down {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes acpm-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes acpm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes acpm-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes acpm-scale-in {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* ---- Animation Utility Classes ---- */
+.acpm-anim-fade-in { animation: acpm-fade-in var(--acpm-duration-normal) var(--acpm-ease-out) both; }
+.acpm-anim-fade-in-up { animation: acpm-fade-in-up var(--acpm-duration-normal) var(--acpm-ease-out) both; }
+.acpm-anim-fade-in-scale { animation: acpm-fade-in-scale var(--acpm-duration-normal) var(--acpm-ease-out) both; }
+.acpm-anim-slide-up { animation: acpm-slide-up var(--acpm-duration-slow) var(--acpm-ease-out) both; }
+
+/* ---- Skeleton Loading ----
+   Base .acpm-skeleton + .acpm-skeleton-text inherit from .skeleton / .skeleton-text in style.css.
+   Only dimension-override sub-classes remain here. */
+.acpm-skeleton-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.acpm-skeleton-card {
+  height: 100px;
+  border-radius: var(--acpm-radius-lg);
+}
+
+.acpm-skeleton-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+}
+
+/* ---- Focus Ring ---- */
+:focus-visible {
+  outline: 2px solid var(--acpm-brand-primary);
+  outline-offset: 2px;
+}
+
+/* ---- Tap Highlight Prevention ---- */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Scrollbar Styling ---- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--acpm-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--acpm-border-light);
+}
+
+/* ==========================================================================
+   ACPM COMPONENT LIBRARY — Reference & Standardized Classes
+
+   All ACPM and PMOS components use these shared tokens. Classes are named
+   with .acpm-* prefix for ACPM, .pmos-* for PMOS-specific overrides.
+   Legacy .btn-* and module-specific classes in style.css remain supported.
+
+   ── Available Components ────────────────────────────────────
+
+   BUTTONS
+   ├─ .btn-primary        Primary CTA (create, submit, install)
+   ├─ .btn-ws-secondary   Secondary/outline (workspace actions)
+   ├─ .btn-ws-back        Back navigation
+   ├─ .btn-refresh        Icon refresh
+   ├─ .btn-hub            Hub navigation
+   ├─ .btn-add            Add item
+   ├─ .btn-lg             Large size modifier
+   ├─ .btn-sm             Small size modifier
+   ├─ .btn-xs             Extra small
+   ├─ .btn-icon           Icon-only with tooltip
+   ├─ .btn-group          Button group
+   ├─ .acpm-btn-ghost     Minimal/transparent button
+   ├─ .acpm-btn-cta       Prominent CTA (PMOS actions)
+   └─ PMOS: .pmos-save, .pmos-btn-draft, .pmos-back-btn, .pmos-more-btn
+
+   CARDS
+   ├─ .card               Base card container (radius, surface, border, shadow)
+   ├─ .card-title         Card heading row
+   ├─ .card-header        Alternative card header
+   ├─ .card-accent-*      Left accent bar (green, amber, red, blue, teal, purple)
+   ├─ .panel-card         Panel-style card (workspace panels)
+   ├─ .compact-card       Compact variant with reduced padding
+   ├─ .kpi-card           KPI stat card with accent bar
+   ├─ .kpi-card.kpi-*     Color variants (green, red, amber, blue, teal, purple)
+   ├─ .proj-card          Project hub card with budget details
+   ├─ .cmp-card           Budget comparison card
+   ├─ .contract-dash-card Billing contract dashboard
+   └─ PMOS: .pmos-stat-card, .pmos-action-card, .pmos-task-row, .pmos-today-stat
+
+   BADGES (Unified system — prefer these in new code)
+   ├─ .badge              Base badge
+   ├─ .badge-purple       Primary brand
+   ├─ .badge-green        Success
+   ├─ .badge-amber        Warning
+   ├─ .badge-red          Danger/error
+   ├─ .badge-blue         Info
+   ├─ .badge-teal         PMOS brand
+   ├─ .badge-dim          Muted/secondary
+   ├─ .badge-ghost        Outline style
+   ├─ .badge-white        Light overlay
+   ├─ .badge-dot          Dot-style indicator
+   └─ PMOS: .pmos-badge-* (aliases → .badge-*, backward compatible)
+
+   FORMS
+   ├─ input, select, textarea  Base (standardized with --surface, --border, --radius)
+   ├─ .field-label        Form field label
+   ├─ .field-hint         Helper text below field
+   ├─ .field-error        Error state wrapper
+   ├─ .field-error-text   Error message
+   ├─ .field-success      Success state wrapper
+   ├─ .field-success-text Success message
+   ├─ .form-grid          Responsive form grid
+   ├─ .form-actions       Action button row
+   ├─ .form-grid.single   Single-column grid
+   └─ PMOS: .pmos-form-actions, .pmos-project-bar select
+
+   DIALOGS / MODALS
+   ├─ .modal-overlay      Backdrop overlay
+   ├─ .modal-box          Modal container
+   ├─ .modal-wide         Wide modal variant
+   ├─ .dialog-overlay     Dialog backdrop
+   ├─ .dialog             Dialog container
+   ├─ .dialog-header      Dialog title row
+   ├─ .dialog-body        Dialog content
+   ├─ .dialog-footer      Dialog action buttons
+   ├─ .dialog-close       Close button
+   └─ .dialog-confirm-icon.*  Status icon (warning, danger, success, info)
+
+   TABLES
+   ├─ .led-table          Materials ledger table
+   ├─ .hist-table         History/billing table
+   ├─ .movement-table     Material movements
+   └─ .empty-cell         Empty cell indicator
+
+   KPIs / STATS
+   ├─ .kpi-row            KPI card row
+   ├─ .kpi-card           Individual KPI
+   ├─ .kpi-num            KPI number value
+   ├─ .kpi-label          KPI label text
+   ├─ .kpi-danger         Red KPI (warning)
+   ├─ .kpi-safe           Green KPI (healthy)
+   ├─ .kpi-warn           Amber KPI
+   └─ PMOS: .pmos-stat-card (4-column stat grid)
+
+   NAVIGATION
+   ├─ .hdr                Main header bar
+   ├─ .hdr-brand          Header logo area
+   ├─ .hdr-right          Header right actions
+   ├─ .tab-group          Tab navigation bar
+   ├─ .tab-btn            Individual tab button
+   ├─ .tab-active         Active tab state
+   ├─ .tab-scroll         Scrollable tab container
+   ├─ .hub-tab-row        Hub-specific tab row
+   ├─ .hub-tab            Hub tab button
+   └─ PMOS: .pmos-bottom-nav, .pmos-nav-btn, .pmos-project-bar
+
+   TABLES / LISTS
+   ├─ .led-table          Materials/purchase ledger table
+   ├─ .hist-table         Billing/change history table
+   ├─ .overflow-scroll    Scrollable table wrapper
+   └─ .task-stats-row     Task stats summary bar
+
+   LOADING / SKELETON
+   ├─ .app-loading        Full-page loading overlay
+   ├─ .skeleton           Base shimmer placeholder
+   ├─ .skeleton-text      Text line shimmer
+   ├─ .skeleton-table-row Table row height skeleton
+   ├─ .skeleton-kpi-card  KPI card height skeleton
+   ├─ .skeleton-progress-bar  Progress bar height skeleton
+   ├─ .panel-skeleton     Full panel skeleton
+   ├─ .panel-content-wrap Content container for fade-in transition
+   └─ PMOS: .pmos-skeleton-row, .pmos-skeleton-card, .pmos-skeleton-stat
+
+   SUMMARY / DASHBOARD
+   ├─ .dash-summary       KPI summary grid
+   ├─ .dash-summary-grid  Stat grid container
+   ├─ .dash-stat          Individual stat
+   ├─ .dash-stat-label    Stat label
+   ├─ .dash-stat-val      Stat value
+   ├─ .dashboard-split    Two-column dashboard layout
+   ├─ .budget-section     Budget breakdown within project card
+   ├─ .prog-ring          SVG progress ring
+   └─ .mini-bar / .mini-fill  Compact progress bar
+
+   ── Token Usage Guidelines ─────────────────────────────────
+
+   Colors:     Use --acpm-* brand tokens over hardcoded hex values
+   Spacing:    Use --acpm-space-* for consistent spacing
+   Radius:     Use --acpm-radius-* for consistent border-radius
+   Shadows:    Use --acpm-shadow-* for consistent depth
+   Typography: Use --acpm-font-* and --acpm-text-* for consistent sizing
+   Animation:  Use --acpm-duration-* and --acpm-ease-* for timing
+   ========================================================================== */
+
+/* ---- Standardized ACPM Buttons ---- */
+
+/* Ghost button — transparent with hover state */
+.acpm-btn-ghost {
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: var(--acpm-text-muted);
+  font-size: var(--acpm-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--acpm-radius-sm);
+  transition: background var(--acpm-duration-fast) var(--acpm-ease-in-out),
+              color var(--acpm-duration-fast) var(--acpm-ease-in-out);
+}
+
+.acpm-btn-ghost:hover {
+  background: var(--acpm-surface-hover);
+  color: var(--acpm-text);
+}
+
+.acpm-btn-ghost:active {
+  transform: scale(0.97);
+}
+
+/* CTA button — prominent, colored, used for primary actions across apps */
+.acpm-btn-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border: none;
+  background: var(--acpm-brand-primary);
+  color: #ffffff;
+  font-size: var(--acpm-text-base);
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--acpm-radius-md);
+  min-height: var(--acpm-touch-target);
+  transition: background var(--acpm-duration-fast) var(--acpm-ease-in-out),
+              transform var(--acpm-duration-fast) var(--acpm-ease-out),
+              box-shadow var(--acpm-duration-fast) var(--acpm-ease-in-out);
+}
+
+.acpm-btn-cta:hover {
+  background: var(--acpm-brand-primary-strong);
+  box-shadow: 0 4px 12px var(--acpm-brand-primary-glow);
+}
+
+.acpm-btn-cta:active {
+  transform: scale(0.97);
+}
+
+.acpm-btn-cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Small CTA variant */
+.acpm-btn-cta-sm {
+  padding: 8px 16px;
+  font-size: var(--acpm-text-sm);
+  min-height: 32px;
+  border-radius: var(--acpm-radius-sm);
+}
+
+/* Danger CTA — destructive actions */
+.acpm-btn-danger {
+  background: var(--acpm-danger);
+}
+
+.acpm-btn-danger:hover {
+  background: var(--acpm-danger-strong);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+/* Success CTA — confirm/completion actions */
+.acpm-btn-success {
+  background: var(--acpm-success);
+}
+
+.acpm-btn-success:hover {
+  background: var(--acpm-success-strong);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+/* ---- Standardized ACPM Cards ---- */
+
+.acpm-card {
+  background: var(--acpm-surface-card);
+  border: 1px solid var(--acpm-border);
+  border-radius: var(--acpm-radius-lg);
+  padding: var(--acpm-space-4);
+  box-shadow: var(--acpm-shadow-sm);
+  transition: border-color var(--acpm-duration-fast) var(--acpm-ease-in-out),
+              box-shadow var(--acpm-duration-fast) var(--acpm-ease-in-out);
+}
+
+.acpm-card:hover {
+  border-color: var(--acpm-border-light);
+  box-shadow: var(--acpm-shadow-md);
+}
+
+.acpm-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--acpm-space-3);
+  margin-bottom: var(--acpm-space-4);
+  padding-bottom: var(--acpm-space-3);
+  border-bottom: 1px solid var(--acpm-border);
+}
+
+.acpm-card-title {
+  font-size: var(--acpm-text-lg);
+  font-weight: 600;
+  color: var(--acpm-text-strong);
+}
+
+.acpm-card-body {
+  color: var(--acpm-text);
+  font-size: var(--acpm-text-base);
+}
+
+/* ---- Standardized Form Group ---- */
+
+.acpm-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.acpm-form-group label {
+  font-size: var(--acpm-text-sm);
+  font-weight: 500;
+  color: var(--acpm-text-muted);
+}
+
+/* ---- Standardized Badge (alias to .badge-* for discoverability) ---- */
+
+.acpm-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--acpm-radius-full);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1.4;
+}
+
+/* ---- Utility Classes ---- */
+.acpm-text-primary { color: var(--acpm-brand-primary); }
+.acpm-text-pmos { color: var(--acpm-pmos-primary); }
+.acpm-text-muted { color: var(--acpm-text-muted); }
+.acpm-text-success { color: var(--acpm-success); }
+.acpm-text-warning { color: var(--acpm-warning); }
+.acpm-text-danger { color: var(--acpm-danger); }
+
+.acpm-bg-surface { background: var(--acpm-surface); }
+.acpm-bg-elevated { background: var(--acpm-surface-elevated); }
+.acpm-bg-card { background: var(--acpm-surface-card); }
+
+.acpm-border { border: 1px solid var(--acpm-border); }
+.acpm-border-light { border: 1px solid var(--acpm-border-light); }
+
+.acpm-shadow-sm { box-shadow: var(--acpm-shadow-sm); }
+.acpm-shadow-md { box-shadow: var(--acpm-shadow-md); }
+
+.acpm-rounded { border-radius: var(--acpm-radius-md); }
+.acpm-rounded-lg { border-radius: var(--acpm-radius-lg); }
+
+.acpm-flex-center { display: flex; align-items: center; justify-content: center; }
+.acpm-gap-2 { gap: var(--acpm-space-2); }
+.acpm-gap-3 { gap: var(--acpm-space-3); }
+.acpm-gap-4 { gap: var(--acpm-space-4); }
+.acpm-p-4 { padding: var(--acpm-space-4); }
+
+/* ---- Reduced Motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --acpm-duration-fast: 0ms;
+    --acpm-duration-normal: 0ms;
+    --acpm-duration-slow: 0ms;
+  }
+}

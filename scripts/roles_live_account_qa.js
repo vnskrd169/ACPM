@@ -3,7 +3,8 @@ const DB_URL = 'https://acpm-project-system-default-rtdb.asia-southeast1.firebas
 
 const ACTIVE_ROLES = new Set(['boss', 'owner', 'admin', 'pm', 'apm']);
 const ADMIN_ROLES = new Set(['boss', 'owner', 'admin']);
-const ASSIGNED_ROLES = new Set(['pm', 'apm']);
+const COMPANY_PROJECT_ROLES = new Set(['boss', 'owner', 'admin', 'pm']);
+const ASSIGNED_ROLES = new Set(['apm']);
 const DEFERRED_ROLES = new Set(['foreman', 'safety', 'viewer']);
 const RC1_REQUIRED_ROLE_QA = ['admin', 'pm', 'apm'];
 
@@ -115,13 +116,13 @@ async function verifyManagementAccount(account, auth, profile, role) {
   assert(selfProfile && selfProfile.role === role, 'Account must read its own profile', { label: account.label, role });
   checks.push('self profile read');
 
-  if (ADMIN_ROLES.has(role)) {
+  if (COMPANY_PROJECT_ROLES.has(role)) {
     const rootProjects = await readDb('projects', auth.idToken, { shallow: 'true' });
-    assert(rootProjects === null || typeof rootProjects === 'object', 'Admin-capable account must read project index', { label: account.label });
+    assert(rootProjects === null || typeof rootProjects === 'object', 'Company management account must read project index', { label: account.label });
     checks.push('project root read allowed');
   } else if (ASSIGNED_ROLES.has(role)) {
     const rootDenied = await readDb('projects', auth.idToken, { shallow: 'true' }, true);
-    assert(rootDenied.ok === false, 'PM/APM must not read full projects root directly', {
+    assert(rootDenied.ok === false, 'APM must not read full projects root directly', {
       label: account.label,
       status: rootDenied.status,
       assignedProjects,
@@ -131,13 +132,13 @@ async function verifyManagementAccount(account, auth, profile, role) {
       exposedProjectKeyCount: rootDenied.body && typeof rootDenied.body === 'object'
         ? Object.keys(rootDenied.body).length
         : 0,
-      securityImpact: 'Deployed Firebase rules expose the projects index to an assigned PM/APM account.'
+      securityImpact: 'Deployed Firebase rules expose the projects index to an assigned APM account.'
     });
     checks.push('project root read denied');
 
     if (assignedProjects.length) {
       const projectShell = await readDb(`projects/${assignedProjects[0]}`, auth.idToken, { shallow: 'true' });
-      assert(projectShell === null || typeof projectShell === 'object', 'PM/APM must read assigned project', {
+      assert(projectShell === null || typeof projectShell === 'object', 'APM must read assigned project', {
         label: account.label,
         projectId: assignedProjects[0]
       });

@@ -88,7 +88,7 @@ function main() {
     [equipment, 'deleteEquipment', "status: 'archived'", 'Equipment deleteEquipment'],
     [compliance, 'deleteCompliance', "status: 'archived'", 'Compliance deleteCompliance'],
     [defects, 'deleteDefect', "status: 'voided'", 'Defects deleteDefect'],
-    [tasks, 'deleteTask', "status: 'archived'", 'Tasks deleteTask']
+    [tasks, 'deleteTask', "'cancelled'", 'Tasks deleteTask']
   ]) {
     const body = functionBody(source, deleteName);
     assertNoHardDelete(body, label);
@@ -100,8 +100,8 @@ function main() {
   assert(/function watchCompliance\([\s\S]*item\.status !== 'archived'/.test(compliance), 'Compliance active list must hide archived records');
   assert(/function scanComplianceAcrossProjects\([\s\S]*item\.status === 'archived'/.test(compliance), 'Compliance alerts must ignore archived records');
   assert(/function watchDefects\([\s\S]*item\.status !== 'voided'/.test(defects), 'Defects active list must hide voided records');
-  assert(/function watchTasks\([\s\S]*task\.status !== 'archived'/.test(tasks), 'Tasks board must hide archived records');
-  assert(/function watchTaskSummary\([\s\S]*t\.status === 'archived'/.test(tasks), 'Task summary must ignore archived records');
+  assert(/function renderTaskBoard\([\s\S]*Object\.keys\(TASK_STATUS\)/.test(tasks), 'Tasks board must render canonical lifecycle columns including terminal history');
+  assert(/function renderTaskSummary\([\s\S]*task\.status !== 'cancelled'/.test(tasks), 'Task summary must exclude cancelled records from completion calculations');
 
   console.log(JSON.stringify({
     result: 'PASS',
@@ -111,7 +111,7 @@ function main() {
       'Materials legacy ledger deletion cancels instead of removing',
       'Project lifecycle delete routes to archive/restore',
       'Billing, Change Orders, Site Logs, and Suppliers use void/archive flows',
-      'Equipment, Compliance, Defects, and Tasks use archive/void flows'
+      'Equipment, Compliance, and Defects use archive/void flows; Tasks use terminal cancelled history'
     ]
   }, null, 2));
 }

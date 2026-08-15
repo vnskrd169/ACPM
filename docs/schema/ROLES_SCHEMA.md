@@ -10,7 +10,7 @@ ACPM preserves legacy `boss` and `apm` roles while locking RC1 access to managem
 | --- | --- | --- |
 | Boss / Owner | `boss` or `owner` | Full company/admin access, financials, settings, team, audit logs. |
 | Admin | `admin` | Full admin access except identity ownership decisions remain business controlled. |
-| Project Manager | `pm` | Assigned project management with financial/report visibility. |
+| Project Manager | `pm` | Company-wide project creation, APM assignment, financial/report visibility, approvals, and verification. |
 | Assoc. Project Manager | `apm` | Assigned project operations without full profit/collection visibility by default. |
 
 ## Future Roles - Disabled For RC1
@@ -40,6 +40,10 @@ Implemented in `auth.js`:
 
 - `normalizeRole(role)`
 - `isBoss(role)`
+- `isProjectManager(role)`
+- `canSeeAllProjects(role)`
+- `canCreateProjects(role)`
+- `canManageProjectAssignments(role)`
 - `canSeeFinancials(role)`
 - `canEditAssignedProject(role)`
 - `isRc1ActiveRole(role)`
@@ -78,18 +82,23 @@ Admin-rule checks accept:
 boss owner admin
 ```
 
-Project write fallback is limited to assigned `pm` and `apm`.
+PM can read and manage all company projects. APM project access is limited to
+explicit assignments.
 Foreman/Safety/Viewer have no active project read/write access in RC1.
 
 ## RC1 Firebase Access
 
-Project reads/writes are limited to:
+Project reads/writes are limited to active:
 
 ```text
 boss owner admin pm apm
 ```
 
 Foreman/Safety/Viewer are blocked by app helpers and do not receive project data access in RC1.
+
+PM may complete or reopen a project but may not archive it. Boss/Owner/Admin
+retain archive authority. PM may update project assignments only for APM
+profiles and may not change user role, status, or another PM's assignments.
 
 ## Future Roadmap
 
@@ -106,6 +115,11 @@ Roadmap item: build a child-level Firebase read refactor before enabling Foreman
 ## QA Evidence
 
 - `scripts/roles_rc1_matrix_qa.js` verifies the active role matrix, deferred-role deny behavior, financial visibility, assigned-project capabilities, and role-based UI helper behavior.
+- `tests/pmos/production-roles-database.test.ts` verifies the production
+  database rules with the Firebase emulator. Current result: 13/13 PASS.
+- `tests/e2e/pmos-workflow.spec.ts` verifies PM company-wide visibility, APM
+  assigned-only visibility, assignment controls, workspace refresh, and PMOS
+  mobile behavior. Current result: 24/24 full-suite PASS.
 - Result on 2026-07-01: PASS.
 - Service worker cache bumped to `acpm-v86`; app shell now loads `auth.js?v=85`.
 - RC1 role matrix rerun after cache `acpm-v89`: PASS.
@@ -121,7 +135,9 @@ Roadmap item: build a child-level Firebase read refactor before enabling Foreman
 
 ## Known Limitations
 
-- Firebase rules are improved but still need full emulator/deployed-rule QA.
+- Firebase rules pass the production-role emulator suite and Firebase CLI
+  syntax dry-run. Deployed live behavior must still be smoke-tested after each
+  rules release.
 - Field-user roles are deferred for RC1.
 - PM financial visibility is enabled because PM is a management role in the RC1 directive.
 - Existing data may still store `boss`; this remains valid and is intentionally preserved.

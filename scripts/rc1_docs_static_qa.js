@@ -27,6 +27,8 @@ const requiredDocs = [
   'docs/qa/QA_NOTIFICATIONS.md',
   'docs/schema/DASHBOARD_INTEGRATION.md',
   'docs/qa/QA_DASHBOARD.md',
+  'docs/schema/TASKS_SCHEMA.md',
+  'docs/qa/QA_TASKS.md',
   'docs/release/OPERATIONS.md',
   'docs/release/RC1_READINESS.md',
   'docs/release/RC1_POST_DEPLOY_QA.md'
@@ -44,7 +46,8 @@ const modulePairs = [
   ['Roles', 'docs/schema/ROLES_SCHEMA.md', 'docs/qa/QA_ROLES.md'],
   ['Audit', 'docs/schema/AUDIT_SCHEMA.md', 'docs/qa/QA_AUDIT.md'],
   ['Notifications', 'docs/schema/NOTIFICATION_EVENTS.md', 'docs/qa/QA_NOTIFICATIONS.md'],
-  ['Dashboard', 'docs/schema/DASHBOARD_INTEGRATION.md', 'docs/qa/QA_DASHBOARD.md']
+  ['Dashboard', 'docs/schema/DASHBOARD_INTEGRATION.md', 'docs/qa/QA_DASHBOARD.md'],
+  ['Tasks', 'docs/schema/TASKS_SCHEMA.md', 'docs/qa/QA_TASKS.md']
 ];
 
 function read(file) {
@@ -81,8 +84,8 @@ function main() {
 
   assertIncludes('docs/release/RC1_READINESS.md', 'Status: RC1 READY', 'explicit RC1-ready status');
   assertIncludes('docs/release/RC1_READINESS.md', 'Live Firebase RC1 gate: PASS', 'live Firebase RC1 gate result');
-  assertIncludes('docs/release/RC1_READINESS.md', 'cache v97', 'current PWA cache evidence');
-  assertIncludes('docs/release/RC1_READINESS.md', 'main.js?v=95', 'current main.js shell evidence');
+  assertIncludes('docs/release/RC1_READINESS.md', 'cache v130', 'current PWA cache evidence');
+  assertIncludes('docs/release/RC1_READINESS.md', 'main.js?v=106', 'current main.js shell evidence');
   assertIncludes('docs/release/RC1_READINESS.md', 'node scripts/rc1_final_readiness_gate.js', 'final readiness gate command');
   assertIncludes('docs/release/RC1_READINESS.md', 'PASS_RC1_READY', 'current final readiness pass result');
   assertIncludes('docs/release/RC1_READINESS.md', 'Change Orders browser click-through after cache v97', 'Change Orders visible reject modal pass evidence');
@@ -112,6 +115,8 @@ function main() {
   assertIncludes('docs/qa/QA_CHANGEORDER.md', 'UI workflow static QA', 'Change Order UI workflow static QA evidence');
   assertIncludes('docs/qa/QA_CHANGEORDER.md', 'Browser click-through workflow QA, reject modal path after cache v97', 'Change Order reject modal browser QA evidence');
   assertIncludes('docs/qa/QA_SITELOG.md', 'UI workflow static QA', 'Site Log UI workflow static QA evidence');
+  assertIncludes('docs/qa/QA_TASKS.md', '24/24 PASS', 'task browser QA evidence');
+  assertIncludes('docs/schema/TASKS_SCHEMA.md', 'projects/{projectId}/tasks/{taskId}', 'canonical task path');
 
   console.log(JSON.stringify({
     result: 'PASS',
@@ -122,10 +127,11 @@ function main() {
       'module docs include status/QA/known limitation evidence',
       'RC1 readiness is explicitly RC1-ready after final role/UI sign-off',
       'RC1 readiness includes live Firebase gate pass evidence',
-      'RC1 readiness includes current v97/v95 shell evidence',
+      'RC1 readiness includes current v130 shell evidence',
       'post-deploy real Firebase gate is documented',
       'local post-deploy gate is documented as read-only',
       'roles/audit/notification/supplier/dashboard RC1 evidence is documented',
+      'canonical Tasks workflow and QA evidence are documented',
       'Change Order reject modal browser evidence and Site Log UI workflow static evidence are documented'
     ]
   }, null, 2));

@@ -93,8 +93,8 @@ function watchCompliance(pid) {
           ${item.link ? `<a href="${escapeHtml(item.link)}" target="_blank" rel="noopener" class="comp-link">View document \u2197</a>` : ''}
           ${item.notes ? `<div class="comp-notes">${escapeHtml(item.notes)}</div>` : ''}
           <div class="comp-actions">
-            <button class="btn-equip-action" onclick="renewCompliance('${item.id}')">\u21BB Renew</button>
-            <button class="del-item-btn" onclick="deleteCompliance('${item.id}')">\u2715</button>
+            <button class="btn-equip-action" aria-label="Renew compliance for ${escapeHtml(item.name || item.id)}" onclick="renewCompliance('${item.id}')">\u21BB Renew</button>
+            <button class="del-item-btn" aria-label="Delete compliance record ${escapeHtml(item.name || item.id)}" onclick="deleteCompliance('${item.id}')">\u2715</button>
           </div>
         </div>
       `;
@@ -151,7 +151,7 @@ async function addCompliance() {
   const link = $('compLink')?.value.trim() || '';
   const notes = $('compNotes')?.value.trim() || '';
 
-  if (!name) { showToast('Enter a document name.', 'error'); return; }
+  if (!name) { setFieldError($('compName'), 'Enter a document name.'); return; }
 
   await safeDb(() => firebase.database().ref(`projects/${_compPid}/compliance`).push({
     docType, name, refNo, expiryDate, link, notes,

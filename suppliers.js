@@ -387,8 +387,8 @@ function watchGlobalSuppliers() {
         </div>
         <div class="supplier-actions">
           <button class="btn-use-supplier" data-key="${s.key}" data-name="${escapeHtml(s.name).replace(/'/g, "\\'")}">Use in PO</button>
-          <button class="btn-edit-supplier" data-key="${s.key}">\u270E Edit</button>
-          <button class="btn-del-supplier" data-key="${s.key}" data-name="${escapeHtml(s.name).replace(/'/g, "\\'")}">\u2715</button>
+          <button class="btn-edit-supplier" aria-label="Edit ${escapeHtml(s.name)}" data-key="${s.key}">\u270E Edit</button>
+          <button class="btn-del-supplier" aria-label="Delete ${escapeHtml(s.name)}" data-key="${s.key}" data-name="${escapeHtml(s.name).replace(/'/g, "\\'")}">\u2715</button>
         </div>
       `;
 
@@ -412,8 +412,8 @@ async function addSupplier() {
   const bank = $('supBank')?.value.trim() || '';
   const accNum = $('supAccNum')?.value.trim() || '';
   const accName = $('supAccName')?.value.trim() || '';
-  if (!name) { showToast('Enter supplier name.', 'error'); return; }
-  if (name.length > 50) { showToast('Name too long (max 50).', 'error'); return; }
+  if (!name) { setFieldError($('supName'), 'Enter supplier name.'); return; }
+  if (name.length > 50) { setFieldError($('supName'), 'Name too long (max 50).'); return; }
 
   // Check for duplicate
   const dupSnap = await firebase.database().ref('suppliers').orderByChild('name').equalTo(name).once('value');
@@ -458,8 +458,8 @@ async function saveEditSupplier() {
   const bank = $('editSupBank').value.trim() || '';
   const accNum = $('editSupAccNum').value.trim() || '';
   const accName = $('editSupAccName').value.trim() || '';
-  if (!name) { showToast('Name required.', 'error'); return; }
-  if (name.length > 50) { showToast('Name too long.', 'error'); return; }
+  if (!name) { setFieldError($('supName'), 'Name required.'); return; }
+  if (name.length > 50) { setFieldError($('supName'), 'Name too long.'); return; }
 
   await safeDb(() => updateSupplier(key, {
     name, contact, specialty: spec, bankName: bank, accNum, accName

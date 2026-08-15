@@ -195,7 +195,8 @@ Current result:
 
 - `scripts/roles_live_account_qa.js`: PASS
 - `scripts/rc1_deployed_rules_security_qa.js`: PASS
-- PM/APM full-root `projects` read: denied.
+- PM full-root `projects` read: allowed for company-wide management.
+- APM full-root `projects` read: denied; assigned project read allowed.
 - PM/APM assigned project read: allowed.
 - PM assigned project count: 1
 - Firebase CLI status in this workspace: unavailable (`firebase` command not found), but Firebase Console publish succeeded.

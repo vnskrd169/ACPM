@@ -1,0 +1,47 @@
+{
+  "name": "ACPM PMOS — Field Operations",
+  "short_name": "PMOS",
+  "description": "Project Mobile Operations System for ACPM — field data capture, site logs, issues, materials, tasks, meeting notes, and photo proofs.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111318",
+  "theme_color": "#0f766e",
+  "orientation": "portrait",
+  "categories": ["business", "productivity", "construction"],
+  "lang": "en-PH",
+  "icons": [
+    {
+      "src": "../assets/brand/acpm/logo-mark.svg",
+      "sizes": "256x256",
+      "type": "image/svg+xml",
+      "purpose": "any monochrome"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='24' fill='%23111827'/%3E%3Crect x='16' y='16' width='160' height='160' rx='16' fill='%231a1d24'/%3E%3Crect x='40' y='48' width='8' height='96' rx='2' fill='%230f766e'/%3E%3Crect x='40' y='48' width='32' height='8' rx='2' fill='%230f766e'/%3E%3Crect x='64' y='48' width='8' height='96' rx='2' fill='%230f766e'/%3E%3Crect x='40' y='88' width='32' height='4' rx='1' fill='%235eead4' opacity='0.5'/%3E%3Cpath d='M88 56 H106 A6 6 0 0 1 112 62 V82' stroke='%2314b8a6' stroke-width='5' fill='none' stroke-linecap='round'/%3E%3Cpath d='M88 136 H106 A6 6 0 0 0 112 130 V110' stroke='%2314b8a6' stroke-width='5' fill='none' stroke-linecap='round'/%3E%3Crect x='124' y='48' width='8' height='96' rx='2' fill='%2306b6d4'/%3E%3Crect x='124' y='48' width='30' height='8' rx='2' fill='%2306b6d4'/%3E%3Crect x='146' y='48' width='8' height='40' rx='2' fill='%2306b6d4'/%3E%3Crect x='124' y='82' width='30' height='8' rx='2' fill='%2306b6d4'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Quick Update",
+      "short_name": "Update",
+      "description": "Create a quick site update",
+      "url": "./index.html?action=quick-update"
+    },
+    {
+      "name": "New Issue",
+      "short_name": "Issue",
+      "description": "Report a new issue",
+      "url": "./index.html?action=new-issue"
+    },
+    {
+      "name": "Site Log",
+      "short_name": "Log",
+      "description": "Record daily site log",
+      "url": "./index.html?action=site-log"
+    }
+  ]
+}

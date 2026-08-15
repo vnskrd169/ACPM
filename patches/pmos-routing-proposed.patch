@@ -1,0 +1,18 @@
+From: PMOS Task
+Date: 2026-07-17
+Subject: [PROPOSED] PMOS routing integration for ACPM
+
+This patch is NOT applied. PMOS routing is handled entirely within
+pmos.html and pmos.js. No changes to ACPM core routing (main.js,
+dashboard.html, workspace.html) are needed.
+
+PMOS page identifier: window.ACPM_PAGE = 'pmos' (set in pmos.html)
+ACPM core page identifiers:
+- 'login' (login.html)
+- 'dashboard' (dashboard.html)
+- 'workspace' (workspace.html)
+
+The PMOS page loads auth.js and main.js for shared authentication and
+user state, but does not use ACPM's Hub, Workspace, or module routing.
+
+No integration changes needed between PMOS routing and ACPM core routing.

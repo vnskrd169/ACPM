@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="acpm-grad" x1="0" y1="0" x2="256" y2="256">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <!-- Outer frame: architectural square with cut corners -->
+  <rect x="8" y="8" width="240" height="240" rx="32" fill="url(#acpm-grad)"/>
+  <rect x="16" y="16" width="224" height="224" rx="24" fill="#111827"/>
+  <!-- Inner architectural grid -->
+  <line x1="128" y1="48" x2="128" y2="208" stroke="#1e3a5f" stroke-width="0.5" opacity="0.4"/>
+  <line x1="48" y1="128" x2="208" y2="128" stroke="#1e3a5f" stroke-width="0.5" opacity="0.4"/>
+  <!-- ACPM monogram: abstract A + C + P + M as architectural structure -->
+  <!-- Left pillar (A) -->
+  <rect x="52" y="64" width="8" height="128" rx="2" fill="#7c3aed"/>
+  <rect x="52" y="64" width="48" height="8" rx="2" fill="#7c3aed"/>
+  <rect x="92" y="64" width="8" height="128" rx="2" fill="#7c3aed"/>
+  <rect x="52" y="116" width="48" height="4" rx="1" fill="#a78bfa" opacity="0.6"/>
+  <!-- Center bridge (C) -->
+  <path d="M116 64 H144 A8 8 0 0 1 152 72 V96" stroke="#3b82f6" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <path d="M116 192 H144 A8 8 0 0 0 152 184 V160" stroke="#3b82f6" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <!-- Right upper pillar (P) -->
+  <rect x="164" y="64" width="8" height="128" rx="2" fill="#06b6d4"/>
+  <rect x="164" y="64" width="40" height="8" rx="2" fill="#06b6d4"/>
+  <rect x="196" y="64" width="8" height="48" rx="2" fill="#06b6d4"/>
+  <rect x="164" y="104" width="40" height="8" rx="2" fill="#06b6d4"/>
+  <!-- Right lower segment (M) -->
+  <rect x="164" y="144" width="8" height="48" rx="2" fill="#06b6d4"/>
+  <rect x="172" y="160" width="8" height="32" rx="2" fill="#3b82f6"/>
+  <rect x="188" y="144" width="8" height="48" rx="2" fill="#06b6d4"/>
+  <!-- Accent dots -->
+  <circle cx="128" cy="128" r="3" fill="#a78bfa" opacity="0.3"/>
+</svg>

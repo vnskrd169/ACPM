@@ -52,7 +52,10 @@ Result: PASS - REAL FIREBASE QA FOR STRUCTURED CORE SECTIONS
 
 ## Photo / Video Upload
 
-- [ ] Upload photo to Firebase Storage. Future scope.
+- [x] Upload photo. Implemented (cache v139): office Site Log "Add Photos"
+  picker uploads through the approved Google Drive Apps Script transport
+  (`PMOS_CONFIG.driveUploadUrl` — same endpoint PMOS uses). No Firebase
+  Storage, no card, no console setup. Static gates + unit suites pass.
 - [x] Verify URL metadata can be written under `siteLogs/{logId}/media`.
 - [x] Verify media URL remains attached after refresh/reload via helper read.
 - [ ] Upload video if enabled. Future scope.
@@ -110,7 +113,9 @@ Result: PASS HELPER QA + UI WIRING STATIC QA
   - `siteLogEvents.logId`
   - `siteLogEvents.createdAt`
 - [x] Verify project permissions protect Site Log paths through project-level rules.
-- [ ] Verify media upload permissions if Firebase Storage is enabled. Future scope.
+- [x] Media upload uses the approved Google Drive Apps Script transport — no
+  Firebase Storage rules needed. Emulator rules suite remains `describe.skip`
+  only because of the pinned emulator runtime, not the rules.
 
 Result: PASS STATIC
 

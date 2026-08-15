@@ -54,7 +54,7 @@ function verifyActualUiAndRules() {
   const activeRoles = ['boss', 'owner', 'admin', 'pm', 'apm'];
   const deferredRoles = ['foreman', 'safety', 'viewer'];
   const allowedVisibilityTokens = new Set([...activeRoles, 'financial', 'none', 'all']);
-  const htmlFiles = ['workspace.html', 'dashboard.html', 'index.html'];
+  const htmlFiles = ['workspace.html', 'dashboard.html'];
 
   htmlFiles.flatMap(relPath => extractDataRoleVisibleValues(read(relPath), relPath)).forEach(entry => {
     const tokens = entry.value.split(',').map(v => v.trim().toLowerCase()).filter(Boolean);
@@ -63,6 +63,7 @@ function verifyActualUiAndRules() {
       assert(!deferredRoles.includes(token), `Deferred role exposed in active UI visibility: ${token}`, entry);
     });
   });
+  assert(read('index.html').includes("window.location.replace('./login.html' + suffix)"), 'Legacy index route must redirect to the maintained auth shell');
 
   const reportJs = read('report.js');
   const optionsStart = reportJs.indexOf('function teamRoleOptions');

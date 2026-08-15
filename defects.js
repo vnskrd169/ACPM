@@ -80,8 +80,8 @@ function watchDefects(pid) {
           ${item.photoLink ? `<a href="${escapeHtml(item.photoLink)}" target="_blank" rel="noopener" class="defect-link">View photo \u2197</a>` : ''}
           ${isClosed && item.resolutionNotes ? `<div class="defect-resolution">\u2713 ${escapeHtml(item.resolutionNotes)}</div>` : ''}
           <div class="defect-actions">
-            ${!isClosed ? `<button class="btn-equip-action" onclick="closeDefect('${item.id}')">\u2713 Mark Resolved</button>` : `<button class="btn-equip-action" onclick="reopenDefect('${item.id}')">\u21A9 Reopen</button>`}
-            <button class="del-item-btn" onclick="deleteDefect('${item.id}')">\u2715</button>
+            ${!isClosed ? `<button class="btn-equip-action" aria-label="Mark defect resolved for ${escapeHtml(item.description || item.id)}" onclick="closeDefect('${item.id}')">\u2713 Mark Resolved</button>` : `<button class="btn-equip-action" aria-label="Reopen defect ${escapeHtml(item.description || item.id)}" onclick="reopenDefect('${item.id}')">\u21A9 Reopen</button>`}
+            <button class="del-item-btn" aria-label="Delete defect ${escapeHtml(item.description || item.id)}" onclick="deleteDefect('${item.id}')">\u2715</button>
           </div>
         </div>
       `;
@@ -121,8 +121,8 @@ async function addDefect() {
   const assignee = $('defAssignee')?.value.trim() || '';
   const photoLink = $('defPhotoLink')?.value.trim() || '';
 
-  if (!description) { showToast('Describe the defect first.', 'error'); return; }
-  if (description.length > 500) { showToast('Description too long (max 500).', 'error'); return; }
+  if (!description) { setFieldError($('defDesc'), 'Describe the defect first.'); return; }
+  if (description.length > 500) { setFieldError($('defDesc'), 'Description too long (max 500).'); return; }
 
   await safeDb(() => firebase.database().ref(`projects/${_defPid}/punchList`).push({
     description, location, severity, assignee, photoLink,

@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "acpm-project-system"
+    "production": "acpm-project-system",
+    "staging": "acpm-project-system-qa"
   }
 }

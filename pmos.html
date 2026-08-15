@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f766e">
+<title>ACPM PMOS — Redirecting...</title>
+<script>
+window.ACPM_PAGE = 'pmos';
+/* Preserve all query parameters during redirect */
+(function() {
+  var target = './pmos/';
+  var qs = window.location.search;
+  var hash = window.location.hash;
+  if (qs || hash) {
+    target += (qs || '') + (hash || '');
+  }
+  window.location.replace(target);
+})();
+</script>
+<style>
+  body {
+    background: #121417; color: #f0f2f8; font-family: system-ui, -apple-system, sans-serif;
+    display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0;
+    padding: 24px; text-align: center;
+  }
+  .redirect-card { max-width: 320px; }
+  .spinner {
+    width: 32px; height: 32px; border: 3px solid #252a38; border-top-color: #7c3aed;
+    border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  p { font-size: 13px; color: #6b7490; }
+</style>
+</head>
+<body>
+  <div class="redirect-card">
+    <div class="spinner"></div>
+    <p>Opening ACPM PMOS...</p>
+  </div>
+</body>
+</html>

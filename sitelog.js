@@ -9,6 +9,211 @@ const SITE_LOG_STATUSES = {
   voided: 'voided'
 };
 
+// -- Site Log photo upload (Google Drive Apps Script, no card) ----
+// Reuses the same approved Drive transport as PMOS (PMOS_CONFIG.driveUploadUrl):
+// photos are compressed client-side, base64-encoded, and POSTed to the Apps
+// Script endpoint. No Firebase Storage, no payment, no console setup.
+const SITE_LOG_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+const SITE_LOG_PHOTO_MAX_IMAGE_DIMENSION = 1600;
+const SITE_LOG_PHOTO_COMPRESS_QUALITY = 0.75;
+const SITE_LOG_PHOTO_THUMB_DIMENSION = 400;
+const SITE_LOG_PHOTO_THUMB_QUALITY = 0.78;
+const SITE_LOG_DRIVE_UPLOAD_URL = (typeof window !== 'undefined' && window.PMOS_CONFIG && window.PMOS_CONFIG.driveUploadUrl)
+  || 'https://script.google.com/macros/s/AKfycbxNQ1PunSoV2gCpdfrHs10D7kNC5YUnIyq0IHmFsI4MrDq3wHsJZaCiEcxP2RkHNA5P/exec';
+let _slPendingPhotos = [];
+
+function siteLogDriveAvailable() {
+  try {
+    return typeof fetch === 'function' && !!SITE_LOG_DRIVE_UPLOAD_URL;
+  } catch (e) {
+    return false;
+  }
+}
+
+function siteLogPhotoFileName(file, index) {
+  const base = String(file?.name || `photo_${index + 1}`)
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[^a-z0-9._-]/gi, '_')
+    .slice(0, 60) || `photo_${index + 1}`;
+  return `${Date.now()}_${index}_${base}`;
+}
+
+function readSiteLogFileDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Could not read photo file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function loadSiteLogImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not process site log photo.'));
+    img.src = src;
+  });
+}
+
+async function compressSiteLogImage(file, maxDim = SITE_LOG_PHOTO_MAX_IMAGE_DIMENSION, quality = SITE_LOG_PHOTO_COMPRESS_QUALITY) {
+  const dataUrl = await readSiteLogFileDataUrl(file);
+  const img = await loadSiteLogImage(dataUrl);
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  const scale = Math.min(1, maxDim / Math.max(w, h));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(w * scale));
+  canvas.height = Math.max(1, Math.round(h * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Photo compression is unavailable in this browser.');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+  if (!blob) throw new Error('Photo compression failed.');
+  return { blob, width: canvas.width, height: canvas.height };
+}
+
+function siteLogBlobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+    reader.onerror = () => reject(reader.error || new Error('Could not read photo.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function siteLogDriveThumbnailUrl(fileId, size) {
+  return fileId ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${size || 800}` : '';
+}
+
+async function uploadSiteLogPhoto(pid, logId, file, index = 0) {
+  if (!siteLogDriveAvailable()) {
+    throw new Error('Photo upload is not available on this device.');
+  }
+  if (file.size > SITE_LOG_PHOTO_MAX_BYTES) {
+    throw new Error(`Photo "${file.name}" is larger than 10 MB.`);
+  }
+  const compressed = await compressSiteLogImage(file);
+  const thumbnail = await compressSiteLogImage(file, SITE_LOG_PHOTO_THUMB_DIMENSION, SITE_LOG_PHOTO_THUMB_QUALITY);
+  const ts = Date.now();
+  const safeName = siteLogPhotoFileName(file, index);
+  const fileName = `${safeName}.jpg`;
+  const thumbnailFileName = `thumb_${fileName}`;
+  const folder = `siteLog/${pid}/${new Date(ts).toISOString().slice(0, 10)}`;
+  const [photoBase64, thumbnailBase64] = await Promise.all([
+    siteLogBlobToBase64(compressed.blob),
+    siteLogBlobToBase64(thumbnail.blob)
+  ]);
+  const response = await fetch(SITE_LOG_DRIVE_UPLOAD_URL, {
+    method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      localId: logId || '', projectId: pid, projectName: pid,
+      projectFolderName: pid,
+      date: new Date(ts).toISOString().slice(0, 10), fileName, thumbnailFileName,
+      photoMimeType: 'image/jpeg', thumbnailMimeType: 'image/jpeg',
+      photoBase64, thumbnailBase64
+    })
+  });
+  const text = await response.text();
+  let data = {};
+  try { data = JSON.parse(text); } catch (e) { throw new Error(`Drive upload invalid response: ${text.slice(0, 120)}`); }
+
+  const normalizeField = function(field) {
+    for (let i = 1; i < arguments.length; i++) {
+      if (data[arguments[i]]) return data[arguments[i]];
+    }
+    return data[field] || '';
+  };
+  data.photoUrl = normalizeField('photoUrl', 'fileUrl', 'viewUrl', 'downloadUrl');
+  data.fileId = normalizeField('fileId', 'photoFileId');
+  data.thumbnailUrl = normalizeField('thumbnailUrl', 'thumbUrl');
+  data.thumbnailFileId = normalizeField('thumbnailFileId', 'thumbFileId');
+  data.folderId = normalizeField('folderId', 'driveFolderId');
+
+  if (!response.ok || data.ok === false) {
+    const driveError = String(data.error || '');
+    if (driveError.includes('getFolderById')) throw new Error('Drive folder not accessible.');
+    if (/access|denied|authorization|permission/i.test(driveError)) throw new Error('Drive upload access denied.');
+    throw new Error(driveError || `Drive upload failed with HTTP ${response.status}`);
+  }
+  if (!data.photoUrl || !data.thumbnailUrl) throw new Error('Drive upload did not return photo links.');
+  const thumbnailUrl = data.thumbnailFileId ? siteLogDriveThumbnailUrl(data.thumbnailFileId, 800) : data.thumbnailUrl;
+  return {
+    mediaNo: index + 1,
+    type: 'photo',
+    name: String(file.name || fileName),
+    url: data.photoUrl,
+    storagePath: `${folder}/${fileName}`,
+    thumbnailUrl,
+    caption: '',
+    uploadedAt: ts,
+    uploadedBy: slUserId(),
+    uploadedByName: slUserName(),
+    offlinePending: false,
+    storageProvider: 'Google Drive',
+    driveFileId: data.fileId || '',
+    driveFolderId: data.folderId || '',
+    size: compressed.blob.size,
+    width: compressed.width,
+    height: compressed.height
+  };
+}
+
+async function addSiteLogMedia(projectId, logId, file) {
+  return uploadSiteLogPhoto(projectId, logId, file, 0);
+}
+
+// -- Photo selection previews (office site log form) -------------
+function onLogPhotoSelected(input) {
+  const files = Array.from(input?.files || []);
+  if (!files.length) return;
+  const images = files.filter(f => String(f.type || '').startsWith('image/'));
+  if (images.length < files.length) showToast('Only image files are accepted.', 'warn');
+  _slPendingPhotos = _slPendingPhotos.concat(images);
+  renderLogPhotoPreviews();
+  if (input) input.value = '';
+}
+
+function removeSelectedLogPhoto(index) {
+  _slPendingPhotos.splice(index, 1);
+  renderLogPhotoPreviews();
+}
+
+function clearSelectedLogPhotos() {
+  _slPendingPhotos = [];
+  renderLogPhotoPreviews();
+}
+
+function renderLogPhotoPreviews() {
+  const container = document.getElementById('logPhotoPreview');
+  if (!container) return;
+  container.innerHTML = '';
+  container.classList.toggle('hidden', _slPendingPhotos.length === 0);
+  const countEl = document.getElementById('logPhotoCount');
+  if (countEl) {
+    countEl.classList.toggle('hidden', _slPendingPhotos.length === 0);
+    countEl.textContent = `${_slPendingPhotos.length} photo${_slPendingPhotos.length !== 1 ? 's' : ''} selected`;
+  }
+  _slPendingPhotos.forEach((file, index) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'log-photo-thumb';
+    const img = document.createElement('img');
+    img.alt = file.name || 'Site photo';
+    img.src = URL.createObjectURL(file);
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'log-photo-remove';
+    removeBtn.setAttribute('aria-label', 'Remove photo');
+    removeBtn.textContent = '\u2715';
+    removeBtn.onclick = () => removeSelectedLogPhoto(index);
+    thumb.appendChild(img);
+    thumb.appendChild(removeBtn);
+    container.appendChild(thumb);
+  });
+}
+
 function canTouchSiteLogProject() {
   if (typeof canWriteFieldLog === 'function') return canWriteFieldLog(_slpid);
   return typeof requireEdit === 'function'
@@ -19,6 +224,10 @@ function canTouchSiteLogProject() {
 function initSiteLog(pid) {
   _slpid = pid;
   if (_slListener) { _slListener.off(); _slListener = null; }
+
+  // Clear any photo selections carried over from a previous project/form
+  _slPendingPhotos = [];
+  renderLogPhotoPreviews();
 
   const dateInp = $('logDate');
   if (dateInp) dateInp.value = new Date().toISOString().slice(0, 10);
@@ -226,11 +435,15 @@ async function createSiteLog(projectId, data = {}) {
   const counterRef = siteLogProjectRef(projectId, 'siteLogCounter');
   const result = await counterRef.transaction(current => (current || 0) + 1);
   const seq = result.snapshot.val();
-  const logRef = siteLogProjectRef(projectId, 'siteLogs').push();
+  const logRef = data.logId
+    ? siteLogProjectRef(projectId, `siteLogs/${data.logId}`)
+    : siteLogProjectRef(projectId, 'siteLogs').push();
   const eventRef = siteLogProjectRef(projectId, 'siteLogEvents').push();
   const notificationRef = siteLogProjectRef(projectId, 'notificationEvents').push();
   const timeStr = data.time || new Date(now).toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-  const mediaRows = Array.isArray(data.mediaRows) ? data.mediaRows : siteLogMediaItems(data.photoUrls || '');
+  const mediaRows = Array.isArray(data.mediaRows)
+    ? data.mediaRows
+    : siteLogMediaItems(data.photoUrls || '');
   const payload = {
     logNo: `SL-${String(seq).padStart(4, '0')}`,
     seq,
@@ -586,9 +799,9 @@ async function saveLog() {
   const notes = notesInp?.value.trim();
   const weather = weatherInp?.value.trim() || '';
   const workAccomplished = workInp?.value.trim() || '';
-  if (!date) { showToast('Select a date.', 'error'); return; }
-  if (!notes && !workAccomplished) { showToast('Write notes or work accomplished first.', 'error'); return; }
-  if (notes.length > 2000) { showToast('Notes too long (max 2000 chars).', 'error'); return; }
+  if (!date) { setFieldError($('logDate'), 'Select a date.'); return; }
+  if (!notes && !workAccomplished) { setFieldError($('logNotes'), 'Write notes or work accomplished first.'); return; }
+  if (notes.length > 2000) { setFieldError($('logNotes'), 'Notes too long (max 2000 chars).'); return; }
 
   // Validate date not in future
   const inputDate = new Date(date + 'T00:00:00');
@@ -611,7 +824,33 @@ async function saveLog() {
   };
 
   const doSave = async (data) => {
-    const saved = await safeDb(() => createSiteLog(_slpid, data), 'Failed to save log');
+    let saveData = data;
+    if (_slPendingPhotos.length) {
+      if (siteLogDriveAvailable()) {
+        // Upload selected photos to Google Drive under a client-generated log
+        // key, then create the log referencing the exact same key + photo URLs.
+        const logId = siteLogProjectRef(_slpid, 'siteLogs').push().key;
+        const mediaRows = [];
+        for (let i = 0; i < _slPendingPhotos.length; i++) {
+          try {
+            mediaRows.push(await uploadSiteLogPhoto(_slpid, logId, _slPendingPhotos[i], i));
+          } catch (uploadError) {
+            console.error('Site log photo upload failed:', uploadError?.code || uploadError?.message || uploadError);
+            showToast(`Photo ${i + 1} failed to upload. Log not saved — fix the file or remove it and retry.`, 'error');
+            return null;
+          }
+        }
+        const urlRows = Array.isArray(data.mediaRows) ? data.mediaRows : [];
+        saveData = { ...data, logId, mediaRows: urlRows.concat(mediaRows) };
+      } else {
+        showToast('Photo upload is not available yet — save the log, then add photo URLs manually.', 'warn');
+        clearSelectedLogPhotos();
+      }
+    }
+    const saved = await safeDb(() => createSiteLog(_slpid, saveData), 'Failed to save log');
+    if (!saved) return null;
+    // Only clear the selected photos once the log (and its media) is saved.
+    clearSelectedLogPhotos();
     if (dateInp) dateInp.value = new Date().toISOString().slice(0, 10);
     if (notesInp) notesInp.value = '';
     if (weatherInp) weatherInp.value = '';
@@ -619,6 +858,11 @@ async function saveLog() {
       if (inp) inp.value = '';
     });
     return saved;
+  };
+
+  const afterSave = (saved) => {
+    if (!saved) return;
+    auditLog('create', 'siteLog', saved.id, { date, hasLocation: !!logData.gps, projectId: _slpid });
   };
 
   if (navigator.geolocation) {
@@ -632,19 +876,22 @@ async function saveLog() {
           capturedAt: Date.now()
         };
         const saved = await doSave(logData);
-        auditLog('create', 'siteLog', saved.id, { date, hasLocation: true, projectId: _slpid });
+        if (!saved) return;
+        afterSave(saved);
         showToast('Log saved with location');
       },
       async () => {
         const saved = await doSave(logData);
-        auditLog('create', 'siteLog', saved.id, { date, hasLocation: false, projectId: _slpid });
+        if (!saved) return;
+        afterSave(saved);
         showToast('Log saved \u2713');
       },
       { timeout: 4000, enableHighAccuracy: true }
     );
   } else {
     const saved = await doSave(logData);
-    auditLog('create', 'siteLog', saved.id, { date, hasLocation: false, projectId: _slpid });
+    if (!saved) return;
+    afterSave(saved);
     showToast('Log saved \u2713');
   }
 }
@@ -732,3 +979,9 @@ window.saveLog = saveLog;
 window.deleteLog = deleteLog;
 window.exportSiteLogs = exportSiteLogs;
 window.filterLogs = filterLogs;
+window.onLogPhotoSelected = onLogPhotoSelected;
+window.removeSelectedLogPhoto = removeSelectedLogPhoto;
+window.clearSelectedLogPhotos = clearSelectedLogPhotos;
+window.addSiteLogMedia = addSiteLogMedia;
+window.uploadSiteLogPhoto = uploadSiteLogPhoto;
+window.siteLogDriveAvailable = siteLogDriveAvailable;
