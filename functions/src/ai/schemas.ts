@@ -12,6 +12,21 @@ export const aiEventTypeSchema = z.enum(AI_EVENT_TYPES);
 export const severitySchema = z.enum(SEVERITIES);
 export const impactStatusSchema = z.enum(IMPACT_STATUSES);
 
+export const aiConfigSchema = z.object({
+  enabled: z.boolean(),
+  generationEnabled: z.boolean(),
+  uiEnabled: z.boolean(),
+  dryRun: z.boolean(),
+  timeZone: z.literal('Asia/Manila'),
+  maxAttempts: z.number().int().min(1).max(10),
+  eventTypes: z.object({
+    material_delivery_overdue: z.boolean(),
+    material_stock_low: z.boolean(),
+    task_overdue: z.boolean(),
+    site_issue_created: z.boolean()
+  }).strict()
+}).strict();
+
 export const evidenceReferenceSchema = z.object({
   path: z.string().trim().min(1),
   recordId: z.string().trim().min(1),

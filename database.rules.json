@@ -3,11 +3,11 @@
     ".read": false,
     ".write": false,
     "users": {
-      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
+      ".read": "auth != null && auth.uid !== 'acpm-ai-service' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
       "$uid": {
-        ".read": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
+        ".read": "auth.uid !== 'acpm-ai-service' && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/))",
         ".write": "root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
-        ".validate": "!newData.exists() || (( !newData.child('name').exists() || (newData.child('name').isString() && newData.child('name').val().length <= 100) ) && ( !newData.child('displayName').exists() || (newData.child('displayName').isString() && newData.child('displayName').val().length <= 100) ) && ( !newData.child('position').exists() || (newData.child('position').isString() && newData.child('position').val().length <= 100) ) && ( !newData.child('mobile').exists() || (newData.child('mobile').isString() && newData.child('mobile').val().length <= 40) ) && ( !newData.child('signature').exists() || (newData.child('signature').isString() && newData.child('signature').val().length <= 120) ) && ( !newData.child('status').exists() || (newData.child('status').isString() && newData.child('status').val().matches(/^(pending|active|disabled|suspended|archived)$/)) ) && ( !newData.child('role').exists() || (newData.child('role').isString() && newData.child('role').val().matches(/^(boss|owner|admin|pm|apm)$/)) ) && ( !newData.child('lastLoginAt').exists() || newData.child('lastLoginAt').isNumber() ) && ( !newData.child('lastSeenAt').exists() || newData.child('lastSeenAt').isNumber() ))",
+        ".validate": "($uid !== 'acpm-ai-service' || !newData.exists()) && (!newData.exists() || (( !newData.child('name').exists() || (newData.child('name').isString() && newData.child('name').val().length <= 100) ) && ( !newData.child('displayName').exists() || (newData.child('displayName').isString() && newData.child('displayName').val().length <= 100) ) && ( !newData.child('position').exists() || (newData.child('position').isString() && newData.child('position').val().length <= 100) ) && ( !newData.child('mobile').exists() || (newData.child('mobile').isString() && newData.child('mobile').val().length <= 40) ) && ( !newData.child('signature').exists() || (newData.child('signature').isString() && newData.child('signature').val().length <= 120) ) && ( !newData.child('status').exists() || (newData.child('status').isString() && newData.child('status').val().matches(/^(pending|active|disabled|suspended|archived)$/)) ) && ( !newData.child('role').exists() || (newData.child('role').isString() && newData.child('role').val().matches(/^(boss|owner|admin|pm|apm)$/)) ) && ( !newData.child('lastLoginAt').exists() || newData.child('lastLoginAt').isNumber() ) && ( !newData.child('lastSeenAt').exists() || newData.child('lastSeenAt').isNumber() )))",
         "displayName": {
           ".write": "auth.uid === $uid && root.child('users/' + $uid + '/status').val() === 'active'"
         },
@@ -67,9 +67,57 @@
         "provider"
       ],
       "$uid": {
-        ".read": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/role').val() === 'owner' || root.child('users/' + auth.uid + '/role').val() === 'admin'",
-        ".write": "auth != null && ((root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/role').val() === 'owner' || root.child('users/' + auth.uid + '/role').val() === 'admin') || (auth.uid === $uid && newData.exists() && newData.child('uid').val() === auth.uid && newData.child('status').val() === 'pending' && (!data.exists() || data.child('status').val() === 'pending' || data.child('status').val() === 'rejected')))",
+        ".read": "auth.uid !== 'acpm-ai-service' && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/role').val() === 'owner' || root.child('users/' + auth.uid + '/role').val() === 'admin')",
+        ".write": "auth != null && auth.uid !== 'acpm-ai-service' && ((root.child('users/' + auth.uid + '/role').val() === 'boss' || root.child('users/' + auth.uid + '/role').val() === 'owner' || root.child('users/' + auth.uid + '/role').val() === 'admin') || (auth.uid === $uid && newData.exists() && newData.child('uid').val() === auth.uid && newData.child('status').val() === 'pending' && (!data.exists() || data.child('status').val() === 'pending' || data.child('status').val() === 'rejected')))",
         ".validate": "!newData.exists() || (newData.hasChildren(['uid', 'email', 'fullName', 'position', 'requestedAt', 'status', 'provider']) && newData.child('uid').val() === $uid && newData.child('email').isString() && newData.child('email').val().length <= 160 && newData.child('fullName').isString() && newData.child('fullName').val().length <= 100 && newData.child('position').isString() && newData.child('position').val().length <= 100 && newData.child('requestedAt').isNumber() && newData.child('status').isString() && newData.child('status').val().matches(/^(pending|approved|rejected)$/) && newData.child('provider').isString())"
+      }
+    },
+    "ai": {
+      ".read": false,
+      ".write": false,
+      "config": {
+        ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)))",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+      },
+      "agents": {
+        ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+      },
+      "runtimeStatus": {
+        ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+      },
+      "conditions": {
+        ".read": "auth != null && auth.uid === 'acpm-ai-service'",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+      },
+      "events": {
+        ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+      },
+      "runs": {
+        ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+      },
+      "findings": {
+        ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+      },
+      "recommendations": {
+        ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+      },
+      "decisions": {
+        ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+      },
+      "idempotency": {
+        ".read": "auth != null && auth.uid === 'acpm-ai-service'",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+      },
+      "$other": {
+        ".read": false,
+        ".write": false
       }
     },
     "projects": {
@@ -133,6 +181,7 @@
           ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))"
         },
         "tasks": {
+          ".read": "auth != null && auth.uid === 'acpm-ai-service'",
           ".indexOn": [
             "status",
             "priority",
@@ -288,6 +337,7 @@
           ]
         },
         "purchaseRequests": {
+          ".read": "auth != null && auth.uid === 'acpm-ai-service'",
           ".indexOn": [
             "requestNo",
             "status",
@@ -296,6 +346,7 @@
           ]
         },
         "purchaseOrders": {
+          ".read": "auth != null && auth.uid === 'acpm-ai-service'",
           ".indexOn": [
             "seq",
             "poNo",
@@ -307,6 +358,7 @@
           ]
         },
         "deliveries": {
+          ".read": "auth != null && auth.uid === 'acpm-ai-service'",
           ".indexOn": [
             "poId",
             "deliveryDate",
@@ -316,6 +368,7 @@
           ]
         },
         "inventory": {
+          ".read": "auth != null && auth.uid === 'acpm-ai-service'",
           ".indexOn": [
             "itemKey",
             "description",
@@ -324,6 +377,7 @@
           ]
         },
         "materialMovements": {
+          ".read": "auth != null && auth.uid === 'acpm-ai-service'",
           ".indexOn": [
             "type",
             "date",
@@ -481,7 +535,7 @@
           }
         },
         "siteLogs": {
-          ".read": "auth != null && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
+          ".read": "auth != null && (auth.uid === 'acpm-ai-service' || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (root.child('users/' + auth.uid + '/role').val().matches(/^(pm|apm)$/) && (root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid))))",
           ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm|apm)$/) && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || root.child('users/' + auth.uid + '/projects').hasChild($pid) || root.child('users/' + auth.uid + '/bossOf').hasChild($pid)))",
           ".indexOn": [
             "date",
@@ -509,6 +563,12 @@
           ".indexOn": [
             "lastUpdatedAt"
           ]
+        },
+        "punchList": {
+          ".read": "auth != null && auth.uid === 'acpm-ai-service'"
+        },
+        "pmosIssues": {
+          ".read": "auth != null && auth.uid === 'acpm-ai-service'"
         },
         "reportRollups": {
           ".indexOn": [
@@ -558,7 +618,7 @@
       }
     },
     "pmosIssues": {
-      ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'",
+      ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('users/' + auth.uid + '/status').val() === 'active'))",
       ".indexOn": [
         "assignedTo",
         "clientGeneratedId",
@@ -737,7 +797,7 @@
       ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
       ".indexOn": "timestamp",
       "$logId": {
-        ".write": "auth != null && ((!newData.exists() && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)) || (newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp']) && newData.child('action').isString() && newData.child('entityType').isString() && (newData.child('userId').val() === auth.uid || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)) && newData.child('userName').isString() && newData.child('timestamp').isNumber()))"
+        ".write": "auth != null && auth.uid !== 'acpm-ai-service' && ((!newData.exists() && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)) || (newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp']) && newData.child('action').isString() && newData.child('entityType').isString() && (newData.child('userId').val() === auth.uid || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)) && newData.child('userName').isString() && newData.child('timestamp').isNumber()))"
       }
     },
     "supplierAuditLogs": {
@@ -750,7 +810,7 @@
           "entityType"
         ],
         "$logId": {
-          ".write": "auth != null && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || newData.child('userId').val() === auth.uid)",
+          ".write": "auth != null && auth.uid !== 'acpm-ai-service' && newData.exists() && (root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || newData.child('userId').val() === auth.uid)",
           ".validate": "newData.hasChildren(['action', 'entityType', 'userId', 'userName', 'timestamp']) && newData.child('action').isString() && newData.child('entityType').isString() && newData.child('userName').isString() && newData.child('timestamp').isNumber()"
         }
       }
@@ -758,13 +818,13 @@
     "notifications": {
       ".read": "auth != null && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
       "$uid": {
-        ".read": "auth.uid === $uid || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)",
+        ".read": "auth.uid !== 'acpm-ai-service' && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/))",
         ".indexOn": [
           "read",
           "createdAt"
         ],
         "$nid": {
-          ".write": "auth != null && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (newData.exists() && newData.child('from').val() === auth.uid && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val())) && (root.child('users/' + $uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + $uid + '/role').val().matches(/^(boss|owner|admin)$/))))",
+          ".write": "auth != null && auth.uid !== 'acpm-ai-service' && (auth.uid === $uid || root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/) || (newData.exists() && newData.child('from').val() === auth.uid && newData.child('projectId').isString() && (root.child('users/' + auth.uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + auth.uid + '/bossOf').hasChild(newData.child('projectId').val())) && (root.child('users/' + $uid + '/projects').hasChild(newData.child('projectId').val()) || root.child('users/' + $uid + '/role').val().matches(/^(boss|owner|admin)$/))))",
           ".validate": "!newData.exists() || (newData.hasChildren(['type', 'message', 'read', 'createdAt', 'from']) && newData.child('type').isString() && newData.child('message').isString() && newData.child('message').val().length <= 500 && newData.child('read').isBoolean() && newData.child('createdAt').isNumber() && newData.child('from').isString())"
         }
       }
@@ -775,7 +835,7 @@
     },
     "sessions": {
       "$uid": {
-        ".read": "auth.uid === $uid",
+        ".read": "auth.uid !== 'acpm-ai-service' && auth.uid === $uid",
         ".write": false
       }
     },
@@ -788,7 +848,7 @@
         "timestamp"
       ],
       "$logId": {
-        ".write": "auth != null && !data.exists() && newData.exists()",
+        ".write": "auth != null && auth.uid !== 'acpm-ai-service' && !data.exists() && newData.exists()",
         ".validate": "newData.hasChildren(['actorUid', 'action', 'module', 'projectId', 'timestamp', 'safeSummary', 'source']) && newData.child('source').val() === 'pmos'"
       }
     }

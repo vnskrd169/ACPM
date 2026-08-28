@@ -1,6 +1,6 @@
 # ACPM AI Command Center Foundation
 
-Status: **contracts and deterministic routing only; disabled and not deployed**
+Status: **security foundation and deterministic routing only; disabled and not deployed**
 
 ## Purpose and V0.1 boundary
 
@@ -10,9 +10,10 @@ billing, payroll, payments, change orders, official communications, and task
 schedules are controlled operational records. A model must not approve,
 release, delete, or silently modify them.
 
-This foundation contains no Firebase reads or writes, no Cloud Function
-exports, no provider SDK, no network call, and no Office or PMOS UI change.
-The `DisabledProvider` is the only provider implementation.
+This foundation contains a restricted Firebase Admin initialization helper and
+RTDB rules, but no code that performs a Firebase read or write, no Cloud
+Function exports, no provider SDK, no network call, and no Office or PMOS UI
+change. The `DisabledProvider` is the only provider implementation.
 
 ## Logical agents
 
@@ -93,14 +94,15 @@ return an untrusted value for validation.
 The default `DisabledProvider` performs no I/O. Disabled and not-configured
 states are ordinary results, not exceptions.
 
-## Future AI namespace
+## Isolated AI namespace
 
-No database namespace is added in this commit. A later, separately reviewed
-phase may introduce:
+Phase 2 reserves these explicit paths:
 
 ```text
 ai/config
 ai/agents/{agentId}
+ai/runtimeStatus
+ai/conditions/{conditionId}
 ai/events/{eventId}
 ai/runs/{runId}
 ai/findings/{runId}/{agentId}
@@ -109,15 +111,81 @@ ai/decisions/{decisionId}
 ai/idempotency/{dedupHash}
 ```
 
-AI records must remain outside existing business paths.
+Unknown `/ai` children are denied. Only `acpm-ai-service` can write the listed
+paths. Active boss, owner, admin, and PM users can read sanitized agents,
+runtime status, events, runs, findings, recommendations, and decisions. Config
+is limited to the service plus active boss, owner, and admin users. Conditions
+and idempotency records are service-only. Browser writes, APM access,
+anonymous access, and inactive-user access are denied.
 
-## Future security model
+AI records remain outside existing business paths. AI output writers must
+persist sanitized structured records only; prompts, provider credentials, raw
+provider responses, and sensitive source records do not belong in
+management-readable output paths.
 
-A later backend phase must be feature-flagged off by default and use a
-down-scoped server identity. That identity may read only approved ACPM context
-and write only inside `/ai`. Browser clients must never receive provider keys
-or directly write AI runs/findings. Human decision capture must record human
-input only; it must not execute business mutations.
+## Service security model
+
+Firebase Admin is prepared under a named app using
+`databaseAuthVariableOverride` with UID `acpm-ai-service`. This makes RTDB
+evaluate the service against the same rules emulator-tested here instead of
+granting unrestricted Admin database access. The reserved UID cannot be
+created as a browser user profile through RTDB rules.
+
+The service may read only:
+
+- `projects/{projectId}/tasks`
+- `projects/{projectId}/purchaseOrders`
+- `projects/{projectId}/deliveries`
+- `projects/{projectId}/inventory`
+- `projects/{projectId}/materialMovements`
+- `projects/{projectId}/purchaseRequests`
+- `projects/{projectId}/siteLogs`
+- `projects/{projectId}/punchList`
+- `projects/{projectId}/pmosIssues`
+- `pmosIssues`
+
+It cannot list projects or read a whole project. It can write only the ten
+explicit `/ai` children. Existing rules that previously allowed any
+authenticated identity to write self-service auth/notification or append-only
+audit records now explicitly exclude this reserved UID; all existing ACPM
+human-role branches are unchanged.
+
+Supplier reads are deliberately not granted. RTDB read rules cascade: granting
+read access at `suppliers/{supplierId}` also exposes bank/account siblings and
+a child rule cannot revoke that access. Phase 2 therefore uses safe supplier
+IDs/names already embedded in purchase records. A future supplier context
+feature must first add a safe projection or use the code allowlist (`name`,
+`specialty`, `status`) and obtain a separately reviewed minimum read path.
+
+`functions/src/ai/security.ts` duplicates the allowed context, AI write, and
+supplier-field boundaries as application guards. RTDB rules remain the
+authoritative enforcement layer.
+
+## Disabled configuration and emergency stop
+
+The typed defaults are:
+
+```text
+enabled=false
+generationEnabled=false
+uiEnabled=false
+dryRun=true
+timeZone=Asia/Manila
+maxAttempts=3
+all four event flags=false
+```
+
+No Production config is seeded. Future activation must require both
+`enabled` and `generationEnabled`; either false is an emergency generation
+stop. `uiEnabled` independently keeps UI exposure off and `dryRun` prevents
+business execution. Phase 2 has no execution code, so changing an RTDB value
+alone still cannot start generation.
+
+## Future provider boundary
+
+Browser clients must never receive provider keys or directly write AI
+runs/findings. Human decision capture must record human input only; it must not
+execute business mutations.
 
 Provider credentials belong in a server-side secret manager and must never be
 stored in RTDB, source control, environment files shipped by Hosting, logs, or

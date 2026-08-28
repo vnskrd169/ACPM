@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import type { GroundedFinding } from '../src/ai/contracts.js';
-import { AGENT_IDS, AI_EVENT_TYPES } from '../src/ai/contracts.js';
+import { AGENT_IDS, AI_CONFIG_DEFAULTS, AI_EVENT_TYPES } from '../src/ai/contracts.js';
 import {
+  aiConfigSchema,
   evidenceReferenceSchema,
   groundedFindingSchema,
   routePlanSchema
@@ -49,6 +50,24 @@ describe('AI contracts and schemas', () => {
       'material_stock_low',
       'task_overdue',
       'site_issue_created'
+    ]);
+  });
+
+  it('keeps every AI capability disabled in the typed default config', () => {
+    expect(aiConfigSchema.parse(AI_CONFIG_DEFAULTS)).toEqual(AI_CONFIG_DEFAULTS);
+    expect(AI_CONFIG_DEFAULTS).toMatchObject({
+      enabled: false,
+      generationEnabled: false,
+      uiEnabled: false,
+      dryRun: true,
+      timeZone: 'Asia/Manila',
+      maxAttempts: 3
+    });
+    expect(Object.values(AI_CONFIG_DEFAULTS.eventTypes)).toEqual([
+      false,
+      false,
+      false,
+      false
     ]);
   });
 

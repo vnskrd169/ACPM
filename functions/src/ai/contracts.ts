@@ -9,6 +9,33 @@ export const AI_EVENT_TYPES = [
 ] as const;
 export type AiEventType = (typeof AI_EVENT_TYPES)[number];
 
+export type AiEventFlags = Readonly<Record<AiEventType, boolean>>;
+
+export interface AiConfig {
+  enabled: boolean;
+  generationEnabled: boolean;
+  uiEnabled: boolean;
+  dryRun: boolean;
+  timeZone: 'Asia/Manila';
+  maxAttempts: number;
+  eventTypes: AiEventFlags;
+}
+
+export const AI_CONFIG_DEFAULTS: Readonly<AiConfig> = Object.freeze({
+  enabled: false,
+  generationEnabled: false,
+  uiEnabled: false,
+  dryRun: true,
+  timeZone: 'Asia/Manila',
+  maxAttempts: 3,
+  eventTypes: Object.freeze({
+    material_delivery_overdue: false,
+    material_stock_low: false,
+    task_overdue: false,
+    site_issue_created: false
+  })
+});
+
 export const SEVERITIES = ['info', 'low', 'medium', 'high', 'critical'] as const;
 export type Severity = (typeof SEVERITIES)[number];
 
