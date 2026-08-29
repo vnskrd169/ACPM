@@ -48,39 +48,39 @@ function main() {
   const indexHtml = read('index.html');
   const loginHtml = read('login.html');
 
-  assert(/const CACHE_NAME = 'acpm-v141'/.test(sw), 'service worker cache must be acpm-v141');
-  assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=112">'), 'login.html must load style.css?v=112');
+  assert(/const CACHE_NAME = 'acpm-v142'/.test(sw), 'service worker cache must be acpm-v142');
+  assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=113">'), 'login.html must load style.css?v=113');
   assert(extractScriptVersion(loginHtml, 'environment.js') === '1', 'login.html must load environment.js?v=1');
   assert(extractScriptVersion(loginHtml, 'utils.js') === '87', 'login.html must load utils.js?v=87');
   assert(extractScriptVersion(loginHtml, 'auth.js') === '98', 'login.html must load auth.js?v=98');
-  assert(extractScriptVersion(loginHtml, 'main.js') === '109', 'login.html must load main.js?v=109');
+  assert(extractScriptVersion(loginHtml, 'main.js') === '110', 'login.html must load main.js?v=110');
   assert(indexHtml.includes("window.location.replace('./login.html' + suffix)"), 'legacy index.html must redirect to the maintained login route');
   assert(!/<script\s+src=/.test(indexHtml), 'legacy index.html must not duplicate the private app shell');
   for (const [file, content] of Object.entries(html)) {
-    assert(content.includes('<link rel="stylesheet" href="style.css?v=112">'), `${file} must load style.css?v=112`);
+    assert(content.includes('<link rel="stylesheet" href="style.css?v=113">'), `${file} must load style.css?v=113`);
     assert(extractScriptVersion(content, 'environment.js') === '1', `${file} must load environment.js?v=1`);
     assert(extractScriptVersion(content, 'utils.js') === '87', `${file} must load utils.js?v=87`);
     assert(extractScriptVersion(content, 'auth.js') === '98', `${file} must load auth.js?v=98`);
-    assert(extractScriptVersion(content, 'main.js') === '109', `${file} must load main.js?v=109`);
+    assert(extractScriptVersion(content, 'main.js') === '110', `${file} must load main.js?v=110`);
     assert(extractScriptVersion(content, 'suppliers.js') === '94', `${file} must load suppliers.js?v=94`);
     assert(extractScriptVersion(content, 'payroll-math.js') === '2', `${file} must load payroll-math.js?v=2`);
-    assert(extractScriptVersion(content, 'labor.js') === '98', `${file} must load labor.js?v=98`);
+    assert(extractScriptVersion(content, 'labor.js') === '99', `${file} must load labor.js?v=99`);
     assert(extractScriptVersion(content, 'materials.js') === '96', `${file} must load materials.js?v=96`);
     assert(extractScriptVersion(content, 'billing.js') === '76', `${file} must load billing.js?v=76`);
     assert(extractScriptVersion(content, 'notifications.js') === '86', `${file} must load notifications.js?v=86`);
-    assert(extractScriptVersion(content, 'report.js') === '97', `${file} must load report.js?v=97`);
+    assert(extractScriptVersion(content, 'report.js') === '98', `${file} must load report.js?v=98`);
   }
   assert(sw.includes('./utils.js?v=87'), 'service worker must cache utils.js?v=87');
   assert(sw.includes('./environment.js?v=1'), 'service worker must cache environment.js?v=1');
-  assert(sw.includes('./style.css?v=112'), 'service worker must cache style.css?v=112');
+  assert(sw.includes('./style.css?v=113'), 'service worker must cache style.css?v=113');
   assert(sw.includes('./auth.js?v=98'), 'service worker must cache auth.js?v=98');
-  assert(sw.includes('./main.js?v=109'), 'service worker must cache main.js?v=109');
+  assert(sw.includes('./main.js?v=110'), 'service worker must cache main.js?v=110');
   assert(sw.includes('./payroll-math.js?v=2'), 'service worker must cache payroll-math.js?v=2');
-  assert(sw.includes('./labor.js?v=98'), 'service worker must cache labor.js?v=98');
+  assert(sw.includes('./labor.js?v=99'), 'service worker must cache labor.js?v=99');
   assert(sw.includes('./materials.js?v=96'), 'service worker must cache materials.js?v=96');
   assert(sw.includes('./billing.js?v=76'), 'service worker must cache billing.js?v=76');
   assert(sw.includes('./suppliers.js?v=94'), 'service worker must cache suppliers.js?v=94');
-  assert(sw.includes('./report.js?v=97'), 'service worker must cache report.js?v=97');
+  assert(sw.includes('./report.js?v=98'), 'service worker must cache report.js?v=98');
   assert(sw.includes('./changeorders.js?v=95'), 'service worker must cache changeorders.js?v=95');
   assert(sw.includes('./sitelog.js?v=95'), 'service worker must cache sitelog.js?v=95');
   assert(sw.includes('./equipment.js?v=94'), 'service worker must cache equipment.js?v=94');
@@ -154,7 +154,7 @@ function main() {
   console.log(JSON.stringify({
     result: 'PASS',
     checks: [
-      'v141 cache/style and script references',
+      'current cache/style and script references',
       'login shell uses current auth/routing scripts',
       'service worker update/reload path',
       'auth logout detaches project and module listeners',

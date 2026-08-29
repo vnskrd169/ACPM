@@ -29,6 +29,7 @@ function initReports() {
     return;
   }
   ensureSystemReportsView();
+  if (typeof deactivatePmosForNavigation === 'function') deactivatePmosForNavigation();
   $('systemReportsView')?.classList.add('hidden');
   $('workspaceView')?.classList.add('hidden');
   $('pmosOfficeView')?.classList.add('hidden');
@@ -38,6 +39,7 @@ function initReports() {
 function renderProjectReports(projectId) {
   const panel = $('reportsPanel');
   if (!panel) return;
+  if (typeof deactivatePmosForNavigation === 'function') deactivatePmosForNavigation();
   $('systemReportsView')?.classList.add('hidden');
   $('pmosOfficeView')?.classList.add('hidden');
   $('workspaceView')?.classList.remove('hidden');
@@ -298,6 +300,7 @@ function openSystemReports() {
     });
     return;
   }
+  if (typeof deactivatePmosForNavigation === 'function') deactivatePmosForNavigation();
   $('hubView')?.classList.add('hidden');
   $('workspaceView')?.classList.add('hidden');
   $('pmosOfficeView')?.classList.add('hidden');

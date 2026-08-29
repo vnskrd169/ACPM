@@ -40,10 +40,10 @@ function assertIncludes(content, needle, message) {
 
 // Expected release versions — bump together with every layout/PWA release.
 const EXPECT = {
-  swCache: 'acpm-v141',
-  pmosCache: 'pmos-cache-v7',
-  htmlAsset: { style: 'style.css?v=112', main: 'main.js?v=109' },
-  pmosAsset: { style: '../style.css?v=112', main: '../main.js?v=109' },
+  swCache: 'acpm-v142',
+  pmosCache: 'pmos-cache-v8',
+  htmlAsset: { style: 'style.css?v=113', main: 'main.js?v=110' },
+  pmosAsset: { style: '../style.css?v=113', main: '../main.js?v=110' },
 };
 
 function main() {
@@ -115,8 +115,8 @@ function main() {
   }
   checks.push('dashboard/workspace/login: style + main asset versions bumped');
   const pmosIdx = read('pmos/index.html');
-  assertIncludes(pmosIdx, EXPECT.pmosAsset.style, 'pmos/index.html: must reference ../style.css?v=112');
-  assertIncludes(pmosIdx, EXPECT.pmosAsset.main, 'pmos/index.html: must reference ../main.js?v=109');
+  assertIncludes(pmosIdx, EXPECT.pmosAsset.style, 'pmos/index.html: must reference current style.css');
+  assertIncludes(pmosIdx, EXPECT.pmosAsset.main, 'pmos/index.html: must reference current main.js');
   checks.push('pmos/index.html: asset versions bumped');
 
   console.log(JSON.stringify({ result: 'PASS', checks }, null, 2));

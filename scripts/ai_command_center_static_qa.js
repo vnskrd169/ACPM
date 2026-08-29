@@ -38,8 +38,8 @@ const spec = read(specPath);
 
 gate(Boolean(source && styles), 'AI Command Center browser module or stylesheet is missing');
 gate(
-  occurrences(dashboard, 'ai-command-center.js?v=1') === 1
-    && occurrences(workspace, 'ai-command-center.js?v=1') === 1,
+  occurrences(dashboard, 'ai-command-center.js?v=2') === 1
+    && occurrences(workspace, 'ai-command-center.js?v=2') === 1,
   'dashboard/workspace must each contain exactly one versioned AI browser module reference'
 );
 gate(
@@ -48,8 +48,8 @@ gate(
   'dashboard/workspace must each contain exactly one versioned AI stylesheet reference'
 );
 gate(
-  /const CACHE_NAME = 'acpm-v141';/.test(sw)
-    && occurrences(sw, './ai-command-center.js?v=1') === 1
+  /const CACHE_NAME = 'acpm-v142';/.test(sw)
+    && occurrences(sw, './ai-command-center.js?v=2') === 1
     && occurrences(sw, './assets/brand/ai-command-center.css?v=1') === 1,
   'service-worker cache name/assets are stale, missing, or duplicated'
 );

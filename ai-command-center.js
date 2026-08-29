@@ -22,6 +22,7 @@
     listeners: [],
     errors: {},
     filter: 'open',
+    decisionReturnFocus: null,
     data: emptyData()
   };
 
@@ -198,7 +199,7 @@
           </aside>
         </div>
 
-        <div id="aiDecisionModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="aiDecisionModalTitle">
+        <div id="aiDecisionModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="aiDecisionModalTitle" data-escape-owner="ai">
           <div class="modal-box modal-wide ai-decision-modal">
             <div class="ai-modal-head">
               <div><span class="ai-panel-kicker">Read-only management review</span><h3 id="aiDecisionModalTitle">Decision Detail</h3></div>
@@ -281,6 +282,9 @@
     ensureView();
     addNavigation();
     state.previousViewId = visibleOfficeView();
+    if (state.previousViewId === 'pmosOfficeView' && typeof window.deactivatePmosOffice === 'function') {
+      window.deactivatePmosOffice();
+    }
     ['hubView', 'workspaceView', 'pmosOfficeView', 'systemReportsView'].forEach(function (id) {
       el(id)?.classList.add('hidden');
     });
@@ -294,10 +298,14 @@
     stopOutputListeners();
     closeDecision();
     el('aiCommandCenterView')?.classList.add('hidden');
+    state.active = false;
+    if (state.previousViewId === 'pmosOfficeView' && typeof window.openPmosOffice === 'function') {
+      window.openPmosOffice();
+      return;
+    }
     var previous = el(state.previousViewId);
     if (previous) previous.classList.remove('hidden');
     else el(window.ACPM_PAGE === 'workspace' ? 'workspaceView' : 'hubView')?.classList.remove('hidden');
-    state.active = false;
   }
 
   async function refresh() {
@@ -726,6 +734,7 @@
     var refs = evidenceRefs(recommendation, findings);
     var actions = Array.isArray(recommendation.recommendedActions) ? recommendation.recommendedActions : [];
     var options = Array.isArray(decision.options) ? decision.options : [];
+    state.decisionReturnFocus = document.activeElement;
     el('aiDecisionModalBody').innerHTML =
       '<section class="ai-detail-section"><h4>Issue</h4><h3>' + h(recommendation.title || 'Human decision required') + '</h3><p>' + h(recommendation.summary || 'No validated issue summary was provided.') + '</p></section>' +
       '<section class="ai-detail-section"><h4>Evidence</h4>' + evidenceMarkup(refs) + '</section>' +
@@ -738,10 +747,19 @@
       '<section class="ai-detail-section"><h4>Options</h4>' + (options.length ? '<ul class="ai-option-list">' + options.map(function (item) { return '<li>' + h(item) + '</li>'; }).join('') + '</ul>' : '<p class="ai-empty-inline">No structured options were provided.</p>') + '</section>' +
       '<div class="ai-readonly-note"><strong>Decision actions are not yet enabled.</strong><span>This review is informational and read-only.</span></div>';
     el('aiDecisionModal').classList.remove('hidden');
+    el('aiDecisionModal').setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(function () { el('aiDecisionModalClose')?.focus(); });
   }
 
   function closeDecision() {
-    el('aiDecisionModal')?.classList.add('hidden');
+    var modal = el('aiDecisionModal');
+    var wasOpen = modal && !modal.classList.contains('hidden');
+    modal?.classList.add('hidden');
+    modal?.setAttribute('aria-hidden', 'true');
+    if (wasOpen && state.decisionReturnFocus && state.decisionReturnFocus.isConnected) {
+      state.decisionReturnFocus.focus();
+    }
+    state.decisionReturnFocus = null;
   }
 
   function emptyMarkup(title, description) {
@@ -791,10 +809,16 @@
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') return;
     if (el('aiDecisionModal') && !el('aiDecisionModal').classList.contains('hidden')) {
+      event.preventDefault();
+      event.stopPropagation();
       closeDecision();
       return;
     }
-    if (state.active) close();
+    if (state.active) {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    }
   });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', observeAuth);

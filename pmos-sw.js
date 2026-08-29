@@ -8,7 +8,7 @@
 //  All old PMOS caches are purged on activate.
 // -----------------------------------------------------------------------------
 
-const PMOS_CACHE = 'pmos-cache-v7';
+const PMOS_CACHE = 'pmos-cache-v8';
 
 const PMOS_ASSETS = [
   './pmos.html',

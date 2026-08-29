@@ -2546,7 +2546,7 @@ function watchPayrollLogs(pid) {
 
       html += `
         <div class="payroll-log-entry">
-          <div class="payroll-log-hdr" onclick="togglePayrollLog('${e.id}')">
+          <div class="payroll-log-hdr" role="button" tabindex="0" onclick="togglePayrollLog('${e.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePayrollLog('${e.id}')}">
             <div class="payroll-log-left">
               <span class="payroll-log-period">${escapeHtml(e.period || '\u2014')}</span>
               <span class="payroll-log-meta">Saved ${escapeHtml(e.savedDate || '\u2014')} \u00B7 ${workerCount} workers \u00B7 ${trades.length} trades</span>

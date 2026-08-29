@@ -184,6 +184,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html.overlay-scroll-locked,
+body.overlay-scroll-locked {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
 /* ═══ HARDENING: MEDIA SAFETY + SCROLL STANDARD ══════════════
    Scroll standard: the page owns vertical scrolling. Internal
    vertical scroll is reserved for modals (.modal-box) and explicitly
@@ -1858,6 +1864,14 @@ button:disabled {
   border-color: var(--border3);
   transform: translateY(-2px);
   box-shadow: var(--shadow-sm);
+}
+
+button.kpi-card {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 /* Accent bar on left */
@@ -10873,6 +10887,136 @@ body.auth-locked .main {
   font-weight: 900;
   text-decoration: none;
   white-space: nowrap;
+}
+
+.pmos-photo-preview-btn {
+  min-height: 30px;
+  padding: 6px 9px;
+  border: 1px solid var(--purple);
+  border-radius: 8px;
+  background: var(--purple-soft);
+  color: var(--purple-xl);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+/* PMOS Office photo preview owns one viewport-bounded scroll surface. */
+.pmos-lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 520;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.pmos-lightbox-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .82);
+}
+
+.pmos-lightbox-container {
+  position: relative;
+  width: min(980px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-xl);
+}
+
+.pmos-lightbox-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(240px, .8fr);
+  min-width: 0;
+}
+
+.pmos-lightbox-image-wrap {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  background: #080a0f;
+}
+
+.pmos-lightbox-image {
+  display: block;
+  max-width: 100%;
+  max-height: min(72dvh, 760px);
+  object-fit: contain;
+}
+
+.pmos-lightbox-loading,
+.pmos-lightbox-info {
+  padding: 22px;
+}
+
+.pmos-lightbox-info {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.pmos-lightbox-caption,
+.pmos-lightbox-meta {
+  overflow-wrap: anywhere;
+}
+
+.pmos-lightbox-meta span:first-child {
+  color: var(--muted2);
+}
+
+.pmos-lightbox-close,
+.pmos-lightbox-nav {
+  position: absolute;
+  z-index: 2;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.22);
+  background: rgba(10,12,18,.86);
+  color: #fff;
+}
+
+.pmos-lightbox-close {
+  top: 12px;
+  right: 12px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  font-size: 25px;
+}
+
+.pmos-lightbox-nav {
+  top: 50%;
+  width: 42px;
+  height: 52px;
+  transform: translateY(-50%);
+  border-radius: 10px;
+  font-size: 30px;
+}
+
+.pmos-lightbox-prev { left: 12px; }
+.pmos-lightbox-next { right: 12px; }
+
+.pmos-lightbox-link {
+  justify-self: start;
+  color: var(--purple-xl);
+  font-weight: 900;
+}
+
+@media (max-width: 720px) {
+  .pmos-lightbox-overlay { padding: 0; }
+  .pmos-lightbox-container {
+    width: 100%;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+  .pmos-lightbox-content { grid-template-columns: 1fr; }
+  .pmos-lightbox-image-wrap { min-height: 42dvh; }
+  .pmos-lightbox-image { max-height: 58dvh; }
 }
 
 .pmos-row-title {

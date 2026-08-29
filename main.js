@@ -934,7 +934,7 @@ function renderAttentionProjects(projects) {
   el.style.display = '';
   el.innerHTML = '<div class="sec-label">&#x1F514; Attention Required</div>' +
     items.slice(0, 6).map(function (item) {
-      return '<div class="dash-attention-projects-card dash-attn-card-' + item.level + '" onclick="openProjectFromHub(\'' + escapeHtml(item.project.id) + '\')">' +
+      return '<div class="dash-attention-projects-card dash-attn-card-' + item.level + '" role="button" tabindex="0" onclick="openProjectFromHub(\'' + escapeHtml(item.project.id) + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openProjectFromHub(\'' + escapeHtml(item.project.id) + '\')}">' +
         '<span class="dash-attn-card-icon">' + item.icon + '</span>' +
         '<div class="dash-attn-card-body">' +
           '<div class="dash-attn-card-title">' + item.title + '</div>' +
@@ -1505,6 +1505,14 @@ function openProjectFromHub(pid) {
 //  WORKSPACE - Enter / Exit
 // ============================================================
 
+function deactivatePmosForNavigation() {
+  if (typeof window.deactivatePmosOffice === 'function') {
+    window.deactivatePmosOffice();
+  } else {
+    $('pmosOfficeView')?.classList.add('hidden');
+  }
+}
+
 async function enterProject(pid) {
   if (!canAccessProject(pid)) {
     showToast('You do not have access to this project.', 'error');
@@ -1520,6 +1528,7 @@ async function enterProject(pid) {
   setText('wsContextLabel', 'Active Site');
   ensureProjectDashboardUi();
   setAdminWorkspaceMode(false);
+  deactivatePmosForNavigation();
   $('hubView').classList.add('hidden');
   $('systemReportsView')?.classList.add('hidden');
   $('pmosOfficeView')?.classList.add('hidden');
@@ -1586,6 +1595,7 @@ function exitHub() {
   detachProjectDashboardListener();
   if (typeof detachNotifications === 'function') detachNotifications();
 
+  deactivatePmosForNavigation();
   $('workspaceView').classList.add('hidden');
   setAdminWorkspaceMode(false);
   $('systemReportsView')?.classList.add('hidden');
@@ -1603,7 +1613,7 @@ function switchTab(tab) {
     tab = 'admin';
   }
   $('systemReportsView')?.classList.add('hidden');
-  if (tab !== 'pmos') $('pmosOfficeView')?.classList.add('hidden');
+  if (tab !== 'pmos') deactivatePmosForNavigation();
   document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('tab-active'));
   $(`tab_${tab}`)?.classList.add('tab-active');
   document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
@@ -1658,6 +1668,7 @@ function openTeamAdmin() {
     showToast('Project assignment access is available to PM and Admin accounts.', 'error');
     return;
   }
+  deactivatePmosForNavigation();
   $('hubView')?.classList.add('hidden');
   $('systemReportsView')?.classList.add('hidden');
   $('pmosOfficeView')?.classList.add('hidden');
@@ -1782,10 +1793,128 @@ async function saveProjectNotes() {
   showToast('Notes saved');
 }
 
+// ============================================================
+//  OVERLAY LIFECYCLE
+// ============================================================
+
+const OVERLAY_SELECTOR = [
+  '.modal-overlay:not(.hidden)',
+  '.dialog-overlay:not(.hidden)',
+  '.cmd-palette-overlay',
+  '.shortcuts-help:not(.hidden)',
+  '.pmos-action-sheet:not(.hidden)',
+  '.pmos-lightbox-overlay'
+].join(', ');
+
+let _overlayScrollLocked = false;
+let _overlayScrollY = 0;
+let _overlayObserver = null;
+
+function visibleOverlayElements() {
+  return Array.from(document.querySelectorAll(OVERLAY_SELECTOR)).filter(overlay => {
+    const style = window.getComputedStyle(overlay);
+    return style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none';
+  });
+}
+
+function syncOverlayScrollLock() {
+  if (!document.body) return;
+  const shouldLock = visibleOverlayElements().length > 0;
+  if (shouldLock === _overlayScrollLocked) return;
+
+  if (shouldLock) {
+    _overlayScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    document.documentElement.classList.add('overlay-scroll-locked');
+    document.body.classList.add('overlay-scroll-locked');
+    _overlayScrollLocked = true;
+    return;
+  }
+
+  document.documentElement.classList.remove('overlay-scroll-locked');
+  document.body.classList.remove('overlay-scroll-locked');
+  _overlayScrollLocked = false;
+  window.scrollTo(0, _overlayScrollY);
+}
+
+function initOverlayLifecycle() {
+  if (_overlayObserver || !document.body) return;
+  _overlayObserver = new MutationObserver(syncOverlayScrollLock);
+  _overlayObserver.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['class', 'style', 'hidden'],
+    childList: true,
+    subtree: true
+  });
+  syncOverlayScrollLock();
+}
+
+const OFFICE_MODAL_CLOSE_HANDLERS = {
+  projectAssignModal: 'closeProjectAssignModal',
+  rfpModal: 'closeRFP',
+  coRejectModal: 'closeRejectChangeOrderModal',
+  payrollModal: 'closePayrollModal',
+  workerEditModal: 'closeWorkerEditModal',
+  advanceModal: 'closeAdvanceModal',
+  deliveryModal: 'closeDeliveryModal',
+  invoiceModal: 'closeInvoiceModal',
+  editContractModal: 'closeEditContractModal',
+  editSupplierModal: 'closeEditSupplier',
+  editTaskModal: 'closeEditTaskModal',
+  editProjectModal: 'closeEditProjectModal',
+  payslipModal: 'closePayslipModal'
+};
+
+function closeTopOverlayFromKeyboard() {
+  const overlays = visibleOverlayElements();
+  if (!overlays.length) return false;
+  const overlay = overlays[overlays.length - 1];
+
+  if (overlay.id === 'pmosActionSheet' && typeof window.pmosHideCreateSheet === 'function') {
+    window.pmosHideCreateSheet();
+    return true;
+  }
+  if (overlay.id === 'pmosTaskDetailSheet' && typeof window.pmosCloseTaskDetails === 'function') {
+    window.pmosCloseTaskDetails();
+    return true;
+  }
+
+  const handlerName = OFFICE_MODAL_CLOSE_HANDLERS[overlay.id];
+  if (handlerName && typeof window[handlerName] === 'function') {
+    window[handlerName]();
+    return true;
+  }
+
+  const closeButton = Array.from(overlay.querySelectorAll('button')).find(button =>
+    /^(close|cancel)(\s|$)/i.test((button.textContent || '').trim()) ||
+    /^close\b/i.test(button.getAttribute('aria-label') || '')
+  );
+  if (closeButton) {
+    closeButton.click();
+    return true;
+  }
+  return false;
+}
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initOverlayLifecycle, { once: true });
+else initOverlayLifecycle();
+
+window.syncOverlayScrollLock = syncOverlayScrollLock;
+window.getOverlayLifecycleDiagnostics = function () {
+  return { locked: _overlayScrollLocked, openOverlayCount: visibleOverlayElements().length };
+};
+
 // Keyboard shortcuts
 window.addEventListener('keydown', e => {
   // Escape: Go back to hub from workspace or close overlays
   if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (e.defaultPrevented) return;
+    // Close the topmost owned overlay before treating Escape as view
+    // navigation. Owner close functions preserve focus and state cleanup.
+    if (closeTopOverlayFromKeyboard()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
     // Don't escape from form inputs
     const tag = document.activeElement?.tagName || '';
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) {
@@ -1798,21 +1927,6 @@ window.addEventListener('keydown', e => {
     if (notifDropdown && !notifDropdown.classList.contains('hidden')) {
       e.preventDefault();
       notifDropdown.classList.add('hidden');
-      return;
-    }
-    // Close the VISIBLE modal overlay (if any). Modals toggle `.hidden` —
-    // never remove them from the DOM (reopening would break). Only act on
-    // overlays that are actually open; the first `.modal-overlay` in the DOM
-    // is usually a hidden one, so we scan for the visible instance.
-    let openModal = null;
-    document.querySelectorAll('.modal-overlay, .dialog-overlay').forEach(m => {
-      if (openModal) return;
-      const inlineStyle = m.getAttribute('style') || '';
-      if (!m.classList.contains('hidden') && !/display\s*:\s*none/i.test(inlineStyle)) openModal = m;
-    });
-    if (openModal) {
-      e.preventDefault();
-      openModal.classList.add('hidden');
       return;
     }
     // Exit workspace views back to hub
@@ -1831,15 +1945,17 @@ window.addEventListener('keydown', e => {
     const systemReports = $('systemReportsView');
     if (systemReports && !systemReports.classList.contains('hidden')) {
       e.preventDefault();
-      systemReports.classList.add('hidden');
-      $('hubView')?.classList.remove('hidden');
+      if (typeof closeSystemReports === 'function') closeSystemReports();
       return;
     }
     const pmosOffice = $('pmosOfficeView');
     if (pmosOffice && !pmosOffice.classList.contains('hidden')) {
       e.preventDefault();
-      pmosOffice.classList.add('hidden');
-      $('hubView')?.classList.remove('hidden');
+      if (typeof window.closePmosOffice === 'function') window.closePmosOffice();
+      else {
+        pmosOffice.classList.add('hidden');
+        $('hubView')?.classList.remove('hidden');
+      }
     }
   }
   // Ctrl+1-8: Switch workspace tabs

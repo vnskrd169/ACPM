@@ -177,6 +177,8 @@
     globalReadDeniedNotified: false,
     fallbackReadDeniedNotified: false,
     homeListenersAttached: false,
+    createSheetReturnFocus: null,
+    taskDetailReturnFocus: null,
     pagination: { inbox: 0, feed: 0, issues: 0, materials: 0, tasks: 0, sitelogs: 0, photos: 0 },
     /* Edit tracking: when set, saves update instead of creating new */
     editingRecord: null
@@ -612,15 +614,15 @@
         <div class="pmos-home-date">${new Date().toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
 
         <div class="pmos-home-stats">
-          <div class="pmos-stat-card" onclick="pmosOpenModule('issue')">
+          <div class="pmos-stat-card" role="button" tabindex="0" onclick="pmosOpenModule('issue')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pmosOpenModule('issue')}">
             <strong>${pendingIssues.length}</strong>
             <span>Open Issues</span>
           </div>
-          <div class="pmos-stat-card" onclick="pmosOpenModule('task')">
+          <div class="pmos-stat-card" role="button" tabindex="0" onclick="pmosOpenModule('task')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pmosOpenModule('task')}">
             <strong>${overdueTasks.length}</strong>
             <span>Overdue Tasks</span>
           </div>
-          <div class="pmos-stat-card" onclick="pmosOpenModule('material')">
+          <div class="pmos-stat-card" role="button" tabindex="0" onclick="pmosOpenModule('material')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pmosOpenModule('material')}">
             <strong>${pendingMaterials.length}</strong>
             <span>Materials Pending</span>
           </div>
@@ -630,7 +632,7 @@
           </div>
         </div>
 
-        ${pendingPhotos ? `<div class="pmos-home-alert" onclick="document.getElementById('pmosNavTab_photos')?.click()">
+        ${pendingPhotos ? `<div class="pmos-home-alert" role="button" tabindex="0" onclick="pmosOpenModule('photo')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();pmosOpenModule('photo')}">
           <span>&#x26A0;&#xFE0F;</span> ${pendingPhotos} photo${pendingPhotos > 1 ? 's' : ''} waiting to upload
         </div>` : ''}
 
@@ -724,7 +726,7 @@
       var statusClass = t.status === 'overdue' || (t.dueDate && t.dueDate < today) ? 'pmos-task-overdue-tag' : '';
       var priorityLower = String(t.priority || '').toLowerCase();
       var priorityDot = '<span class="pmos-task-priority-dot pmos-priority-' + (priorityLower || 'normal') + '"></span>';
-      return '<div class="pmos-task-mini-card ' + statusClass + '" onclick="pmosShowNav(\'tasks\')">' +
+      return '<div class="pmos-task-mini-card ' + statusClass + '" role="button" tabindex="0" onclick="pmosShowNav(\'tasks\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();pmosShowNav(\'tasks\')}">' +
         '<div class="pmos-task-mini-hdr">' +
           '<strong>' + title + '</strong>' +
           dueStr +
@@ -743,15 +745,15 @@
         '<button class="pmos-btn-link" onclick="pmosShowNav(\'tasks\')">View All</button>' +
       '</div>' +
       '<div class="pmos-today-task-stats">' +
-        '<div class="pmos-today-stat" onclick="pmosShowNav(\'tasks\')">' +
+        '<div class="pmos-today-stat" role="button" tabindex="0" onclick="pmosShowNav(\'tasks\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();pmosShowNav(\'tasks\')}">' +
           '<strong>' + openCount + '</strong>' +
           '<span>Open</span>' +
         '</div>' +
-        '<div class="pmos-today-stat pmos-today-stat-overdue" onclick="pmosShowNav(\'tasks\')">' +
+        '<div class="pmos-today-stat pmos-today-stat-overdue" role="button" tabindex="0" onclick="pmosShowNav(\'tasks\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();pmosShowNav(\'tasks\')}">' +
           '<strong>' + overdueCount + '</strong>' +
           '<span>Overdue</span>' +
         '</div>' +
-        '<div class="pmos-today-stat" onclick="pmosOpenModule(\'task\')">' +
+        '<div class="pmos-today-stat" role="button" tabindex="0" onclick="pmosOpenModule(\'task\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();pmosOpenModule(\'task\')}">' +
           '<strong>+</strong>' +
           '<span>New Task</span>' +
         '</div>' +
@@ -908,7 +910,7 @@
       </nav>
 
       <!-- Action Sheet (for Create button) -->
-      <div id="pmosActionSheet" class="pmos-action-sheet hidden" role="dialog" aria-label="Create new record">
+      <div id="pmosActionSheet" class="pmos-action-sheet hidden" role="dialog" aria-modal="true" aria-label="Create new record">
         <div class="pmos-action-sheet-backdrop" onclick="pmosHideCreateSheet()"></div>
         <div class="pmos-action-sheet-content">
           <div class="pmos-action-sheet-head">New Field Record</div>
@@ -1029,12 +1031,20 @@
 
   function pmosShowCreateSheet() {
     const sheet = $('pmosActionSheet');
-    if (sheet) sheet.classList.remove('hidden');
+    if (!sheet || !sheet.classList.contains('hidden')) return;
+    state.createSheetReturnFocus = document.activeElement;
+    sheet.classList.remove('hidden');
+    requestAnimationFrame(function () { sheet.querySelector('.pmos-action-sheet-btn')?.focus(); });
   }
 
   function pmosHideCreateSheet() {
     const sheet = $('pmosActionSheet');
-    if (sheet) sheet.classList.add('hidden');
+    if (!sheet || sheet.classList.contains('hidden')) return;
+    sheet.classList.add('hidden');
+    if (state.createSheetReturnFocus && state.createSheetReturnFocus.isConnected) {
+      state.createSheetReturnFocus.focus();
+    }
+    state.createSheetReturnFocus = null;
   }
 
   function pmosOpenModule(key) {
@@ -1180,6 +1190,7 @@
       pmosToast('Task could not be found. Refresh and try again.', 'error');
       return;
     }
+    state.taskDetailReturnFocus = document.activeElement;
     var existing = $('pmosTaskDetailSheet');
     if (existing) existing.remove();
     var proofUrl = task.completionProof && task.completionProof.url ? task.completionProof.url : '';
@@ -1219,14 +1230,23 @@
         <div class="pmos-action-sheet-actions">${pmosTaskActionButtons(task)}</div>
       </section>`;
     document.body.appendChild(sheet);
-    requestAnimationFrame(function () { sheet.classList.add('is-open'); });
+    requestAnimationFrame(function () {
+      sheet.classList.add('is-open');
+      sheet.querySelector('[aria-label="Close task details"]')?.focus();
+    });
   }
 
   function pmosCloseTaskDetails() {
     var sheet = $('pmosTaskDetailSheet');
     if (!sheet) return;
     sheet.classList.remove('is-open');
-    setTimeout(function () { sheet.remove(); }, 180);
+    setTimeout(function () {
+      sheet.remove();
+      if (state.taskDetailReturnFocus && state.taskDetailReturnFocus.isConnected) {
+        state.taskDetailReturnFocus.focus();
+      }
+      state.taskDetailReturnFocus = null;
+    }, 180);
   }
 
   async function pmosTransitionTask(status) {
@@ -2188,7 +2208,7 @@
 
     var priorityLabel = String(priority).charAt(0).toUpperCase() + String(priority).slice(1).toLowerCase();
 
-    return '<div class="pmos-task-row ' + priorityBorder + '" data-task-id="' + h(t.id) + '" onclick="pmosOpenTaskDetails(\'' + h(t.id) + '\')">' +
+    return '<div class="pmos-task-row ' + priorityBorder + '" role="button" tabindex="0" data-task-id="' + h(t.id) + '" onclick="pmosOpenTaskDetails(\'' + h(t.id) + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();pmosOpenTaskDetails(\'' + h(t.id) + '\')}">' +
       '<div class="pmos-task-row-left">' +
         '<div class="pmos-task-row-title">' +
           '<strong>' + title + '</strong>' +

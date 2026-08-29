@@ -40,9 +40,9 @@
 <script src="auth.js?v=98"></script>
 
 <!-- Core modules -->
-<script src="main.js?v=109"></script>
+<script src="main.js?v=110"></script>
 <script src="payroll-math.js?v=2"></script>
-<script src="labor.js?v=98"></script>
+<script src="labor.js?v=99"></script>
 <script src="materials.js?v=96"></script>
 <script src="sitelog.js?v=95"></script>
 <script src="suppliers.js?v=94"></script>
@@ -53,9 +53,11 @@
 <script src="defects.js?v=94"></script>
 <script src="tasks.js?v=95"></script>
 <script src="notifications.js?v=86"></script>
-<script src="report.js?v=97"></script>
-<script src="pmos-office.js?v=4"></script>
-<script src="ai-command-center.js?v=1"></script>
+<script src="report.js?v=98"></script>
+<script src="pmos-subscription-manager.js?v=1"></script>
+<script src="pmos-photo-lightbox.js?v=1"></script>
+<script src="pmos-office.js?v=5"></script>
+<script src="ai-command-center.js?v=2"></script>
 <script src="face-attendance.js?v=1"></script>
 <script src="ux-palette.js?v=1"></script>
 
@@ -63,29 +65,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<link rel="stylesheet" href="style.css?v=112">
+<link rel="stylesheet" href="style.css?v=113">
 <link rel="stylesheet" href="assets/brand/acpm-brand.css">
 <link rel="stylesheet" href="assets/brand/ai-command-center.css?v=1">
 
 <script>
 // -- Theme Toggle --------------------------------------------
-function toggleTheme() {
-  const html = document.documentElement;
-  const current = html.getAttribute('data-theme');
-  if (current === 'light') {
-    html.removeAttribute('data-theme');
-    localStorage.setItem('theme', 'dark');
-  } else {
-    html.setAttribute('data-theme', 'light');
-    localStorage.setItem('theme', 'light');
-  }
-}
-(function loadTheme() {
-  const saved = localStorage.getItem('theme');
-  if (saved === 'light') document.documentElement.setAttribute('data-theme', 'light');
-})();
-
-// -- PWA install prompt --------------------------------------
 function toggleTheme() {
   const html = document.documentElement;
   const current = html.getAttribute('data-theme');
@@ -261,16 +246,16 @@ window.addEventListener('appinstalled', () => {
 
       <!-- Premium KPI Row: Attention-first hierarchy -->
       <div class="kpi-row">
-        <div class="kpi-card kpi-red" id="dsCriticalCard" onclick="showHubTab('active')">
+        <button class="kpi-card kpi-red" id="dsCriticalCard" type="button" onclick="showHubTab('active')">
           <span class="kpi-label">&#x26A0;&#xFE0F; At Risk</span>
           <span class="kpi-num kpi-danger" id="dsSumCritical"> - </span>
           <span class="kpi-sub" id="dsCriticalNames"></span>
-        </div>
-        <div class="kpi-card kpi-amber" onclick="scrollToSection('attentionGrid')">
+        </button>
+        <button class="kpi-card kpi-amber" type="button" onclick="scrollToSection('attentionGrid')">
           <span class="kpi-label">&#x26A0;&#xFE0F; Overdue Tasks</span>
           <span class="kpi-num kpi-warn" id="dsSumOverdue"> - </span>
           <span class="kpi-sub">Across all projects</span>
-        </div>
+        </button>
         <div class="kpi-card kpi-blue">
           <span class="kpi-label">&#x1F4CB; Pending Approvals</span>
           <span class="kpi-num kpi-info" id="dsSumPending"> - </span>

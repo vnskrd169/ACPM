@@ -181,11 +181,17 @@
     // Keyboard handler
     _lightboxState.keyHandler = function (e) {
       if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
         pmosCloseLightbox();
       } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
         pmosLightboxPrev();
       } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
         pmosLightboxNext();
+      } else if (e.key === 'Tab') {
+        trapLightboxFocus(e);
       }
     };
     document.addEventListener('keydown', _lightboxState.keyHandler);
@@ -209,6 +215,22 @@
     if (Math.abs(diff) > threshold) {
       if (diff > 0) pmosLightboxNext();
       else pmosLightboxPrev();
+    }
+  }
+
+  function trapLightboxFocus(event) {
+    const overlay = document.getElementById('pmosLightbox');
+    if (!overlay) return;
+    const focusable = Array.from(overlay.querySelectorAll('button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'));
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
     }
   }
 
@@ -238,39 +260,41 @@
 
   /* ---- Thumbnail click handler (convenience) ---- */
   function pmosAttachLightboxToGallery(containerSelector = '.pmos-photo-grid') {
-    const container = document.querySelector(containerSelector);
-    if (!container) return;
+    document.querySelectorAll(containerSelector).forEach(function (container) {
+      if (container.dataset.pmosLightboxBound === '1') return;
+      container.dataset.pmosLightboxBound = '1';
 
-    container.addEventListener('click', function (e) {
-      const thumb = e.target.closest('.pmos-photo-card, .pmos-photo-row');
-      if (!thumb) return;
+      container.addEventListener('click', function (e) {
+        const preview = e.target.closest('.pmos-photo-preview-btn');
+        const thumb = preview && preview.closest('.pmos-photo-card, .pmos-photo-row');
+        if (!thumb) return;
 
-      // Collect all photos in the grid
-      const allPhotos = Array.from(container.querySelectorAll('.pmos-photo-card, .pmos-photo-row'))
-        .map(el => {
-          const dataset = el.dataset;
-          return {
-            id: dataset?.id || '',
-            photoUrl: dataset?.photoUrl || '',
-            thumbnailUrl: dataset?.thumbnailUrl || '',
-            caption: dataset?.caption || '',
-            location: dataset?.location || '',
-            category: dataset?.category || '',
-            projectId: dataset?.projectId || '',
-            projectName: dataset?.projectName || '',
-            createdByName: dataset?.createdByName || '',
-            createdAt: dataset?.createdAt ? Number(dataset.createdAt) : 0,
-            uploadedAt: dataset?.uploadedAt ? Number(dataset.uploadedAt) : 0,
-            storageProvider: dataset?.storageProvider || '',
-            status: dataset?.status || 'New'
-          };
-        })
-        .filter(p => p.photoUrl);
+        // Collect the current visual group only. Each group owns one delegated
+        // listener, and the data flag prevents multiplication on rerender.
+        const allPhotos = Array.from(container.querySelectorAll('.pmos-photo-card, .pmos-photo-row'))
+          .map(el => {
+            const dataset = el.dataset;
+            return {
+              id: dataset?.id || '',
+              photoUrl: dataset?.photoUrl || '',
+              thumbnailUrl: dataset?.thumbnailUrl || '',
+              caption: dataset?.caption || '',
+              location: dataset?.location || '',
+              category: dataset?.category || '',
+              projectId: dataset?.projectId || '',
+              projectName: dataset?.projectName || '',
+              createdByName: dataset?.createdByName || '',
+              createdAt: dataset?.createdAt ? Number(dataset.createdAt) : 0,
+              uploadedAt: dataset?.uploadedAt ? Number(dataset.uploadedAt) : 0,
+              storageProvider: dataset?.storageProvider || '',
+              status: dataset?.status || 'New'
+            };
+          })
+          .filter(p => p.photoUrl);
 
-      const index = allPhotos.findIndex(p => p.id === (thumb.dataset?.id || ''));
-      if (index >= 0) {
-        pmosOpenLightbox(allPhotos, index);
-      }
+        const index = allPhotos.findIndex(p => p.id === (thumb.dataset?.id || ''));
+        if (index >= 0) pmosOpenLightbox(allPhotos, index);
+      });
     });
   }
   window.pmosAttachLightboxToGallery = pmosAttachLightboxToGallery;
@@ -281,5 +305,8 @@
   window.pmosLightboxPrev = pmosLightboxPrev;
   window.pmosLightboxNext = pmosLightboxNext;
   window.pmosLightboxStatusBadge = lightboxStatusBadge;
+  window.getPmosLightboxDiagnostics = function () {
+    return { open: _lightboxState.open, keyListenerActive: !!_lightboxState.keyHandler };
+  };
 
 })();
