@@ -66,6 +66,29 @@ export const unknownFactSchema = z.object({
   reason: z.string().trim().min(1)
 }).strict();
 
+const providerEvidenceReferenceSchema = z.object({
+  path: z.string().min(1),
+  recordId: z.string().min(1),
+  field: z.string().min(1)
+}).strict();
+
+const providerGroundedFactSchema = z.object({
+  claim: z.string().min(1),
+  evidenceRefs: z.array(providerEvidenceReferenceSchema).min(1)
+}).strict();
+
+const providerUnknownFactSchema = z.object({
+  field: z.string().min(1),
+  reason: z.string().min(1)
+}).strict();
+
+export const providerScheduleImpactSchema = z.object({
+  status: impactStatusSchema,
+  days: z.number().positive().finite().nullable(),
+  reason: z.string().min(1).nullable(),
+  evidenceRefs: z.array(providerEvidenceReferenceSchema)
+}).strict();
+
 export const scheduleImpactSchema = z.object({
   status: impactStatusSchema,
   days: z.number().positive().finite().nullable(),
@@ -87,6 +110,14 @@ export const scheduleImpactSchema = z.object({
     });
   }
 });
+
+export const providerCostImpactSchema = z.object({
+  status: impactStatusSchema,
+  amount: z.number().nonnegative().finite().nullable(),
+  currency: z.literal('PHP').nullable(),
+  reason: z.string().min(1).nullable(),
+  evidenceRefs: z.array(providerEvidenceReferenceSchema)
+}).strict();
 
 export const costImpactSchema = z.object({
   status: impactStatusSchema,
@@ -124,6 +155,24 @@ export const costImpactSchema = z.object({
     });
   }
 });
+
+const providerGroundedFindingShape = {
+  schemaVersion: z.literal('0.1'),
+  agentId: agentIdSchema,
+  severity: severitySchema,
+  summary: z.string().min(1),
+  facts: z.array(providerGroundedFactSchema),
+  unknowns: z.array(providerUnknownFactSchema),
+  scheduleImpact: providerScheduleImpactSchema,
+  costImpact: providerCostImpactSchema,
+  recommendedActions: z.array(z.string().min(1)),
+  needsHumanDecision: z.boolean(),
+  decisionQuestion: z.string().min(1).nullable()
+} as const;
+
+// Provider-compatible strict structure. Custom cross-field and grounding
+// checks remain local because they cannot be represented faithfully in JSON Schema.
+export const groundedFindingProviderSchema = z.object(providerGroundedFindingShape).strict();
 
 export const groundedFindingSchema = z.object({
   schemaVersion: z.literal('0.1'),

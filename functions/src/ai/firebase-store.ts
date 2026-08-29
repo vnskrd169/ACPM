@@ -8,6 +8,7 @@ import type {
   AiProjectTarget,
   AiRecommendationRecord,
   AiRunRecord,
+  AiRuntimeStatusRecord,
   GroundedFinding
 } from './contracts.js';
 import { aiProjectTargetSchema } from './schemas.js';
@@ -164,5 +165,9 @@ export class FirebaseAiPipelineStore implements AiPipelineStore {
 
   async saveEvent(eventId: string, event: AiEventRecord): Promise<void> {
     await this.aiRef(`ai/events/${eventId}`).set(event);
+  }
+
+  async saveRuntimeStatus(status: AiRuntimeStatusRecord): Promise<void> {
+    await this.aiRef('ai/runtimeStatus').set(status);
   }
 }

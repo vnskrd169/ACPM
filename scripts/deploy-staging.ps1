@@ -1,5 +1,6 @@
 param(
-  [switch]$HostingOnly
+  [switch]$HostingOnly,
+  [switch]$IncludeAiProvider
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,7 +16,19 @@ if ($LASTEXITCODE -ne 0) { throw 'PWA cache QA failed.' }
 node scripts/rc1_static_gate.js
 if ($LASTEXITCODE -ne 0) { throw 'RC1 static gate failed.' }
 
-$Target = if ($HostingOnly) { 'hosting' } else { 'database,hosting' }
+$Target = if ($HostingOnly) {
+  'hosting'
+} elseif ($IncludeAiProvider) {
+  node scripts/ai_security_static_qa.js
+  if ($LASTEXITCODE -ne 0) { throw 'AI security static QA failed.' }
+  npm.cmd --prefix functions run typecheck
+  if ($LASTEXITCODE -ne 0) { throw 'AI Functions typecheck failed.' }
+  npm.cmd --prefix functions test
+  if ($LASTEXITCODE -ne 0) { throw 'AI Functions tests failed.' }
+  'database,hosting,functions:ai-staging'
+} else {
+  'database,hosting'
+}
 firebase.cmd deploy --only $Target --project $ProjectId
 if ($LASTEXITCODE -ne 0) { throw 'Staging deployment failed.' }
 

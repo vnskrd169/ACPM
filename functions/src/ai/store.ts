@@ -6,6 +6,7 @@ import type {
   AiProjectTarget,
   AiRecommendationRecord,
   AiRunRecord,
+  AiRuntimeStatusRecord,
   GroundedFinding
 } from './contracts.js';
 
@@ -43,6 +44,7 @@ export interface AiPipelineStore {
   saveRecommendation(id: string, recommendation: AiRecommendationRecord): Promise<void>;
   saveDecision(id: string, decision: AiDecisionRecord): Promise<void>;
   saveEvent(eventId: string, event: AiEventRecord): Promise<void>;
+  saveRuntimeStatus(status: AiRuntimeStatusRecord): Promise<void>;
 }
 
 function clone<T>(value: T): T {
@@ -57,6 +59,7 @@ export class InMemoryAiPipelineStore implements AiPipelineStore {
   readonly findings = new Map<string, Partial<Record<AgentId, GroundedFinding>>>();
   readonly recommendations = new Map<string, AiRecommendationRecord>();
   readonly decisions = new Map<string, AiDecisionRecord>();
+  runtimeStatus: AiRuntimeStatusRecord | null = null;
 
   constructor(targets: Readonly<Record<string, AiProjectTarget>> = {}) {
     for (const [projectId, target] of Object.entries(targets)) {
@@ -178,5 +181,9 @@ export class InMemoryAiPipelineStore implements AiPipelineStore {
 
   async saveEvent(eventId: string, event: AiEventRecord): Promise<void> {
     this.events.set(eventId, clone(event));
+  }
+
+  async saveRuntimeStatus(status: AiRuntimeStatusRecord): Promise<void> {
+    this.runtimeStatus = clone(status);
   }
 }

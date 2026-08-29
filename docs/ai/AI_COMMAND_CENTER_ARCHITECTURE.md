@@ -1,6 +1,6 @@
 # ACPM AI Command Center
 
-Status: **deterministic fake-provider pipeline; disabled and not deployed**
+Status: **staging-only OpenAI adapter and manual dry-run runtime prepared; disabled and not deployed**
 
 ## Purpose and boundary
 
@@ -124,6 +124,81 @@ the no-I/O default boundary.
 Provider credentials do not exist in Phase 3. Future credentials belong in a
 server-side secret manager, never RTDB, source control, Hosting output, logs,
 or browser code.
+
+### Phase 4 OpenAI adapter
+
+`OpenAIProvider` is the first real adapter and is the only backend module that
+imports the official OpenAI Node SDK. The reviewed dependency is pinned at
+`openai@7.8.0`. It uses the Responses API with strict JSON Schema structured
+output, `store=false`, no tools, an idempotency header, a per-request timeout,
+and explicit retry handling. The adapter has no Firebase import, database
+credential, ACPM tool, URL-fetch facility, or business-record access.
+
+Application code uses `analysis` and `synthesis` model aliases. Both currently
+resolve inside the adapter to `gpt-5.6-luna`, selected as the current
+cost-sensitive model for this bounded structured analysis. Raw model IDs do
+not appear in agents, routing, orchestration, context assembly, or persisted
+run records. Runs record `analysis+synthesis`, not the provider model ID.
+
+Provider-compatible structural Zod schemas deliberately contain no opaque
+refinements and are converted by the SDK to strict JSON Schema. Successful
+provider parsing is still passed through the stricter local Zod schema,
+cross-field unknown-value rules, evidence grounding, and unsupported numeric
+claim validation. Provider structured output is an additional boundary, not a
+replacement for local validation.
+
+Prompts are versioned as `materials-v1`, `planning-v1`, and `pm-v1`. Their
+server-only instructions say that all source text is untrusted data, embedded
+instructions must be ignored, missing facts stay unknown, evidence must exist
+in context, and exact schedule/cost numbers cannot be estimated. Prompt bodies
+and raw provider responses are never persisted.
+
+Provider exceptions map to safe codes only:
+
+- `provider_timeout`
+- `provider_rate_limited`
+- `provider_unavailable`
+- `provider_auth_failed`
+- `provider_bad_request`
+- `provider_invalid_output`
+- `provider_unknown_error`
+
+Timeout/network, HTTP 408/429, and 5xx failures retry with bounded exponential
+backoff up to `maxAttempts`. Authentication, bad configuration/request, and
+invalid output do not retry. API keys, headers, raw response bodies, prompts,
+and upstream error messages are not logged or persisted.
+
+## Staging-only manual runtime
+
+The sole deployable entrypoint is `stagingManualAiDryRun`. It is a callable
+with App Check enforcement, authenticated `boss`/`owner`/`admin` custom-claim
+authorization, one maximum instance, Secret Manager binding, and a hard check
+for Firebase project `acpm-project-system-qa`. It requires explicit
+`projectId` and `eventId`, an enabled enrolled target with activation time,
+global AI/generation enabled, and `dryRun=true`. Existing event/run transaction
+claims prevent accidental repeat processing.
+
+The callable uses the restricted `acpm-ai-service` Admin app. It cannot read
+the project root, suppliers, users, or forbidden business collections. The
+OpenAI provider receives only the `GroundedContext` assembled before the call.
+Dry-run completion can create `/ai/runs`, `/ai/findings`, event status, and a
+sanitized `/ai/runtimeStatus`; it cannot create recommendations or decisions.
+
+Runtime status contains only schema version, provider alias, one of
+`not_configured|healthy|degraded|unavailable`, checked/success timestamps, and
+a safe error code. It contains no account, API, model, request, prompt, or
+secret metadata.
+
+`OPENAI_API_KEY` is declared only with Firebase Functions `defineSecret` and is
+read only inside the staging callable runtime. It is never stored in RTDB,
+frontend assets, committed environment files, provider metadata, or logs.
+Staging deployment requires the explicit `-IncludeAiProvider` switch;
+Production deployment excludes Functions entirely.
+
+As of the Phase 4 implementation, both Firebase projects are on a plan that
+cannot enable Secret Manager. No staging secret, config, target, fixture,
+Function deployment, or live provider call was created. Production remains
+unconfigured and therefore disabled by the typed defaults.
 
 ## Isolated AI namespace and service permissions
 

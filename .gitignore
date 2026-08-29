@@ -23,6 +23,7 @@ playwright-report/
 # Build artifacts
 dist/
 build/
+functions/lib/
 
 # Standalone experimental face-attendance prototype (kept on feature/pmos-face-attendance-assist branch)
 line17-face-attendance/

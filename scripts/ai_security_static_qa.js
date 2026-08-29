@@ -16,7 +16,11 @@ function sourceFiles(directory) {
   });
 }
 
-const files = sourceRoots.flatMap(sourceFiles);
+const entrypointPath = path.join(root, 'functions', 'src', 'index.ts');
+const files = [
+  ...sourceRoots.flatMap(sourceFiles),
+  ...(fs.existsSync(entrypointPath) ? [entrypointPath] : [])
+];
 const failures = [];
 const aiSourceFiles = sourceFiles(path.join(root, 'functions', 'src', 'ai'));
 const forbiddenRoots = [
@@ -93,12 +97,23 @@ for (const file of files) {
     }
   }
 
-  if (/\b(?:OPENAI|ANTHROPIC|GEMINI|CLAUDE)_API_KEY\b|\bsk-[A-Za-z0-9_-]{12,}|\bapiKey\s*[:=]\s*['"][^'"]+/i.test(source)) {
+  if (/\bsk-[A-Za-z0-9_-]{12,}|\bapiKey\s*[:=]\s*['"][^'"]+/i.test(source)) {
     failures.push(`${relative}: provider credential pattern found`);
   }
+  if (/\bOPENAI_API_KEY\b/.test(source) && relative !== path.join('functions', 'src', 'index.ts')) {
+    failures.push(`${relative}: OPENAI_API_KEY may appear only in the server entrypoint Secret Manager binding`);
+  }
+  if (/console\.(?:log|info|warn|error|debug)\s*\([^)]*(?:OPENAI_API_KEY|apiKey)/is.test(source)) {
+    failures.push(`${relative}: possible provider credential logging found`);
+  }
 
-  if (/\b(?:onSchedule|onValueCreated|onValueWritten|onCall|onRequest)\s*\(/.test(source)) {
+  const deployableTrigger = /\b(?:onSchedule|onValueCreated|onValueWritten|onCall|onRequest)\s*\(/;
+  if (deployableTrigger.test(source) && relative !== path.join('functions', 'src', 'index.ts')) {
     failures.push(`${relative}: deployable Firebase trigger or callable found`);
+  }
+  if (/from\s+['"]openai(?:\/[^'"]*)?['"]/.test(source)
+      && relative !== path.join('functions', 'src', 'ai', 'providers', 'openai.ts')) {
+    failures.push(`${relative}: direct OpenAI import is outside the provider adapter`);
   }
 
   if (
@@ -106,6 +121,42 @@ for (const file of files) {
     || /\bref\s*\([^,]+,\s*['"`]\/?projects\/?['"`]\s*\)/.test(source)
   ) {
     failures.push(`${relative}: project-root read/listing pattern found`);
+  }
+}
+
+const ignoredFrontendDirectories = new Set([
+  '.git', '.firebase', 'node_modules', 'functions', 'docs', 'scripts', 'tests',
+  'test-results', 'playwright-report', 'dev', 'line17-face-attendance'
+]);
+function deployableFrontendFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    if (entry.isDirectory() && ignoredFrontendDirectories.has(entry.name)) return [];
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return deployableFrontendFiles(fullPath);
+    return /\.(?:html|js|mjs|cjs)$/i.test(entry.name) ? [fullPath] : [];
+  });
+}
+for (const file of deployableFrontendFiles(root)) {
+  const source = fs.readFileSync(file, 'utf8');
+  if (/\bOPENAI_API_KEY\b|\bsk-[A-Za-z0-9_-]{12,}|from\s+['"]openai(?:\/[^'"]*)?['"]/i.test(source)) {
+    failures.push(`${path.relative(root, file)}: OpenAI credential or SDK reference found in deployable frontend`);
+  }
+}
+
+function repositoryTextFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    if (entry.isDirectory() && new Set([
+      '.git', '.firebase', '.tmp_jdk', 'tmp_jdk', 'node_modules', 'lib',
+      'test-results', 'playwright-report', 'line17-face-attendance'
+    ]).has(entry.name)) return [];
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) return repositoryTextFiles(fullPath);
+    return /\.(?:ts|js|mjs|cjs|json|html|md|ps1)$/i.test(entry.name) ? [fullPath] : [];
+  });
+}
+for (const file of repositoryTextFiles(root)) {
+  if (/\bsk-[A-Za-z0-9_-]{12,}/.test(fs.readFileSync(file, 'utf8'))) {
+    failures.push(`${path.relative(root, file)}: provider-key-shaped value found in repository text`);
   }
 }
 
@@ -138,6 +189,15 @@ if (!/databaseAuthVariableOverride\s*:/.test(adminSource) || !/AI_SERVICE_UID/.t
   failures.push('functions/src/firebase/admin.ts: restricted RTDB auth override is missing');
 }
 
+const openAiProviderPath = path.join(root, 'functions', 'src', 'ai', 'providers', 'openai.ts');
+const openAiProviderSource = fs.readFileSync(openAiProviderPath, 'utf8');
+if (/firebase|database\.ref|initializeApp|getDatabase/i.test(openAiProviderSource)) {
+  failures.push('functions/src/ai/providers/openai.ts: provider adapter must not access Firebase');
+}
+if (!/store:\s*false/.test(openAiProviderSource) || !/zodTextFormat/.test(openAiProviderSource)) {
+  failures.push('functions/src/ai/providers/openai.ts: strict non-stored structured output boundary is missing');
+}
+
 const databaseRules = JSON.parse(fs.readFileSync(path.join(root, 'database.rules.json'), 'utf8'));
 function inspectAiWrites(node, pathParts = ['ai']) {
   if (!node || typeof node !== 'object') return;
@@ -161,14 +221,51 @@ const dependencies = {
   ...(functionsPackage.dependencies || {}),
   ...(functionsPackage.devDependencies || {})
 };
-for (const providerSdk of ['openai', '@anthropic-ai/sdk', '@google/generative-ai', 'firebase-functions']) {
+for (const providerSdk of ['@anthropic-ai/sdk', '@google/generative-ai']) {
   if (providerSdk in dependencies) {
-    failures.push(`functions/package.json: forbidden Phase 2 dependency ${providerSdk}`);
+    failures.push(`functions/package.json: unapproved provider SDK ${providerSdk}`);
+  }
+}
+if (dependencies.openai !== '7.8.0') {
+  failures.push('functions/package.json: OpenAI SDK must stay pinned to reviewed version 7.8.0');
+}
+if (dependencies['firebase-functions'] !== '7.3.2') {
+  failures.push('functions/package.json: Firebase Functions SDK must stay pinned to reviewed version 7.3.2');
+}
+
+if (!fs.existsSync(entrypointPath)) {
+  failures.push('functions/src/index.ts: reviewed staging manual entrypoint is missing');
+} else {
+  const entrypoint = fs.readFileSync(entrypointPath, 'utf8');
+  const onCallCount = (entrypoint.match(/\bonCall\s*\(/g) || []).length;
+  if (onCallCount !== 1 || !/stagingManualAiDryRun/.test(entrypoint)) {
+    failures.push('functions/src/index.ts: only the stagingManualAiDryRun callable may be exported');
+  }
+  for (const requirement of [
+    /defineSecret\(['"]OPENAI_API_KEY['"]\)/,
+    /enforceAppCheck:\s*true/,
+    /STAGING_PROJECT_ID/,
+    /MANAGEMENT_ROLES/,
+    /dry_run_required/
+  ]) {
+    if (!requirement.test(entrypoint) && !(
+      requirement.source === 'dry_run_required' && fs.readFileSync(path.join(root, 'functions', 'src', 'ai', 'staging-manual.ts'), 'utf8').includes('dry_run_required')
+    )) {
+      failures.push('functions/src/index.ts: a staging callable safety guard is missing');
+    }
+  }
+  if (/\b(?:onSchedule|onValueCreated|onValueWritten|onRequest)\s*\(/.test(entrypoint)) {
+    failures.push('functions/src/index.ts: unapproved trigger or HTTP function found');
   }
 }
 
-if (fs.existsSync(path.join(root, 'functions', 'src', 'index.ts'))) {
-  failures.push('functions/src/index.ts: deployable functions entrypoint must not exist in Phase 2');
+const stagingDeploy = fs.readFileSync(path.join(root, 'scripts', 'deploy-staging.ps1'), 'utf8');
+const productionDeploy = fs.readFileSync(path.join(root, 'scripts', 'deploy-production.ps1'), 'utf8');
+if (!/IncludeAiProvider/.test(stagingDeploy) || !/functions:ai-staging/.test(stagingDeploy)) {
+  failures.push('scripts/deploy-staging.ps1: explicit opt-in AI Functions deployment is missing');
+}
+if (/functions(?::ai-staging)?/.test(productionDeploy)) {
+  failures.push('scripts/deploy-production.ps1: Production deployment must exclude AI Functions');
 }
 
 if (failures.length > 0) {
@@ -178,4 +275,4 @@ if (failures.length > 0) {
 }
 
 console.log(`AI security static QA passed (${files.length} backend source files scanned).`);
-console.log('Verified: /ai-only backend writes, no project-root listing/full snapshots, service-only browser rules, disabled defaults, restricted Admin auth, no provider SDK/keys, no deployable trigger.');
+console.log('Verified: pinned OpenAI adapter only, Secret Manager binding, no frontend key/SDK, no credential logging, /ai-only runtime writes, no provider Firebase access, no project-root listing/full snapshots, staging-only callable guards, Production Functions excluded, and disabled defaults.');

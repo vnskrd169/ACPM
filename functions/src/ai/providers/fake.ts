@@ -9,6 +9,7 @@ import type {
   GenerateStructuredResponse,
   LlmProvider
 } from './provider.js';
+import { ProviderExecutionError } from './provider.js';
 
 export const FAKE_PROVIDER_SCENARIOS = [
   'valid',
@@ -24,12 +25,12 @@ export const FAKE_PROVIDER_SCENARIOS = [
 ] as const;
 export type FakeProviderScenario = (typeof FAKE_PROVIDER_SCENARIOS)[number];
 
-export class FakeProviderError extends Error {
+export class FakeProviderError extends ProviderExecutionError {
   constructor(
     readonly code: 'provider_timeout' | 'provider_transient' | 'provider_permanent',
     readonly retryable: boolean
   ) {
-    super(code);
+    super(code, retryable);
     this.name = 'FakeProviderError';
   }
 }
@@ -82,10 +83,14 @@ function findingFor(
 }
 
 export class FakeProvider implements LlmProvider {
-  readonly alias = 'fake';
+  readonly alias = 'fake' as const;
   callCount = 0;
 
   constructor(private readonly options: FakeProviderOptions = {}) {}
+
+  modelAliasForOperation(): 'fake' {
+    return 'fake';
+  }
 
   async health(): Promise<ProviderHealth> {
     return { status: 'available', configured: true, reason: null };

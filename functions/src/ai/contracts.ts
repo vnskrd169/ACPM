@@ -166,8 +166,8 @@ export interface AiRunRecord {
   requiredAgents: AgentId[];
   attempt: number;
   status: AiRunStatus;
-  providerAlias: 'fake';
-  modelAlias: 'fake';
+  providerAlias: 'fake' | 'openai';
+  modelAlias: 'fake' | 'analysis+synthesis';
   contextDigest: string;
   dryRun: boolean;
   createdAt: number;
@@ -175,6 +175,23 @@ export interface AiRunRecord {
   completedAt: number | null;
   safeErrorCode: string | null;
   usage: TokenUsage | null;
+}
+
+export const AI_RUNTIME_STATUSES = [
+  'not_configured',
+  'healthy',
+  'degraded',
+  'unavailable'
+] as const;
+export type AiRuntimeStatusValue = (typeof AI_RUNTIME_STATUSES)[number];
+
+export interface AiRuntimeStatusRecord {
+  schemaVersion: '0.1';
+  providerAlias: 'openai';
+  status: AiRuntimeStatusValue;
+  lastCheckedAt: number;
+  lastSuccessAt: number | null;
+  safeErrorCode: string | null;
 }
 
 export interface AiRecommendationRecord {

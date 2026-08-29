@@ -17,7 +17,8 @@ const context: GroundedContext = {
 const request = {
   operation: 'agent-analysis' as const,
   agentId: 'planning' as const,
-  modelAlias: 'disabled',
+    modelAlias: 'disabled',
+    promptVersion: 'planning-v1',
   systemInstruction: 'Use only grounded records.',
   context,
   outputSchema: {},

@@ -17,7 +17,13 @@ export interface DisabledProviderResult {
  * It performs no I/O and treats the disabled state as a normal result.
  */
 export class DisabledProvider implements LlmProvider {
+  readonly alias = 'disabled' as const;
+
   constructor(private readonly reason: DisabledProviderReason = 'provider_disabled') {}
+
+  modelAliasForOperation(): 'disabled' {
+    return 'disabled';
+  }
 
   async health(): Promise<ProviderHealth> {
     return {

@@ -14,6 +14,7 @@ function request() {
     operation: 'agent-analysis' as const,
     agentId: 'planning' as const,
     modelAlias: 'fake',
+    promptVersion: 'planning-v1',
     systemInstruction: 'Use supplied data only.',
     context,
     outputSchema: {},

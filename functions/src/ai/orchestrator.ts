@@ -12,8 +12,7 @@ import type {
 import { ContextAssembler } from './context.js';
 import { deterministicId, stableDigest } from './determinism.js';
 import { GroundingValidationError } from './grounding.js';
-import { FakeProviderError } from './providers/fake.js';
-import type { LlmProvider } from './providers/provider.js';
+import { ProviderExecutionError, type LlmProvider } from './providers/provider.js';
 import { routeAiEvent } from './router.js';
 import type { AiSourceReader } from './source-reader.js';
 import type { AiPipelineStore } from './store.js';
@@ -35,7 +34,7 @@ export interface ProcessEventResult {
 }
 
 function safeErrorCode(error: unknown): string {
-  if (error instanceof FakeProviderError) return error.code;
+  if (error instanceof ProviderExecutionError) return error.code;
   if (error instanceof GroundingValidationError) return error.code;
   return 'pipeline_failed';
 }
@@ -111,8 +110,8 @@ export async function processAiEvent(
     requiredAgents: route.agents,
     attempt,
     status: 'queued',
-    providerAlias: 'fake',
-    modelAlias: 'fake',
+    providerAlias: dependencies.provider.alias === 'openai' ? 'openai' : 'fake',
+    modelAlias: dependencies.provider.alias === 'openai' ? 'analysis+synthesis' : 'fake',
     contextDigest,
     dryRun: dependencies.config.dryRun,
     createdAt: now,
