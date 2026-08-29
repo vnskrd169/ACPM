@@ -9,9 +9,10 @@ import type {
   AiRecommendationRecord,
   AiRunRecord,
   AiRuntimeStatusRecord,
+  AiUiStatus,
   GroundedFinding
 } from './contracts.js';
-import { aiProjectTargetSchema } from './schemas.js';
+import { aiProjectTargetSchema, aiUiStatusSchema } from './schemas.js';
 import { assertAiWritePath } from './security.js';
 import type {
   AiPipelineStore,
@@ -169,5 +170,9 @@ export class FirebaseAiPipelineStore implements AiPipelineStore {
 
   async saveRuntimeStatus(status: AiRuntimeStatusRecord): Promise<void> {
     await this.aiRef('ai/runtimeStatus').set(status);
+  }
+
+  async saveUiStatus(status: AiUiStatus): Promise<void> {
+    await this.aiRef('ai/uiStatus').set(aiUiStatusSchema.parse(status));
   }
 }

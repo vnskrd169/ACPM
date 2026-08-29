@@ -28,15 +28,16 @@ pmosIssues/**
 ```
 
 Allowed writes are exactly the explicit children under `/ai`: `config`,
-`agents`, `runtimeStatus`, `conditions`, `events`, `runs`, `findings`,
-`recommendations`, `decisions`, and `idempotency`. A bulk `/ai` write and
-unknown child names are denied.
+`projectTargets`, `agents`, `runtimeStatus`, `uiStatus`, `conditions`, `events`,
+`runs`, `findings`, `recommendations`, `decisions`, and `idempotency`. A bulk
+`/ai` write and unknown child names are denied.
 
 ## Browser read matrix
 
 | Path group | boss/owner/admin | PM | APM | inactive/anonymous |
 | --- | --- | --- | --- | --- |
 | sanitized output and runtime status | read | read | denied | denied |
+| sanitized `uiStatus` projection | read | read | denied | denied |
 | config | read | denied | denied | denied |
 | conditions and idempotency | denied | denied | denied | denied |
 | any `/ai` write | denied | denied | denied | denied |
@@ -45,6 +46,29 @@ APM access is deferred in V0.1 because AI output is initially a management
 review surface and the output model does not yet provide project-scoped read
 rules. Adding APM access would require project-scoped records and separate
 authorization tests.
+
+## PM-readable UI availability projection
+
+PM remains denied from `/ai/config`. That node is the authoritative internal
+configuration and contains generation, dry-run, retry, event, and timezone
+controls that the browser does not need for Command Center gating.
+
+The service-owned `/ai/uiStatus` projection contains exactly:
+
+```text
+schemaVersion = 0.1
+uiEnabled = boolean
+systemStatus = disabled | not_configured | ready | degraded | unavailable
+updatedAt = non-negative integer timestamp
+```
+
+Active boss, owner, admin, and PM users may read this projection. Only
+`acpm-ai-service` may write it. APM, inactive, and anonymous users are denied,
+and unknown fields fail validation. The projection is derived server-side from
+the authoritative config and sanitized runtime status. Missing `uiStatus`
+means the UI is disabled; browser code must not fall back to `/ai/config`.
+This adds no business-record permission and does not weaken the original
+config boundary.
 
 ## Supplier limitation
 
@@ -80,8 +104,9 @@ npm --prefix functions test
 npm --prefix functions run typecheck
 ```
 
-The emulator suite proves allowed AI writes and context reads, rejects broad
-project and sensitive reads, rejects business/auth/notification/audit writes,
+The emulator suite proves allowed AI writes and context reads, proves PM can
+read only the sanitized UI projection while remaining denied from config,
+rejects broad project and sensitive reads, rejects business/auth/notification/audit writes,
 checks the complete browser role matrix, and prevents a role-bearing service
 profile. The static gate scans backend source for obvious non-AI writes,
 provider key patterns, enabled defaults, real provider SDKs, deployable

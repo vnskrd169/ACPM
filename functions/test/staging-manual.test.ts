@@ -100,6 +100,9 @@ describe('staging-only manual OpenAI dry run', () => {
     expect(current.store.runtimeStatus).toMatchObject({
       providerAlias: 'openai', status: 'healthy', safeErrorCode: null
     });
+    expect(current.store.uiStatus).toEqual({
+      schemaVersion: '0.1', uiEnabled: false, systemStatus: 'disabled', updatedAt: NOW
+    });
   });
 
   it('rejects non-staging, non-dry-run, disabled, mismatched, and repeated requests', async () => {
@@ -133,6 +136,7 @@ describe('staging-only manual OpenAI dry run', () => {
     expect(current.store.runtimeStatus).toMatchObject({
       status: 'not_configured', safeErrorCode: 'provider_not_configured'
     });
+    expect(current.store.uiStatus).toMatchObject({ uiEnabled: false, systemStatus: 'disabled' });
   });
 
   it('maps provider failure to sanitized runtime health and creates no output', async () => {
@@ -151,6 +155,7 @@ describe('staging-only manual OpenAI dry run', () => {
     expect(current.store.runtimeStatus).toMatchObject({
       status: 'degraded', safeErrorCode: 'provider_rate_limited'
     });
+    expect(current.store.uiStatus).toMatchObject({ uiEnabled: false, systemStatus: 'disabled' });
   });
 
   it('uses a synthetic fixture with no sensitive domains and cleans it automatically', () => {

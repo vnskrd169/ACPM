@@ -24,6 +24,7 @@ const AI_OUTPUT_COLLECTIONS = [
   'projectTargets',
   'agents',
   'runtimeStatus',
+  'uiStatus',
   'events',
   'runs',
   'findings',
@@ -35,6 +36,7 @@ const AI_SERVICE_WRITE_COLLECTIONS = [
   'config',
   'agents',
   'runtimeStatus',
+  'uiStatus',
   'events',
   'runs',
   'findings',
@@ -160,6 +162,12 @@ beforeAll(async () => {
         },
         agents: { planning: { status: 'disabled' } },
         runtimeStatus: { state: 'disabled' },
+        uiStatus: {
+          schemaVersion: '0.1',
+          uiEnabled: false,
+          systemStatus: 'disabled',
+          updatedAt: 1785254400000
+        },
         conditions: { internal1: { matched: false } },
         events: { event1: { type: 'task_overdue' } },
         runs: { run1: { status: 'disabled' } },
@@ -180,11 +188,30 @@ describe('ACPM AI service isolation', () => {
   it('allows the service to write every explicit AI namespace collection', async () => {
     const db = testEnv.authenticatedContext(AI_SERVICE_UID).database();
     for (const collection of AI_SERVICE_WRITE_COLLECTIONS) {
-      await assertSucceeds(set(ref(db, `ai/${collection}/phase2-proof`), {
-        source: 'emulator',
-        createdAt: 1785254400000
-      }));
+      const path = collection === 'uiStatus' ? 'ai/uiStatus' : `ai/${collection}/phase2-proof`;
+      const value = collection === 'uiStatus'
+        ? { schemaVersion: '0.1', uiEnabled: true, systemStatus: 'ready', updatedAt: 1785254400000 }
+        : { source: 'emulator', createdAt: 1785254400000 };
+      await assertSucceeds(set(ref(db, path), value));
     }
+  });
+
+  it('allows the service to read uiStatus and rejects unsanitized projection fields', async () => {
+    const db = testEnv.authenticatedContext(AI_SERVICE_UID).database();
+    await assertSucceeds(get(ref(db, 'ai/uiStatus')));
+    await assertFails(set(ref(db, 'ai/uiStatus'), {
+      schemaVersion: '0.1',
+      uiEnabled: true,
+      systemStatus: 'ready',
+      updatedAt: 1785254400000,
+      generationEnabled: true
+    }));
+    await assertFails(set(ref(db, 'ai/uiStatus'), {
+      schemaVersion: '0.1',
+      uiEnabled: true,
+      systemStatus: 'ready',
+      updatedAt: 1.5
+    }));
   });
 
   it('allows only schema-valid service writes to the explicit project target registry', async () => {
@@ -314,6 +341,16 @@ describe('ACPM browser AI permissions', () => {
     await assertFails(get(ref(testEnv.authenticatedContext(USERS.pm).database(), 'ai/config')));
   });
 
+  it('allows management roles to read only the sanitized UI availability projection', async () => {
+    for (const uid of [USERS.boss, USERS.owner, USERS.admin, USERS.pm]) {
+      await assertSucceeds(get(ref(testEnv.authenticatedContext(uid).database(), 'ai/uiStatus')));
+      await assertFails(set(
+        ref(testEnv.authenticatedContext(uid).database(), 'ai/uiStatus'),
+        { schemaVersion: '0.1', uiEnabled: true, systemStatus: 'ready', updatedAt: 1785254400000 }
+      ));
+    }
+  });
+
   it('keeps conditions and idempotency service-only', async () => {
     for (const uid of [USERS.boss, USERS.owner, USERS.admin, USERS.pm]) {
       const db = testEnv.authenticatedContext(uid).database();
@@ -339,6 +376,9 @@ describe('ACPM browser AI permissions', () => {
     await assertFails(get(ref(testEnv.authenticatedContext(USERS.apm).database(), 'ai/events')));
     await assertFails(get(ref(testEnv.unauthenticatedContext().database(), 'ai/events')));
     await assertFails(get(ref(testEnv.authenticatedContext(USERS.inactive).database(), 'ai/events')));
+    await assertFails(get(ref(testEnv.authenticatedContext(USERS.apm).database(), 'ai/uiStatus')));
+    await assertFails(get(ref(testEnv.unauthenticatedContext().database(), 'ai/uiStatus')));
+    await assertFails(get(ref(testEnv.authenticatedContext(USERS.inactive).database(), 'ai/uiStatus')));
   });
 
   it('prevents browser admins from creating a role-bearing service profile', async () => {

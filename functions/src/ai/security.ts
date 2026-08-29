@@ -18,6 +18,7 @@ export const AI_WRITABLE_COLLECTIONS = [
   'projectTargets',
   'agents',
   'runtimeStatus',
+  'uiStatus',
   'conditions',
   'events',
   'runs',

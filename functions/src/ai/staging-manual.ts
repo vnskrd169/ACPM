@@ -5,6 +5,7 @@ import { processAiEvent, type ProcessEventResult } from './orchestrator.js';
 import type { LlmProvider } from './providers/provider.js';
 import type { AiSourceReader } from './source-reader.js';
 import type { AiPipelineStore } from './store.js';
+import { deriveUiStatus } from './ui-status.js';
 
 export const STAGING_PROJECT_ID = 'acpm-project-system-qa' as const;
 
@@ -55,6 +56,18 @@ function failureHealth(reason: string | null): AiRuntimeStatusRecord['status'] {
     : 'degraded';
 }
 
+async function saveRuntimeProjection(
+  dependencies: StagingManualDependencies,
+  status: AiRuntimeStatusRecord
+): Promise<void> {
+  await dependencies.store.saveRuntimeStatus(status);
+  await dependencies.store.saveUiStatus(deriveUiStatus(
+    dependencies.config,
+    status,
+    dependencies.now
+  ));
+}
+
 export async function runStagingManualAiDryRun(
   rawInput: unknown,
   dependencies: StagingManualDependencies
@@ -82,7 +95,7 @@ export async function runStagingManualAiDryRun(
 
   const health = await dependencies.provider.health();
   if (!health.configured || health.status !== 'available') {
-    await dependencies.store.saveRuntimeStatus(runtimeStatus(
+    await saveRuntimeProjection(dependencies, runtimeStatus(
       'not_configured',
       dependencies.now,
       'provider_not_configured'
@@ -95,11 +108,11 @@ export async function runStagingManualAiDryRun(
     if (result.recommendationId !== null || result.decisionId !== null) {
       throw new StagingManualError('dry_run_output_violation');
     }
-    await dependencies.store.saveRuntimeStatus(runtimeStatus('healthy', dependencies.now, null));
+    await saveRuntimeProjection(dependencies, runtimeStatus('healthy', dependencies.now, null));
     return result;
   }
 
-  await dependencies.store.saveRuntimeStatus(runtimeStatus(
+  await saveRuntimeProjection(dependencies, runtimeStatus(
     failureHealth(result.reason),
     dependencies.now,
     result.reason ?? 'provider_unknown_error'

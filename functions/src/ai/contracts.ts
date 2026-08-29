@@ -194,6 +194,22 @@ export interface AiRuntimeStatusRecord {
   safeErrorCode: string | null;
 }
 
+export const AI_UI_SYSTEM_STATUSES = [
+  'disabled',
+  'not_configured',
+  'ready',
+  'degraded',
+  'unavailable'
+] as const;
+export type AiUiSystemStatus = (typeof AI_UI_SYSTEM_STATUSES)[number];
+
+export interface AiUiStatus {
+  schemaVersion: '0.1';
+  uiEnabled: boolean;
+  systemStatus: AiUiSystemStatus;
+  updatedAt: number;
+}
+
 export interface AiRecommendationRecord {
   schemaVersion: '0.1';
   projectId: string;

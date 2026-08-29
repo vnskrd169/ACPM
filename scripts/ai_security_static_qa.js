@@ -41,6 +41,7 @@ const allowedAiCollections = new Set([
   'projectTargets',
   'agents',
   'runtimeStatus',
+  'uiStatus',
   'conditions',
   'events',
   'runs',
@@ -136,10 +137,18 @@ function deployableFrontendFiles(directory) {
     return /\.(?:html|js|mjs|cjs)$/i.test(entry.name) ? [fullPath] : [];
   });
 }
-for (const file of deployableFrontendFiles(root)) {
+const frontendFiles = deployableFrontendFiles(root);
+for (const file of frontendFiles) {
   const source = fs.readFileSync(file, 'utf8');
+  const relative = path.relative(root, file);
   if (/\bOPENAI_API_KEY\b|\bsk-[A-Za-z0-9_-]{12,}|from\s+['"]openai(?:\/[^'"]*)?['"]/i.test(source)) {
-    failures.push(`${path.relative(root, file)}: OpenAI credential or SDK reference found in deployable frontend`);
+    failures.push(`${relative}: OpenAI credential or SDK reference found in deployable frontend`);
+  }
+  if (/['"`]\/?ai\/config(?:\/|['"`])/.test(source)) {
+    failures.push(`${relative}: browser code must not read /ai/config for UI feature gating`);
+  }
+  if (/['"`]\/?ai\/uiStatus(?:\/|['"`])[\s\S]{0,200}\.(?:set|update|remove|push|transaction)\s*\(/.test(source)) {
+    failures.push(`${relative}: browser code must not write /ai/uiStatus`);
   }
 }
 
@@ -199,6 +208,34 @@ if (!/store:\s*false/.test(openAiProviderSource) || !/zodTextFormat/.test(openAi
 }
 
 const databaseRules = JSON.parse(fs.readFileSync(path.join(root, 'database.rules.json'), 'utf8'));
+const aiRules = databaseRules.rules && databaseRules.rules.ai;
+const configReadRule = aiRules && aiRules.config && aiRules.config['.read'];
+const expectedConfigReadRule = "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)))";
+if (configReadRule !== expectedConfigReadRule) {
+  failures.push('database.rules.json: /ai/config must remain limited to active boss, owner, admin, and service reads');
+}
+
+const uiStatusRules = aiRules && aiRules.uiStatus;
+const uiStatusFields = 'schemaVersion|uiEnabled|systemStatus|updatedAt';
+const expectedUiStatusReadRule = "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))";
+if (
+  !uiStatusRules
+  || uiStatusRules['.read'] !== expectedUiStatusReadRule
+  || uiStatusRules['.write'] !== "auth != null && auth.uid === 'acpm-ai-service'"
+  || !uiStatusRules.$other
+  || uiStatusRules.$other['.validate'] !== `$other.matches(/^(${uiStatusFields})$/)`
+) {
+  failures.push('database.rules.json: /ai/uiStatus must be a service-owned, management-readable four-field projection');
+}
+
+const uiStatusSchemaPath = path.join(root, 'functions', 'src', 'ai', 'schemas.ts');
+const uiStatusSchemaSource = fs.readFileSync(uiStatusSchemaPath, 'utf8');
+if (
+  !/aiUiStatusSchema\s*=\s*z\.object\(\{[\s\S]*?schemaVersion:[\s\S]*?uiEnabled:[\s\S]*?systemStatus:[\s\S]*?updatedAt:[\s\S]*?\}\)\.strict\(\)/.test(uiStatusSchemaSource)
+) {
+  failures.push('functions/src/ai/schemas.ts: strict four-field uiStatus schema is missing');
+}
+
 function inspectAiWrites(node, pathParts = ['ai']) {
   if (!node || typeof node !== 'object') return;
   if (Object.prototype.hasOwnProperty.call(node, '.write')) {
@@ -275,4 +312,4 @@ if (failures.length > 0) {
 }
 
 console.log(`AI security static QA passed (${files.length} backend source files scanned).`);
-console.log('Verified: pinned OpenAI adapter only, Secret Manager binding, no frontend key/SDK, no credential logging, /ai-only runtime writes, no provider Firebase access, no project-root listing/full snapshots, staging-only callable guards, Production Functions excluded, and disabled defaults.');
+console.log('Verified: pinned OpenAI adapter only, Secret Manager binding, no frontend key/SDK, no credential logging, /ai-only runtime writes, sanitized service-owned uiStatus with PM config isolation, no provider Firebase access, no project-root listing/full snapshots, staging-only callable guards, Production Functions excluded, and disabled defaults.');

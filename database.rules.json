@@ -97,6 +97,14 @@
         ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
         ".write": "auth != null && auth.uid === 'acpm-ai-service'"
       },
+      "uiStatus": {
+        ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'",
+        ".validate": "!newData.exists() || (newData.hasChildren(['schemaVersion', 'uiEnabled', 'systemStatus', 'updatedAt']) && newData.child('schemaVersion').val() === '0.1' && newData.child('uiEnabled').isBoolean() && newData.child('systemStatus').isString() && newData.child('systemStatus').val().matches(/^(disabled|not_configured|ready|degraded|unavailable)$/) && newData.child('updatedAt').isNumber() && newData.child('updatedAt').val() >= 0 && newData.child('updatedAt').val() % 1 === 0)",
+        "$other": {
+          ".validate": "$other.matches(/^(schemaVersion|uiEnabled|systemStatus|updatedAt)$/)"
+        }
+      },
       "conditions": {
         ".read": "auth != null && auth.uid === 'acpm-ai-service'",
         ".write": "auth != null && auth.uid === 'acpm-ai-service'"

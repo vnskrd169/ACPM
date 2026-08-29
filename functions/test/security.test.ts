@@ -25,6 +25,7 @@ describe('AI security guards', () => {
   it('accepts writes only in an explicit AI collection', () => {
     expect(isAiWritePath('/ai/events/event-1')).toBe(true);
     expect(isAiWritePath('/ai/idempotency/key-1')).toBe(true);
+    expect(isAiWritePath('/ai/uiStatus')).toBe(true);
     expect(isAiWritePath('/ai/unknown/value')).toBe(false);
     expect(isAiWritePath('/projects/project-1/tasks/task-1')).toBe(false);
     expect(() => assertAiWritePath('/suppliers/supplier-1')).toThrow(/denied/);

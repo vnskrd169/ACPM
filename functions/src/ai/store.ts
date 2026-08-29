@@ -7,6 +7,7 @@ import type {
   AiRecommendationRecord,
   AiRunRecord,
   AiRuntimeStatusRecord,
+  AiUiStatus,
   GroundedFinding
 } from './contracts.js';
 
@@ -45,6 +46,7 @@ export interface AiPipelineStore {
   saveDecision(id: string, decision: AiDecisionRecord): Promise<void>;
   saveEvent(eventId: string, event: AiEventRecord): Promise<void>;
   saveRuntimeStatus(status: AiRuntimeStatusRecord): Promise<void>;
+  saveUiStatus(status: AiUiStatus): Promise<void>;
 }
 
 function clone<T>(value: T): T {
@@ -60,6 +62,7 @@ export class InMemoryAiPipelineStore implements AiPipelineStore {
   readonly recommendations = new Map<string, AiRecommendationRecord>();
   readonly decisions = new Map<string, AiDecisionRecord>();
   runtimeStatus: AiRuntimeStatusRecord | null = null;
+  uiStatus: AiUiStatus | null = null;
 
   constructor(targets: Readonly<Record<string, AiProjectTarget>> = {}) {
     for (const [projectId, target] of Object.entries(targets)) {
@@ -185,5 +188,9 @@ export class InMemoryAiPipelineStore implements AiPipelineStore {
 
   async saveRuntimeStatus(status: AiRuntimeStatusRecord): Promise<void> {
     this.runtimeStatus = clone(status);
+  }
+
+  async saveUiStatus(status: AiUiStatus): Promise<void> {
+    this.uiStatus = clone(status);
   }
 }

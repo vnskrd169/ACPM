@@ -209,6 +209,7 @@ ai/config
 ai/projectTargets/{projectId}
 ai/agents/{agentId}
 ai/runtimeStatus
+ai/uiStatus
 ai/conditions/{conditionId}
 ai/events/{eventId}
 ai/runs/{runId}
@@ -222,6 +223,34 @@ Unknown `/ai` children are denied. Only `acpm-ai-service` may write. Active
 boss, owner, admin, and PM users can read sanitized operational AI output and
 targets; config excludes PM. Conditions/idempotency are service-only. Browser
 writes, APM access, anonymous access, and inactive-user access are denied.
+
+### Sanitized UI availability projection
+
+`/ai/config` remains the authoritative internal configuration and remains
+readable only by the service and active boss, owner, and admin users. PM does
+not need its generation, dry-run, event, retry, or timezone controls and stays
+denied from the node.
+
+`/ai/uiStatus` is a minimal service-owned projection for Command Center feature
+gating. It contains exactly `schemaVersion`, `uiEnabled`, `systemStatus`, and
+`updatedAt`. `systemStatus` is one of `disabled`, `not_configured`, `ready`,
+`degraded`, or `unavailable`. It contains no provider account or API detail,
+model or prompt metadata, target or schedule data, raw config, secret state,
+or internal error.
+
+The pure `deriveUiStatus(config, runtimeStatus, updatedAt)` mapping fails closed:
+disabled config/generation/UI controls produce `disabled`, missing runtime
+status produces `not_configured`, healthy maps to `ready`, and degraded or
+unavailable remain high-level sanitized states. The existing staging runtime
+updates this projection whenever it saves runtime health. No scheduler was
+added. Until a deployed runtime owns maintenance, emulator and UI tests seed
+the projection directly as service-owned fixture data.
+
+Active boss, owner, admin, and PM users may read `uiStatus`; only
+`acpm-ai-service` may write it. APM, inactive, and anonymous users are denied.
+Missing `uiStatus` means the Command Center is hidden and no browser fallback
+to `/ai/config` is allowed. This projection changes no project or business
+permission.
 
 The named Firebase Admin app uses `databaseAuthVariableOverride` with UID
 `acpm-ai-service`, so rules still constrain it. Its reads are limited to these
@@ -238,7 +267,7 @@ already reviewed paths:
 - `projects/{projectId}/pmosIssues`
 - `pmosIssues`
 
-It cannot list projects or read a whole project. It can write only the eleven
+It cannot list projects or read a whole project. It can write only the twelve
 explicit `/ai` children. Supplier reads are deliberately not granted because
 parent RTDB reads would expose sensitive siblings. Existing human-role
 branches remain unchanged.
@@ -271,6 +300,6 @@ integration, bounded retry/timeout policy, observability, privacy review, and
 provider tests. A scheduler would require a separate export review and may
 iterate only enabled `/ai/projectTargets`.
 
-UI remains deferred. Before output is exposed, ACPM needs reviewed read models,
+The full UI remains deferred after the Phase 5A availability projection. Before output is exposed, ACPM needs reviewed read models,
 clear provenance/uncertainty presentation, and a server-owned human-decision
 workflow. Browser resolution and automatic business actions stay out of scope.

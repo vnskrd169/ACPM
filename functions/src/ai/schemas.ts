@@ -5,6 +5,7 @@ import {
   AI_EVENT_STATUSES,
   AI_EVENT_TYPES,
   AI_RUN_STATUSES,
+  AI_UI_SYSTEM_STATUSES,
   IMPACT_STATUSES,
   SEVERITIES
 } from './contracts.js';
@@ -49,6 +50,13 @@ export const aiProjectTargetSchema = z.object({
 
 export const aiEventStatusSchema = z.enum(AI_EVENT_STATUSES);
 export const aiRunStatusSchema = z.enum(AI_RUN_STATUSES);
+
+export const aiUiStatusSchema = z.object({
+  schemaVersion: z.literal('0.1'),
+  uiEnabled: z.boolean(),
+  systemStatus: z.enum(AI_UI_SYSTEM_STATUSES),
+  updatedAt: z.number().int().nonnegative()
+}).strict();
 
 export const evidenceReferenceSchema = z.object({
   path: z.string().trim().min(1),
