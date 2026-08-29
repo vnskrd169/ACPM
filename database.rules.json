@@ -111,11 +111,13 @@
       },
       "events": {
         ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
-        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'",
+        ".indexOn": ["createdAt"]
       },
       "runs": {
         ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
-        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'",
+        ".indexOn": ["createdAt"]
       },
       "findings": {
         ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
@@ -123,11 +125,13 @@
       },
       "recommendations": {
         ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
-        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'",
+        ".indexOn": ["createdAt"]
       },
       "decisions": {
         ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
-        ".write": "auth != null && auth.uid === 'acpm-ai-service'"
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'",
+        ".indexOn": ["createdAt"]
       },
       "idempotency": {
         ".read": "auth != null && auth.uid === 'acpm-ai-service'",

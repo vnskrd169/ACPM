@@ -47,9 +47,17 @@ const TEST_USERS = {
   },
 };
 
-export function buildInitScript(userKey: keyof typeof TEST_USERS, options: { disableServiceWorker?: boolean } = {}): string {
+type InitScriptOptions = {
+  disableServiceWorker?: boolean;
+  databaseData?: Record<string, unknown>;
+  failReadPaths?: string[];
+};
+
+export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitScriptOptions = {}): string {
   const user = TEST_USERS[userKey];
   const disableServiceWorker = options.disableServiceWorker !== false;
+  const databaseData = options.databaseData || {};
+  const failReadPaths = options.failReadPaths || [];
   return `
     window._currentUser = ${JSON.stringify(user)};
     window._currentPid = 'test-project-1';
@@ -57,7 +65,13 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: { dis
 
     const __pmosTestUser = ${JSON.stringify(user)};
     const __pmosTestProject = ${JSON.stringify(TEST_PROJECT)};
+    const __extraDbData = ${JSON.stringify(databaseData)};
+    const __failReadPaths = ${JSON.stringify(failReadPaths)};
     window.__mockDbPaths = [];
+    window.__mockDbOnPaths = [];
+    window.__mockDbOffPaths = [];
+    window.__mockDbWrites = [];
+    window.__mockAuthObservers = [];
 
     function makeSnapshot(value, key) {
       return {
@@ -76,6 +90,7 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: { dis
 
     function dataForPath(path) {
       window.__mockDbPaths.push(path);
+      if (Object.prototype.hasOwnProperty.call(__extraDbData, path)) return __extraDbData[path];
       if (path === 'users/' + __pmosTestUser.uid) {
         return Object.assign({}, __pmosTestUser, {
           status: 'active',
@@ -114,14 +129,24 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: { dis
     function makeDbRef(path) {
       return {
         key: String(path || '').split('/').pop() || 'mock-key',
-        once: function () { return Promise.resolve(makeSnapshot(dataForPath(path), String(path || '').split('/').pop())); },
-        on: function (event, cb) {
-          if (typeof cb === 'function') setTimeout(function () { cb(makeSnapshot(dataForPath(path), String(path || '').split('/').pop())); }, 0);
+        once: function () {
+          if (__failReadPaths.indexOf(path) !== -1) return Promise.reject({ code: 'PERMISSION_DENIED' });
+          return Promise.resolve(makeSnapshot(dataForPath(path), String(path || '').split('/').pop()));
         },
-        off: function () {},
-        update: function () { return Promise.resolve(); },
-        set: function () { return Promise.resolve(); },
+        on: function (event, cb, errorCb) {
+          window.__mockDbOnPaths.push(path);
+          if (__failReadPaths.indexOf(path) !== -1) {
+            if (typeof errorCb === 'function') setTimeout(function () { errorCb({ code: 'PERMISSION_DENIED' }); }, 0);
+            return cb;
+          }
+          if (typeof cb === 'function') setTimeout(function () { cb(makeSnapshot(dataForPath(path), String(path || '').split('/').pop())); }, 0);
+          return cb;
+        },
+        off: function () { window.__mockDbOffPaths.push(path); },
+        update: function () { window.__mockDbWrites.push({ method: 'update', path: path }); return Promise.resolve(); },
+        set: function () { window.__mockDbWrites.push({ method: 'set', path: path }); return Promise.resolve(); },
         push: function () {
+          window.__mockDbWrites.push({ method: 'push', path: path });
           const key = 'mock-key-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
           return makeDbRef((path || '') + '/' + key);
         },
@@ -144,11 +169,18 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: { dis
           Auth: { Persistence: { LOCAL: 'local' } },
           setPersistence: function () { return Promise.resolve(); },
           onAuthStateChanged: function (cb) {
+            window.__mockAuthObservers.push(cb);
             cb(Object.assign({}, __pmosTestUser, { getIdToken: function() { return Promise.resolve('mock-token'); } }));
-            return function () {};
+            return function () {
+              const index = window.__mockAuthObservers.indexOf(cb);
+              if (index !== -1) window.__mockAuthObservers.splice(index, 1);
+            };
           },
           signInAnonymously: function () { return Promise.resolve({ user: __pmosTestUser }); },
-          signOut: function () { return Promise.resolve(); },
+          signOut: function () {
+            window.__mockAuthObservers.slice().forEach(function (observer) { observer(null); });
+            return Promise.resolve();
+          },
         };
       },
       database: Object.assign(

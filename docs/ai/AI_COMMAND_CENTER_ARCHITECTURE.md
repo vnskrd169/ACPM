@@ -252,6 +252,42 @@ Missing `uiStatus` means the Command Center is hidden and no browser fallback
 to `/ai/config` is allowed. This projection changes no project or business
 permission.
 
+### Read-only Office Command Center
+
+Phase 5 adds a company-level Office view to `dashboard.html` and
+`workspace.html`; it is deliberately not a project workspace tab. Navigation
+is created only after an active boss, owner, admin, or PM profile successfully
+reads a valid `/ai/uiStatus` with `uiEnabled=true`. Missing, false, invalid, or
+denied status fails closed: navigation and view markup are removed and no AI
+output subscription starts. APM, inactive, anonymous, and unknown-role users
+never attempt the gate or output reads.
+
+Opening the view rechecks `uiStatus`, then attaches one bounded listener to
+sanitized runtime status and bounded collections for runs, events, findings,
+recommendations, and decisions. Closing, logout, account change, environment
+reinitialization, and cleanup detach every listener. Refresh detaches the old
+set before creating a new set. The module exposes lifecycle methods so Office
+can initialize, open, close, refresh, or clean up deterministically.
+
+The UI derives only high-level operational presentation: active logical agents,
+open recommendations and decisions, Manila-local runs today, sanitized provider
+health, recent activity, and validated human-review detail. Open decisions sort
+by severity and age. Unknown and None impacts never display numeric values;
+Possible and Confirmed values display only finite validated numbers.
+
+Evidence is provenance text, not a browser read capability. The view escapes and
+prints the supplied path, record ID, and field without fetching that path.
+Project names are reused only from metadata Office has already loaded, with a
+`Project <id>` fallback. Prompts, chain of thought, raw responses, provider/model
+identifiers, credentials, raw internal errors, and unrestricted database paths
+are not exposed.
+
+Phase 5 remains read-only. Review opens an informational detail surface with no
+approve, reject, resolve, acknowledge, dismiss, provider-call, or business-write
+action. Browser code imports no provider SDK, reads no `/ai/config`, and performs
+no `/ai` write. Query indexes on `createdAt` support the bounded reads without
+changing any Phase 2/3/5A read or write permission.
+
 The named Firebase Admin app uses `databaseAuthVariableOverride` with UID
 `acpm-ai-service`, so rules still constrain it. Its reads are limited to these
 already reviewed paths:
@@ -295,11 +331,14 @@ numeric claims fail closed. A safe error code may be saved on the AI run/event;
 no recommendation or decision is created. AI never participates in ACPM save,
 approval, payment, or scheduling paths, so Office and PMOS keep operating.
 
-A real provider requires a separately reviewed server adapter, secret-manager
-integration, bounded retry/timeout policy, observability, privacy review, and
-provider tests. A scheduler would require a separate export review and may
+The real provider remains restricted to the separately reviewed Staging manual
+dry-run boundary with Secret Manager, strict structured output, timeout/error
+mapping, and `store=false`. Production provider use and automatic scheduling
+remain disabled. A scheduler would require a separate export review and may
 iterate only enabled `/ai/projectTargets`.
 
-The full UI remains deferred after the Phase 5A availability projection. Before output is exposed, ACPM needs reviewed read models,
-clear provenance/uncertainty presentation, and a server-owned human-decision
-workflow. Browser resolution and automatic business actions stay out of scope.
+The read-only UI now supplies reviewed bounded read models and explicit
+provenance/uncertainty presentation. A future phase may add a separately
+reviewed, App Check-protected server callable for a server-owned human-decision
+mutation workflow. Browser resolution, automatic business actions, and
+Production enablement stay out of scope.

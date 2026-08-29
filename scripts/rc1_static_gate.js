@@ -48,7 +48,7 @@ function main() {
   const indexHtml = read('index.html');
   const loginHtml = read('login.html');
 
-  assert(/const CACHE_NAME = 'acpm-v140'/.test(sw), 'service worker cache must be acpm-v140');
+  assert(/const CACHE_NAME = 'acpm-v141'/.test(sw), 'service worker cache must be acpm-v141');
   assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=112">'), 'login.html must load style.css?v=112');
   assert(extractScriptVersion(loginHtml, 'environment.js') === '1', 'login.html must load environment.js?v=1');
   assert(extractScriptVersion(loginHtml, 'utils.js') === '87', 'login.html must load utils.js?v=87');
@@ -154,7 +154,7 @@ function main() {
   console.log(JSON.stringify({
     result: 'PASS',
     checks: [
-      'v133 cache/style and script references',
+      'v141 cache/style and script references',
       'login shell uses current auth/routing scripts',
       'service worker update/reload path',
       'auth logout detaches project and module listeners',

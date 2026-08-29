@@ -11,6 +11,7 @@
     "test:production:rules": "vitest run tests/pmos/production-roles-database.test.ts",
     "test:ai:rules": "vitest run tests/pmos/rules-ai-security.test.ts",
     "test:ai:static": "node scripts/ai_security_static_qa.js",
+    "test:ai:ui:static": "node scripts/ai_command_center_static_qa.js",
     "test:environments": "node scripts/environment_static_qa.js",
     "configure:staging:auth": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/configure-staging-auth.ps1",
     "deploy:staging": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/deploy-staging.ps1",
