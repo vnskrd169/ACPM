@@ -79,6 +79,16 @@
         ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin)$/)))",
         ".write": "auth != null && auth.uid === 'acpm-ai-service'"
       },
+      "projectTargets": {
+        ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
+        ".write": "auth != null && auth.uid === 'acpm-ai-service'",
+        "$projectId": {
+          ".validate": "!newData.exists() || (newData.hasChildren(['schemaVersion', 'enabled', 'scanTasks', 'scanMaterials', 'scanIssues']) && newData.child('schemaVersion').val() === '0.1' && newData.child('enabled').isBoolean() && newData.child('scanTasks').isBoolean() && newData.child('scanMaterials').isBoolean() && newData.child('scanIssues').isBoolean() && (newData.child('enabled').val() === false || newData.child('activationAt').isNumber()) && (!newData.child('activationAt').exists() || newData.child('activationAt').isNumber()) && (!newData.child('lastScanAt').exists() || newData.child('lastScanAt').isNumber()))",
+          "$other": {
+            ".validate": "$other.matches(/^(schemaVersion|enabled|activationAt|scanTasks|scanMaterials|scanIssues|lastScanAt)$/)"
+          }
+        }
+      },
       "agents": {
         ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
         ".write": "auth != null && auth.uid === 'acpm-ai-service'"

@@ -15,6 +15,7 @@ export const AI_CONTEXT_COLLECTIONS = [
 
 export const AI_WRITABLE_COLLECTIONS = [
   'config',
+  'projectTargets',
   'agents',
   'runtimeStatus',
   'conditions',

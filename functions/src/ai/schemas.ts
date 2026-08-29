@@ -2,7 +2,9 @@ import { z } from 'zod';
 
 import {
   AGENT_IDS,
+  AI_EVENT_STATUSES,
   AI_EVENT_TYPES,
+  AI_RUN_STATUSES,
   IMPACT_STATUSES,
   SEVERITIES
 } from './contracts.js';
@@ -26,6 +28,27 @@ export const aiConfigSchema = z.object({
     site_issue_created: z.boolean()
   }).strict()
 }).strict();
+
+export const aiProjectTargetSchema = z.object({
+  schemaVersion: z.literal('0.1'),
+  enabled: z.boolean(),
+  activationAt: z.number().int().nonnegative().nullable(),
+  scanTasks: z.boolean(),
+  scanMaterials: z.boolean(),
+  scanIssues: z.boolean(),
+  lastScanAt: z.number().int().nonnegative().nullable()
+}).strict().superRefine((target, ctx) => {
+  if (target.enabled && target.activationAt === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['activationAt'],
+      message: 'enabled project targets require activationAt'
+    });
+  }
+});
+
+export const aiEventStatusSchema = z.enum(AI_EVENT_STATUSES);
+export const aiRunStatusSchema = z.enum(AI_RUN_STATUSES);
 
 export const evidenceReferenceSchema = z.object({
   path: z.string().trim().min(1),

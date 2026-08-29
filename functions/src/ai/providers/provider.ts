@@ -1,9 +1,10 @@
-import type { GroundedContext, ProviderHealth, TokenUsage } from '../contracts.js';
+import type { AgentId, GroundedContext, ProviderHealth, TokenUsage } from '../contracts.js';
 
 export type LlmOperation = 'agent-analysis' | 'pm-synthesis';
 
 export interface GenerateStructuredRequest {
   operation: LlmOperation;
+  agentId: AgentId;
   modelAlias: string;
   systemInstruction: string;
   context: Readonly<GroundedContext>;

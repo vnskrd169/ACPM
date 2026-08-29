@@ -18,6 +18,7 @@ function sourceFiles(directory) {
 
 const files = sourceRoots.flatMap(sourceFiles);
 const failures = [];
+const aiSourceFiles = sourceFiles(path.join(root, 'functions', 'src', 'ai'));
 const forbiddenRoots = [
   'projects',
   'suppliers',
@@ -29,10 +30,11 @@ const forbiddenRoots = [
   'notifications',
   'auditLogs'
 ];
-const mutationMethods = '(?:set|update|remove|push)';
+const mutationMethods = '(?:set|update|remove|push|transaction)';
 const quote = "['\"`]";
 const allowedAiCollections = new Set([
   'config',
+  'projectTargets',
   'agents',
   'runtimeStatus',
   'conditions',
@@ -79,7 +81,7 @@ for (const file of files) {
     ),
     new RegExp(
       '(?:ref|child)\\s*\\(\\s*' + quote + "([^'\"`]+)" + quote
-        + '\\s*\\)[\\s\\S]{0,160}\\.' + mutationMethods + '\\s*\\(',
+        + '\\s*\\)\\s*\\.' + mutationMethods + '\\s*\\(',
       'gs'
     )
   ];
@@ -98,6 +100,23 @@ for (const file of files) {
   if (/\b(?:onSchedule|onValueCreated|onValueWritten|onCall|onRequest)\s*\(/.test(source)) {
     failures.push(`${relative}: deployable Firebase trigger or callable found`);
   }
+
+  if (
+    /\.ref\s*\(\s*['"`]\/?projects\/?['"`]\s*\)/.test(source)
+    || /\bref\s*\([^,]+,\s*['"`]\/?projects\/?['"`]\s*\)/.test(source)
+  ) {
+    failures.push(`${relative}: project-root read/listing pattern found`);
+  }
+}
+
+const aiSources = aiSourceFiles
+  .map(file => fs.readFileSync(file, 'utf8'))
+  .join('\n');
+if (/\b(?:projectSnapshot|rawProject|fullProject)\b/.test(aiSources)) {
+  failures.push('functions/src/ai: possible full project snapshot passed through AI code');
+}
+if (!/TASK_CONTEXT_FIELDS/.test(aiSources) || !/MATERIAL_CONTEXT_FIELDS/.test(aiSources) || !/ISSUE_CONTEXT_FIELDS/.test(aiSources)) {
+  failures.push('functions/src/ai: explicit grounded-context field allowlists are missing');
 }
 
 const contractsPath = path.join(root, 'functions', 'src', 'ai', 'contracts.ts');
@@ -118,6 +137,24 @@ const adminSource = fs.readFileSync(path.join(root, 'functions', 'src', 'firebas
 if (!/databaseAuthVariableOverride\s*:/.test(adminSource) || !/AI_SERVICE_UID/.test(adminSource)) {
   failures.push('functions/src/firebase/admin.ts: restricted RTDB auth override is missing');
 }
+
+const databaseRules = JSON.parse(fs.readFileSync(path.join(root, 'database.rules.json'), 'utf8'));
+function inspectAiWrites(node, pathParts = ['ai']) {
+  if (!node || typeof node !== 'object') return;
+  if (Object.prototype.hasOwnProperty.call(node, '.write')) {
+    const writeRule = node['.write'];
+    if (
+      writeRule !== false
+      && (typeof writeRule !== 'string' || !writeRule.includes("auth.uid === 'acpm-ai-service'"))
+    ) {
+      failures.push(`database.rules.json: non-service /${pathParts.join('/')} write rule found`);
+    }
+  }
+  for (const [key, child] of Object.entries(node)) {
+    if (!key.startsWith('.')) inspectAiWrites(child, [...pathParts, key]);
+  }
+}
+inspectAiWrites(databaseRules.rules && databaseRules.rules.ai);
 
 const functionsPackage = JSON.parse(fs.readFileSync(path.join(root, 'functions', 'package.json'), 'utf8'));
 const dependencies = {
@@ -141,4 +178,4 @@ if (failures.length > 0) {
 }
 
 console.log(`AI security static QA passed (${files.length} backend source files scanned).`);
-console.log('Verified: /ai write boundary patterns, disabled defaults, restricted Admin auth, no provider SDK/keys, no deployable trigger.');
+console.log('Verified: /ai-only backend writes, no project-root listing/full snapshots, service-only browser rules, disabled defaults, restricted Admin auth, no provider SDK/keys, no deployable trigger.');

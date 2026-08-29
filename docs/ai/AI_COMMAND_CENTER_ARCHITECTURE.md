@@ -1,105 +1,137 @@
-# ACPM AI Command Center Foundation
+# ACPM AI Command Center
 
-Status: **security foundation and deterministic routing only; disabled and not deployed**
+Status: **deterministic fake-provider pipeline; disabled and not deployed**
 
-## Purpose and V0.1 boundary
+## Purpose and boundary
 
-The AI Command Center is planned as an optional analysis layer over ACPM. V0.1
-is read-only relative to existing business records because purchase orders,
-billing, payroll, payments, change orders, official communications, and task
-schedules are controlled operational records. A model must not approve,
-release, delete, or silently modify them.
+The AI Command Center is an optional analysis layer over ACPM. It is read-only
+relative to existing business records: purchase orders, billing, payroll,
+payments, change orders, official communications, and task schedules remain
+controlled operational records. AI cannot approve, release, delete, or modify
+them.
 
-This foundation contains a restricted Firebase Admin initialization helper and
-RTDB rules, but no code that performs a Firebase read or write, no Cloud
-Function exports, no provider SDK, no network call, and no Office or PMOS UI
-change. The `DisabledProvider` is the only provider implementation.
+Phase 3 adds internal source readers, a deterministic reconciler,
+transactional AI stores, grounded context assembly, logical agents, and a
+deterministic `FakeProvider`. It exports no Cloud Function, performs no
+provider network call, includes no provider SDK, and changes no Office/PMOS UI
+or business-data write path.
 
-## Logical agents
+## Explicit project enrollment
 
-The initial logical agents are:
+The service cannot list `/projects`, by design. Reconciliation receives a
+project ID and requires a service-controlled record at
+`ai/projectTargets/{projectId}`. This target contains scanning controls only:
 
-- `materials`: analyzes explicitly supplied procurement, delivery, and stock
-  facts.
-- `planning`: analyzes explicitly supplied tasks, dates, links, and issue facts.
-- `pm`: synthesizes validated findings and always runs last.
+```text
+schemaVersion = 0.1
+enabled = false
+activationAt = null
+scanTasks = false
+scanMaterials = false
+scanIssues = false
+lastScanAt = null
+```
 
-They are permission and instruction boundaries, not separate deployed models.
-Future implementations may use one provider adapter for all three.
+Enabling a target requires numeric `activationAt`. The strict schema rejects
+project names, client details, financial values, and every unknown child.
+Disabling stops later scans without deleting historical AI records.
+Management may read targets; only `acpm-ai-service` may write them. APM and
+browser identities cannot write.
 
-## Deterministic routing
+There is no scheduler export. An explicit caller may invoke
+`reconcileProject(projectId, now)`, after which the source reader accesses only
+authorized child collections for that exact project. It never reads or lists
+the project root. Production config and targets are not seeded.
 
-Routing is pure code and never selected by a model:
+## Reconciliation and condition lifecycle
+
+Detection is pure code; a model never decides if an event exists. Manila
+calendar semantics apply to date-only task and delivery fields. The four event
+types are:
+
+- `task_overdue`: a non-terminal task has a valid due date before Manila today.
+- `material_stock_low`: numeric quantity on hand is at or below an explicit
+  numeric reorder point/threshold. A missing threshold is never guessed.
+- `site_issue_created`: a root PMOS, project fallback, punch-list, or nested
+  site-log issue was created at/after target activation.
+- `material_delivery_overdue`: remaining quantity exists and an explicit
+  expected/promised delivery date is before Manila today. PO/needed dates are
+  never substituted.
+
+Root and fallback PMOS issues share a logical identity when a canonical or
+client-generated ID is available. Terminal tasks, pre-activation issues,
+missing thresholds, and missing expected delivery dates produce deterministic
+suppressions rather than events.
+
+Conditions are keyed from project ID, event type, logical source, and logical
+record identity. Transactions implement:
+
+```text
+false -> true  open cycle; create one deterministic event
+true  -> true  update evaluation time; do not duplicate
+true  -> false resolve active event
+false -> true  open the next numbered recurrence cycle
+```
+
+Condition changes, event/idempotency claims, event creation, and run claims use
+RTDB transactions and deterministic IDs. Repeated, concurrent, retry, and
+at-least-once invocations converge on the same logical event/run.
+
+Events contain only schema/event/project identifiers, source path/record/field
+references, a source digest, condition/dedup keys, timestamps, status, and
+run ID. They never copy a project snapshot.
+
+## Logical agents and routing
+
+`materials`, `planning`, and `pm` are logical context boundaries, not separate
+deployed models. Routing is deterministic:
 
 | Event | Route |
 | --- | --- |
 | `material_delivery_overdue` | materials -> planning -> pm |
-| `material_stock_low` | materials -> planning only when linked work exists -> pm |
-| `task_overdue` | planning -> materials only when material/procurement relevance exists -> pm |
-| `site_issue_created` | planning -> materials only when material/procurement relevance exists -> pm |
+| `material_stock_low` | materials -> planning when linked work exists -> pm |
+| `task_overdue` | planning -> materials when material/procurement relevance exists -> pm |
+| `site_issue_created` | planning -> materials when material/procurement relevance exists -> pm |
 
-The router validates that agent IDs are unique and `pm` is last.
+The PM agent always runs last. Materials and planning receive only relevant
+allowlisted context. PM receives deterministic event facts, validated earlier
+findings, and evidence references—not unrestricted project data.
 
-## Grounded context and evidence
+## Grounded context and validation
 
-Future context assembly must read actual ACPM records, select only allowlisted
-fields, and pass an immutable `GroundedContext` to the provider. User-entered
-record text is data, not model instructions.
+Context assembly selects explicit task, material, issue, and line-item fields.
+It never passes a raw Firebase object or project snapshot. Payroll, rates,
+billing, payments, collections, bank/account data, private-user data, and
+supplier account details are excluded. Supplier reads remain denied; safe IDs
+or names already embedded in an allowed purchase record may be selected.
+User-entered text remains data, never instructions.
 
-Every asserted fact must point to evidence containing:
+Every factual assertion references evidence by `path`, `recordId`, and
+`field`. Provider output is untrusted until strict Zod validation and grounding
+validation pass. Evidence must exist in the supplied context. Numeric schedule
+days or cost amounts are rejected unless deterministic context explicitly
+supports that exact number. Unknown values remain null with a reason.
 
-- `path`
-- `recordId`
-- `field`
+## Provider boundary
 
-Provider output is untrusted until it passes the strict Zod schemas and future
-evidence-grounding checks. Free-form output must never drive application
-logic.
+`LlmProvider` defines health and structured generation without naming a vendor.
+`FakeProvider` is development/test-only and makes no network calls. It
+deterministically simulates valid output, unknown schedule/cost impacts,
+decision/no-decision output, invalid JSON-like and schema-invalid output,
+timeout, transient failure, and permanent failure. `DisabledProvider` remains
+the no-I/O default boundary.
 
-## Unknown-value policy
+Provider credentials do not exist in Phase 3. Future credentials belong in a
+server-side secret manager, never RTDB, source control, Hosting output, logs,
+or browser code.
 
-Unknown facts remain unknown. Schedule days, cost amount, and currency use
-`null` when the source records do not establish them. Unknown impacts require
-a reason. The schemas reject silently replacing an unknown schedule or cost
-impact with zero.
+## Isolated AI namespace and service permissions
 
-The model must not guess dates, quantities, dependencies, schedule duration,
-cost, supplier performance, or project facts.
-
-## Delivery-overdue suppression
-
-Current ACPM purchase orders store the PO date, status, delivery status,
-ordered and received quantities, and actual delivery dates. They do not have a
-canonical expected/promised delivery date.
-
-Therefore `material_delivery_overdue` is ineligible unless an explicit
-`expectedDeliveryDate` or `promisedDeliveryDate` is supplied by a future
-approved data contract. Without one, the detector returns:
-
-```text
-eligible: false
-reason: missing_expected_delivery_date
-```
-
-It never substitutes PO creation date, request needed date, supplier history,
-actual delivery dates, or a model-generated date.
-
-## Provider abstraction
-
-`LlmProvider` exposes provider health and structured generation without naming
-OpenAI, Claude, or another vendor. A future implementation must receive a
-grounded context and output schema, honor a timeout and idempotency key, and
-return an untrusted value for validation.
-
-The default `DisabledProvider` performs no I/O. Disabled and not-configured
-states are ordinary results, not exceptions.
-
-## Isolated AI namespace
-
-Phase 2 reserves these explicit paths:
+Explicit Phase 3 paths are:
 
 ```text
 ai/config
+ai/projectTargets/{projectId}
 ai/agents/{agentId}
 ai/runtimeStatus
 ai/conditions/{conditionId}
@@ -111,27 +143,14 @@ ai/decisions/{decisionId}
 ai/idempotency/{dedupHash}
 ```
 
-Unknown `/ai` children are denied. Only `acpm-ai-service` can write the listed
-paths. Active boss, owner, admin, and PM users can read sanitized agents,
-runtime status, events, runs, findings, recommendations, and decisions. Config
-is limited to the service plus active boss, owner, and admin users. Conditions
-and idempotency records are service-only. Browser writes, APM access,
-anonymous access, and inactive-user access are denied.
+Unknown `/ai` children are denied. Only `acpm-ai-service` may write. Active
+boss, owner, admin, and PM users can read sanitized operational AI output and
+targets; config excludes PM. Conditions/idempotency are service-only. Browser
+writes, APM access, anonymous access, and inactive-user access are denied.
 
-AI records remain outside existing business paths. AI output writers must
-persist sanitized structured records only; prompts, provider credentials, raw
-provider responses, and sensitive source records do not belong in
-management-readable output paths.
-
-## Service security model
-
-Firebase Admin is prepared under a named app using
-`databaseAuthVariableOverride` with UID `acpm-ai-service`. This makes RTDB
-evaluate the service against the same rules emulator-tested here instead of
-granting unrestricted Admin database access. The reserved UID cannot be
-created as a browser user profile through RTDB rules.
-
-The service may read only:
+The named Firebase Admin app uses `databaseAuthVariableOverride` with UID
+`acpm-ai-service`, so rules still constrain it. Its reads are limited to these
+already reviewed paths:
 
 - `projects/{projectId}/tasks`
 - `projects/{projectId}/purchaseOrders`
@@ -144,56 +163,39 @@ The service may read only:
 - `projects/{projectId}/pmosIssues`
 - `pmosIssues`
 
-It cannot list projects or read a whole project. It can write only the ten
-explicit `/ai` children. Existing rules that previously allowed any
-authenticated identity to write self-service auth/notification or append-only
-audit records now explicitly exclude this reserved UID; all existing ACPM
-human-role branches are unchanged.
+It cannot list projects or read a whole project. It can write only the eleven
+explicit `/ai` children. Supplier reads are deliberately not granted because
+parent RTDB reads would expose sensitive siblings. Existing human-role
+branches remain unchanged.
 
-Supplier reads are deliberately not granted. RTDB read rules cascade: granting
-read access at `suppliers/{supplierId}` also exposes bank/account siblings and
-a child rule cannot revoke that access. Phase 2 therefore uses safe supplier
-IDs/names already embedded in purchase records. A future supplier context
-feature must first add a safe projection or use the code allowlist (`name`,
-`specialty`, `status`) and obtain a separately reviewed minimum read path.
+## Flags and dry-run contract
 
-`functions/src/ai/security.ts` duplicates the allowed context, AI write, and
-supplier-field boundaries as application guards. RTDB rules remain the
-authoritative enforcement layer.
+Defaults are `enabled=false`, `generationEnabled=false`, `uiEnabled=false`,
+`dryRun=true`, `timeZone=Asia/Manila`, `maxAttempts=3`, and every event flag
+false. Targets also default disabled.
 
-## Disabled configuration and emergency stop
+Detection requires global `enabled`, an enabled target with `activationAt`, a
+matching target scan flag, and the event-type flag. Generation requires both
+`enabled` and `generationEnabled`; either false causes zero provider calls.
 
-The typed defaults are:
+Dry run is audit-only. With `dryRun=true`, validated analysis may save a run
+and per-agent findings and complete the AI event/run, but it creates no
+recommendation or decision. With `dryRun=false`, a validated PM finding creates
+one deterministic recommendation and creates an open decision only when human
+judgment is required. Neither mode writes business records.
 
-```text
-enabled=false
-generationEnabled=false
-uiEnabled=false
-dryRun=true
-timeZone=Asia/Manila
-maxAttempts=3
-all four event flags=false
-```
+## Failure isolation and remaining work
 
-No Production config is seeded. Future activation must require both
-`enabled` and `generationEnabled`; either false is an emergency generation
-stop. `uiEnabled` independently keeps UI exposure off and `dryRun` prevents
-business execution. Phase 2 has no execution code, so changing an RTDB value
-alone still cannot start generation.
+Timeouts, provider errors, schema failures, bad evidence, and unsupported
+numeric claims fail closed. A safe error code may be saved on the AI run/event;
+no recommendation or decision is created. AI never participates in ACPM save,
+approval, payment, or scheduling paths, so Office and PMOS keep operating.
 
-## Future provider boundary
+A real provider requires a separately reviewed server adapter, secret-manager
+integration, bounded retry/timeout policy, observability, privacy review, and
+provider tests. A scheduler would require a separate export review and may
+iterate only enabled `/ai/projectTargets`.
 
-Browser clients must never receive provider keys or directly write AI
-runs/findings. Human decision capture must record human input only; it must not
-execute business mutations.
-
-Provider credentials belong in a server-side secret manager and must never be
-stored in RTDB, source control, environment files shipped by Hosting, logs, or
-browser code.
-
-## Failure isolation
-
-ACPM Office and PMOS must continue operating normally when AI is disabled,
-unconfigured, unavailable, slow, or returns invalid output. Future AI work
-must run outside existing save/approval/payment paths, and an AI failure must
-never roll back or block an ACPM business workflow.
+UI remains deferred. Before output is exposed, ACPM needs reviewed read models,
+clear provenance/uncertainty presentation, and a server-owned human-decision
+workflow. Browser resolution and automatic business actions stay out of scope.

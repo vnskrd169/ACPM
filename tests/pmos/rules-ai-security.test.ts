@@ -6,7 +6,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment
 } from '@firebase/rules-unit-testing';
-import { get, ref, set } from 'firebase/database';
+import { get, ref, runTransaction, set } from 'firebase/database';
 
 const PROJECT_ID = 'acpm-ai-security-test';
 const AI_SERVICE_UID = 'acpm-ai-service';
@@ -21,6 +21,7 @@ const USERS = {
 };
 
 const AI_OUTPUT_COLLECTIONS = [
+  'projectTargets',
   'agents',
   'runtimeStatus',
   'events',
@@ -32,7 +33,13 @@ const AI_OUTPUT_COLLECTIONS = [
 
 const AI_SERVICE_WRITE_COLLECTIONS = [
   'config',
-  ...AI_OUTPUT_COLLECTIONS,
+  'agents',
+  'runtimeStatus',
+  'events',
+  'runs',
+  'findings',
+  'recommendations',
+  'decisions',
   'conditions',
   'idempotency'
 ];
@@ -142,6 +149,15 @@ beforeAll(async () => {
       },
       ai: {
         config: { enabled: false },
+        projectTargets: {
+          [TEST_PROJECT]: {
+            schemaVersion: '0.1',
+            enabled: false,
+            scanTasks: false,
+            scanMaterials: false,
+            scanIssues: false
+          }
+        },
         agents: { planning: { status: 'disabled' } },
         runtimeStatus: { state: 'disabled' },
         conditions: { internal1: { matched: false } },
@@ -169,6 +185,46 @@ describe('ACPM AI service isolation', () => {
         createdAt: 1785254400000
       }));
     }
+  });
+
+  it('allows only schema-valid service writes to the explicit project target registry', async () => {
+    const db = testEnv.authenticatedContext(AI_SERVICE_UID).database();
+    await assertSucceeds(set(ref(db, `ai/projectTargets/${TEST_PROJECT}`), {
+      schemaVersion: '0.1',
+      enabled: true,
+      activationAt: 1785254400000,
+      scanTasks: true,
+      scanMaterials: true,
+      scanIssues: true,
+      lastScanAt: 1785254401000
+    }));
+    await assertFails(set(ref(db, 'ai/projectTargets/copied-project'), {
+      schemaVersion: '0.1',
+      enabled: true,
+      activationAt: 1785254400000,
+      scanTasks: true,
+      scanMaterials: true,
+      scanIssues: true,
+      projectName: 'Copied business metadata is forbidden'
+    }));
+    await assertFails(set(ref(db, 'ai/projectTargets/missing-activation'), {
+      schemaVersion: '0.1',
+      enabled: true,
+      scanTasks: true,
+      scanMaterials: true,
+      scanIssues: true
+    }));
+  });
+
+  it('supports an atomic service-only idempotency claim', async () => {
+    const db = testEnv.authenticatedContext(AI_SERVICE_UID).database();
+    const claimRef = ref(db, 'ai/idempotency/concurrentClaims/claim-1');
+    const [left, right] = await Promise.all([
+      runTransaction(claimRef, current => current ?? { owner: 'left' }),
+      runTransaction(claimRef, current => current ?? { owner: 'right' })
+    ]);
+    expect(left.snapshot.val()).toEqual(right.snapshot.val());
+    expect(['left', 'right']).toContain(left.snapshot.child('owner').val());
   });
 
   it('denies the service from unknown AI children and bulk namespace writes', async () => {
@@ -271,6 +327,10 @@ describe('ACPM browser AI permissions', () => {
       await assertFails(set(
         ref(testEnv.authenticatedContext(uid).database(), `ai/events/browser-${uid}`),
         { type: 'task_overdue' }
+      ));
+      await assertFails(set(
+        ref(testEnv.authenticatedContext(uid).database(), `ai/projectTargets/browser-${uid}`),
+        { schemaVersion: '0.1', enabled: false, scanTasks: false, scanMaterials: false, scanIssues: false }
       ));
     }
   });
