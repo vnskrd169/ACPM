@@ -11019,6 +11019,441 @@ body.auth-locked .main {
   .pmos-lightbox-image { max-height: 58dvh; }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   APM WORKSPACE VNEXT
+   Role-scoped operational presentation. Existing management views and
+   module behavior remain intact; APMs receive progressive disclosure.
+   ═══════════════════════════════════════════════════════════════ */
+
+.role-apm #hubView > .hub-command,
+.role-apm #hubView > .hub-create-card,
+.role-apm #hubView > .hub-search-wrap,
+.role-apm #hubView > .hub-tab-row,
+.role-apm #hubView > #dashboardAlerts,
+.role-apm #hubView > .tab-pane {
+  display: none !important;
+}
+
+.apm-home,
+.apm-project-home {
+  --apm-line: color-mix(in srgb, var(--border2) 76%, transparent);
+  color: var(--text);
+}
+
+.apm-primary-nav {
+  position: sticky;
+  top: 8px;
+  z-index: 30;
+  display: flex;
+  gap: 4px;
+  margin-bottom: 18px;
+  padding: 5px;
+  overflow-x: auto;
+  border: 1px solid var(--apm-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .08);
+  backdrop-filter: blur(12px);
+}
+
+.apm-primary-nav button,
+.apm-more-menu button,
+.apm-more-menu a {
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.apm-primary-nav button:hover,
+.apm-primary-nav button:focus-visible,
+.apm-primary-nav button.is-active,
+.apm-more-menu button:hover,
+.apm-more-menu a:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.apm-more-menu {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: -10px 0 16px;
+}
+
+.apm-more-menu.hidden { display: none; }
+
+.apm-today-head,
+.apm-project-hero,
+.apm-attendance-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.apm-today-head {
+  padding: 26px 4px 22px;
+  border-bottom: 1px solid var(--apm-line);
+}
+
+.apm-today-head h1,
+.apm-project-hero h2,
+.apm-attendance-head h2,
+.apm-materials-flow h2 {
+  margin: 3px 0 6px;
+  color: var(--text);
+  font-size: clamp(24px, 4vw, 34px);
+  line-height: 1.1;
+  letter-spacing: -.025em;
+}
+
+.apm-today-head p,
+.apm-project-hero p,
+.apm-attendance-head p,
+.apm-materials-flow p {
+  margin: 0;
+  color: var(--muted2);
+  font-size: 13px;
+}
+
+.apm-eyebrow,
+.apm-project-label {
+  display: block;
+  color: var(--muted2);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.apm-project-picker,
+.apm-attendance-head label {
+  display: grid;
+  gap: 5px;
+  min-width: 230px;
+  color: var(--muted2);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.apm-project-picker select,
+.apm-attendance-head input {
+  min-height: 42px;
+  border-color: var(--apm-line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.apm-section,
+.apm-project-today,
+.apm-current-work,
+.apm-materials-flow,
+.apm-attendance-daily {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--apm-line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 5px 16px rgba(15, 23, 42, .05);
+}
+
+.apm-section-head,
+.apm-work-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.apm-section-head h2,
+.apm-section-head h3,
+.apm-work-head h4 {
+  margin: 2px 0 0;
+  color: var(--text);
+}
+
+.apm-section-head h2 { font-size: 19px; }
+.apm-section-head h3 { font-size: 18px; }
+.apm-work-head h4 { font-size: 14px; }
+
+.apm-section-head > input {
+  width: min(260px, 100%);
+  min-height: 40px;
+}
+
+.apm-attention-list,
+.apm-project-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.apm-attention-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--apm-line);
+  border-radius: 9px;
+  background: var(--surface2);
+  color: var(--text);
+  text-align: left;
+}
+
+.apm-attention-row:hover { border-color: var(--muted); }
+.apm-attention-row strong { display: block; font-size: 13px; }
+.apm-attention-row small { display: block; margin-top: 3px; color: var(--muted2); font-size: 11px; }
+.apm-state-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); }
+.apm-attention-row.is-urgent .apm-state-dot { background: var(--red); }
+.apm-row-action { color: var(--muted2); font-size: 11px; font-weight: 900; }
+
+.apm-calm-state {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--apm-line);
+  border-radius: 9px;
+  background: var(--surface2);
+}
+
+.apm-calm-state strong { font-size: 14px; }
+.apm-calm-state span,
+.apm-track-note,
+.apm-empty { color: var(--muted2); font-size: 12px; }
+.apm-track-note { margin: 10px 2px 0; }
+
+.apm-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.apm-quick-grid button {
+  display: grid;
+  gap: 4px;
+  min-height: 72px;
+  padding: 13px;
+  border: 1px solid var(--apm-line);
+  border-radius: 9px;
+  background: var(--surface2);
+  color: var(--text);
+  text-align: left;
+}
+
+.apm-quick-grid button:hover { border-color: var(--teal); }
+.apm-quick-grid strong { font-size: 13px; }
+.apm-quick-grid span { color: var(--muted2); font-size: 11px; }
+
+.apm-project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(210px, .65fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px;
+  border: 1px solid var(--apm-line);
+  border-radius: 10px;
+  background: var(--surface2);
+}
+
+.apm-project-main h3 { margin: 3px 0; font-size: 16px; }
+.apm-project-main p { margin: 0; color: var(--muted2); font-size: 12px; }
+.apm-project-counts { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted2); font-size: 11px; }
+.apm-project-counts strong { color: var(--text); }
+.apm-open-project,
+.apm-work-head button,
+.apm-project-quick button,
+.apm-attendance-progress button,
+.apm-materials-flow .apm-section-head button {
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--apm-line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 800;
+}
+
+.apm-open-project:hover,
+.apm-work-head button:hover,
+.apm-project-quick button:hover { border-color: var(--teal); }
+
+/* Project Home */
+.apm-project-home { display: grid; gap: 16px; }
+.apm-project-hero { padding: 6px 2px 16px; border-bottom: 1px solid var(--apm-line); }
+.apm-project-status {
+  padding: 5px 9px;
+  border: 1px solid var(--apm-line);
+  border-radius: 999px;
+  color: var(--muted2);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.apm-operational-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.apm-operational-summary button {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--apm-line);
+  border-radius: 9px;
+  background: var(--surface2);
+  color: var(--text);
+  text-align: left;
+}
+
+.apm-operational-summary span { color: var(--muted2); font-size: 10px; font-weight: 900; text-transform: uppercase; }
+.apm-operational-summary strong { font-size: 24px; }
+.apm-operational-summary small { color: var(--muted2); font-size: 11px; }
+
+.apm-project-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+.apm-current-work { display: grid; gap: 14px; }
+.apm-work-block { min-width: 0; border-top: 1px solid var(--apm-line); padding-top: 12px; }
+.apm-work-block:first-of-type { border-top: 0; }
+
+.apm-table-wrap {
+  max-width: 100%;
+  margin-top: 9px;
+  overflow-x: auto;
+  border: 1px solid var(--apm-line);
+  border-radius: 9px;
+}
+
+.apm-table-wrap table { width: 100%; min-width: 560px; border-collapse: collapse; }
+.apm-table-wrap th,
+.apm-table-wrap td { padding: 10px 12px; border-bottom: 1px solid var(--apm-line); text-align: left; font-size: 12px; }
+.apm-table-wrap th { background: var(--surface2); color: var(--muted2); font-size: 10px; text-transform: uppercase; }
+.apm-table-wrap td small { display: block; margin-top: 2px; color: var(--muted2); }
+.apm-table-wrap tr:last-child td { border-bottom: 0; }
+
+.apm-advanced-details {
+  padding: 13px 15px;
+  border: 1px solid var(--apm-line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.apm-advanced-details summary { cursor: pointer; color: var(--muted2); font-size: 12px; font-weight: 900; }
+.apm-detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.apm-detail-grid div { padding: 10px; border: 1px solid var(--apm-line); border-radius: 8px; background: var(--surface2); }
+.apm-detail-grid span { display: block; color: var(--muted2); font-size: 10px; text-transform: uppercase; }
+.apm-detail-grid strong { display: block; margin-top: 3px; font-size: 13px; }
+
+/* Daily attendance. Missing records are visually Unmarked, never Absent. */
+.apm-attendance-daily { margin-top: 0; margin-bottom: 16px; }
+.apm-attendance-progress { display: grid; grid-template-columns: minmax(170px, 1fr) auto auto; align-items: center; gap: 10px; margin-top: 14px; }
+.apm-attendance-progress > div { display: grid; gap: 2px; }
+.apm-attendance-progress span { color: var(--muted2); font-size: 10px; font-weight: 900; text-transform: uppercase; }
+.apm-attendance-progress strong { font-size: 22px; }
+.apm-attendance-progress small { color: var(--muted2); }
+
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) details,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .kpi-row,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .two-col > div:first-child,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) #laborBudgetWarn,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .apm-attendance-advanced,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) #periodIndicator,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .tc-controls,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .g-rate,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .g-hdr-rate,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .g-sub,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .g-hdr-sub,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .trade-hdr-total {
+  display: none !important;
+}
+
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .two-col { grid-template-columns: minmax(0, 1fr); }
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .attendance-sel { min-width: 130px; }
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .g-table { min-width: 320px; }
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .g-hdr-name,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .g-name { width: 44%; min-width: 120px; }
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .g-day-hdr,
+.role-apm #laborPanel.apm-attendance-mode:not(.apm-attendance-expanded) .g-cell { min-width: 150px; }
+.attendance-sel.status-unmarked { color: var(--muted2); border-style: dashed; background: var(--surface2); }
+
+/* Materials keeps the delivery flow and PO work visible; finance/warehouse
+   layers remain available on demand. */
+.role-apm #materialsPanel.apm-materials-mode:not(.apm-materials-expanded) .apm-materials-advanced { display: none !important; }
+.apm-materials-flow { margin-top: 0; margin-bottom: 16px; }
+.apm-material-table td:first-child strong,
+.apm-material-table td:first-child small { display: block; }
+
+/* Task work defaults to exception/time filters. History and Gantt are Level 3. */
+.apm-task-filters { display: flex; gap: 6px; margin: 12px 0; overflow-x: auto; }
+.apm-task-filters button {
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--apm-line, var(--border2));
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted2);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.apm-task-filters button.is-active { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 10%, var(--surface)); color: var(--text); }
+.role-apm #tasksPanel.apm-tasks-mode .task-stats-row,
+.role-apm #tasksPanel.apm-tasks-mode .task-overall-progress,
+.role-apm #tasksPanel.apm-tasks-mode #ganttView { display: none; }
+.role-apm #tasksPanel.apm-tasks-mode #taskList { display: grid; gap: 10px; }
+.role-apm #tasksPanel.apm-tasks-mode .task-column { min-width: 0; padding: 10px; border: 1px solid var(--apm-line); border-radius: 10px; background: var(--surface2); }
+
+@media (max-width: 820px) {
+  .apm-quick-grid,
+  .apm-operational-summary,
+  .apm-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .apm-project-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .apm-project-counts { grid-column: 1 / -1; grid-row: 2; }
+}
+
+@media (max-width: 560px) {
+  .apm-primary-nav { top: 4px; margin-inline: -5px; border-radius: 9px; }
+  .apm-today-head,
+  .apm-project-hero,
+  .apm-attendance-head,
+  .apm-section-head { align-items: stretch; flex-direction: column; }
+  .apm-project-picker,
+  .apm-attendance-head label { min-width: 0; width: 100%; }
+  .apm-section,
+  .apm-project-today,
+  .apm-current-work,
+  .apm-materials-flow,
+  .apm-attendance-daily { padding: 15px; }
+  .apm-quick-grid,
+  .apm-operational-summary,
+  .apm-detail-grid { grid-template-columns: 1fr 1fr; }
+  .apm-project-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .apm-project-counts { grid-column: auto; grid-row: auto; }
+  .apm-open-project { width: 100%; }
+  .apm-attendance-progress { grid-template-columns: 1fr; }
+  .apm-attendance-progress button { width: 100%; }
+  .role-apm #workspaceView > .tab-scroll { position: sticky; top: 0; z-index: 25; background: var(--bg); }
+}
+
 .pmos-row-title {
   font-size: 14px;
   font-weight: 900;

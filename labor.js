@@ -13,6 +13,7 @@ let _workersSnap = null;
 let _attendanceSnap = null;
 let _advancesSnap = null;
 let _editingWid = null;
+let _apmAttendanceDate = '';
 
 function getWeekKey(start = $('weekStart')?.value, end = $('weekEnd')?.value) {
   return start && end ? `${start}_${end}` : '';
@@ -36,6 +37,127 @@ function canTouchLaborProject() {
   return typeof requireEdit === 'function'
     ? requireEdit(_lpid)
     : !!_lpid && typeof canEditProject === 'function' && canEditProject(_lpid);
+}
+
+function laborIsApm() {
+  return (typeof normalizeRole === 'function'
+    ? normalizeRole(window._currentUser?.role || 'apm')
+    : String(window._currentUser?.role || 'apm').toLowerCase()) === 'apm';
+}
+
+function localAttendanceIso(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function ensureApmAttendanceUi() {
+  const panel = $('laborPanel');
+  if (!panel || !laborIsApm()) return;
+  panel.classList.add('apm-attendance-mode');
+  let daily = $('apmAttendanceDaily');
+  if (!daily) {
+    daily = document.createElement('section');
+    daily.id = 'apmAttendanceDaily';
+    daily.className = 'apm-attendance-daily';
+    daily.innerHTML = `
+      <div class="apm-attendance-head">
+        <div><span class="apm-eyebrow">Daily attendance</span><h2>Attendance</h2><p id="apmAttendanceProject">Current project</p></div>
+        <label>Date<input id="apmAttendanceDate" type="date" onchange="setApmAttendanceDate(this.value)" aria-label="Attendance date"></label>
+      </div>
+      <div class="apm-attendance-progress">
+        <div><span>Recorded</span><strong id="apmAttendanceRecorded">0 / 0</strong><small id="apmAttendanceUnmarked">No workers loaded</small></div>
+        <button id="apmMarkAllPresent" type="button" onclick="markAllPresentForApmDate()">Mark All Present</button>
+        <button id="apmAttendanceMore" type="button" aria-expanded="false" onclick="toggleApmAttendanceAdvanced()">More attendance tools</button>
+      </div>`;
+    panel.insertBefore(daily, panel.firstChild);
+  }
+  _apmAttendanceDate = _apmAttendanceDate || localAttendanceIso();
+  const dateInput = $('apmAttendanceDate');
+  if (dateInput) {
+    dateInput.max = localAttendanceIso();
+    dateInput.value = _apmAttendanceDate;
+  }
+  $('attendanceSummary')?.closest('.card')?.classList.add('apm-attendance-advanced');
+}
+
+function updateApmAttendanceProgress() {
+  if (!laborIsApm() || !_workersSnap) return;
+  const date = _apmAttendanceDate || localAttendanceIso();
+  const attendance = _attendanceSnap?.val?.() || {};
+  let total = 0;
+  let recorded = 0;
+  _workersSnap.forEach(child => {
+    const worker = child.val() || {};
+    if (!workerIsActive(worker)) return;
+    total++;
+    const entry = attendance[child.key]?.[date];
+    if (entry && entry.status && entry.status !== 'unmarked') recorded++;
+  });
+  setText('apmAttendanceRecorded', `${recorded} / ${total}`);
+  setText('apmAttendanceUnmarked', total === recorded ? 'Attendance complete' : `${total - recorded} unmarked`);
+  const markAll = $('apmMarkAllPresent');
+  if (markAll) markAll.disabled = !total || total === recorded || date > localAttendanceIso();
+}
+
+function setApmAttendanceDate(value) {
+  const date = String(value || '');
+  if (!date || date > localAttendanceIso()) {
+    showToast('Choose today or an earlier date.', 'warn');
+    if ($('apmAttendanceDate')) $('apmAttendanceDate').value = _apmAttendanceDate || localAttendanceIso();
+    return;
+  }
+  _apmAttendanceDate = date;
+  if (_workersSnap && _attendanceSnap) buildGrid(_lpid, _workersSnap, _attendanceSnap);
+  updateApmAttendanceProgress();
+}
+
+function toggleApmAttendanceAdvanced() {
+  const panel = $('laborPanel');
+  if (!panel) return;
+  const expanded = panel.classList.toggle('apm-attendance-expanded');
+  $('apmAttendanceMore')?.setAttribute('aria-expanded', String(expanded));
+  setText('apmAttendanceMore', expanded ? 'Hide advanced tools' : 'More attendance tools');
+  renderLaborWorkspaceViews();
+}
+
+async function markAllPresentForApmDate() {
+  if (!_lpid || !_workersSnap || !canTouchLaborProject()) return;
+  const date = _apmAttendanceDate || localAttendanceIso();
+  if (date > localAttendanceIso()) {
+    showToast('Cannot mark future attendance.', 'error');
+    return;
+  }
+  const attendance = _attendanceSnap?.val?.() || {};
+  const updates = {};
+  const now = Date.now();
+  _workersSnap.forEach(child => {
+    const worker = child.val() || {};
+    if (!workerIsActive(worker)) return;
+    const existing = attendance[child.key]?.[date];
+    if (existing && existing.status && existing.status !== 'unmarked') return;
+    updates[`projects/${_lpid}/attendance/${child.key}/${date}`] = {
+      workerId: child.key,
+      date,
+      status: 'present',
+      weekKey: getWeekKey(),
+      regularHours: ATTENDANCE_STATUS.present.hours,
+      overtimeHours: 0,
+      nightDiffHours: 0,
+      paidHours: ATTENDANCE_STATUS.present.hours,
+      multiplier: ATTENDANCE_STATUS.present.multiplier,
+      notes: '',
+      markedAt: now,
+      markedBy: window._currentUser?.uid || null
+    };
+  });
+  const count = Object.keys(updates).length;
+  if (!count) {
+    showToast('Every active worker is already marked.', 'success');
+    return;
+  }
+  await safeDb(() => firebase.database().ref().update(updates), 'Failed to mark attendance');
+  auditLog('bulk_mark_present', 'attendance', date, { projectId: _lpid, workerCount: count });
+  showToast(`${count} unmarked worker${count === 1 ? '' : 's'} marked present.`);
 }
 
 // Payroll formulas (gross pay, cash advance eligibility/deduction, rate
@@ -70,6 +192,7 @@ function initLabor(pid) {
   // Fetch the human-readable project name (used in RFP, exports, etc.)
   firebase.database().ref(`projects/${pid}/name`).once('value', snap => {
     _projectName = snap.val() || pid;
+    setText('apmAttendanceProject', _projectName);
   });
 
   // Set default week range
@@ -84,6 +207,8 @@ function initLabor(pid) {
   if (we && !we.value) we.value = sunday.toISOString().slice(0, 10);
   _activeWeekKey = getWeekKey();
   renderPeriodIndicator();
+  ensureApmAttendanceUi();
+  if (laborIsApm()) setApmAttendanceDate(_apmAttendanceDate || localAttendanceIso());
 }
 
 // ══════════════════════════════════════════════════════
@@ -376,6 +501,7 @@ function renderLaborWorkspaceViews() {
   if (!_lpid || !_workersSnap) return;
   if (_advancesSnap) renderRoster(_workersSnap, _lpid, _advancesSnap);
   if (_attendanceSnap) buildGrid(_lpid, _workersSnap, _attendanceSnap);
+  updateApmAttendanceProgress();
 }
 
 function workerIsActive(worker) {
@@ -1088,9 +1214,9 @@ function buildGrid(pid, wSnap, attSnap) {
       let sub = 0, daysPresent = 0, daysHalf = 0, daysHoliday = 0, otHours = 0;
 
       const cells = days.map(d => {
-        const att = attendance[w.id]?.[d.iso] || { status: 'absent', overtimeHours: 0, nightDiffHours: 0 };
-        const status = att.status || 'absent';
-        const config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.absent;
+        const att = attendance[w.id]?.[d.iso] || { status: 'unmarked', overtimeHours: 0, nightDiffHours: 0 };
+        const status = att.status || 'unmarked';
+        const config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.unmarked;
 
         if (status === 'present' || status === 'leave') daysPresent++;
         if (status === 'half') daysHalf++;
@@ -1177,6 +1303,11 @@ async function markAttendance(wid, iso, status, overtimeHours = 0, nightDiffHour
   const weekKey = getWeekKey();
   if (_compiledWeekKeys.has(weekKey) && !confirm('This week is already compiled. Edit archived attendance anyway?')) return;
 
+  if (status === 'unmarked') {
+    await safeDb(() => firebase.database().ref(`projects/${_lpid}/attendance/${wid}/${iso}`).set(null), 'Failed to clear attendance');
+    return;
+  }
+
   const config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.present;
 
   await safeDb(() => firebase.database().ref(`projects/${_lpid}/attendance/${wid}/${iso}`).set({
@@ -1209,6 +1340,14 @@ async function updateAttendanceOT(wid, iso, otHours) {
 }
 
 function getWeekDays() {
+  if (laborIsApm() && _apmAttendanceDate && !$('laborPanel')?.classList.contains('apm-attendance-expanded')) {
+    const selected = new Date(`${_apmAttendanceDate}T12:00:00`);
+    return [{
+      iso: _apmAttendanceDate,
+      short: selected.toLocaleDateString('en-PH', { weekday: 'short' }),
+      num: selected.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })
+    }];
+  }
   const s = $('weekStart')?.value;
   const e = $('weekEnd')?.value;
   const days = [];
@@ -1379,6 +1518,8 @@ async function compilePayroll() {
     workerAtt.forEach(daySnap => {
       const att = daySnap.val();
       if (!weekSet.has(att.date)) return;
+      // Unmarked is a UI sentinel, not an attendance or payroll record.
+      if (att.status === 'unmarked') return;
 
       const pay = calculateGrossPay(w.dailyRate, att);
       if (pay.total > 0 && !(parseFloat(w.dailyRate) > 0) && !missingRateWarned[wid]) {
@@ -1389,7 +1530,7 @@ async function compilePayroll() {
       workerOT += pay.otPay;
       workerNight += pay.nightDiffPay;
       if (att.status === 'half') workerDays += 0.5;
-      else if (att.status !== 'absent' && att.status !== 'rest') workerDays++;
+      else if (!['absent', 'rest', 'unmarked'].includes(att.status)) workerDays++;
 
       attendanceToArchive.push({
         ...att,
@@ -2179,7 +2320,7 @@ async function buildLiveRFP(start, end) {
     workerAtt.forEach(daySnap => {
       const tc = daySnap.val();
       if (!weekSet.has(tc.date)) return;
-      if (tc.status === 'absent' || tc.status === 'rest') return;
+      if (tc.status === 'absent' || tc.status === 'rest' || tc.status === 'unmarked') return;
       const tradeKey = w.trade || 'Unassigned';
       if (!byTrade[tradeKey]) byTrade[tradeKey] = [];
       let entry = byTrade[tradeKey].find(x => x.name === w.name);
@@ -2644,6 +2785,9 @@ window.createCashAdvanceEvent = createCashAdvanceEvent;
 window.createLaborNotificationEvent = createLaborNotificationEvent;
 window.handleAttendanceChange = handleAttendanceChange;
 window.markAttendance = markAttendance;
+window.setApmAttendanceDate = setApmAttendanceDate;
+window.toggleApmAttendanceAdvanced = toggleApmAttendanceAdvanced;
+window.markAllPresentForApmDate = markAllPresentForApmDate;
 window.updateAttendanceOT = updateAttendanceOT;
 window.handleWeekRangeChange = handleWeekRangeChange;
 window.applyWeek = applyWeek;

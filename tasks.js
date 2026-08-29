@@ -6,6 +6,7 @@ let _tpid = null;
 let _taskListeners = [];
 let _taskCache = [];
 let _taskAssigneeDirectory = [];
+let _apmTaskFilter = 'today';
 
 const TASK_STATUS = Object.freeze({
   pending: { label: 'Pending', icon: '\u25CB', color: 'var(--muted)' },
@@ -59,6 +60,63 @@ function canTouchTasksProject() {
     : !!_tpid && typeof canEditProject === 'function' && canEditProject(_tpid);
 }
 
+function tasksIsApm() {
+  return (typeof normalizeRole === 'function'
+    ? normalizeRole(window._currentUser?.role || 'apm')
+    : String(window._currentUser?.role || 'apm').toLowerCase()) === 'apm';
+}
+
+function ensureApmTaskFilters() {
+  const panel = $('tasksPanel');
+  const card = panel?.querySelector('.panel-card');
+  if (!card || !tasksIsApm()) return;
+  panel.classList.add('apm-tasks-mode');
+  if ($('apmTaskFilters')) return;
+  const filters = document.createElement('div');
+  filters.id = 'apmTaskFilters';
+  filters.className = 'apm-task-filters';
+  filters.setAttribute('aria-label', 'Task view');
+  filters.innerHTML = [
+    ['today', 'Today'], ['upcoming', 'Upcoming'], ['blocked', 'Blocked'],
+    ['verification', 'For Verification'], ['history', 'Completed / History']
+  ].map(([key, label]) => `<button type="button" data-apm-task-filter="${key}" onclick="setApmTaskFilter('${key}')">${label}</button>`).join('');
+  const form = card.querySelector('.task-form-row');
+  card.insertBefore(filters, form || card.firstChild);
+  updateApmTaskFilterButtons();
+}
+
+function updateApmTaskFilterButtons() {
+  document.querySelectorAll('[data-apm-task-filter]').forEach(button => {
+    const active = button.dataset.apmTaskFilter === _apmTaskFilter;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+}
+
+function apmFilteredTasks(tasks) {
+  if (!tasksIsApm()) return tasks;
+  const today = new Date();
+  const localToday = new Date(today.getTime() - today.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  return tasks.filter(task => {
+    const due = String(task.dueDate || '').slice(0, 10);
+    const historical = ['completed', 'cancelled'].includes(task.status);
+    if (_apmTaskFilter === 'history') return historical;
+    if (historical) return false;
+    if (_apmTaskFilter === 'blocked') return task.status === 'blocked';
+    if (_apmTaskFilter === 'verification') return task.status === 'for_verification';
+    if (_apmTaskFilter === 'upcoming') return !due || due > localToday;
+    return !!due && due <= localToday;
+  });
+}
+
+function setApmTaskFilter(filter) {
+  const allowed = ['today', 'upcoming', 'blocked', 'verification', 'history'];
+  if (!allowed.includes(filter)) return;
+  _apmTaskFilter = filter;
+  updateApmTaskFilterButtons();
+  renderTaskBoard(_taskCache);
+}
+
 function canVerifyTasks() {
   const role = typeof normalizeRole === 'function'
     ? normalizeRole(window._currentUser?.role)
@@ -70,7 +128,9 @@ function initTasks(pid) {
   detachTaskListeners();
   _tpid = pid || null;
   _taskCache = [];
+  _apmTaskFilter = 'today';
   if (!_tpid) return;
+  ensureApmTaskFilters();
   loadTaskAssignees();
   watchTasks(_tpid);
 }
@@ -162,8 +222,10 @@ function sortTasks(tasks) {
 function renderTaskBoard(tasks) {
   const container = $('taskList');
   if (!container) return;
-  if (!tasks.length) {
-    container.innerHTML = '<p class="empty-hint">No tasks yet. Add the first project mission above.</p>';
+  const visibleTasks = apmFilteredTasks(tasks);
+  if (!visibleTasks.length) {
+    const label = _apmTaskFilter === 'history' ? 'completed tasks or history' : `${_apmTaskFilter.replace('_', ' ')} tasks`;
+    container.innerHTML = `<p class="empty-hint">No ${tasksIsApm() ? label : 'tasks'} in this view.</p>`;
     return;
   }
 
@@ -171,7 +233,7 @@ function renderTaskBoard(tasks) {
     result[status] = [];
     return result;
   }, {});
-  sortTasks(tasks).forEach(task => groups[task.status].push(task));
+  sortTasks(visibleTasks).forEach(task => groups[task.status].push(task));
 
   container.innerHTML = '';
   const board = document.createDocumentFragment();
@@ -678,3 +740,4 @@ window.openEditTaskModal = openEditTaskModal;
 window.closeEditTaskModal = closeEditTaskModal;
 window.saveEditTask = saveEditTask;
 window.renderGanttView = renderGanttView;
+window.setApmTaskFilter = setApmTaskFilter;

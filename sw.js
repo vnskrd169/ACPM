@@ -7,7 +7,7 @@
 // -----------------------------------------------------------------------------
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v142';
+const CACHE_NAME = 'acpm-v143';
 
 const ASSETS = [
   './',
@@ -17,14 +17,14 @@ const ASSETS = [
   './dashboard.html',
   './workspace.html',
   './environment.js?v=1',
-  './style.css?v=113',
+  './style.css?v=114',
   './assets/brand/ai-command-center.css?v=1',
   './utils.js?v=87',
-  './auth.js?v=98',
-  './main.js?v=110',
-  './payroll-math.js?v=2',
-  './labor.js?v=99',
-  './materials.js?v=96',
+  './auth.js?v=99',
+  './main.js?v=111',
+  './payroll-math.js?v=3',
+  './labor.js?v=100',
+  './materials.js?v=97',
   './billing.js?v=76',
   './changeorders.js?v=95',
   './sitelog.js?v=95',
@@ -32,7 +32,7 @@ const ASSETS = [
   './equipment.js?v=94',
   './compliance.js?v=88',
   './defects.js?v=94',
-  './tasks.js?v=95',
+  './tasks.js?v=96',
   './notifications.js?v=86',
   './ux-palette.js?v=1',
   './report.js?v=98',
@@ -41,6 +41,7 @@ const ASSETS = [
   './pmos-photo-lightbox.js?v=1',
   './pmos-office.js?v=5',
   './ai-command-center.js?v=2',
+  './apm-workspace-vnext.js?v=1',
   './face-attendance.js?v=1',
   './pmos-task-adapter.js?v=2',
   './manifest.json',

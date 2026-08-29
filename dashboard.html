@@ -37,13 +37,13 @@
 <script src="utils.js?v=87"></script>
 
 <!-- Auth (must load before main.js - main.js calls canAccessProject/canEditProject) -->
-<script src="auth.js?v=98"></script>
+<script src="auth.js?v=99"></script>
 
 <!-- Core modules -->
-<script src="main.js?v=110"></script>
-<script src="payroll-math.js?v=2"></script>
-<script src="labor.js?v=99"></script>
-<script src="materials.js?v=96"></script>
+<script src="main.js?v=111"></script>
+<script src="payroll-math.js?v=3"></script>
+<script src="labor.js?v=100"></script>
+<script src="materials.js?v=97"></script>
 <script src="sitelog.js?v=95"></script>
 <script src="suppliers.js?v=94"></script>
 <script src="billing.js?v=76"></script>
@@ -51,13 +51,14 @@
 <script src="equipment.js?v=94"></script>
 <script src="compliance.js?v=88"></script>
 <script src="defects.js?v=94"></script>
-<script src="tasks.js?v=95"></script>
+<script src="tasks.js?v=96"></script>
 <script src="notifications.js?v=86"></script>
 <script src="report.js?v=98"></script>
 <script src="pmos-subscription-manager.js?v=1"></script>
 <script src="pmos-photo-lightbox.js?v=1"></script>
 <script src="pmos-office.js?v=5"></script>
 <script src="ai-command-center.js?v=2"></script>
+<script src="apm-workspace-vnext.js?v=1"></script>
 <script src="face-attendance.js?v=1"></script>
 <script src="ux-palette.js?v=1"></script>
 
@@ -65,7 +66,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-<link rel="stylesheet" href="style.css?v=113">
+<link rel="stylesheet" href="style.css?v=114">
 <link rel="stylesheet" href="assets/brand/acpm-brand.css">
 <link rel="stylesheet" href="assets/brand/ai-command-center.css?v=1">
 
@@ -443,7 +444,7 @@ window.addEventListener('appinstalled', () => {
       <button id="extrasToggleBtn" class="tab-btn" onclick="toggleExtraTabs()" data-role-visible="apm,pm,boss,owner,admin">&#x1F527; Extras</button>
       <button id="tab_changeorders" class="tab-btn" onclick="switchTab('changeorders')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F4CB; Change Orders</button>
       <button id="tab_suppliers" class="tab-btn" onclick="switchTab('suppliers')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F3EA; Suppliers</button>
-      <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x2611; Tasks</button>
+      <button id="tab_tasks" class="tab-btn" onclick="switchTab('tasks')" data-role-visible="apm,pm,boss,owner,admin">&#x2611; Tasks</button>
       <button id="tab_equipment" class="tab-btn" onclick="switchTab('equipment')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F6A7; Equipment</button>
       <button id="tab_compliance" class="tab-btn" onclick="switchTab('compliance')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F4C4; Compliance <span id="complianceBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>
       <button id="tab_defects" class="tab-btn" onclick="switchTab('defects')" data-role-visible="apm,pm,boss,owner,admin" data-feature-visible="extras">&#x1F4CC; Punch List <span id="defectsBadge" class="hidden" style="background:var(--red);border-radius:10px;padding:1px 6px;font-size:11px;margin-left:4px;"></span></button>

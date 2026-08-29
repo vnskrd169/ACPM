@@ -1094,7 +1094,10 @@ async function initAppForUser() {
     return;
   }
   const role = normalizeRole(_currentAuthUser?.role || 'apm');
-  const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true;
+  if (role === 'apm') window._apmMoreExpanded = false;
+  const extrasEnabled = role === 'apm'
+    ? false
+    : (typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true);
 
   // Role-based CSS classes
   document.body.classList.remove('role-boss', 'role-owner', 'role-admin', 'role-pm', 'role-apm', 'role-foreman', 'role-safety', 'role-viewer');
@@ -1124,13 +1127,16 @@ async function initAppForUser() {
   const extrasToggle = document.getElementById('extrasToggleBtn');
   if (extrasToggle) {
     extrasToggle.classList.toggle('is-enabled', extrasEnabled);
-    extrasToggle.textContent = extrasEnabled ? 'Extras On' : 'Extras';
+    extrasToggle.textContent = role === 'apm' ? 'More' : (extrasEnabled ? 'Extras On' : 'Extras');
     extrasToggle.title = extrasEnabled ? 'Hide optional tabs' : 'Show optional tabs';
     // Position Extras toggle at the end of the tab group
     const tabGroup = extrasToggle.closest('.tab-group');
     if (tabGroup && extrasToggle.parentNode === tabGroup) {
       tabGroup.appendChild(extrasToggle);
     }
+  }
+  if (typeof window.configureApmWorkspaceNavigation === 'function') {
+    window.configureApmWorkspaceNavigation();
   }
 
   const preferredTab = canSeeFinancials(role) ? '#tab_reports' : (isFieldRole(role) || isViewerRole(role)) ? '#tab_sitelog' : '#tab_labor';

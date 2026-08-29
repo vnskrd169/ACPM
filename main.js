@@ -42,8 +42,11 @@ function appUrl(page, params = {}) {
   if (page === 'login') return '/login.html';
   if (page === 'pmos') return '/pmos.html';
   if (page === 'workspace') {
-    const pid = encodeURIComponent(params.projectId || '');
-    return pid ? `/workspace.html?projectId=${pid}` : '/workspace.html';
+    const query = new URLSearchParams();
+    if (params.projectId) query.set('projectId', params.projectId);
+    if (params.tab) query.set('tab', params.tab);
+    const queryString = query.toString();
+    return queryString ? `/workspace.html?${queryString}` : '/workspace.html';
   }
   return '/dashboard.html';
 }
@@ -418,7 +421,9 @@ function refreshWorkspaceTabVisibility() {
   const role = typeof normalizeRole === 'function'
     ? normalizeRole(window._currentUser?.role || 'apm')
     : (window._currentUser?.role || 'apm');
-  const extrasEnabled = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true;
+  const extrasEnabled = role === 'apm'
+    ? !!window._apmMoreExpanded
+    : (typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true);
   document.querySelectorAll('#workspaceView > .tab-scroll > .tab-group > .tab-btn').forEach(el => {
     if (el.id === 'tab_admin') {
       el.classList.add('hidden');
@@ -429,6 +434,9 @@ function refreshWorkspaceTabVisibility() {
     const featureAllowed = el.dataset.featureVisible === 'extras' ? extrasEnabled : true;
     el.style.display = roleAllowed && featureAllowed ? '' : 'none';
   });
+  if (typeof window.configureApmWorkspaceNavigation === 'function') {
+    window.configureApmWorkspaceNavigation();
+  }
 }
 
 function setAdminWorkspaceMode(enabled) {
@@ -455,6 +463,12 @@ function renderProjectHubList(projects, gridId, tab, isAll) {
 
   const visibleProjects = sortProjectsNewest(projects.filter(p => projectMatchesHubTab(p, tab, isAll)));
   el.innerHTML = '';
+
+  if (typeof window.isApmWorkspaceUser === 'function' && window.isApmWorkspaceUser() && typeof window.renderApmHome === 'function') {
+    window.renderApmHome(visibleProjects);
+    visibleProjects.forEach(p => cacheProject(p.id, p));
+    return;
+  }
 
   if (!visibleProjects.length) {
     el.innerHTML = `<p class="hub-empty">No ${isAll ? '' : tab} projects.</p>`;
@@ -1364,6 +1378,9 @@ function projectDateLabel(project = {}) {
 
 function renderProjectDashboard(projectId, project = {}) {
   ensureProjectDashboardUi();
+  if (typeof window.renderApmProjectHome === 'function' && window.renderApmProjectHome(projectId, project)) {
+    return;
+  }
   const trades = objectRows(project.trades).filter(t => t.active !== false && t.status !== 'inactive' && t.archived !== true);
   const workers = objectRows(project.workers).filter(w => w.active !== false && w.status !== 'inactive' && w.status !== 'archived');
   const foremen = Array.from(new Set(trades.map(t => t.foremanName).filter(Boolean)));
@@ -1551,7 +1568,15 @@ async function enterProject(pid) {
   initDefects(pid);
   initNotifications();
   loadProjectNotes(pid);
-  switchTab('dashboard');
+  const requestedTab = new URLSearchParams(window.location.search).get('tab') || 'dashboard';
+  const initialTabs = ['dashboard', 'labor', 'materials', 'sitelog', 'tasks', 'changeorders', 'suppliers', 'equipment', 'compliance', 'defects'];
+  const initialTab = initialTabs.includes(requestedTab) ? requestedTab : 'dashboard';
+  if (typeof window.isApmWorkspaceUser === 'function' && window.isApmWorkspaceUser() &&
+      ['changeorders', 'suppliers', 'equipment', 'compliance', 'defects'].includes(initialTab)) {
+    window._apmMoreExpanded = true;
+    refreshWorkspaceTabVisibility();
+  }
+  switchTab(initialTab);
   handleNotificationRouteFocus();
 
   auditLog('enter', 'project', pid, { name: p.name });
@@ -1627,13 +1652,16 @@ function switchTab(tab) {
 }
 
 function toggleExtraTabs(forceValue) {
-  const current = typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true;
-  const next = typeof forceValue === 'boolean' ? forceValue : !current;
-  if (typeof setFeatureFlag === 'function') setFeatureFlag('extras', next);
-
   const role = typeof normalizeRole === 'function'
     ? normalizeRole(window._currentUser?.role || 'apm')
     : (window._currentUser?.role || 'apm');
+  const isApmRole = role === 'apm';
+  const current = isApmRole
+    ? !!window._apmMoreExpanded
+    : (typeof getFeatureFlag === 'function' ? getFeatureFlag('extras', true) : true);
+  const next = typeof forceValue === 'boolean' ? forceValue : !current;
+  if (isApmRole) window._apmMoreExpanded = next;
+  else if (typeof setFeatureFlag === 'function') setFeatureFlag('extras', next);
   document.querySelectorAll('[data-feature-visible="extras"]').forEach(el => {
     const roleAllowed = typeof elementAllowsRole === 'function'
       ? elementAllowsRole(el, role)
@@ -1644,7 +1672,7 @@ function toggleExtraTabs(forceValue) {
   const extrasToggle = document.getElementById('extrasToggleBtn');
   if (extrasToggle) {
     extrasToggle.classList.toggle('is-enabled', next);
-    extrasToggle.textContent = next ? 'Extras On' : 'Extras';
+    extrasToggle.textContent = isApmRole ? (next ? 'Less' : 'More') : (next ? 'Extras On' : 'Extras');
     extrasToggle.title = next ? 'Hide optional tabs' : 'Show optional tabs';
   }
 
@@ -1654,9 +1682,12 @@ function toggleExtraTabs(forceValue) {
       const fallback = document.getElementById('tab_reports');
       fallback?.click();
     } else {
-      const fallback = document.getElementById('tab_labor');
+      const fallback = document.getElementById(isApmRole ? 'tab_dashboard' : 'tab_labor');
       fallback?.click();
     }
+  }
+  if (typeof window.configureApmWorkspaceNavigation === 'function') {
+    window.configureApmWorkspaceNavigation();
   }
 }
 

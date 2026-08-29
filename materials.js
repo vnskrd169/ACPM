@@ -5,9 +5,104 @@ let _inventory = {};
 let _currentDeliveryPO = null;
 let _currentInvoicePO = null;
 let _prevMatSpent = -1;
+let _purchaseOrders = [];
+
+function materialsIsApm() {
+  return (typeof normalizeRole === 'function'
+    ? normalizeRole(window._currentUser?.role || 'apm')
+    : String(window._currentUser?.role || 'apm').toLowerCase()) === 'apm';
+}
+
+function ensureApmMaterialsUi() {
+  const panel = $('materialsPanel');
+  if (!panel || !materialsIsApm()) return;
+  panel.classList.add('apm-materials-mode');
+  if (!$('apmMaterialsFlow')) {
+    const section = document.createElement('section');
+    section.id = 'apmMaterialsFlow';
+    section.className = 'apm-materials-flow';
+    section.innerHTML = `
+      <div class="apm-section-head">
+        <div><span class="apm-eyebrow">Delivery status</span><h2>Materials</h2><p>Requested, ordered, received, and still pending.</p></div>
+        <button id="apmMaterialsMore" type="button" aria-expanded="false" onclick="toggleApmMaterialsAdvanced()">More material tools</button>
+      </div>
+      <div id="apmMaterialsFlowBody"><p class="empty-hint">No material orders yet.</p></div>`;
+    panel.insertBefore(section, panel.firstChild);
+  }
+
+  [
+    $('matBudgetWarn'),
+    $('mbBudget')?.closest('.kpi-row'),
+    $('inventoryAlertContainer'),
+    $('inventoryList')?.closest('.card'),
+    $('matIssueItem')?.closest('.card'),
+    $('ledgerBody')?.closest('.card'),
+    $('materialMovementBody')?.closest('.card'),
+    $('materialsSummary')?.closest('.card')
+  ].filter(Boolean).forEach(element => element.classList.add('apm-materials-advanced'));
+}
+
+function materialInventoryState(item) {
+  const wantedItem = String(item.desc || item.description || item.item || '').trim().toLowerCase();
+  const wantedSize = String(item.size || '').trim().toLowerCase();
+  const match = Object.values(_inventory || {}).find(inventory =>
+    String(inventory.item || inventory.description || '').trim().toLowerCase() === wantedItem &&
+    String(inventory.size || '').trim().toLowerCase() === wantedSize
+  );
+  if (!match) return 'Stock not verified';
+  return `${parseFloat(match.qtyOnHand) || 0} ${match.unit || item.unit || ''} recorded on site`.trim();
+}
+
+function renderApmMaterialsFlow() {
+  const container = $('apmMaterialsFlowBody');
+  if (!container || !materialsIsApm()) return;
+  const lines = [];
+  _purchaseOrders.forEach(order => {
+    const orderItems = Array.isArray(order.items)
+      ? order.items
+      : Object.values(order.items || {});
+    orderItems.forEach(item => {
+      const ordered = parseFloat(item.qtyOrdered ?? item.qty) || 0;
+      const received = parseFloat(item.qtyAccepted ?? item.qtyReceived) || 0;
+      lines.push({
+        name: item.desc || item.description || item.item || 'Material',
+        size: item.size || '',
+        unit: item.unit || '',
+        ordered,
+        received,
+        pending: Math.max(0, parseFloat(item.qtyRemaining ?? (ordered - received)) || 0),
+        status: poStatusLabel(order.deliveryStatus || order.status),
+        inventory: materialInventoryState(item)
+      });
+    });
+  });
+  if (!lines.length) {
+    container.innerHTML = '<div class="apm-calm-state"><strong>No material orders yet.</strong><span>Create a request below when the site needs materials.</span></div>';
+    return;
+  }
+  container.innerHTML = `<div class="apm-table-wrap"><table class="apm-material-table">
+    <thead><tr><th>Material</th><th>Ordered</th><th>Received</th><th>Pending</th><th>Status</th><th>Site stock</th></tr></thead>
+    <tbody>${lines.map(line => `<tr>
+      <td><strong>${escapeHtml(line.name)}</strong>${line.size ? `<small>${escapeHtml(line.size)}</small>` : ''}</td>
+      <td>${line.ordered} ${escapeHtml(line.unit)}</td>
+      <td>${line.received} ${escapeHtml(line.unit)}</td>
+      <td>${line.pending} ${escapeHtml(line.unit)}</td>
+      <td>${escapeHtml(line.status)}</td>
+      <td>${escapeHtml(line.inventory)}</td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+}
+
+function toggleApmMaterialsAdvanced() {
+  const panel = $('materialsPanel');
+  if (!panel) return;
+  const expanded = panel.classList.toggle('apm-materials-expanded');
+  $('apmMaterialsMore')?.setAttribute('aria-expanded', String(expanded));
+  setText('apmMaterialsMore', expanded ? 'Hide advanced tools' : 'More material tools');
+}
 
 function initMaterials(pid) {
-  _mpid = pid; _draftItems = [];
+  _mpid = pid; _draftItems = []; _purchaseOrders = [];
   detachMatListeners();
   renderDraft();
   watchMatBudget(pid);
@@ -16,6 +111,7 @@ function initMaterials(pid) {
   watchInventory(pid);
   watchMaterialMovements(pid);
   loadGlobalSuppliersForPO();
+  ensureApmMaterialsUi();
 
   // Set default PO date to today
   const poDate = $('poDate');
@@ -68,6 +164,7 @@ function watchInventory(pid) {
     renderInventoryList(snap);
     renderInventoryAlerts(snap);
     renderMaterialIssueOptions();
+    renderApmMaterialsFlow();
   });
 }
 
@@ -1410,9 +1507,11 @@ function watchPOHistory(pid) {
   matListen(ref, snap => {
     const container = $('poHistory'); if (!container) return;
     container.innerHTML = '';
+    _purchaseOrders = [];
 
     if (!snap.exists()) {
       container.innerHTML = '<p class="empty-hint" style="padding:20px">No purchase orders yet. Create one above.</p>';
+      renderApmMaterialsFlow();
       return;
     }
 
@@ -1420,6 +1519,8 @@ function watchPOHistory(pid) {
     snap.forEach(c => {
       entries.unshift({ id: c.key, ...c.val() });
     });
+    _purchaseOrders = entries;
+    renderApmMaterialsFlow();
 
     const byMonth = {};
     entries.forEach(po => {
@@ -1789,6 +1890,7 @@ window.getPurchaseOrder = getPurchaseOrder;
 window.listPurchaseOrders = listPurchaseOrders;
 window.receiveDelivery = receiveDelivery;
 window.calculateReceivedQtyByPOItem = calculateReceivedQtyByPOItem;
+window.toggleApmMaterialsAdvanced = toggleApmMaterialsAdvanced;
 window.updateInventoryFromReceiving = updateInventoryFromReceiving;
 window.issueMaterial = issueMaterial;
 window.updateInventoryFromIssuance = updateInventoryFromIssuance;

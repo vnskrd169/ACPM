@@ -40,10 +40,10 @@ function assertIncludes(content, needle, message) {
 
 // Expected release versions — bump together with every layout/PWA release.
 const EXPECT = {
-  swCache: 'acpm-v142',
-  pmosCache: 'pmos-cache-v8',
-  htmlAsset: { style: 'style.css?v=113', main: 'main.js?v=110' },
-  pmosAsset: { style: '../style.css?v=113', main: '../main.js?v=110' },
+  swCache: 'acpm-v143',
+  pmosCache: 'pmos-cache-v9',
+  htmlAsset: { style: 'style.css?v=114', main: 'main.js?v=111' },
+  pmosAsset: { style: '../style.css?v=114', main: '../main.js?v=111' },
 };
 
 function main() {

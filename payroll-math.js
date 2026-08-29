@@ -21,10 +21,11 @@
   'use strict';
 
   var ATTENDANCE_STATUS = {
+    unmarked: { label: 'Unmarked',   multiplier: 0,   hours: 0 },
     present:  { label: 'Present',    multiplier: 1.0, hours: 8 },
     half:     { label: 'Half Day',   multiplier: 0.5, hours: 4 },
     absent:   { label: 'Absent',     multiplier: 0,   hours: 0 },
-    leave:    { label: 'Paid Leave', multiplier: 1.0, hours: 8 },
+    leave:    { label: 'Leave',      multiplier: 1.0, hours: 8 },
     rest:     { label: 'Rest Day',   multiplier: 0,   hours: 0 },
     holiday:  { label: 'Holiday',    multiplier: 2.0, hours: 8 }
   };
@@ -39,8 +40,8 @@
   function calculateGrossPay(rate, att) {
     var r = num(rate);
     att = att || {};
-    var status = att.status || 'absent';
-    var config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.absent;
+    var status = att.status || 'unmarked';
+    var config = ATTENDANCE_STATUS[status] || ATTENDANCE_STATUS.unmarked;
     var regularPay = r * config.multiplier;
     var otPay = (r / 8 * 1.25) * num(att.overtimeHours);
     var nightDiffPay = (r / 8 * 0.1) * num(att.nightDiffHours);

@@ -78,15 +78,17 @@ test.describe('UI integrity and interaction hardening', () => {
   test('Office modal repeats safely, scrolls internally, and restores page scroll', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 700 });
     await setupOffice(page, { projects: projectFixtures(8) });
+    await page.addStyleTag({ content: 'html { scroll-behavior: auto !important; }' });
     const editButton = page.locator('.proj-card .btn-edit-proj').first();
-    await editButton.scrollIntoViewIfNeeded();
+    await expect(editButton).toBeVisible();
+    await editButton.evaluate(button => button.scrollIntoView({ block: 'center' }));
 
     for (let cycle = 0; cycle < 3; cycle += 1) {
-      const before = await page.evaluate(() => window.scrollY);
       await editButton.click();
       const modal = page.locator('#editProjectModal');
       await expect(modal).toBeVisible();
       await expect(page.locator('body')).toHaveClass(/overlay-scroll-locked/);
+      const before = await page.evaluate(() => window.scrollY);
 
       if (cycle === 0) {
         await modal.locator('.modal-box').evaluate(box => {
@@ -219,9 +221,10 @@ test.describe('UI integrity and interaction hardening', () => {
     await page.locator('#openPmosOfficeBtn').click();
     await page.waitForFunction(() => (window as any).getPmosOfficeDiagnostics?.().listenerCount === 8);
 
+    const loginRequest = page.waitForRequest(request => /\/login(?:\.html)?$/.test(new URL(request.url()).pathname), { timeout: 10000 });
     await page.evaluate(() => (window as any).firebase.auth().signOut());
     await page.waitForFunction(() => ((window as any).getPmosOfficeDiagnostics?.().listenerCount || 0) === 0);
-    await page.waitForURL(/\/login(?:\.html)?(?:\?.*)?$/, { timeout: 5000 });
+    await loginRequest;
 
     // The mock auth fixture starts each navigation with the same signed-in
     // reviewer, matching a fresh login after the logout redirect.

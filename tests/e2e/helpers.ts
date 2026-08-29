@@ -143,8 +143,8 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitS
           return cb;
         },
         off: function () { window.__mockDbOffPaths.push(path); },
-        update: function () { window.__mockDbWrites.push({ method: 'update', path: path }); return Promise.resolve(); },
-        set: function () { window.__mockDbWrites.push({ method: 'set', path: path }); return Promise.resolve(); },
+        update: function (value) { window.__mockDbWrites.push({ method: 'update', path: path, value: value }); return Promise.resolve(); },
+        set: function (value) { window.__mockDbWrites.push({ method: 'set', path: path, value: value }); return Promise.resolve(); },
         push: function () {
           window.__mockDbWrites.push({ method: 'push', path: path });
           const key = 'mock-key-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);

@@ -43,7 +43,7 @@ test.describe('ACPM PM and APM Operations', () => {
 
     await expect(page.locator('.hub-create-card')).toBeHidden();
     await expect(page.locator('#teamAdminBtn')).toBeHidden();
-    await expect(page.locator('#projectGrid .proj-card')).toHaveCount(1);
+    await expect(page.locator('#apmProjectList .apm-project-row')).toHaveCount(1);
     expect(errors.length).toBe(0);
   });
 

@@ -48,7 +48,7 @@ gate(
   'dashboard/workspace must each contain exactly one versioned AI stylesheet reference'
 );
 gate(
-  /const CACHE_NAME = 'acpm-v142';/.test(sw)
+  /const CACHE_NAME = 'acpm-v143';/.test(sw)
     && occurrences(sw, './ai-command-center.js?v=2') === 1
     && occurrences(sw, './assets/brand/ai-command-center.css?v=1') === 1,
   'service-worker cache name/assets are stale, missing, or duplicated'
