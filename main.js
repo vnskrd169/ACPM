@@ -20,6 +20,7 @@ window._currentPid = null;
 let _hubListeners = [];
 let _projectNotesListener = null;
 let _projectDashboardListener = null;
+let _accessibleProjectSnapshots = [];
 window._isReadOnly = false;
 window._currentProjectStatus = null;
 window._adminWorkspaceMode = false;
@@ -364,6 +365,17 @@ function canListAllProjects(user = window._currentUser || {}) {
     : ['boss', 'owner', 'admin', 'pm'].includes(String(user.role || '').toLowerCase());
 }
 
+function publishAccessibleProjectSnapshots(projects = []) {
+  _accessibleProjectSnapshots = projects.filter(Boolean).map(project => ({ ...project }));
+  window.dispatchEvent(new CustomEvent('acpm:accessible-projects', {
+    detail: { count: _accessibleProjectSnapshots.length }
+  }));
+}
+
+window.getAccessibleProjectSnapshots = function getAccessibleProjectSnapshots() {
+  return _accessibleProjectSnapshots.slice();
+};
+
 function canDeleteProject(pid) {
   const user = window._currentUser || {};
   return typeof isBoss === 'function'
@@ -522,7 +534,9 @@ function watchAssignedProjects(user, gridId, tab, isAll) {
   const deniedIds = new Set();
   let warningShown = false;
   const render = () => {
-    renderProjectHubList(Array.from(projectMap.values()), gridId, tab, isAll);
+    const projects = Array.from(projectMap.values());
+    publishAccessibleProjectSnapshots(projects);
+    renderProjectHubList(projects, gridId, tab, isAll);
     if (deniedIds.size && grid && !projectMap.size) {
       grid.innerHTML = '<p class="hub-empty">No accessible assigned projects. Ask an admin to review Team Admin project assignments.</p>';
     }
@@ -596,6 +610,7 @@ function renderHub() {
     snap.forEach(c => {
       projects.push({ id: c.key, ...c.val() });
     });
+    publishAccessibleProjectSnapshots(projects);
     renderProjectHubList(projects, gridId, tab, isAll);
   }, error => {
     console.error('Firebase error:', error);
@@ -1538,6 +1553,8 @@ async function enterProject(pid) {
 
   const p = await loadProjectForCurrentRole(pid);
   if (!p) { showToast('Project not found.', 'error'); return false; }
+
+  publishAccessibleProjectSnapshots([p]);
 
   window._currentPid = pid;
   window._adminWorkspaceMode = false;

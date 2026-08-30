@@ -234,3 +234,65 @@ export function aiScenarios(now = Date.now()) {
     },
   };
 }
+
+function manilaDate(now: number, offsetDays = 0) {
+  const base = new Date(now + (8 * 60 * 60 * 1000));
+  base.setUTCDate(base.getUTCDate() + offsetDays);
+  return base.toISOString().slice(0, 10);
+}
+
+function operationalProject(id: string, name: string, overrides: Record<string, unknown> = {}) {
+  return { id, name, status: 'active', createdAt: Date.now() - 30 * 86_400_000, ...overrides };
+}
+
+function withProjects(data: AiFixtureData, projects: Record<string, any>): AiFixtureData {
+  data.projects = projects;
+  Object.entries(projects).forEach(([id, value]) => { data[`projects/${id}`] = value; });
+  return data;
+}
+
+export function zeroBudgetScenarios(now = Date.now()) {
+  const yesterday = manilaDate(now, -1);
+  const overdueDate = manilaDate(now, -2);
+  const futureDate = manilaDate(now, 2);
+  const calm = operationalProject('test-project-1', 'Coffee Bay');
+  const overdue = operationalProject('test-project-1', 'RCBC Plaza', {
+    tasks: { 'task-overdue': { title: 'Ceiling framing', status: 'in_progress', dueDate: overdueDate, priority: 'normal', createdAt: now - 5 * 86_400_000 } },
+  });
+  const blocked = operationalProject('test-project-1', 'RCBC Plaza', {
+    tasks: { 'task-blocked': { title: 'Release coordinated layout', status: 'blocked', dueDate: futureDate, blockedReason: 'Awaiting drawing', updatedAt: now - 2 * 86_400_000 } },
+  });
+  const attendance = operationalProject('test-project-1', 'Coffee Bay', {
+    workers: { w1: { name: 'Ana', active: true }, w2: { name: 'Ben', active: true }, w3: { name: 'Carlo', active: true } },
+    attendance: { w1: { [yesterday]: { status: 'present', date: yesterday } } },
+  });
+  const delivery = operationalProject('test-project-1', 'RCBC Plaza', {
+    purchaseOrders: { po1: { status: 'partially_delivered', items: [{ desc: 'Gypsum Board', qtyOrdered: 100, qtyAccepted: 80, unit: 'sheets' }] } },
+    inventory: { gypsum: { quantity: 0, reorderPoint: 50 } },
+  });
+  const openIssue = operationalProject('test-project-1', 'Coffee Bay', {
+    punchList: { issue1: { description: 'Door alignment requires review', status: 'open', severity: 'minor', createdAt: now - 86_400_000 } },
+  });
+  const agingIssue = operationalProject('test-project-1', 'Coffee Bay', {
+    punchList: { issue1: { description: 'Wall crack review', status: 'open', severity: 'minor', createdAt: now - 4 * 86_400_000 } },
+  });
+  const notConfigured = base(now, 'not_configured');
+  notConfigured['ai/runtimeStatus'] = null;
+  const trueAiAlongside = decisions(now);
+
+  return {
+    Z1_NO_ATTENTION: withProjects(base(now), { 'test-project-1': calm }),
+    Z2_OVERDUE_TASK: withProjects(base(now), { 'test-project-1': overdue }),
+    Z3_BLOCKED_TASK: withProjects(base(now), { 'test-project-1': blocked }),
+    Z4_UNRESOLVED_ATTENDANCE: withProjects(base(now), { 'test-project-1': attendance }),
+    Z5_PARTIAL_DELIVERY: withProjects(base(now), { 'test-project-1': delivery }),
+    Z6_OPEN_SITE_ISSUE: withProjects(base(now), { 'test-project-1': openIssue }),
+    Z7_AGING_SITE_ISSUE: withProjects(base(now), { 'test-project-1': agingIssue }),
+    Z8_MULTIPLE_PROJECTS: withProjects(base(now), {
+      'test-project-1': overdue,
+      'test-project-2': operationalProject('test-project-2', 'Coffee Bay'),
+    }),
+    Z9_PROVIDER_OFF_MONITORING: withProjects(notConfigured, { 'test-project-1': overdue }),
+    Z10_AI_DECISION_AND_ATTENTION: withProjects(trueAiAlongside, { 'test-project-1': overdue }),
+  };
+}

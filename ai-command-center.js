@@ -3,9 +3,9 @@
 
   var MANAGEMENT_ROLES = ['boss', 'owner', 'admin', 'pm'];
   var AGENTS = [
-    { id: 'pm', label: 'PM Agent', description: 'Synthesizes validated operational findings.' },
-    { id: 'planning', label: 'Planning Agent', description: 'Reviews task and schedule context.' },
-    { id: 'materials', label: 'Materials Agent', description: 'Reviews material and delivery context.' }
+    { id: 'pm', label: 'PM Agent', description: 'Advanced cross-discipline analysis.' },
+    { id: 'planning', label: 'Planning Monitor', description: 'Task and schedule rule monitoring.' },
+    { id: 'materials', label: 'Materials Monitor', description: 'Request and delivery rule monitoring.' }
   ];
   var LIMITS = { runs: 100, events: 100, findings: 60, recommendations: 100, decisions: 100 };
   var RUNTIME_STALE_MS = 60 * 60 * 1000;
@@ -33,7 +33,10 @@
       events: {},
       findings: {},
       recommendations: [],
-      decisions: []
+      decisions: [],
+      projects: [],
+      attention: [],
+      projectSummaries: []
     };
   }
 
@@ -147,28 +150,47 @@
     if (!main) return;
     main.insertAdjacentHTML('beforeend', `
       <section id="aiCommandCenterView" class="view-workspace ai-command-center hidden" aria-labelledby="aiCommandTitle">
-        <div class="ai-command-hero">
+        <div class="ai-command-hero ai-command-hero-operational">
           <div>
-            <div class="ws-kicker">Construction Intelligence &amp; Operations</div>
+            <div class="ws-kicker">Construction operations intelligence</div>
             <h2 id="aiCommandTitle">AI Command Center</h2>
-            <p>Validated operational signals, recommendations, and decisions awaiting human review.</p>
+            <p>What needs attention across your projects, using stored ACPM records and clearly identified detection methods.</p>
           </div>
           <div class="ai-command-hero-actions">
-            <span id="aiSystemStatus" class="ai-status-pill ai-status-disabled">DISABLED</span>
+            <span id="aiSystemStatus" class="ai-status-pill ai-status-deterministic">DETERMINISTIC INTELLIGENCE</span>
             <button id="aiRefreshBtn" class="btn-ws-secondary" type="button">Refresh</button>
             <button id="aiCommandBackBtn" class="btn-ws-back" type="button">Back</button>
           </div>
         </div>
 
         <div id="aiCommandNotice" class="ai-command-notice hidden" role="status"></div>
-        <div id="aiSummaryCards" class="ai-summary-grid" aria-label="AI operations summary"></div>
-        <div id="aiAgentStatus" class="ai-agent-grid" aria-label="Logical AI agents"></div>
+
+        <section class="ai-today-panel" aria-labelledby="aiTodayHeading">
+          <span class="ai-panel-kicker">Today</span>
+          <h3 id="aiTodayHeading">Everything looks on track.</h3>
+          <p id="aiTodaySummary">No operational issues currently need your attention.</p>
+        </section>
 
         <div class="ai-command-layout">
           <div class="ai-command-primary">
+            <section class="ai-panel ai-needs-action-panel">
+              <div class="ai-panel-head">
+                <div><span class="ai-panel-kicker">System detected · rule-based</span><h3>Needs Action</h3></div>
+                <span id="aiNeedsActionCount" class="ai-count-badge">0</span>
+              </div>
+              <div id="aiAttentionList" class="ai-card-list"></div>
+            </section>
+
+            <section class="ai-panel">
+              <div class="ai-panel-head">
+                <div><span class="ai-panel-kicker">Operational summary</span><h3>Projects</h3></div>
+              </div>
+              <div id="aiProjectSummary" class="ai-project-list"></div>
+            </section>
+
             <section class="ai-panel ai-waiting-panel">
               <div class="ai-panel-head">
-                <div><span class="ai-panel-kicker">Human review queue</span><h3>Waiting On You</h3></div>
+                <div><span class="ai-panel-kicker">Actual AI decisions · human judgment</span><h3>Waiting On You</h3></div>
                 <span id="aiWaitingCount" class="ai-count-badge">0</span>
               </div>
               <div id="aiDecisionList" class="ai-card-list"></div>
@@ -176,7 +198,7 @@
 
             <section class="ai-panel">
               <div class="ai-panel-head ai-panel-head-wrap">
-                <div><span class="ai-panel-kicker">Validated output</span><h3>Recommendations</h3></div>
+                <div><span class="ai-panel-kicker">Generative analysis output</span><h3>Recommendations</h3></div>
                 <div id="aiRecommendationFilters" class="ai-filter-group" aria-label="Recommendation status filters">
                   <button type="button" data-ai-filter="open" class="is-active">Open</button>
                   <button type="button" data-ai-filter="acknowledged">Acknowledged</button>
@@ -187,14 +209,18 @@
             </section>
           </div>
 
-          <aside class="ai-command-side">
+          <aside class="ai-command-side ai-command-secondary">
             <section class="ai-panel">
-              <div class="ai-panel-head"><div><span class="ai-panel-kicker">Provider</span><h3>Runtime Health</h3></div></div>
+              <div class="ai-panel-head"><div><span class="ai-panel-kicker">Recent record</span><h3>Activity</h3></div></div>
+              <div id="aiRunActivity" class="ai-activity-list"></div>
+            </section>
+            <section class="ai-panel">
+              <div class="ai-panel-head"><div><span class="ai-panel-kicker">Secondary</span><h3>System</h3></div></div>
               <div id="aiRuntimeHealth"></div>
             </section>
             <section class="ai-panel">
-              <div class="ai-panel-head"><div><span class="ai-panel-kicker">Bounded recent history</span><h3>Run Activity</h3></div></div>
-              <div id="aiRunActivity" class="ai-activity-list"></div>
+              <div class="ai-panel-head"><div><span class="ai-panel-kicker">Secondary</span><h3>Monitors &amp; Agents</h3></div></div>
+              <div id="aiAgentStatus" class="ai-agent-grid" aria-label="Operational monitors and AI agents"></div>
             </section>
           </aside>
         </div>
@@ -226,6 +252,14 @@
     el('aiDecisionList').addEventListener('click', function (event) {
       var button = event.target.closest('[data-ai-review]');
       if (button) openDecision(button.dataset.aiReview);
+    });
+    el('aiAttentionList').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-ai-destination]');
+      if (button) navigateToDestination(button.dataset.projectId, button.dataset.aiDestination);
+    });
+    el('aiProjectSummary').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-ai-project-open]');
+      if (button) navigateToDestination(button.dataset.aiProjectOpen, 'project');
     });
   }
 
@@ -359,6 +393,7 @@
     if (!state.active || !state.uiStatus || state.uiStatus.uiEnabled !== true || !authorizedProfile()) return;
     state.data = emptyData();
     state.errors = {};
+    refreshOperationalData();
     renderAll();
 
     listenValue('runtimeStatus', database().ref('ai/runtimeStatus'), function (snapshot) {
@@ -379,6 +414,20 @@
     listenValue('decisions', recentQuery('ai/decisions', LIMITS.decisions), function (snapshot) {
       state.data.decisions = snapshotRows(snapshot).sort(oldestFirst);
     });
+  }
+
+  function refreshOperationalData() {
+    var projects = typeof window.getAccessibleProjectSnapshots === 'function'
+      ? window.getAccessibleProjectSnapshots()
+      : [];
+    state.data.projects = Array.isArray(projects) ? projects : [];
+    if (!window.ACPMAttention) {
+      state.data.attention = [];
+      state.data.projectSummaries = [];
+      return;
+    }
+    state.data.attention = window.ACPMAttention.derive(state.data.projects, { now: Date.now() });
+    state.data.projectSummaries = window.ACPMAttention.summarizeProjects(state.data.projects, state.data.attention);
   }
 
   function stopOutputListeners() {
@@ -402,6 +451,8 @@
   function projectName(projectId) {
     var id = String(projectId || '').trim();
     if (!id) return 'Project unavailable';
+    var loaded = state.data.projects.find(function (project) { return String(project.id || '') === id; });
+    if (loaded && loaded.name) return String(loaded.name);
     var card = document.querySelector('.proj-card[data-pid="' + cssEscape(id) + '"] .proj-name');
     if (card && card.textContent.trim()) return card.textContent.trim();
     if (String(window._currentPid || '') === id) {
@@ -457,10 +508,12 @@
   function renderAll() {
     if (!el('aiCommandCenterView')) return;
     var status = el('aiSystemStatus');
-    status.textContent = statusText();
-    status.className = 'ai-status-pill ' + statusClass();
+    status.textContent = 'DETERMINISTIC INTELLIGENCE';
+    status.className = 'ai-status-pill ai-status-deterministic';
     renderNotice();
     renderSummary();
+    renderAttention();
+    renderProjectSummaries();
     renderAgents();
     renderDecisions();
     renderRecommendations();
@@ -480,7 +533,7 @@
       message = 'Some AI operational data could not be read. ACPM Office remains available; try Refresh when connectivity returns.';
       tone = 'danger';
     } else if ((state.uiStatus && state.uiStatus.systemStatus) === 'not_configured' || !runtime) {
-      message = 'The AI provider is not configured. The Command Center remains available for existing validated records.';
+      message = 'Advanced AI analysis is not configured. Rule-based operational monitoring remains available.';
       tone = 'info';
     } else if ((state.uiStatus && state.uiStatus.systemStatus) === 'degraded') {
       message = 'AI runtime health is degraded. Existing Office workflows are not affected.';
@@ -497,34 +550,97 @@
   }
 
   function renderSummary() {
-    var working = Object.keys(workingAgents()).length;
-    var openRecommendations = state.data.recommendations.filter(function (item) { return item.status === 'open'; }).length;
-    var openDecisions = state.data.decisions.filter(function (item) { return item.status === 'open'; }).length;
-    var today = manilaDateKey(Date.now());
-    var runsToday = state.data.runs.filter(function (run) { return manilaDateKey(numberTime(run.createdAt)) === today; }).length;
-    var cards = [
-      ['Agents Active', working, 'Logical roles currently involved in running analysis'],
-      ['Open Recommendations', openRecommendations, 'Validated recommendations in the bounded recent view'],
-      ['Waiting On You', openDecisions, 'Open decisions requiring human review'],
-      ['Runs Today', runsToday, 'Recent runs created today in Asia/Manila']
-    ];
-    el('aiSummaryCards').innerHTML = cards.map(function (card) {
-      return '<article class="ai-summary-card"><span>' + h(card[0]) + '</span><strong>' + h(card[1]) + '</strong><small>' + h(card[2]) + '</small></article>';
+    var count = state.data.attention.length;
+    el('aiTodayHeading').textContent = count
+      ? count + ' thing' + (count === 1 ? ' needs' : 's need') + ' attention'
+      : 'Everything looks on track.';
+    el('aiTodaySummary').textContent = count
+      ? 'Prioritized from current ACPM project records using deterministic business rules.'
+      : 'No operational issues currently need your attention.';
+  }
+
+  function actionLabel(destination) {
+    return {
+      attendance: 'Review Attendance', task: 'Open Task', materials: 'Open Materials',
+      issue: 'Open Issue', project: 'Open Project'
+    }[destination] || 'Open Project';
+  }
+
+  function ageLabel(item) {
+    if (typeof item.age !== 'number') return '';
+    return item.age === 0 ? 'Today' : item.age + ' day' + (item.age === 1 ? '' : 's') + ' old';
+  }
+
+  function renderAttention() {
+    var items = state.data.attention;
+    el('aiNeedsActionCount').textContent = String(items.length);
+    if (!items.length) {
+      el('aiAttentionList').innerHTML = emptyMarkup('No action needed', 'Everything looks on track. Rule-based monitoring found no current operational exceptions.');
+      return;
+    }
+    el('aiAttentionList').innerHTML = items.map(function (item) {
+      var meta = [item.projectName, ageLabel(item)].filter(Boolean).join(' · ');
+      return '<article class="ai-attention-card ai-severity-border-' + h(item.severity) + '">' +
+        '<div class="ai-card-meta"><span>' + h(meta) + '</span><span class="ai-severity ai-severity-' + h(item.severity) + '">' + h(item.severity) + '</span></div>' +
+        '<div class="ai-detection-label">System detected · ' + h(item.category.replace(/_/g, ' ')) + '</div>' +
+        '<h4>' + h(item.title) + '</h4><p>' + h(item.summary) + '</p>' +
+        '<div class="ai-card-actions"><button type="button" class="btn-ws-secondary" data-project-id="' + h(item.projectId) + '" data-ai-destination="' + h(item.recommendedDestination) + '">' + h(actionLabel(item.recommendedDestination)) + '</button></div>' +
+      '</article>';
     }).join('');
+  }
+
+  function renderProjectSummaries() {
+    var summaries = state.data.projectSummaries;
+    if (!summaries.length) {
+      el('aiProjectSummary').innerHTML = emptyMarkup('No active projects available', 'Operational summaries use the project records already loaded by ACPM Office.');
+      return;
+    }
+    el('aiProjectSummary').innerHTML = summaries.map(function (project) {
+      var levels = ['critical', 'high', 'medium', 'low'].filter(function (level) { return project.counts[level]; })
+        .map(function (level) { return project.counts[level] + ' ' + level.charAt(0).toUpperCase() + level.slice(1); });
+      return '<article class="ai-project-row"><div><h4>' + h(project.projectName) + '</h4>' +
+        (project.attentionCount
+          ? '<p>' + h(project.attentionCount + ' attention item' + (project.attentionCount === 1 ? '' : 's')) + '</p><small>' + h(levels.join(' · ')) + '</small>'
+          : '<p>No current attention items</p><small class="ai-on-track">On track</small>') +
+        '</div><button type="button" class="btn-ws-secondary" data-ai-project-open="' + h(project.projectId) + '">Open Project</button></article>';
+    }).join('');
+  }
+
+  function navigateToDestination(projectId, destination) {
+    var destinationTabs = { attendance: 'labor', task: 'tasks', materials: 'materials', issue: 'defects', project: 'dashboard' };
+    var tab = destinationTabs[destination];
+    if (!tab || !projectId) return false;
+    if (String(window._currentPid || '') === String(projectId) && el('workspaceView')) {
+      close();
+      if (tab === 'defects' && typeof toggleExtraTabs === 'function') toggleExtraTabs(true);
+      if (typeof switchTab === 'function') switchTab(tab);
+      return true;
+    }
+    var target = typeof appUrl === 'function'
+      ? appUrl('workspace', { projectId: projectId, tab: tab })
+      : '/workspace.html?projectId=' + encodeURIComponent(projectId) + '&tab=' + encodeURIComponent(tab);
+    window.location.href = target;
+    return true;
   }
 
   function agentState(agentId) {
     var system = state.uiStatus && state.uiStatus.systemStatus;
-    if (system === 'disabled') return 'Disabled';
-    if (system === 'degraded') return 'Degraded';
-    if (system === 'unavailable' || system === 'not_configured') return 'Unavailable';
-    return workingAgents()[agentId] ? 'Working' : 'Idle';
+    var providerOff = system === 'disabled' || system === 'unavailable' || system === 'not_configured';
+    if (agentId === 'pm') {
+      if (providerOff) return { label: 'Advanced analysis unavailable', className: 'unavailable' };
+      if (system === 'degraded') return { label: 'Advanced analysis degraded', className: 'degraded' };
+      return workingAgents()[agentId]
+        ? { label: 'Advanced analysis working', className: 'working' }
+        : { label: 'Advanced analysis available', className: 'idle' };
+    }
+    if (!providerOff && workingAgents()[agentId]) return { label: 'Advanced analysis working', className: 'working' };
+    return { label: 'Rule-based monitoring active', className: 'monitoring' };
   }
 
   function renderAgents() {
     el('aiAgentStatus').innerHTML = AGENTS.map(function (agent) {
       var current = agentState(agent.id);
-      return '<article class="ai-agent-card"><div class="ai-agent-icon" aria-hidden="true">AI</div><div><h3>' + h(agent.label) + '</h3><p>' + h(agent.description) + '</p></div><span class="ai-agent-state ai-agent-' + current.toLowerCase() + '"><i></i>' + h(current) + '</span></article>';
+      return '<article class="ai-agent-card"><div class="ai-agent-icon" aria-hidden="true">' + (agent.id === 'pm' ? 'AI' : 'OP') + '</div><div><h3>' + h(agent.label) + '</h3><p>' + h(agent.description) + '</p></div><span class="ai-agent-state ai-agent-' + h(current.className) + '"><i></i>' + h(current.label) + '</span></article>';
     }).join('');
   }
 
@@ -629,13 +745,14 @@
 
   function renderRuntime() {
     var runtime = state.data.runtimeStatus;
-    if (!runtime) {
-      el('aiRuntimeHealth').innerHTML = '<div class="ai-runtime-card"><div><span>AI Provider</span><strong>Not configured</strong></div><p>No recent sanitized runtime health is available.</p></div>';
-      return;
-    }
-    var stale = numberTime(runtime.lastCheckedAt) > 0 && Date.now() - numberTime(runtime.lastCheckedAt) > RUNTIME_STALE_MS;
-    el('aiRuntimeHealth').innerHTML = '<div class="ai-runtime-card"><div><span>' + h(providerLabel(runtime.providerAlias)) + '</span><strong>' + h(runtimeLabel(runtime.status)) + '</strong></div>' +
-      '<p>' + (stale ? 'Health status is stale.' : 'Last checked ' + h(formatWhen(runtime.lastCheckedAt)) + '.') + '</p></div>';
+    var configured = runtime && (state.uiStatus && state.uiStatus.systemStatus) !== 'not_configured';
+    var advanced = configured ? runtimeLabel(runtime.status) : 'Not configured';
+    var stale = runtime && numberTime(runtime.lastCheckedAt) > 0 && Date.now() - numberTime(runtime.lastCheckedAt) > RUNTIME_STALE_MS;
+    el('aiRuntimeHealth').innerHTML = '<div class="ai-system-list">' +
+      '<div><span>Operational monitoring</span><strong class="ai-on-track">Available</strong><small>Deterministic rules · no provider required</small></div>' +
+      '<div><span>Advanced AI analysis</span><strong>' + h(advanced) + '</strong><small>' +
+        (configured ? (stale ? 'Provider status is stale' : h(providerLabel(runtime.providerAlias)) + ' · ' + h(formatWhen(runtime.lastCheckedAt))) : 'Optional provider enhancement') +
+      '</small></div></div>';
   }
 
   function agentNames(run) {
@@ -763,7 +880,7 @@
   }
 
   function emptyMarkup(title, description) {
-    return '<div class="ai-empty-state"><div aria-hidden="true">AI</div><strong>' + h(title) + '</strong><p>' + h(description) + '</p></div>';
+    return '<div class="ai-empty-state"><div aria-hidden="true">OP</div><strong>' + h(title) + '</strong><p>' + h(description) + '</p></div>';
   }
 
   function formatWhen(timestamp) {
@@ -821,6 +938,11 @@
     }
   });
 
+  window.addEventListener('acpm:accessible-projects', function () {
+    refreshOperationalData();
+    if (state.active) renderAll();
+  });
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', observeAuth);
   else observeAuth();
 
@@ -834,6 +956,8 @@
       active: state.active,
       uiEnabled: !!(state.uiStatus && state.uiStatus.uiEnabled),
       listenerCount: state.listeners.length,
+      operationalProjectCount: state.data.projects.length,
+      attentionCount: state.data.attention.length,
       role: normalizedRole()
     };
   };

@@ -128,15 +128,16 @@ gate(/function pmosSetFilter\(/.test(pmosOffice) && /state\.filters\[prefix\]/.t
 gate(/function closeTopOverlayFromKeyboard\(/.test(main) && /OFFICE_MODAL_CLOSE_HANDLERS/.test(main), 'Escape delegates to modal owner close routines');
 gate(/MutationObserver\(syncOverlayScrollLock\)/.test(main), 'dynamic overlays participate in scroll-lock restoration');
 
-gate(/const CACHE_NAME = 'acpm-v143';/.test(sw), 'service worker cache version is current');
+gate(/const CACHE_NAME = 'acpm-v144';/.test(sw), 'service worker cache version is current');
 for (const asset of [
   './style.css?v=114',
-  './main.js?v=111',
+  './main.js?v=112',
   './report.js?v=98',
   './pmos-subscription-manager.js?v=1',
   './pmos-photo-lightbox.js?v=1',
   './pmos-office.js?v=5',
-  './ai-command-center.js?v=2',
+  './ai-attention.js?v=1',
+  './ai-command-center.js?v=3',
 ]) {
   gate(occurrences(sw, asset) === 1, `service worker caches ${asset} exactly once`);
 }

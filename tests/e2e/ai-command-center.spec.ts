@@ -1,5 +1,5 @@
 import { expect, Page, test } from '@playwright/test';
-import { aiScenarios, AiFixtureData } from './ai-command-center-fixtures';
+import { aiScenarios, zeroBudgetScenarios, AiFixtureData } from './ai-command-center-fixtures';
 import { buildInitScript, navigateToDashboard, navigateToWorkspace } from './helpers';
 
 const OUTPUT_PATHS = [
@@ -35,8 +35,14 @@ async function openCommandCenter(page: Page, workspace = false) {
   await page.waitForFunction(() => window.getAiCommandCenterDiagnostics?.().listenerCount === 6);
 }
 
-function summaryCard(page: Page, label: string) {
-  return page.locator('.ai-summary-card').filter({ hasText: label });
+async function captureIfRequested(page: Page, path: string) {
+  if (process.env.ACPM_CAPTURE_SCREENSHOTS !== '1') return;
+  const dismiss = page.locator('.toast-msg .toast-dismiss');
+  if (await dismiss.isVisible().catch(() => false)) {
+    await dismiss.click();
+    await expect(page.locator('.toast-msg')).toHaveCount(0);
+  }
+  await page.screenshot({ path, fullPage: true });
 }
 
 test.describe('AI Command Center read-only Office UI', () => {
@@ -75,10 +81,10 @@ test.describe('AI Command Center read-only Office UI', () => {
   test('5. summary counts correct', async ({ page }) => {
     await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
     await openCommandCenter(page);
-    await expect(summaryCard(page, 'Agents Active').locator('strong')).toHaveText('3');
-    await expect(summaryCard(page, 'Open Recommendations').locator('strong')).toHaveText('2');
-    await expect(summaryCard(page, 'Waiting On You').locator('strong')).toHaveText('2');
-    await expect(summaryCard(page, 'Runs Today').locator('strong')).toHaveText('2');
+    await expect(page.locator('#aiWaitingCount')).toHaveText('2');
+    await expect(page.locator('#aiRecommendationList .ai-recommendation-card')).toHaveCount(2);
+    await expect(page.locator('#aiTodayHeading')).toHaveText('Everything looks on track.');
+    await expect(page.locator('#aiAgentStatus')).toContainText('Advanced analysis working');
   });
 
   test('6. open decisions populate Waiting On You', async ({ page }) => {
@@ -124,7 +130,7 @@ test.describe('AI Command Center read-only Office UI', () => {
   test('11. degraded runtime banner', async ({ page }) => {
     await setup(page, 'pm', aiScenarios().G_PROVIDER_DEGRADED);
     await openCommandCenter(page);
-    await expect(page.locator('#aiSystemStatus')).toHaveText('DEGRADED');
+    await expect(page.locator('#aiSystemStatus')).toHaveText('DETERMINISTIC INTELLIGENCE');
     await expect(page.locator('#aiCommandNotice')).toContainText('runtime health is degraded');
     await expect(page.locator('#aiRuntimeHealth')).toContainText('Degraded');
   });
@@ -211,12 +217,136 @@ test.describe('AI Command Center read-only Office UI', () => {
     const layout = await page.locator('#aiCommandCenterView').evaluate((view) => ({
       scrollWidth: view.scrollWidth,
       clientWidth: view.clientWidth,
-      summaryColumns: getComputedStyle(view.querySelector('.ai-summary-grid')!).gridTemplateColumns.split(' ').length,
       agentColumns: getComputedStyle(view.querySelector('.ai-agent-grid')!).gridTemplateColumns.split(' ').length,
     }));
     expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
-    expect(layout.summaryColumns).toBe(1);
     expect(layout.agentColumns).toBe(1);
+  });
+
+  test('23. provider-off zero-budget mode remains operational', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z9_PROVIDER_OFF_MONITORING);
+    await openCommandCenter(page);
+    await expect(page.locator('#aiTodayHeading')).toHaveText('1 thing needs attention');
+    await expect(page.locator('#aiCommandNotice')).toContainText('Rule-based operational monitoring remains available');
+    await expect(page.locator('#aiRuntimeHealth')).toContainText('Operational monitoring');
+    await expect(page.locator('#aiRuntimeHealth')).toContainText('Available');
+    await expect(page.locator('#aiRuntimeHealth')).toContainText('Advanced AI analysis');
+    await expect(page.locator('#aiRuntimeHealth')).toContainText('Not configured');
+    await captureIfRequested(page, 'test-results/ai-zero-budget-desktop.png');
+  });
+
+  test('24. overdue and blocked attention counts come from stored tasks', async ({ browser }) => {
+    for (const [scenario, title] of [
+      [zeroBudgetScenarios().Z2_OVERDUE_TASK, 'Overdue task'],
+      [zeroBudgetScenarios().Z3_BLOCKED_TASK, 'Blocked task'],
+    ] as const) {
+      const page = await browser.newPage();
+      await setup(page, 'pm', scenario);
+      await openCommandCenter(page);
+      await expect(page.locator('#aiNeedsActionCount')).toHaveText('1');
+      await expect(page.locator('#aiAttentionList .ai-attention-card')).toHaveCount(1);
+      await expect(page.locator('#aiAttentionList')).toContainText(title);
+      await page.close();
+    }
+  });
+
+  test('25. missing attendance is unresolved and never absent', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z4_UNRESOLVED_ATTENDANCE);
+    await openCommandCenter(page);
+    const card = page.locator('#aiAttentionList .ai-attention-card');
+    await expect(card).toContainText('Unresolved attendance');
+    await expect(card).toContainText('2 attendance entries are unresolved');
+    await expect(card).not.toContainText(/absent/i);
+  });
+
+  test('26. partial delivery uses exact quantities and never guesses stock', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z5_PARTIAL_DELIVERY);
+    await openCommandCenter(page);
+    const list = page.locator('#aiAttentionList');
+    await expect(list).toContainText('Received 80 sheets / 100 sheets. Pending 20 sheets.');
+    await expect(list).not.toContainText(/out of stock|stock shortage|reorder/i);
+    await expect(page.locator('#aiNeedsActionCount')).toHaveText('1');
+  });
+
+  test('27. open and aging issue fixtures retain deterministic wording', async ({ browser }) => {
+    const cases = [
+      [zeroBudgetScenarios().Z6_OPEN_SITE_ISSUE, 'Open site issue', 'low'],
+      [zeroBudgetScenarios().Z7_AGING_SITE_ISSUE, 'Aging site issue', 'medium'],
+    ] as const;
+    for (const [scenario, title, severity] of cases) {
+      const page = await browser.newPage();
+      await setup(page, 'pm', scenario);
+      await openCommandCenter(page);
+      await expect(page.locator('#aiAttentionList')).toContainText(title);
+      await expect(page.locator('#aiAttentionList .ai-severity')).toHaveText(severity);
+      await page.close();
+    }
+  });
+
+  test('28. project summaries use real counts and no arbitrary score', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z8_MULTIPLE_PROJECTS);
+    await openCommandCenter(page);
+    const rows = page.locator('#aiProjectSummary .ai-project-row');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.filter({ hasText: 'RCBC Plaza' })).toContainText('1 attention item');
+    await expect(rows.filter({ hasText: 'Coffee Bay' })).toContainText('On track');
+    await expect(page.locator('#aiProjectSummary')).not.toContainText(/\d+\s*\/\s*100|health score|% health/i);
+  });
+
+  test('29. Needs Action and Waiting On You remain distinct', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z10_AI_DECISION_AND_ATTENTION);
+    await openCommandCenter(page);
+    await expect(page.locator('#aiNeedsActionCount')).toHaveText('1');
+    await expect(page.locator('#aiWaitingCount')).toHaveText('2');
+    await expect(page.locator('.ai-needs-action-panel')).toContainText('System detected');
+    await expect(page.locator('.ai-waiting-panel')).toContainText('Actual AI decisions');
+    await captureIfRequested(page, 'test-results/ai-zero-budget-mixed.png');
+  });
+
+  test('30. allowlisted action navigates to the actual task screen without mutation', async ({ page }) => {
+    const scenario = zeroBudgetScenarios().Z2_OVERDUE_TASK;
+    await setup(page, 'pm', scenario, { workspace: true });
+    await openCommandCenter(page, true);
+    const writesBefore = await page.evaluate(() => window.__mockDbWrites.length);
+    await page.locator('#aiAttentionList [data-ai-destination="task"]').click();
+    await expect(page.locator('#workspaceView')).toBeVisible();
+    await expect(page.locator('#tasksPanel')).toBeVisible();
+    expect(await page.evaluate(() => window.__mockDbWrites.length)).toBe(writesBefore);
+  });
+
+  test('31. calm empty state stays compact', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z1_NO_ATTENTION);
+    await openCommandCenter(page);
+    await expect(page.locator('#aiTodayHeading')).toHaveText('Everything looks on track.');
+    await expect(page.locator('#aiTodaySummary')).toHaveText('No operational issues currently need your attention.');
+    await expect(page.locator('#aiAttentionList .ai-attention-card')).toHaveCount(0);
+    await expect(page.locator('#aiProjectSummary .ai-project-row')).toHaveCount(1);
+  });
+
+  test('32. provider-off monitor labels never pretend an LLM is working', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z9_PROVIDER_OFF_MONITORING);
+    await openCommandCenter(page);
+    await expect(page.locator('#aiAgentStatus')).toContainText('PM Agent');
+    await expect(page.locator('#aiAgentStatus')).toContainText('Advanced analysis unavailable');
+    await expect(page.locator('#aiAgentStatus')).toContainText('Planning Monitor');
+    await expect(page.locator('#aiAgentStatus')).toContainText('Materials Monitor');
+    await expect(page.locator('#aiAgentStatus').getByText('Rule-based monitoring active', { exact: true })).toHaveCount(2);
+    await expect(page.locator('#aiAgentStatus')).not.toContainText(/\bWorking\b/);
+  });
+
+  test('33. zero-budget mobile view keeps navigation and document width intact', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await setup(page, 'pm', zeroBudgetScenarios().Z9_PROVIDER_OFF_MONITORING);
+    await openCommandCenter(page);
+    const metrics = await page.evaluate(() => ({
+      body: document.body.scrollWidth,
+      viewport: document.documentElement.clientWidth,
+      actionVisible: !!document.querySelector('#aiAttentionList [data-ai-destination]'),
+    }));
+    expect(metrics.body).toBeLessThanOrEqual(metrics.viewport + 1);
+    expect(metrics.actionVisible).toBe(true);
+    await expect(page.locator('#aiCommandBackBtn')).toBeVisible();
+    await captureIfRequested(page, 'test-results/ai-zero-budget-mobile.png');
   });
 
   test('21. listener/data failure does not break Office', async ({ page }) => {

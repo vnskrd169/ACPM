@@ -12,6 +12,7 @@
     "test:ai:rules": "vitest run tests/pmos/rules-ai-security.test.ts",
     "test:ai:static": "node scripts/ai_security_static_qa.js",
     "test:ai:ui:static": "node scripts/ai_command_center_static_qa.js",
+    "test:ai:attention": "vitest run tests/pmos/ai-attention.test.ts",
     "test:apm:static": "node scripts/apm_workspace_static_qa.js",
     "test:ui:static": "node scripts/ui_interaction_static_qa.js",
     "test:environments": "node scripts/environment_static_qa.js",
