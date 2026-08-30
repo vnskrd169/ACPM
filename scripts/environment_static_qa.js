@@ -14,6 +14,7 @@ function main() {
   const firebaseRc = parse('.firebaserc');
   const productionDeploy = read('scripts/deploy-production.ps1');
   const stagingDeploy = read('scripts/deploy-staging.ps1');
+  const firebaseConfig = parse('firebase.json');
   const pages = ['login.html', 'dashboard.html', 'workspace.html', 'pmos/index.html'];
 
   assert(environment.includes("projectId: 'acpm-project-system'"), 'production project config must exist');
@@ -35,6 +36,10 @@ function main() {
   assert(firebaseRc.projects.production === 'acpm-project-system', 'production alias must target the live project');
   assert(firebaseRc.projects.staging === 'acpm-project-system-qa', 'staging alias must target the QA project');
   assert(!Object.prototype.hasOwnProperty.call(firebaseRc.projects, 'default'), 'Firebase config must not have an unsafe default project');
+  const hostingIgnore = new Set(firebaseConfig.hosting.ignore);
+  for (const privatePath of ['.git/**', '.github/**', '.firebase/**', '.vscode/**', '.codex/**', '.gitignore', '.gitattributes', '.env', '.env.*']) {
+    assert(hostingIgnore.has(privatePath), `Hosting must explicitly exclude ${privatePath}`);
+  }
   assert(stagingDeploy.includes("$ProjectId = 'acpm-project-system-qa'"), 'staging deploy must pin the QA project');
   assert(!stagingDeploy.includes('acpm-project-system '), 'staging deploy must not contain the production project target');
   assert(productionDeploy.includes("$ProjectId = 'acpm-project-system'"), 'production deploy must pin the live project');
@@ -53,6 +58,7 @@ function main() {
       'staging-default local development',
       'environment script order',
       'no Firebase default deploy alias',
+      'repository and environment metadata excluded from Hosting',
       'guarded production deployment'
     ]
   }, null, 2));
