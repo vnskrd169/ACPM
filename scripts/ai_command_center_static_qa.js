@@ -41,24 +41,24 @@ const spec = read(specPath);
 
 gate(Boolean(source && attention && styles), 'AI Command Center, attention model, or stylesheet is missing');
 gate(
-  occurrences(dashboard, 'ai-attention.js?v=1') === 1
-    && occurrences(workspace, 'ai-attention.js?v=1') === 1
-    && occurrences(dashboard, 'ai-command-center.js?v=3') === 1
-    && occurrences(workspace, 'ai-command-center.js?v=3') === 1
-    && dashboard.indexOf('ai-attention.js?v=1') < dashboard.indexOf('ai-command-center.js?v=3')
-    && workspace.indexOf('ai-attention.js?v=1') < workspace.indexOf('ai-command-center.js?v=3'),
+  occurrences(dashboard, 'ai-attention.js?v=2') === 1
+    && occurrences(workspace, 'ai-attention.js?v=2') === 1
+    && occurrences(dashboard, 'ai-command-center.js?v=4') === 1
+    && occurrences(workspace, 'ai-command-center.js?v=4') === 1
+    && dashboard.indexOf('ai-attention.js?v=2') < dashboard.indexOf('ai-command-center.js?v=4')
+    && workspace.indexOf('ai-attention.js?v=2') < workspace.indexOf('ai-command-center.js?v=4'),
   'dashboard/workspace must each contain exactly one versioned AI browser module reference'
 );
 gate(
-  occurrences(dashboard, 'assets/brand/ai-command-center.css?v=2') === 1
-    && occurrences(workspace, 'assets/brand/ai-command-center.css?v=2') === 1,
+  occurrences(dashboard, 'assets/brand/ai-command-center.css?v=3') === 1
+    && occurrences(workspace, 'assets/brand/ai-command-center.css?v=3') === 1,
   'dashboard/workspace must each contain exactly one versioned AI stylesheet reference'
 );
 gate(
-  /const CACHE_NAME = 'acpm-v144';/.test(sw)
-    && occurrences(sw, './ai-attention.js?v=1') === 1
-    && occurrences(sw, './ai-command-center.js?v=3') === 1
-    && occurrences(sw, './assets/brand/ai-command-center.css?v=2') === 1,
+  /const CACHE_NAME = 'acpm-v145';/.test(sw)
+    && occurrences(sw, './ai-attention.js?v=2') === 1
+    && occurrences(sw, './ai-command-center.js?v=4') === 1
+    && occurrences(sw, './assets/brand/ai-command-center.css?v=3') === 1,
   'service-worker cache name/assets are stale, missing, or duplicated'
 );
 gate(
@@ -86,6 +86,20 @@ gate(
     && /Unresolved attendance/.test(attention)
     && !/Out of Stock|stock shortage/i.test(attention),
   'deterministic model must identify its source, preserve unresolved attendance, and avoid stock claims'
+);
+gate(
+  /function buildDailyBrief\(/.test(attention)
+    && /lines:\s*\['Everything looks on track\.', 'No operational issues currently need your attention\.'\]/.test(attention)
+    && /lines\.slice\(0, 6\)/.test(attention)
+    && /!hasUnreportedAttention && summaries\.some/.test(attention),
+  'Daily Brief must be deterministic, preserve the exact calm state, cap at six lines, and guard its calm remainder'
+);
+gate(
+  /Deterministic daily brief/.test(source)
+    && /Rule-based · no AI generation/.test(source)
+    && /ACPMAttention\.buildDailyBrief/.test(source)
+    && /dataset\.detectedBy = brief\.detectedBy/.test(source),
+  'Daily Brief UI must clearly distinguish rule-based wording from AI-generated output'
 );
 gate(
   !/(?:evidence|reference|ref)\s*\.\s*path[\s\S]{0,160}(?:database\(\)|\.ref\s*\()/i.test(source)
@@ -136,13 +150,14 @@ gate(
 gate(
   ['Z1_NO_ATTENTION', 'Z2_OVERDUE_TASK', 'Z3_BLOCKED_TASK', 'Z4_UNRESOLVED_ATTENDANCE',
     'Z5_PARTIAL_DELIVERY', 'Z6_OPEN_SITE_ISSUE', 'Z7_AGING_SITE_ISSUE', 'Z8_MULTIPLE_PROJECTS',
-    'Z9_PROVIDER_OFF_MONITORING', 'Z10_AI_DECISION_AND_ATTENTION'].every(name => fixtures.includes(name)),
-  'all ten zero-budget UI scenarios must exist'
+    'Z9_PROVIDER_OFF_MONITORING', 'Z10_AI_DECISION_AND_ATTENTION', 'Z11_DAILY_BRIEF'].every(name => fixtures.includes(name)),
+  'all eleven zero-budget UI scenarios must exist'
 );
 gate(
-  (spec.match(/\btest\('/g) || []).length === 33
+  (spec.match(/\btest\('/g) || []).length === 36
+    && (spec.match(/test\('[^']*Daily Brief/g) || []).length === 3
     && /PM browser never attempts \/ai\/config read/.test(spec),
-  'Playwright suite must contain the required 33 Command Center checks'
+  'Playwright suite must contain the required 36 Command Center checks, including three Daily Brief checks'
 );
 gate(
   fs.existsSync(qaPath)
@@ -158,4 +173,4 @@ if (failures.length) {
 }
 
 console.log(`AI Command Center static QA passed (${gates} gates).`);
-console.log('Verified: assets/cache, fail-closed role and uiStatus gating, no provider SDK/config read/AI writes/evidence fetch, snapshot-only deterministic detection, allowlisted navigation, bounded detachable AI listeners, read-only decisions, A-H and zero-budget fixtures, and 33 browser checks.');
+console.log('Verified: assets/cache, fail-closed role and uiStatus gating, no provider SDK/config read/AI writes/evidence fetch, snapshot-only deterministic detection and Daily Brief, allowlisted navigation, bounded detachable AI listeners, read-only decisions, A-H and zero-budget fixtures, and 36 browser checks.');

@@ -103,4 +103,65 @@ describe('deterministic AI attention model', () => {
     ].sort());
     expect(Attention.DESTINATIONS).toContain(item.recommendedDestination);
   });
+
+  it('builds a concise deterministic daily brief from normalized attention only', () => {
+    const projects = [
+      project({
+        workers: { w1: { active: true }, w2: { active: true } },
+        attendance: { w1: { '2026-08-29': { status: 'present' } } },
+        tasks: { blocked: { title: 'Ceiling framing', status: 'blocked', dueDate: '2026-08-27', blockedReason: 'Drawing pending' } },
+        purchaseOrders: { po1: { status: 'partially_delivered', items: [{ desc: 'Gypsum Board', qtyOrdered: 100, qtyAccepted: 80, unit: 'sheets' }] } },
+        punchList: { issue1: { description: 'Wall crack review', status: 'open', severity: 'minor', createdAt: NOW - 4 * 86_400_000 } },
+      }),
+      { id: 'p2', name: 'Coffee Bay', status: 'active' },
+    ];
+    const items = Attention.derive(projects, { now: NOW });
+    const summaries = Attention.summarizeProjects(projects, items);
+    const brief = Attention.buildDailyBrief(items, summaries, { now: NOW });
+    const copy = brief.lines.join('\n');
+
+    expect(brief.detectedBy).toBe('deterministic');
+    expect(brief.lines).toHaveLength(6);
+    expect(brief.lines[0]).toBe('Good afternoon.');
+    expect(copy).toContain('4 items need attention across 1 project.');
+    expect(copy).toContain('Priority: RCBC Plaza — Blocked overdue task: Ceiling framing — Drawing pending.');
+    expect(copy).toContain('1 attendance record from yesterday remains unresolved.');
+    expect(copy).toContain('1 blocked and overdue task needs follow-up.');
+    expect(copy).toContain('Gypsum Board delivery is 80 of 100 sheets received.');
+    expect(copy).toContain('1 site issue has been open for 4 days.');
+    expect(brief.lines.at(-1)).toBe('Everything else currently has no detected attention items.');
+    expect(copy).not.toMatch(/schedule impact|cost impact|out of stock|caused|because/i);
+  });
+
+  it('uses the exact calm two-line brief when there is no attention', () => {
+    const brief = Attention.buildDailyBrief([], [{ projectId: 'p1', status: 'on_track' }], { now: NOW });
+    expect(brief).toEqual({
+      detectedBy: 'deterministic',
+      lines: ['Everything looks on track.', 'No operational issues currently need your attention.'],
+    });
+  });
+
+  it('omits the calm remainder when no loaded project is on track', () => {
+    const projects = [project({ tasks: { late: { title: 'Late task', status: 'in_progress', dueDate: '2026-08-25' } } })];
+    const items = Attention.derive(projects, { now: NOW });
+    const summaries = Attention.summarizeProjects(projects, items);
+    const brief = Attention.buildDailyBrief(items, summaries, { now: NOW });
+    expect(brief.lines).toContain('1 item needs attention across 1 project.');
+    expect(brief.lines).not.toContain('Everything else currently has no detected attention items.');
+    expect(brief.lines.length).toBeLessThanOrEqual(6);
+  });
+
+  it('omits the calm remainder when an attention item is not otherwise reported', () => {
+    const projects = [
+      project({ tasks: { late: { title: 'Late task', status: 'in_progress', dueDate: '2026-08-25' } } }),
+      { id: 'p2', name: 'Library Fit-out', status: 'active', pmosMaterialRequests: { pending: { item: 'Cement', status: 'Under Review' } } },
+      { id: 'p3', name: 'Coffee Bay', status: 'active' },
+    ];
+    const items = Attention.derive(projects, { now: NOW });
+    const summaries = Attention.summarizeProjects(projects, items);
+    const brief = Attention.buildDailyBrief(items, summaries, { now: NOW });
+    expect(items.some((item: any) => item.category === 'materials')).toBe(true);
+    expect(summaries.some((summary: any) => summary.status === 'on_track')).toBe(true);
+    expect(brief.lines).not.toContain('Everything else currently has no detected attention items.');
+  });
 });

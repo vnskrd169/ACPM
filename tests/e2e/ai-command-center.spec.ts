@@ -349,6 +349,45 @@ test.describe('AI Command Center read-only Office UI', () => {
     await captureIfRequested(page, 'test-results/ai-zero-budget-mobile.png');
   });
 
+  test('34. Daily Brief concisely covers normalized operational attention', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z11_DAILY_BRIEF);
+    await openCommandCenter(page);
+    const brief = page.locator('.ai-daily-brief');
+    const lines = brief.locator('#aiDailyBriefLines p');
+    const copy = await lines.allTextContents();
+
+    await expect(brief).toContainText('Deterministic daily brief');
+    await expect(brief).toContainText('Rule-based · no AI generation');
+    expect(await page.locator('#aiDailyBriefLines').getAttribute('data-detected-by')).toBe('deterministic');
+    expect(copy.length).toBeGreaterThanOrEqual(4);
+    expect(copy.length).toBeLessThanOrEqual(6);
+    expect(copy.join('\n')).toContain('4 items need attention across 1 project.');
+    expect(copy.join('\n')).toContain('Priority: RCBC Plaza — Blocked overdue task: Ceiling framing — Drawing pending.');
+    expect(copy.join('\n')).toContain('1 attendance record from yesterday remains unresolved.');
+    expect(copy.join('\n')).toContain('1 blocked and overdue task needs follow-up.');
+    expect(copy.join('\n')).toContain('Gypsum Board delivery is 80 of 100 sheets received.');
+    expect(copy.join('\n')).toContain('1 site issue has been open for 4 days.');
+    expect(copy.at(-1)).toBe('Everything else currently has no detected attention items.');
+    expect(copy.join('\n')).not.toMatch(/schedule impact|cost impact|out of stock|stock shortage|caused|because/i);
+  });
+
+  test('35. Daily Brief uses the exact two-line calm state', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z1_NO_ATTENTION);
+    await openCommandCenter(page);
+    await expect(page.locator('#aiDailyBriefLines p')).toHaveText([
+      'Everything looks on track.',
+      'No operational issues currently need your attention.',
+    ]);
+  });
+
+  test('36. Daily Brief omits the calm remainder when it is unsupported', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z2_OVERDUE_TASK);
+    await openCommandCenter(page);
+    const brief = page.locator('#aiDailyBriefLines');
+    await expect(brief).toContainText('1 item needs attention across 1 project.');
+    await expect(brief).not.toContainText('Everything else currently has no detected attention items.');
+  });
+
   test('21. listener/data failure does not break Office', async ({ page }) => {
     await setup(page, 'pm', aiScenarios().B_ACTIVE_RUNS, { failReadPaths: ['ai/runs'] });
     await openCommandCenter(page);

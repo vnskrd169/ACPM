@@ -165,6 +165,14 @@
 
         <div id="aiCommandNotice" class="ai-command-notice hidden" role="status"></div>
 
+        <section class="ai-daily-brief" aria-labelledby="aiDailyBriefTitle">
+          <div class="ai-daily-brief-head">
+            <div><span class="ai-panel-kicker">Deterministic daily brief</span><h3 id="aiDailyBriefTitle">Operational Brief</h3></div>
+            <span class="ai-rule-badge">Rule-based · no AI generation</span>
+          </div>
+          <div id="aiDailyBriefLines" class="ai-daily-brief-lines"></div>
+        </section>
+
         <section class="ai-today-panel" aria-labelledby="aiTodayHeading">
           <span class="ai-panel-kicker">Today</span>
           <h3 id="aiTodayHeading">Everything looks on track.</h3>
@@ -511,6 +519,7 @@
     status.textContent = 'DETERMINISTIC INTELLIGENCE';
     status.className = 'ai-status-pill ai-status-deterministic';
     renderNotice();
+    renderDailyBrief();
     renderSummary();
     renderAttention();
     renderProjectSummaries();
@@ -557,6 +566,18 @@
     el('aiTodaySummary').textContent = count
       ? 'Prioritized from current ACPM project records using deterministic business rules.'
       : 'No operational issues currently need your attention.';
+  }
+
+  function renderDailyBrief() {
+    var container = el('aiDailyBriefLines');
+    if (!container || !window.ACPMAttention || typeof window.ACPMAttention.buildDailyBrief !== 'function') return;
+    var brief = window.ACPMAttention.buildDailyBrief(
+      state.data.attention,
+      state.data.projectSummaries,
+      { now: Date.now() }
+    );
+    container.innerHTML = brief.lines.map(function (line) { return '<p>' + h(line) + '</p>'; }).join('');
+    container.dataset.detectedBy = brief.detectedBy;
   }
 
   function actionLabel(destination) {

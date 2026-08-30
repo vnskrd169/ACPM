@@ -58,6 +58,12 @@ They are separate sections, labels, sources, and counts. Navigating from Needs A
 
 Each active loaded project shows its real attention count and exact critical/high/medium/low breakdown. A project with zero items says “On track.” There is no arbitrary health percentage or score.
 
+## Deterministic Daily Brief
+
+The Daily Brief is generated locally from the normalized attention items and their deterministic project summaries. It uses no LLM or provider SDK. The UI labels it “Rule-based · no AI generation” so it cannot be confused with provider-backed recommendations.
+
+The brief is capped at six lines. It reports the attention total and highest-priority item, then includes only detected attendance, blocked/overdue task, partial-delivery, and aging-site-issue signals. It never derives schedule impact, cost impact, stock availability, or causal relationships. The calm remainder appears only when at least one loaded project has a deterministic zero-attention summary and no detected item beyond the priority item is omitted from those lines; the zero-attention state uses two concise lines.
+
 ## Provider-independent behavior
 
 When OpenAI is not configured, the System area shows “Advanced AI analysis — Not configured” and “Operational monitoring — Available.” The PM Agent reports advanced analysis unavailable; Planning Monitor and Materials Monitor report rule-based monitoring active. No LLM agent is labeled working unless an actual running provider-backed run names that agent.

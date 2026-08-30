@@ -279,6 +279,33 @@ export function zeroBudgetScenarios(now = Date.now()) {
   const notConfigured = base(now, 'not_configured');
   notConfigured['ai/runtimeStatus'] = null;
   const trueAiAlongside = decisions(now);
+  const dailyBrief = operationalProject('test-project-1', 'RCBC Plaza', {
+    workers: { w1: { name: 'Ana', active: true }, w2: { name: 'Ben', active: true } },
+    attendance: { w1: { [yesterday]: { status: 'present', date: yesterday } } },
+    tasks: {
+      'task-brief': {
+        title: 'Ceiling framing',
+        status: 'blocked',
+        dueDate: overdueDate,
+        blockedReason: 'Drawing pending',
+        createdAt: now - 5 * 86_400_000,
+      },
+    },
+    purchaseOrders: {
+      po1: {
+        status: 'partially_delivered',
+        items: [{ desc: 'Gypsum Board', qtyOrdered: 100, qtyAccepted: 80, unit: 'sheets' }],
+      },
+    },
+    punchList: {
+      issue1: {
+        description: 'Wall crack review',
+        status: 'open',
+        severity: 'minor',
+        createdAt: now - 4 * 86_400_000,
+      },
+    },
+  });
 
   return {
     Z1_NO_ATTENTION: withProjects(base(now), { 'test-project-1': calm }),
@@ -294,5 +321,9 @@ export function zeroBudgetScenarios(now = Date.now()) {
     }),
     Z9_PROVIDER_OFF_MONITORING: withProjects(notConfigured, { 'test-project-1': overdue }),
     Z10_AI_DECISION_AND_ATTENTION: withProjects(trueAiAlongside, { 'test-project-1': overdue }),
+    Z11_DAILY_BRIEF: withProjects(base(now), {
+      'test-project-1': dailyBrief,
+      'test-project-2': operationalProject('test-project-2', 'Coffee Bay'),
+    }),
   };
 }

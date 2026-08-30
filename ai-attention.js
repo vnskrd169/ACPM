@@ -257,11 +257,126 @@
     }).sort(function (a, b) { return b.attentionCount - a.attentionCount || a.projectName.localeCompare(b.projectName); });
   }
 
+  function manilaHour(now) {
+    try {
+      var parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Manila', hour: 'numeric', hourCycle: 'h23'
+      }).formatToParts(new Date(now));
+      var hour = parts.find(function (part) { return part.type === 'hour'; });
+      return hour ? Number(hour.value) : new Date(now).getHours();
+    } catch (_) {
+      return new Date(now).getHours();
+    }
+  }
+
+  function greeting(now) {
+    var hour = manilaHour(now);
+    if (hour < 12) return 'Good morning.';
+    if (hour < 18) return 'Good afternoon.';
+    return 'Good evening.';
+  }
+
+  function countFromSummary(item, pattern) {
+    var match = String(item && item.summary || '').match(pattern);
+    return match ? Number(match[1]) || 0 : 0;
+  }
+
+  function sentence(value) {
+    var text = String(value || '').trim();
+    return text && !/[.!?]$/.test(text) ? text + '.' : text;
+  }
+
+  function taskBriefLine(items) {
+    var blockedOverdue = items.filter(function (item) { return item.category === 'task' && /^Blocked overdue task/.test(item.title); }).length;
+    var blocked = items.filter(function (item) { return item.category === 'task' && /^Blocked task/.test(item.title); }).length;
+    var overdue = items.filter(function (item) { return item.category === 'task' && /^Overdue task/.test(item.title); }).length;
+    var total = blockedOverdue + blocked + overdue;
+    if (!total) return '';
+    var parts = [];
+    if (blockedOverdue) parts.push(blockedOverdue + ' blocked and overdue task' + (blockedOverdue === 1 ? '' : 's'));
+    if (blocked) parts.push(blocked + ' blocked task' + (blocked === 1 ? '' : 's'));
+    if (overdue) parts.push(overdue + ' overdue task' + (overdue === 1 ? '' : 's'));
+    return parts.join(' and ') + (total === 1 ? ' needs' : ' need') + ' follow-up.';
+  }
+
+  function deliveryBriefLine(items) {
+    var deliveries = items.filter(function (item) { return item.category === 'delivery'; });
+    if (!deliveries.length) return '';
+    if (deliveries.length > 1) return deliveries.length + ' partial deliveries need follow-up.';
+    var item = deliveries[0];
+    var match = String(item.summary || '').match(/^Received\s+([0-9.,]+)(?:\s+([^/]+?))?\s*\/\s*([0-9.,]+)(?:\s+([^.]+?))?\./i);
+    if (!match) return sentence(item.title + ' has a partial delivery');
+    var unit = String(match[4] || match[2] || '').trim();
+    return item.title + ' delivery is ' + match[1] + ' of ' + match[3] + (unit ? ' ' + unit : '') + ' received.';
+  }
+
+  function packSignals(signals) {
+    if (signals.length <= 2) return signals;
+    var split = Math.ceil(signals.length / 2);
+    return [signals.slice(0, split).join(' '), signals.slice(split).join(' ')];
+  }
+
+  function isReportedBriefSignal(item) {
+    if (item.category === 'attendance') return countFromSummary(item, /^(\d+)\s+attendance entr/i) > 0;
+    if (item.category === 'task') return /^(?:Blocked overdue|Blocked|Overdue) task/.test(item.title);
+    if (item.category === 'delivery') return true;
+    return item.category === 'site_issue' && item.title === 'Aging site issue';
+  }
+
+  function buildDailyBrief(items, projectSummaries, options) {
+    var now = options && Number.isFinite(options.now) ? options.now : Date.now();
+    var attention = (Array.isArray(items) ? items : []).slice().sort(compareItems);
+    if (!attention.length) {
+      return {
+        detectedBy: 'deterministic',
+        lines: ['Everything looks on track.', 'No operational issues currently need your attention.']
+      };
+    }
+
+    var projects = {};
+    attention.forEach(function (item) { projects[item.projectId] = true; });
+    var priority = attention[0];
+    var lines = [
+      greeting(now),
+      attention.length + ' item' + (attention.length === 1 ? ' needs' : 's need') + ' attention across ' +
+        Object.keys(projects).length + ' project' + (Object.keys(projects).length === 1 ? '' : 's') + '.',
+      'Priority: ' + priority.projectName + ' — ' + priority.title + ': ' + sentence(priority.summary)
+    ];
+
+    var signals = [];
+    var unresolved = attention.reduce(function (sum, item) {
+      return item.category === 'attendance'
+        ? sum + countFromSummary(item, /^(\d+)\s+attendance entr/i)
+        : sum;
+    }, 0);
+    if (unresolved) signals.push(unresolved + ' attendance record' + (unresolved === 1 ? '' : 's') + ' from yesterday ' + (unresolved === 1 ? 'remains' : 'remain') + ' unresolved.');
+    var tasks = taskBriefLine(attention);
+    if (tasks) signals.push(tasks);
+    var deliveries = deliveryBriefLine(attention);
+    if (deliveries) signals.push(deliveries);
+    var agingIssues = attention.filter(function (item) { return item.category === 'site_issue' && item.title === 'Aging site issue'; });
+    if (agingIssues.length) {
+      var oldest = Math.max.apply(Math, agingIssues.map(function (item) { return typeof item.age === 'number' ? item.age : 0; }));
+      signals.push(agingIssues.length === 1
+        ? '1 site issue has been open for ' + oldest + ' days.'
+        : agingIssues.length + ' site issues have been open for up to ' + oldest + ' days.');
+    }
+    lines = lines.concat(packSignals(signals));
+
+    var summaries = Array.isArray(projectSummaries) ? projectSummaries : [];
+    var hasUnreportedAttention = attention.slice(1).some(function (item) { return !isReportedBriefSignal(item); });
+    if (!hasUnreportedAttention && summaries.some(function (project) { return project.status === 'on_track'; })) {
+      lines.push('Everything else currently has no detected attention items.');
+    }
+    return { detectedBy: 'deterministic', lines: lines.slice(0, 6) };
+  }
+
   return {
     AGING_ISSUE_DAYS: AGING_ISSUE_DAYS,
     DESTINATIONS: Object.freeze(['attendance', 'task', 'materials', 'issue', 'project']),
     derive: derive,
     summarizeProjects: summarizeProjects,
+    buildDailyBrief: buildDailyBrief,
     dateKey: dateKey,
     shiftDateKey: shiftDateKey
   };
