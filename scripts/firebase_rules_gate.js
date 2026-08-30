@@ -63,8 +63,8 @@ console.log(JSON.stringify({
   deployCommands: [
     'npm install -g firebase-tools',
     'firebase login',
-    'firebase use acpm-project-system',
-    'firebase deploy --only database'
+    'npm.cmd run deploy:staging',
+    '.\\scripts\\deploy-production.ps1 -ConfirmProduction -DatabaseOnly'
   ],
   consoleAlternative: [
     'Firebase Console > Realtime Database > Rules',

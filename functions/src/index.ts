@@ -40,7 +40,8 @@ export const stagingManualAiDryRun = onCall({
   timeoutSeconds: 120,
   memory: '512MiB',
   minInstances: 0,
-  maxInstances: 1
+  maxInstances: 1,
+  concurrency: 1
 }, async request => {
   if (runtimeProjectId() !== STAGING_PROJECT_ID) {
     throw new HttpsError('failed-precondition', 'staging_environment_required');
@@ -88,7 +89,8 @@ export const submitAiDecision = onCall({
   timeoutSeconds: 30,
   memory: '256MiB',
   minInstances: 0,
-  maxInstances: 5
+  maxInstances: 5,
+  concurrency: 10
 }, async request => {
   if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'unauthenticated');
 
@@ -129,7 +131,8 @@ export const reviewAiActionDraft = onCall({
   timeoutSeconds: 30,
   memory: '256MiB',
   minInstances: 0,
-  maxInstances: 5
+  maxInstances: 5,
+  concurrency: 10
 }, async request => {
   if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'unauthenticated');
 

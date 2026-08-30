@@ -25,11 +25,17 @@ const failures = [];
 const aiSourceFiles = sourceFiles(path.join(root, 'functions', 'src', 'ai'));
 const forbiddenRoots = [
   'projects',
+  'tasks',
+  'purchaseOrders',
+  'deliveries',
   'suppliers',
   'users',
   'billing',
   'billings',
+  'collections',
+  'payments',
   'payroll',
+  'attendance',
   'changeOrders',
   'notifications',
   'auditLogs'
@@ -48,6 +54,8 @@ const allowedAiCollections = new Set([
   'findings',
   'recommendations',
   'decisions',
+  'actionDrafts',
+  'actionDraftEvents',
   'idempotency'
 ]);
 
@@ -300,6 +308,22 @@ if (!fs.existsSync(entrypointPath)) {
   if (!/reviewAiActionDraft[\s\S]*request\.auth\?\.uid[\s\S]*readAiActorProfile[\s\S]*reviewActionDraft/.test(entrypoint)) {
     failures.push('functions/src/index.ts: action-draft callable must authenticate and verify the active database profile before review');
   }
+  const callableBlocks = [...entrypoint.matchAll(/export const (\w+) = onCall\(\{([\s\S]*?)\}, async request =>/g)]
+    .map(match => ({ name: match[1], options: match[2] }));
+  const expectedAppCheck = new Map([
+    ['stagingManualAiDryRun', true],
+    ['submitAiDecision', false],
+    ['reviewAiActionDraft', false]
+  ]);
+  for (const callable of callableBlocks) {
+    const expected = expectedAppCheck.get(callable.name);
+    if (expected === undefined || !new RegExp(`enforceAppCheck:\\s*${expected}`).test(callable.options)) {
+      failures.push(`functions/src/index.ts: ${callable.name} has an unreviewed App Check state`);
+    }
+    if (!/maxInstances:\s*[1-5]\b/.test(callable.options) || !/concurrency:\s*(?:1|10)\b/.test(callable.options)) {
+      failures.push(`functions/src/index.ts: ${callable.name} must retain bounded instances and concurrency`);
+    }
+  }
 }
 
 const decisionWorkflowSource = fs.readFileSync(path.join(root, 'functions', 'src', 'ai', 'decision-workflow.ts'), 'utf8');
@@ -334,8 +358,10 @@ for (const forbiddenType of ['approve_purchase', 'release_payment', 'approve_cha
 
 const stagingDeploy = fs.readFileSync(path.join(root, 'scripts', 'deploy-staging.ps1'), 'utf8');
 const productionDeploy = fs.readFileSync(path.join(root, 'scripts', 'deploy-production.ps1'), 'utf8');
-if (!/IncludeAiProvider/.test(stagingDeploy) || !/functions:ai-staging/.test(stagingDeploy)) {
-  failures.push('scripts/deploy-staging.ps1: explicit opt-in AI Functions deployment is missing');
+if (!/IncludeAiProvider/.test(stagingDeploy)
+    || !/AI Functions deployment blocked: enable Firebase billing, configure and validate Web App Check/.test(stagingDeploy)
+    || /functions(?::ai-staging)?/.test(stagingDeploy)) {
+  failures.push('scripts/deploy-staging.ps1: AI Functions must remain explicitly blocked until billing and App Check prerequisites are satisfied');
 }
 if (/functions(?::ai-staging)?/.test(productionDeploy)) {
   failures.push('scripts/deploy-production.ps1: Production deployment must exclude AI Functions');
@@ -348,4 +374,4 @@ if (failures.length > 0) {
 }
 
 console.log(`AI security static QA passed (${files.length} backend source files scanned).`);
-console.log('Verified: pinned OpenAI adapter only, Secret Manager binding, no frontend key/SDK, no credential logging, /ai-only runtime writes, transactional human decisions and allowlisted action drafts with active-role verification, append-only draft audit, sanitized service-owned uiStatus with PM config isolation, no provider Firebase access, no project-root listing/full snapshots, reviewed callable guards, Production Functions excluded, and disabled defaults.');
+console.log('Verified: pinned OpenAI adapter only, Secret Manager binding, no frontend key/SDK, no credential logging, /ai-only runtime writes, transactional human decisions and allowlisted action drafts with active-role verification, append-only draft audit, sanitized service-owned uiStatus with PM config isolation, no provider Firebase access, no project-root listing/full snapshots, reviewed App Check states, bounded callable capacity, Production Functions excluded, and disabled defaults.');

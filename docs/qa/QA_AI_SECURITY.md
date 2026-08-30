@@ -29,7 +29,9 @@ pmosIssues/**
 
 Allowed writes are exactly the explicit children under `/ai`: `config`,
 `projectTargets`, `agents`, `runtimeStatus`, `uiStatus`, `conditions`, `events`,
-`runs`, `findings`, `recommendations`, `decisions`, and `idempotency`. A bulk
+`runs`, `findings`, `recommendations`, `decisions`, `actionDrafts`,
+`actionDraftEvents`, and `idempotency`. Decision audit events are children of
+each decision's `history`; there is no separate `decisionEvents` root. A bulk
 `/ai` write and unknown child names are denied.
 
 ## Browser read matrix
@@ -88,10 +90,12 @@ database access.
 
 The code-owned config defaults keep `enabled`, `generationEnabled`,
 `uiEnabled`, and every initial event flag false; `dryRun` is true. No RTDB
-Production config is seeded. Future execution must check both master and
-generation flags, while either false is an emergency stop. In Phase 2 there is
-no deployable execution entrypoint, so generation cannot run regardless of
-database state.
+Production config is seeded. Provider execution checks both master and
+generation flags, while either false is an emergency stop. Human Decision and
+Action Draft callables have no provider or business-execution path. Their
+deployment remains blocked for RC1 until Firebase billing and supported Web
+App Check prerequisites are complete; see
+`docs/release/AI_COMMAND_CENTER_RC1.md`.
 
 ## Local proof commands
 
@@ -109,5 +113,5 @@ read only the sanitized UI projection while remaining denied from config,
 rejects broad project and sensitive reads, rejects business/auth/notification/audit writes,
 checks the complete browser role matrix, and prevents a role-bearing service
 profile. The static gate scans backend source for obvious non-AI writes,
-provider key patterns, enabled defaults, real provider SDKs, deployable
-Firebase triggers/callables, and the required Admin auth override.
+provider key patterns, enabled defaults, unreviewed Firebase triggers/callables,
+bounded callable capacity, and the required Admin auth override.

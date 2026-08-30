@@ -43,7 +43,7 @@ async function setupOffice(page: Page, data: Record<string, unknown>) {
 async function openAi(page: Page) {
   await page.locator('#openAiCommandCenterBtn').click();
   await expect(page.locator('#aiCommandCenterView')).toBeVisible();
-  await page.waitForFunction(() => (window as any).getAiCommandCenterDiagnostics?.().listenerCount === 6);
+  await page.waitForFunction(() => (window as any).getAiCommandCenterDiagnostics?.().listenerCount === 7);
 }
 
 async function scrollPageToBottom(page: Page) {
@@ -192,7 +192,7 @@ test.describe('UI integrity and interaction hardening', () => {
     await expect(page.locator('#aiCommandCenterView')).toBeVisible();
     await expect(review).toBeFocused();
     await expect(page.locator('body')).not.toHaveClass(/overlay-scroll-locked/);
-    expect(await page.evaluate(() => (window as any).getAiCommandCenterDiagnostics().listenerCount)).toBe(6);
+    expect(await page.evaluate(() => (window as any).getAiCommandCenterDiagnostics().listenerCount)).toBe(7);
 
     await page.keyboard.press('Escape');
     await expect(page.locator('#hubView')).toBeVisible();
@@ -208,7 +208,7 @@ test.describe('UI integrity and interaction hardening', () => {
     await page.evaluate(() => (window as any).openAiCommandCenter());
     await expect(page.locator('#aiCommandCenterView')).toBeVisible();
     expect(await page.evaluate(() => (window as any).getPmosOfficeDiagnostics().listenerCount)).toBe(0);
-    await page.waitForFunction(() => (window as any).getAiCommandCenterDiagnostics?.().listenerCount === 6);
+    await page.waitForFunction(() => (window as any).getAiCommandCenterDiagnostics?.().listenerCount === 7);
 
     await page.locator('#aiCommandBackBtn').click();
     await expect(page.locator('#pmosOfficeView')).toBeVisible();
@@ -221,14 +221,18 @@ test.describe('UI integrity and interaction hardening', () => {
     await page.locator('#openPmosOfficeBtn').click();
     await page.waitForFunction(() => (window as any).getPmosOfficeDiagnostics?.().listenerCount === 8);
 
-    const loginRequest = page.waitForRequest(request => /\/login(?:\.html)?$/.test(new URL(request.url()).pathname), { timeout: 10000 });
+    const loginNavigation = page.waitForURL('**/login', { waitUntil: 'domcontentloaded', timeout: 10000 });
     await page.evaluate(() => (window as any).firebase.auth().signOut());
     await page.waitForFunction(() => ((window as any).getPmosOfficeDiagnostics?.().listenerCount || 0) === 0);
-    await loginRequest;
+    await loginNavigation;
 
     // The mock auth fixture starts each navigation with the same signed-in
-    // reviewer, matching a fresh login after the logout redirect.
-    await navigateToDashboard(page);
+    // reviewer, so the login shell performs the fresh-login dashboard redirect.
+    await page.waitForURL('**/dashboard', { waitUntil: 'domcontentloaded', timeout: 10000 });
+    await page.waitForFunction(() => {
+      const hub = document.querySelector('#hubView');
+      return !!hub && !hub.classList.contains('hidden') && document.body.classList.contains('auth-ready');
+    });
     await page.locator('#openPmosOfficeBtn').click();
     await page.waitForFunction(() => (window as any).getPmosOfficeDiagnostics?.().listenerCount === 8);
     expect(await page.evaluate(() => (window as any).getPmosOfficeDiagnostics().listenerCount)).toBe(8);

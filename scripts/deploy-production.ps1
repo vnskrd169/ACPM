@@ -1,6 +1,7 @@
 param(
   [switch]$ConfirmProduction,
-  [switch]$IncludeDatabase
+  [switch]$IncludeDatabase,
+  [switch]$DatabaseOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,6 +12,9 @@ Set-Location -LiteralPath $Root
 if (-not $ConfirmProduction) {
   throw 'Production deploy blocked. Run scripts/deploy-production.ps1 -ConfirmProduction after staging QA passes.'
 }
+if ($IncludeDatabase -and $DatabaseOnly) {
+  throw 'Choose either -IncludeDatabase or -DatabaseOnly, not both.'
+}
 
 Write-Host "ACPM PRODUCTION deployment -> $ProjectId" -ForegroundColor Red
 node scripts/environment_static_qa.js
@@ -20,7 +24,13 @@ if ($LASTEXITCODE -ne 0) { throw 'PWA cache QA failed.' }
 node scripts/rc1_static_gate.js
 if ($LASTEXITCODE -ne 0) { throw 'RC1 static gate failed.' }
 
-$Target = if ($IncludeDatabase) { 'database,hosting' } else { 'hosting' }
+$Target = if ($DatabaseOnly) {
+  'database'
+} elseif ($IncludeDatabase) {
+  'database,hosting'
+} else {
+  'hosting'
+}
 firebase.cmd deploy --only $Target --project $ProjectId
 if ($LASTEXITCODE -ne 0) { throw 'Production deployment failed.' }
 

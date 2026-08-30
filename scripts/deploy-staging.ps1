@@ -16,16 +16,12 @@ if ($LASTEXITCODE -ne 0) { throw 'PWA cache QA failed.' }
 node scripts/rc1_static_gate.js
 if ($LASTEXITCODE -ne 0) { throw 'RC1 static gate failed.' }
 
+if ($IncludeAiProvider) {
+  throw 'AI Functions deployment blocked: enable Firebase billing, configure and validate Web App Check for the decision and action-draft callables, then replace this release guard in a reviewed change.'
+}
+
 $Target = if ($HostingOnly) {
   'hosting'
-} elseif ($IncludeAiProvider) {
-  node scripts/ai_security_static_qa.js
-  if ($LASTEXITCODE -ne 0) { throw 'AI security static QA failed.' }
-  npm.cmd --prefix functions run typecheck
-  if ($LASTEXITCODE -ne 0) { throw 'AI Functions typecheck failed.' }
-  npm.cmd --prefix functions test
-  if ($LASTEXITCODE -ne 0) { throw 'AI Functions tests failed.' }
-  'database,hosting,functions:ai-staging'
 } else {
   'database,hosting'
 }
