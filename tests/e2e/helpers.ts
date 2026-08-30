@@ -51,6 +51,7 @@ type InitScriptOptions = {
   disableServiceWorker?: boolean;
   databaseData?: Record<string, unknown>;
   failReadPaths?: string[];
+  callableError?: { code: string; message: string };
 };
 
 export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitScriptOptions = {}): string {
@@ -58,6 +59,7 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitS
   const disableServiceWorker = options.disableServiceWorker !== false;
   const databaseData = options.databaseData || {};
   const failReadPaths = options.failReadPaths || [];
+  const callableError = options.callableError || null;
   return `
     window._currentUser = ${JSON.stringify(user)};
     window._currentPid = 'test-project-1';
@@ -67,11 +69,14 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitS
     const __pmosTestProject = ${JSON.stringify(TEST_PROJECT)};
     const __extraDbData = ${JSON.stringify(databaseData)};
     const __failReadPaths = ${JSON.stringify(failReadPaths)};
+    const __callableError = ${JSON.stringify(callableError)};
     window.__mockDbPaths = [];
     window.__mockDbOnPaths = [];
     window.__mockDbOffPaths = [];
     window.__mockDbWrites = [];
     window.__mockAuthObservers = [];
+    window.__mockCallableCalls = [];
+    window.__mockDbListeners = {};
 
     function makeSnapshot(value, key) {
       return {
@@ -139,10 +144,16 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitS
             if (typeof errorCb === 'function') setTimeout(function () { errorCb({ code: 'PERMISSION_DENIED' }); }, 0);
             return cb;
           }
+          window.__mockDbListeners[path] = window.__mockDbListeners[path] || [];
+          window.__mockDbListeners[path].push(cb);
           if (typeof cb === 'function') setTimeout(function () { cb(makeSnapshot(dataForPath(path), String(path || '').split('/').pop())); }, 0);
           return cb;
         },
-        off: function () { window.__mockDbOffPaths.push(path); },
+        off: function (event, cb) {
+          window.__mockDbOffPaths.push(path);
+          if (!window.__mockDbListeners[path]) return;
+          window.__mockDbListeners[path] = window.__mockDbListeners[path].filter(function (listener) { return listener !== cb; });
+        },
         update: function (value) { window.__mockDbWrites.push({ method: 'update', path: path, value: value }); return Promise.resolve(); },
         set: function (value) { window.__mockDbWrites.push({ method: 'set', path: path, value: value }); return Promise.resolve(); },
         push: function () {
@@ -159,9 +170,70 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitS
       };
     }
 
+    function notifyDbPath(path) {
+      (window.__mockDbListeners[path] || []).slice().forEach(function (listener) {
+        listener(makeSnapshot(dataForPath(path), String(path || '').split('/').pop()));
+      });
+    }
+
+    function mockFunctionsService() {
+      return {
+        httpsCallable: function (name) {
+          return async function (input) {
+            window.__mockCallableCalls.push({ name: name, input: JSON.parse(JSON.stringify(input || {})) });
+            await new Promise(function (resolve) { setTimeout(resolve, 25); });
+            if (__callableError) throw { code: __callableError.code, message: __callableError.message };
+            if (name !== 'submitAiDecision') throw { code: 'functions/not-found', message: 'callable_not_found' };
+            const decisions = __extraDbData['ai/decisions'] || {};
+            const current = decisions[input.decisionId];
+            if (!current) throw { code: 'functions/not-found', message: 'decision_not_found' };
+            if (current.status !== 'open') throw { code: 'functions/failed-precondition', message: 'decision_already_resolved' };
+            const timestamp = Date.now();
+            if (input.action === 'choose') {
+              current.status = 'resolved';
+              current.resolution = input.selectedOptionId;
+              current.resolutionNotes = input.notes || null;
+              current.resolvedAt = timestamp;
+              current.resolvedBy = __pmosTestUser.uid;
+              current.resolvedByRole = __pmosTestUser.role;
+            } else if (input.action === 'dismiss') {
+              current.status = 'dismissed';
+              current.resolution = null;
+              current.resolutionNotes = input.notes || null;
+              current.resolvedAt = timestamp;
+              current.resolvedBy = __pmosTestUser.uid;
+              current.resolvedByRole = __pmosTestUser.role;
+            } else if (input.action === 'defer') {
+              current.deferredAt = timestamp;
+              current.deferredBy = __pmosTestUser.uid;
+              current.deferredByRole = __pmosTestUser.role;
+            } else {
+              throw { code: 'functions/invalid-argument', message: 'invalid_decision_request' };
+            }
+            __extraDbData['ai/decisions/' + input.decisionId] = current;
+            notifyDbPath('ai/decisions');
+            return { data: {
+              decisionId: input.decisionId,
+              status: current.status,
+              resolution: current.resolution || null,
+              resolutionNotes: current.resolutionNotes || null,
+              resolvedAt: current.resolvedAt || null,
+              resolvedBy: current.resolvedBy || null,
+              resolvedByRole: current.resolvedByRole || null,
+              deferredAt: current.deferredAt || null,
+              deferredBy: current.deferredBy || null,
+              deferredByRole: current.deferredByRole || null,
+              auditEventId: input.submissionId,
+              replayed: false,
+            } };
+          };
+        },
+      };
+    }
+
     window.firebase = {
       initializeApp: function () { return {}; },
-      app: function () { return {}; },
+      app: function () { return { functions: function () { return mockFunctionsService(); } }; },
       apps: [],
       auth: function () {
         return {
@@ -187,6 +259,7 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitS
         function () { return { ref: function (path) { return makeDbRef(path || ''); } }; },
         { ServerValue: { TIMESTAMP: Date.now() } }
       ),
+      functions: function () { return mockFunctionsService(); },
     };
     window.firebase.auth.Auth = { Persistence: { LOCAL: 'local' } };
 

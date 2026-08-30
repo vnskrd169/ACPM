@@ -2,6 +2,11 @@ import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
 import { FirebaseAiPipelineStore } from './ai/firebase-store.js';
+import { FirebaseDecisionWorkflowStore } from './ai/firebase-decision-store.js';
+import {
+  mapDecisionWorkflowError,
+  submitHumanDecision
+} from './ai/decision-workflow.js';
 import { OpenAIProvider } from './ai/providers/openai.js';
 import { aiConfigSchema } from './ai/schemas.js';
 import { FirebaseAiSourceReader } from './ai/source-reader.js';
@@ -11,7 +16,7 @@ import {
   StagingManualError,
   stagingManualInputSchema
 } from './ai/staging-manual.js';
-import { getAiDatabase } from './firebase/admin.js';
+import { getAiDatabase, readAiActorProfile } from './firebase/admin.js';
 
 const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 const STAGING_DATABASE_URL =
@@ -68,5 +73,36 @@ export const stagingManualAiDryRun = onCall({
       throw new HttpsError('failed-precondition', error.code);
     }
     throw new HttpsError('internal', 'staging_ai_run_failed');
+  }
+});
+
+export const submitAiDecision = onCall({
+  region: 'asia-southeast1',
+  enforceAppCheck: false,
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  minInstances: 0,
+  maxInstances: 5
+}, async request => {
+  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'unauthenticated');
+
+  let profile: Record<string, unknown> | null;
+  try {
+    profile = await readAiActorProfile(request.auth.uid);
+  } catch {
+    throw new HttpsError('internal', 'actor_verification_failed');
+  }
+
+  const database = getAiDatabase();
+  const store = new FirebaseDecisionWorkflowStore(database);
+  try {
+    return await submitHumanDecision(request.data, {
+      uid: request.auth.uid,
+      role: typeof profile?.role === 'string' ? profile.role.trim().toLowerCase() : '',
+      status: typeof profile?.status === 'string' ? profile.status.trim().toLowerCase() : ''
+    }, store, Date.now());
+  } catch (error) {
+    const mapped = mapDecisionWorkflowError(error);
+    throw new HttpsError(mapped.httpsCode, mapped.safeCode);
   }
 });

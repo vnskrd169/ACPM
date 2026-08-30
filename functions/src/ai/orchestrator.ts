@@ -204,6 +204,7 @@ export async function processAiEvent(
         runId,
         recommendationId,
         question: pmFinding.decisionQuestion,
+        options: pmFinding.recommendedActions,
         status: 'open',
         createdAt: now
       };

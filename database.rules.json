@@ -130,8 +130,28 @@
       },
       "decisions": {
         ".read": "auth != null && (auth.uid === 'acpm-ai-service' || (root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/)))",
-        ".write": "auth != null && auth.uid === 'acpm-ai-service'",
-        ".indexOn": ["createdAt"]
+        ".indexOn": ["createdAt"],
+        "$decisionId": {
+          ".write": "auth != null && auth.uid === 'acpm-ai-service' && (!data.exists() || data.child('status').val() === 'open')",
+          ".validate": "!newData.exists() || (newData.hasChildren(['schemaVersion', 'projectId', 'eventId', 'runId', 'recommendationId', 'question', 'options', 'status', 'createdAt']) && newData.child('schemaVersion').val() === '0.1' && newData.child('projectId').isString() && newData.child('projectId').val().length > 0 && newData.child('projectId').val().length <= 160 && newData.child('eventId').isString() && newData.child('eventId').val().length > 0 && newData.child('eventId').val().length <= 160 && newData.child('runId').isString() && newData.child('runId').val().length > 0 && newData.child('runId').val().length <= 160 && newData.child('recommendationId').isString() && newData.child('recommendationId').val().length > 0 && newData.child('recommendationId').val().length <= 160 && newData.child('question').isString() && newData.child('question').val().length > 0 && newData.child('question').val().length <= 500 && newData.child('status').isString() && newData.child('status').val().matches(/^(open|resolved|dismissed)$/) && newData.child('createdAt').isNumber() && newData.child('createdAt').val() >= 0 && newData.child('createdAt').val() % 1 === 0 && (!newData.child('resolvedAt').exists() || (newData.child('resolvedAt').isNumber() && newData.child('resolvedAt').val() >= 0 && newData.child('resolvedAt').val() % 1 === 0)) && (!newData.child('resolvedBy').exists() || (newData.child('resolvedBy').isString() && newData.child('resolvedBy').val().length > 0 && newData.child('resolvedBy').val().length <= 128)) && (!newData.child('resolvedByRole').exists() || (newData.child('resolvedByRole').isString() && newData.child('resolvedByRole').val().matches(/^(boss|owner|admin|pm)$/))) && (!newData.child('resolution').exists() || (newData.child('resolution').isString() && newData.child('resolution').val().length > 0 && newData.child('resolution').val().length <= 500)) && (!newData.child('resolutionNotes').exists() || (newData.child('resolutionNotes').isString() && newData.child('resolutionNotes').val().length > 0 && newData.child('resolutionNotes').val().length <= 500)) && (!newData.child('deferredAt').exists() || (newData.child('deferredAt').isNumber() && newData.child('deferredAt').val() >= 0 && newData.child('deferredAt').val() % 1 === 0)) && (!newData.child('deferredBy').exists() || (newData.child('deferredBy').isString() && newData.child('deferredBy').val().length > 0 && newData.child('deferredBy').val().length <= 128)) && (!newData.child('deferredByRole').exists() || (newData.child('deferredByRole').isString() && newData.child('deferredByRole').val().matches(/^(boss|owner|admin|pm)$/))) && ((newData.child('status').val() === 'open' && !newData.child('resolvedAt').exists() && !newData.child('resolvedBy').exists() && !newData.child('resolvedByRole').exists() && !newData.child('resolution').exists()) || (newData.child('status').val() === 'resolved' && newData.child('resolvedAt').exists() && newData.child('resolvedBy').exists() && newData.child('resolvedByRole').exists() && newData.child('resolution').exists()) || (newData.child('status').val() === 'dismissed' && newData.child('resolvedAt').exists() && newData.child('resolvedBy').exists() && newData.child('resolvedByRole').exists() && !newData.child('resolution').exists())))",
+          "options": {
+            ".validate": "newData.exists()",
+            "$optionIndex": {
+              ".validate": "$optionIndex.matches(/^[0-9]+$/) && newData.isString() && newData.val().length > 0 && newData.val().length <= 500"
+            }
+          },
+          "history": {
+            "$submissionId": {
+              ".validate": "$submissionId.matches(/^[A-Za-z0-9_-]{8,128}$/) && newData.hasChildren(['decisionId', 'projectId', 'action', 'actorUid', 'actorRole', 'timestamp']) && newData.child('decisionId').val() === $decisionId && newData.child('projectId').val() === newData.parent().parent().child('projectId').val() && newData.child('action').isString() && newData.child('action').val().matches(/^(choose|defer|dismiss)$/) && newData.child('actorUid').isString() && newData.child('actorUid').val().length > 0 && newData.child('actorUid').val().length <= 128 && newData.child('actorRole').isString() && newData.child('actorRole').val().matches(/^(boss|owner|admin|pm)$/) && newData.child('timestamp').isNumber() && newData.child('timestamp').val() >= 0 && newData.child('timestamp').val() % 1 === 0 && ((newData.child('action').val() === 'choose' && newData.child('selectedOptionId').isString() && newData.child('selectedOptionId').val().length > 0 && newData.child('selectedOptionId').val().length <= 500) || (newData.child('action').val() !== 'choose' && !newData.child('selectedOptionId').exists())) && (!newData.child('notes').exists() || (newData.child('notes').isString() && newData.child('notes').val().length > 0 && newData.child('notes').val().length <= 500))",
+              "$other": {
+                ".validate": "$other.matches(/^(decisionId|projectId|action|selectedOptionId|actorUid|actorRole|timestamp|notes)$/)"
+              }
+            }
+          },
+          "$other": {
+            ".validate": "$other.matches(/^(schemaVersion|projectId|eventId|runId|recommendationId|question|status|createdAt|resolvedAt|resolvedBy|resolvedByRole|resolution|resolutionNotes|deferredAt|deferredBy|deferredByRole)$/)"
+          }
+        }
       },
       "idempotency": {
         ".read": "auth != null && auth.uid === 'acpm-ai-service'",

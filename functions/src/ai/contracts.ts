@@ -235,8 +235,29 @@ export interface AiDecisionRecord {
   runId: string;
   recommendationId: string;
   question: string;
-  status: 'open';
+  options: string[];
+  status: 'open' | 'resolved' | 'dismissed';
   createdAt: number;
+  resolvedAt?: number | null;
+  resolvedBy?: string | null;
+  resolvedByRole?: 'boss' | 'owner' | 'admin' | 'pm' | null;
+  resolution?: string | null;
+  resolutionNotes?: string | null;
+  deferredAt?: number | null;
+  deferredBy?: string | null;
+  deferredByRole?: 'boss' | 'owner' | 'admin' | 'pm' | null;
+  history?: Record<string, AiDecisionHistoryEvent>;
+}
+
+export interface AiDecisionHistoryEvent {
+  decisionId: string;
+  projectId: string;
+  action: 'choose' | 'defer' | 'dismiss';
+  selectedOptionId?: string;
+  actorUid: string;
+  actorRole: 'boss' | 'owner' | 'admin' | 'pm';
+  timestamp: number;
+  notes?: string;
 }
 
 export interface TokenUsage {

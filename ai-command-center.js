@@ -23,6 +23,8 @@
     errors: {},
     filter: 'open',
     decisionReturnFocus: null,
+    decisionSubmitting: false,
+    pendingDecisionSubmission: null,
     data: emptyData()
   };
 
@@ -236,7 +238,7 @@
         <div id="aiDecisionModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="aiDecisionModalTitle" data-escape-owner="ai">
           <div class="modal-box modal-wide ai-decision-modal">
             <div class="ai-modal-head">
-              <div><span class="ai-panel-kicker">Read-only management review</span><h3 id="aiDecisionModalTitle">Decision Detail</h3></div>
+              <div><span class="ai-panel-kicker">Waiting on you · human intent only</span><h3 id="aiDecisionModalTitle">Decision Detail</h3></div>
               <button id="aiDecisionModalClose" class="btn-ws-secondary" type="button">Close</button>
             </div>
             <div id="aiDecisionModalBody"></div>
@@ -251,11 +253,19 @@
     el('aiDecisionModal').addEventListener('click', function (event) {
       if (event.target === el('aiDecisionModal')) closeDecision();
     });
+    el('aiDecisionModalBody').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-ai-decision-action]');
+      if (button) submitDecision(button.dataset.aiDecisionAction);
+    });
     el('aiRecommendationFilters').addEventListener('click', function (event) {
       var button = event.target.closest('[data-ai-filter]');
       if (!button) return;
       state.filter = button.dataset.aiFilter;
       renderRecommendations();
+    });
+    el('aiRecommendationList').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-ai-decision-history]');
+      if (button) openDecision(button.dataset.aiDecisionHistory);
     });
     el('aiDecisionList').addEventListener('click', function (event) {
       var button = event.target.closest('[data-ai-review]');
@@ -745,6 +755,12 @@
     el('aiRecommendationList').innerHTML = recommendations.map(function (recommendation) {
       var level = severity(recommendation.severity);
       var actions = Array.isArray(recommendation.recommendedActions) ? recommendation.recommendedActions : [];
+      var linkedDecision = state.data.decisions.find(function (decision) {
+        return decision.id === recommendation.decisionId || decision.recommendationId === recommendation.id;
+      });
+      var historyAction = linkedDecision && linkedDecision.status !== 'open'
+        ? '<div class="ai-card-actions"><button type="button" class="btn-ws-secondary" data-ai-decision-history="' + h(linkedDecision.id) + '">View recorded decision</button></div>'
+        : '';
       return '<article class="ai-recommendation-card ai-severity-border-' + level + '">' +
         '<div class="ai-card-meta"><span>' + h(projectName(recommendation.projectId)) + '</span><span class="ai-severity ai-severity-' + level + '">' + h(level) + '</span></div>' +
         '<h4>' + h(recommendation.title || 'AI recommendation') + '</h4><p>' + h(recommendation.summary || 'No validated summary was provided.') + '</p>' +
@@ -752,6 +768,7 @@
         (actions.length ? '<ul class="ai-action-list">' + actions.map(function (action) { return '<li>' + h(action) + '</li>'; }).join('') + '</ul>' : '') +
         '<div class="ai-card-foot"><span>' + h(formatWhen(recommendation.createdAt)) + '</span>' +
           (recommendation.needsHumanDecision ? '<span class="ai-human-indicator">Human decision required</span>' : '<span>Informational</span>') + '</div>' +
+        historyAction +
       '</article>';
     }).join('');
   }
@@ -864,26 +881,77 @@
         : '<p class="ai-empty-inline">No validated finding was provided.</p>') + '</section>';
   }
 
-  function openDecision(decisionId) {
-    var decision = state.data.decisions.find(function (item) { return item.id === decisionId; });
-    if (!decision) return;
+  function decisionOptions(decision) {
+    return (Array.isArray(decision.options) ? decision.options : [])
+      .filter(function (item) { return typeof item === 'string' && item.trim(); })
+      .slice(0, 20);
+  }
+
+  function decisionStatusMarkup(decision) {
+    if (decision.status === 'resolved') {
+      return '<section class="ai-decision-result ai-decision-result-resolved" data-ai-decision-result="resolved">' +
+        '<span>Resolved</span><h4>Selected: ' + h(decision.resolution || 'Recorded option unavailable') + '</h4>' +
+        '<p>Resolved by: ' + h(decision.resolvedByRole || 'authorized manager') + '</p>' +
+        '<p>Resolved at: ' + h(formatWhen(decision.resolvedAt)) + '</p>' +
+        (decision.resolutionNotes ? '<p>Note: ' + h(decision.resolutionNotes) + '</p>' : '') +
+        '<small>This records human intent only. No business action was performed.</small></section>';
+    }
+    if (decision.status === 'dismissed') {
+      return '<section class="ai-decision-result ai-decision-result-dismissed" data-ai-decision-result="dismissed">' +
+        '<span>Dismissed</span><p>Resolved by: ' + h(decision.resolvedByRole || 'authorized manager') + '</p>' +
+        '<p>Resolved at: ' + h(formatWhen(decision.resolvedAt)) + '</p>' +
+        (decision.resolutionNotes ? '<p>Note: ' + h(decision.resolutionNotes) + '</p>' : '') +
+        '<small>No decision or business action is required from this recommendation.</small></section>';
+    }
+    return '';
+  }
+
+  function decisionControlsMarkup(decision) {
+    var options = decisionOptions(decision);
+    var deferred = decision.deferredAt
+      ? '<div class="ai-deferred-note" data-ai-decision-result="deferred"><strong>Deferred</strong><span>By ' + h(decision.deferredByRole || 'authorized manager') + ' · ' + h(formatWhen(decision.deferredAt)) + '</span></div>'
+      : '';
+    var optionMarkup = options.length
+      ? '<fieldset class="ai-decision-options"><legend>Choose one stored option</legend>' + options.map(function (item, index) {
+          return '<label><input type="radio" name="aiDecisionOption" value="' + index + '"><span>' + h(item) + '</span></label>';
+        }).join('') + '</fieldset>'
+      : '<p class="ai-empty-inline">No structured options were provided. You may defer or dismiss this decision.</p>';
+    return deferred + '<section class="ai-decision-controls" data-ai-decision-id="' + h(decision.id) + '">' +
+      optionMarkup +
+      '<label class="ai-decision-note"><span>Optional note</span><textarea id="aiDecisionNote" maxlength="500" rows="3" placeholder="Add a short plain-text note"></textarea><small>Maximum 500 characters. Notes are recorded as user data, not AI instructions.</small></label>' +
+      '<div id="aiDecisionSubmitState" class="ai-decision-submit-state" role="status" aria-live="polite"></div>' +
+      '<div class="ai-decision-actions">' +
+        '<button type="button" class="btn-ws-primary" data-ai-decision-action="choose"' + (options.length ? '' : ' disabled') + '>Submit Decision</button>' +
+        '<button type="button" class="btn-ws-secondary" data-ai-decision-action="defer">Defer</button>' +
+        '<button type="button" class="btn-ws-secondary ai-dismiss-button" data-ai-decision-action="dismiss">Dismiss</button>' +
+      '</div><p class="ai-intent-boundary">Records human intent only. It does not update tasks, purchases, schedules, billing, payments, or messages.</p></section>';
+  }
+
+  function renderDecisionDetail(decision) {
     var recommendation = recommendationForDecision(decision) || {};
     var findings = state.data.findings[decision.runId || recommendation.runId] || {};
     var refs = evidenceRefs(recommendation, findings);
     var actions = Array.isArray(recommendation.recommendedActions) ? recommendation.recommendedActions : [];
-    var options = Array.isArray(decision.options) ? decision.options : [];
-    state.decisionReturnFocus = document.activeElement;
     el('aiDecisionModalBody').innerHTML =
       '<section class="ai-detail-section"><h4>Issue</h4><h3>' + h(recommendation.title || 'Human decision required') + '</h3><p>' + h(recommendation.summary || 'No validated issue summary was provided.') + '</p></section>' +
       '<section class="ai-detail-section"><h4>Evidence</h4>' + evidenceMarkup(refs) + '</section>' +
       findingBlock('Materials Finding', findings.materials) +
       findingBlock('Planning Finding', findings.planning) +
-      findingBlock('PM Synthesis', findings.pm) +
+      findingBlock('PM Recommendation', findings.pm) +
       '<section class="ai-detail-section"><h4>Impacts</h4><div class="ai-impact-row">' + impactMarkup('Schedule impact', recommendation.scheduleImpact, 'schedule') + impactMarkup('Cost impact', recommendation.costImpact, 'cost') + '</div></section>' +
       '<section class="ai-detail-section"><h4>Recommendation</h4>' + (actions.length ? '<ul class="ai-action-list">' + actions.map(function (item) { return '<li>' + h(item) + '</li>'; }).join('') + '</ul>' : '<p class="ai-empty-inline">No validated action was provided.</p>') + '</section>' +
-      '<section class="ai-detail-section"><h4>Human Decision Question</h4><p>' + h(decision.question || 'No decision question was provided.') + '</p></section>' +
-      '<section class="ai-detail-section"><h4>Options</h4>' + (options.length ? '<ul class="ai-option-list">' + options.map(function (item) { return '<li>' + h(item) + '</li>'; }).join('') + '</ul>' : '<p class="ai-empty-inline">No structured options were provided.</p>') + '</section>' +
-      '<div class="ai-readonly-note"><strong>Decision actions are not yet enabled.</strong><span>This review is informational and read-only.</span></div>';
+      '<section class="ai-detail-section"><h4>Question</h4><p>' + h(decision.question || 'No decision question was provided.') + '</p></section>' +
+      (decision.status === 'resolved' || decision.status === 'dismissed'
+        ? decisionStatusMarkup(decision)
+        : decisionControlsMarkup(decision));
+  }
+
+  function openDecision(decisionId) {
+    var decision = state.data.decisions.find(function (item) { return item.id === decisionId; });
+    if (!decision) return;
+    state.decisionReturnFocus = document.activeElement;
+    state.pendingDecisionSubmission = null;
+    renderDecisionDetail(decision);
     el('aiDecisionModal').classList.remove('hidden');
     el('aiDecisionModal').setAttribute('aria-hidden', 'false');
     requestAnimationFrame(function () { el('aiDecisionModalClose')?.focus(); });
@@ -898,6 +966,122 @@
       state.decisionReturnFocus.focus();
     }
     state.decisionReturnFocus = null;
+    state.pendingDecisionSubmission = null;
+  }
+
+  function callableService() {
+    if (!window.firebase) return null;
+    try {
+      var app = typeof firebase.app === 'function' ? firebase.app() : null;
+      if (app && typeof app.functions === 'function') return app.functions('asia-southeast1');
+      if (typeof firebase.functions === 'function') return firebase.functions('asia-southeast1');
+    } catch (_) {}
+    return null;
+  }
+
+  function submissionId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return 'decision-' + Date.now() + '-' + Math.random().toString(36).slice(2, 12);
+  }
+
+  function decisionFailureMessage(error) {
+    var safeCode = String(error && error.message || '').split(/\s+/).pop();
+    var code = String(error && error.code || '').replace(/^functions\//, '');
+    return {
+      unauthenticated: 'Your session expired. Sign in and try again.',
+      inactive_user: 'Your account is not active.',
+      unauthorized_role: 'Your role cannot submit AI decisions.',
+      invalid_decision_request: 'The decision request is invalid. Review it and try again.',
+      invalid_option: 'That option is no longer available. Refresh and review the decision.',
+      decision_not_found: 'This decision is no longer available.',
+      decision_malformed: 'This decision cannot be safely processed.',
+      invalid_decision_relationship: 'The linked AI records could not be validated.',
+      stale_decision: 'This decision changed. Refresh before submitting.',
+      decision_already_resolved: 'Another manager already resolved this decision.',
+      duplicate_request_conflict: 'This submission could not be safely retried.',
+      decision_transaction_failed: 'The decision could not be saved. Please try again.',
+      unavailable: 'The decision service is currently unavailable.'
+    }[safeCode] || ({
+      unauthenticated: 'Your session expired. Sign in and try again.',
+      'permission-denied': 'You are not authorized to submit this decision.',
+      unavailable: 'The decision service is currently unavailable.'
+    }[code] || 'The decision could not be submitted. No changes were made.');
+  }
+
+  function setDecisionSubmitting(submitting) {
+    state.decisionSubmitting = submitting;
+    document.querySelectorAll('#aiDecisionModalBody [data-ai-decision-action], #aiDecisionModalBody input, #aiDecisionModalBody textarea')
+      .forEach(function (control) {
+        var unavailableChoice = control.dataset && control.dataset.aiDecisionAction === 'choose'
+          && !document.querySelector('#aiDecisionModalBody input[name="aiDecisionOption"]');
+        control.disabled = submitting || unavailableChoice;
+      });
+    var closeButton = el('aiDecisionModalClose');
+    if (closeButton) closeButton.disabled = submitting;
+  }
+
+  function mergeDecisionResult(decisionId, result) {
+    var index = state.data.decisions.findIndex(function (item) { return item.id === decisionId; });
+    if (index === -1) return null;
+    state.data.decisions[index] = Object.assign({}, state.data.decisions[index], result, { id: decisionId });
+    return state.data.decisions[index];
+  }
+
+  async function submitDecision(action) {
+    if (state.decisionSubmitting || ['choose', 'defer', 'dismiss'].indexOf(action) === -1) return;
+    var controls = document.querySelector('#aiDecisionModalBody [data-ai-decision-id]');
+    var decisionId = controls && controls.dataset.aiDecisionId;
+    var decision = state.data.decisions.find(function (item) { return item.id === decisionId; });
+    if (!decision || decision.status !== 'open') return;
+    var options = decisionOptions(decision);
+    var selected = document.querySelector('#aiDecisionModalBody input[name="aiDecisionOption"]:checked');
+    var selectedOptionId = action === 'choose' && selected ? options[Number(selected.value)] : undefined;
+    var status = el('aiDecisionSubmitState');
+    if (action === 'choose' && !selectedOptionId) {
+      if (status) status.textContent = 'Choose one option before submitting.';
+      return;
+    }
+    var notes = String(el('aiDecisionNote')?.value || '').trim();
+    var signature = [decision.id, action, selectedOptionId || '', notes].join('|');
+    if (!state.pendingDecisionSubmission || state.pendingDecisionSubmission.signature !== signature) {
+      state.pendingDecisionSubmission = { signature: signature, id: submissionId() };
+    }
+    var service = callableService();
+    if (!service || typeof service.httpsCallable !== 'function') {
+      if (status) status.textContent = 'The decision service is currently unavailable.';
+      return;
+    }
+    setDecisionSubmitting(true);
+    if (status) status.textContent = 'Recording human intent…';
+    try {
+      var callable = service.httpsCallable('submitAiDecision');
+      var response = await callable({
+        decisionId: decision.id,
+        submissionId: state.pendingDecisionSubmission.id,
+        action: action,
+        ...(selectedOptionId ? { selectedOptionId: selectedOptionId } : {}),
+        ...(notes ? { notes: notes } : {}),
+        expectedCreatedAt: decision.createdAt
+      });
+      var result = response && response.data;
+      if (!result || result.decisionId !== decision.id || ['open', 'resolved', 'dismissed'].indexOf(result.status) === -1) {
+        throw { code: 'functions/internal', message: 'decision_submission_failed' };
+      }
+      state.pendingDecisionSubmission = null;
+      var updated = mergeDecisionResult(decision.id, result);
+      renderAll();
+      if (updated && el('aiDecisionModal') && !el('aiDecisionModal').classList.contains('hidden')) {
+        renderDecisionDetail(updated);
+        var success = el('aiDecisionSubmitState');
+        if (success) success.textContent = action === 'defer'
+          ? 'Decision deferred. It remains open.'
+          : 'Decision recorded. No business action was taken.';
+      }
+    } catch (error) {
+      if (status) status.textContent = decisionFailureMessage(error);
+    } finally {
+      setDecisionSubmitting(false);
+    }
   }
 
   function emptyMarkup(title, description) {

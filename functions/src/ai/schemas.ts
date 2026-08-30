@@ -58,6 +58,79 @@ export const aiUiStatusSchema = z.object({
   updatedAt: z.number().int().nonnegative()
 }).strict();
 
+export const aiDecisionRoleSchema = z.enum(['boss', 'owner', 'admin', 'pm']);
+export const aiDecisionActionSchema = z.enum(['choose', 'defer', 'dismiss']);
+const safeDecisionTextSchema = z.string().trim().min(1).max(500)
+  .refine(value => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value), 'control characters are not allowed');
+
+export const aiDecisionHistoryEventSchema = z.object({
+  decisionId: z.string().trim().min(1).max(160),
+  projectId: z.string().trim().min(1).max(160),
+  action: aiDecisionActionSchema,
+  selectedOptionId: safeDecisionTextSchema.optional(),
+  actorUid: z.string().trim().min(1).max(128),
+  actorRole: aiDecisionRoleSchema,
+  timestamp: z.number().int().nonnegative(),
+  notes: safeDecisionTextSchema.optional()
+}).strict().superRefine((event, ctx) => {
+  if (event.action === 'choose' && event.selectedOptionId === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['selectedOptionId'], message: 'choose requires a stored option' });
+  }
+  if (event.action !== 'choose' && event.selectedOptionId !== undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['selectedOptionId'], message: 'only choose may store an option' });
+  }
+});
+
+export const aiDecisionRecordSchema = z.object({
+  schemaVersion: z.literal('0.1'),
+  projectId: z.string().trim().min(1).max(160),
+  eventId: z.string().trim().min(1).max(160),
+  runId: z.string().trim().min(1).max(160),
+  recommendationId: z.string().trim().min(1).max(160),
+  question: safeDecisionTextSchema,
+  options: z.array(safeDecisionTextSchema).min(1).max(20).refine(options => new Set(options).size === options.length),
+  status: z.enum(['open', 'resolved', 'dismissed']),
+  createdAt: z.number().int().nonnegative(),
+  resolvedAt: z.number().int().nonnegative().nullable().optional(),
+  resolvedBy: z.string().trim().min(1).max(128).nullable().optional(),
+  resolvedByRole: aiDecisionRoleSchema.nullable().optional(),
+  resolution: safeDecisionTextSchema.nullable().optional(),
+  resolutionNotes: safeDecisionTextSchema.nullable().optional(),
+  deferredAt: z.number().int().nonnegative().nullable().optional(),
+  deferredBy: z.string().trim().min(1).max(128).nullable().optional(),
+  deferredByRole: aiDecisionRoleSchema.nullable().optional(),
+  history: z.record(z.string().regex(/^[A-Za-z0-9_-]{8,128}$/), aiDecisionHistoryEventSchema).optional()
+}).strict().superRefine((decision, ctx) => {
+  if (decision.status === 'resolved') {
+    if (!decision.resolvedAt || !decision.resolvedBy || !decision.resolvedByRole || !decision.resolution) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['status'], message: 'resolved decisions require immutable resolution fields' });
+    } else if (!decision.options.includes(decision.resolution)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['resolution'], message: 'resolution must be a stored option' });
+    }
+  }
+  if (decision.status === 'dismissed' && (!decision.resolvedAt || !decision.resolvedBy || !decision.resolvedByRole)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['status'], message: 'dismissed decisions require immutable resolution fields' });
+  }
+});
+
+export const aiDecisionSubmissionSchema = z.object({
+  decisionId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,160}$/),
+  submissionId: z.string().trim().regex(/^[A-Za-z0-9_-]{8,128}$/),
+  action: aiDecisionActionSchema,
+  selectedOptionId: safeDecisionTextSchema.optional(),
+  notes: z.string().trim().max(500)
+    .refine(value => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value), 'control characters are not allowed')
+    .optional(),
+  expectedCreatedAt: z.number().int().nonnegative()
+}).strict().superRefine((submission, ctx) => {
+  if (submission.action === 'choose' && submission.selectedOptionId === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['selectedOptionId'], message: 'choose requires a selected option' });
+  }
+  if (submission.action !== 'choose' && submission.selectedOptionId !== undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['selectedOptionId'], message: 'only choose accepts a selected option' });
+  }
+});
+
 export const evidenceReferenceSchema = z.object({
   path: z.string().trim().min(1),
   recordId: z.string().trim().min(1),
@@ -207,6 +280,13 @@ export const groundedFindingSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['decisionQuestion'],
       message: 'decisionQuestion must be null when no human decision is needed'
+    });
+  }
+  if (finding.needsHumanDecision && finding.recommendedActions.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['recommendedActions'],
+      message: 'a human decision requires at least one stored option'
     });
   }
 });

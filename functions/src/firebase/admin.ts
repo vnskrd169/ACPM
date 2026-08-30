@@ -1,5 +1,6 @@
 import {
   applicationDefault,
+  deleteApp,
   getApp,
   getApps,
   initializeApp,
@@ -37,4 +38,22 @@ export function getAiAdminApp(options: AiAdminOptions = {}): App {
 
 export function getAiDatabase(options: AiAdminOptions = {}): Database {
   return getDatabase(getAiAdminApp(options));
+}
+
+export async function readAiActorProfile(
+  uid: string,
+  options: AiAdminOptions = {}
+): Promise<Record<string, unknown> | null> {
+  if (!uid || /[.#$\[\]\/]/.test(uid)) return null;
+  const actorApp = initializeApp({
+    credential: applicationDefault(),
+    ...(options.databaseURL !== undefined ? { databaseURL: options.databaseURL } : {}),
+    databaseAuthVariableOverride: { uid }
+  }, `acpm-ai-actor-${crypto.randomUUID()}`);
+  try {
+    const snapshot = await getDatabase(actorApp).ref(`users/${uid}`).get();
+    return snapshot.exists() ? snapshot.val() as Record<string, unknown> : null;
+  } finally {
+    await deleteApp(actorApp);
+  }
 }

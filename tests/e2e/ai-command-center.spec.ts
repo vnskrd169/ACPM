@@ -17,11 +17,12 @@ async function setup(
   page: Page,
   user: TestUser,
   databaseData: AiFixtureData,
-  options: { workspace?: boolean; failReadPaths?: string[] } = {},
+  options: { workspace?: boolean; failReadPaths?: string[]; callableError?: { code: string; message: string } } = {},
 ) {
   await page.addInitScript(buildInitScript(user, {
     databaseData,
     failReadPaths: options.failReadPaths,
+    callableError: options.callableError,
   }));
   if (options.workspace) await navigateToWorkspace(page);
   else await navigateToDashboard(page);
@@ -154,20 +155,23 @@ test.describe('AI Command Center read-only Office UI', () => {
     expect(paths).not.toContain('projects/test-project-1/materials/mat-42');
   });
 
-  test('14. Review opens read-only detail', async ({ page }) => {
+  test('14. Review opens complete decision detail', async ({ page }) => {
     await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
     await openCommandCenter(page);
     await page.locator('#aiDecisionList [data-ai-review]').first().click();
     await expect(page.locator('#aiDecisionModal')).toBeVisible();
-    await expect(page.locator('#aiDecisionModalBody')).toContainText('Human Decision Question');
-    await expect(page.locator('#aiDecisionModalBody')).toContainText('Decision actions are not yet enabled.');
+    await expect(page.locator('#aiDecisionModalBody')).toContainText('Question');
+    await expect(page.locator('#aiDecisionModalBody')).toContainText('Records human intent only');
   });
 
-  test('15. no approve/reject/resolve action exists', async ({ page }) => {
+  test('15. no direct business action exists in decision review', async ({ page }) => {
     await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
     await openCommandCenter(page);
     await page.locator('#aiDecisionList [data-ai-review]').first().click();
-    await expect(page.locator('#aiDecisionModal').getByRole('button', { name: /approve|reject|resolve|acknowledge|dismiss/i })).toHaveCount(0);
+    await expect(page.locator('#aiDecisionModal').getByRole('button', { name: 'Submit Decision' })).toBeVisible();
+    await expect(page.locator('#aiDecisionModal').getByRole('button', { name: 'Defer' })).toBeVisible();
+    await expect(page.locator('#aiDecisionModal').getByRole('button', { name: 'Dismiss' })).toBeVisible();
+    await expect(page.locator('#aiDecisionModal').getByRole('button', { name: /Approve Purchase|Update Task|Change Schedule|Send Message|Create PO/i })).toHaveCount(0);
     expect(await page.evaluate(() => window.__mockDbWrites.filter((write: { path: string }) => write.path.startsWith('ai/')))).toEqual([]);
   });
 
@@ -386,6 +390,144 @@ test.describe('AI Command Center read-only Office UI', () => {
     const brief = page.locator('#aiDailyBriefLines');
     await expect(brief).toContainText('1 item needs attention across 1 project.');
     await expect(brief).not.toContainText('Everything else currently has no detected attention items.');
+  });
+
+  test('37. Human decision workflow opens the complete review modal', async ({ page }) => {
+    await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
+    await openCommandCenter(page);
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    const modal = page.locator('#aiDecisionModal');
+    await expect(modal).toBeVisible();
+    for (const section of ['Issue', 'Evidence', 'Materials Finding', 'Planning Finding', 'PM Recommendation', 'Impacts', 'Question']) {
+      await expect(modal.getByRole('heading', { name: section, exact: true })).toBeVisible();
+    }
+  });
+
+  test('38. Human decision workflow allows one stored option selection', async ({ page }) => {
+    await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
+    await openCommandCenter(page);
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    const options = page.locator('input[name="aiDecisionOption"]');
+    await expect(options).toHaveCount(2);
+    await page.getByLabel('Proceed with the mitigation plan').check();
+    await expect(page.getByLabel('Proceed with the mitigation plan')).toBeChecked();
+    await expect(page.getByLabel('Continue monitoring')).not.toBeChecked();
+  });
+
+  test('39. Human decision workflow submits a chosen option after server confirmation', async ({ page }) => {
+    await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
+    await openCommandCenter(page);
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    await page.getByLabel('Proceed with the mitigation plan').check();
+    await page.getByRole('button', { name: 'Submit Decision' }).click();
+    const result = page.locator('[data-ai-decision-result="resolved"]');
+    await expect(result).toContainText('Resolved');
+    await expect(result).toContainText('Selected: Proceed with the mitigation plan');
+    expect(await page.evaluate(() => window.__mockCallableCalls[0].name)).toBe('submitAiDecision');
+  });
+
+  test('40. Human decision workflow decreases Waiting On You after resolution', async ({ page }) => {
+    await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
+    await openCommandCenter(page);
+    await expect(page.locator('#aiWaitingCount')).toHaveText('2');
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    await page.getByLabel('Continue monitoring').check();
+    await page.getByRole('button', { name: 'Submit Decision' }).click();
+    await expect(page.locator('#aiWaitingCount')).toHaveText('1');
+    await expect(page.locator('#aiDecisionList .ai-review-card')).toHaveCount(1);
+  });
+
+  test('41. Human decision workflow retains resolved history and safe actor details', async ({ page }) => {
+    await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
+    await openCommandCenter(page);
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    await page.getByLabel('Continue monitoring').check();
+    await page.locator('#aiDecisionNote').fill('Reviewed with operations.');
+    await page.getByRole('button', { name: 'Submit Decision' }).click();
+    const result = page.locator('[data-ai-decision-result="resolved"]');
+    await expect(result).toContainText('Resolved by: pm');
+    await expect(result).toContainText('Resolved at:');
+    await expect(result).toContainText('Note: Reviewed with operations.');
+    await expect(page.getByRole('button', { name: 'View recorded decision' })).toBeVisible();
+  });
+
+  test('42. Human decision workflow dismisses without deleting history', async ({ page }) => {
+    await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
+    await openCommandCenter(page);
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    await page.locator('#aiDecisionNote').fill('No decision required.');
+    await page.locator('#aiDecisionModal').getByRole('button', { name: 'Dismiss', exact: true }).click();
+    const result = page.locator('[data-ai-decision-result="dismissed"]');
+    await expect(result).toContainText('Dismissed');
+    await expect(result).toContainText('No decision required.');
+    await expect(page.locator('#aiWaitingCount')).toHaveText('1');
+    await expect(page.getByRole('button', { name: 'View recorded decision' })).toBeVisible();
+  });
+
+  test('43. Human decision workflow defers and keeps the decision open', async ({ page }) => {
+    await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
+    await openCommandCenter(page);
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    await page.getByRole('button', { name: 'Defer' }).click();
+    await expect(page.locator('[data-ai-decision-result="deferred"]')).toContainText('Deferred');
+    await expect(page.locator('#aiDecisionSubmitState')).toHaveText('Decision deferred. It remains open.');
+    await expect(page.locator('#aiWaitingCount')).toHaveText('2');
+  });
+
+  test('44. Human decision workflow prevents double-click duplicate submission', async ({ page }) => {
+    await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
+    await openCommandCenter(page);
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    await page.getByLabel('Continue monitoring').check();
+    await page.getByRole('button', { name: 'Submit Decision' }).evaluate((button: HTMLButtonElement) => {
+      button.click();
+      button.click();
+    });
+    await expect(page.locator('[data-ai-decision-result="resolved"]')).toBeVisible();
+    expect(await page.evaluate(() => window.__mockCallableCalls.length)).toBe(1);
+  });
+
+  test('45. Human decision workflow recovers from a safe server error', async ({ page }) => {
+    await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS, {
+      callableError: { code: 'functions/failed-precondition', message: 'decision_already_resolved' },
+    });
+    await openCommandCenter(page);
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    await page.getByLabel('Continue monitoring').check();
+    await page.getByRole('button', { name: 'Submit Decision' }).click();
+    await expect(page.locator('#aiDecisionSubmitState')).toHaveText('Another manager already resolved this decision.');
+    await expect(page.getByRole('button', { name: 'Submit Decision' })).toBeEnabled();
+    await expect(page.locator('#aiWaitingCount')).toHaveText('2');
+  });
+
+  test('46. Human decision workflow remains unavailable to APM', async ({ page }) => {
+    await setup(page, 'field', aiScenarios().D_TWO_WAITING_DECISIONS);
+    await expect(page.locator('#openAiCommandCenterBtn')).toHaveCount(0);
+    await expect(page.locator('#aiDecisionModal')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__mockCallableCalls)).toEqual([]);
+  });
+
+  test('47. Human decision workflow creates no business-record mutation', async ({ page }) => {
+    await setup(page, 'pm', aiScenarios().D_TWO_WAITING_DECISIONS);
+    await openCommandCenter(page);
+    const writesBefore = await page.evaluate(() => window.__mockDbWrites.length);
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    await page.getByLabel('Continue monitoring').check();
+    await page.getByRole('button', { name: 'Submit Decision' }).click();
+    await expect(page.locator('[data-ai-decision-result="resolved"]')).toBeVisible();
+    expect(await page.evaluate(() => window.__mockDbWrites.length)).toBe(writesBefore);
+    const inputKeys = await page.evaluate(() => Object.keys(window.__mockCallableCalls[0].input).sort());
+    expect(inputKeys).toEqual(['action', 'decisionId', 'expectedCreatedAt', 'selectedOptionId', 'submissionId']);
+  });
+
+  test('48. Human decision workflow works when the provider is not configured', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z12_PROVIDER_OFF_DECISIONS);
+    await openCommandCenter(page);
+    await expect(page.locator('#aiCommandNotice')).toContainText('Rule-based operational monitoring remains available');
+    await page.locator('#aiDecisionList [data-ai-review]').first().click();
+    await page.getByLabel('Continue monitoring').check();
+    await page.getByRole('button', { name: 'Submit Decision' }).click();
+    await expect(page.locator('[data-ai-decision-result="resolved"]')).toContainText('Selected: Continue monitoring');
   });
 
   test('21. listener/data failure does not break Office', async ({ page }) => {

@@ -275,8 +275,8 @@ if (!fs.existsSync(entrypointPath)) {
 } else {
   const entrypoint = fs.readFileSync(entrypointPath, 'utf8');
   const onCallCount = (entrypoint.match(/\bonCall\s*\(/g) || []).length;
-  if (onCallCount !== 1 || !/stagingManualAiDryRun/.test(entrypoint)) {
-    failures.push('functions/src/index.ts: only the stagingManualAiDryRun callable may be exported');
+  if (onCallCount !== 2 || !/stagingManualAiDryRun/.test(entrypoint) || !/submitAiDecision/.test(entrypoint)) {
+    failures.push('functions/src/index.ts: only the reviewed staging dry-run and human-decision callables may be exported');
   }
   for (const requirement of [
     /defineSecret\(['"]OPENAI_API_KEY['"]\)/,
@@ -294,6 +294,21 @@ if (!fs.existsSync(entrypointPath)) {
   if (/\b(?:onSchedule|onValueCreated|onValueWritten|onRequest)\s*\(/.test(entrypoint)) {
     failures.push('functions/src/index.ts: unapproved trigger or HTTP function found');
   }
+  if (!/submitAiDecision[\s\S]*request\.auth\?\.uid[\s\S]*readAiActorProfile[\s\S]*submitHumanDecision/.test(entrypoint)) {
+    failures.push('functions/src/index.ts: human-decision callable must authenticate and verify the active database profile before submission');
+  }
+}
+
+const decisionWorkflowSource = fs.readFileSync(path.join(root, 'functions', 'src', 'ai', 'decision-workflow.ts'), 'utf8');
+const firebaseDecisionStoreSource = fs.readFileSync(path.join(root, 'functions', 'src', 'ai', 'firebase-decision-store.ts'), 'utf8');
+if (!/transactDecision/.test(decisionWorkflowSource)
+    || !/decision_already_resolved/.test(decisionWorkflowSource)
+    || !/history/.test(decisionWorkflowSource)
+    || !/assertAiWritePath\(path\)/.test(firebaseDecisionStoreSource)) {
+  failures.push('functions/src/ai: transactional immutable decision workflow or /ai write assertion is missing');
+}
+if (/projects\/[\s\S]{0,120}\.(?:set|update|remove|push|transaction)\s*\(/.test(decisionWorkflowSource + firebaseDecisionStoreSource)) {
+  failures.push('functions/src/ai: human decision workflow must not mutate business records');
 }
 
 const stagingDeploy = fs.readFileSync(path.join(root, 'scripts', 'deploy-staging.ps1'), 'utf8');
@@ -312,4 +327,4 @@ if (failures.length > 0) {
 }
 
 console.log(`AI security static QA passed (${files.length} backend source files scanned).`);
-console.log('Verified: pinned OpenAI adapter only, Secret Manager binding, no frontend key/SDK, no credential logging, /ai-only runtime writes, sanitized service-owned uiStatus with PM config isolation, no provider Firebase access, no project-root listing/full snapshots, staging-only callable guards, Production Functions excluded, and disabled defaults.');
+console.log('Verified: pinned OpenAI adapter only, Secret Manager binding, no frontend key/SDK, no credential logging, /ai-only runtime writes, transactional human decisions with active-role verification, sanitized service-owned uiStatus with PM config isolation, no provider Firebase access, no project-root listing/full snapshots, reviewed callable guards, Production Functions excluded, and disabled defaults.');

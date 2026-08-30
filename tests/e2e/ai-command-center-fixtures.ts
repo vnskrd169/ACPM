@@ -279,6 +279,9 @@ export function zeroBudgetScenarios(now = Date.now()) {
   const notConfigured = base(now, 'not_configured');
   notConfigured['ai/runtimeStatus'] = null;
   const trueAiAlongside = decisions(now);
+  const providerOffDecisions = decisions(now);
+  providerOffDecisions['ai/uiStatus'] = uiStatus(now, 'not_configured');
+  providerOffDecisions['ai/runtimeStatus'] = null;
   const dailyBrief = operationalProject('test-project-1', 'RCBC Plaza', {
     workers: { w1: { name: 'Ana', active: true }, w2: { name: 'Ben', active: true } },
     attendance: { w1: { [yesterday]: { status: 'present', date: yesterday } } },
@@ -325,5 +328,6 @@ export function zeroBudgetScenarios(now = Date.now()) {
       'test-project-1': dailyBrief,
       'test-project-2': operationalProject('test-project-2', 'Coffee Bay'),
     }),
+    Z12_PROVIDER_OFF_DECISIONS: withProjects(providerOffDecisions, { 'test-project-1': calm }),
   };
 }

@@ -173,7 +173,19 @@ beforeAll(async () => {
         runs: { run1: { status: 'disabled' } },
         findings: { run1: { planning: { summary: 'Sanitized finding' } } },
         recommendations: { recommendation1: { summary: 'Sanitized recommendation' } },
-        decisions: { decision1: { status: 'pending' } },
+        decisions: {
+          decision1: {
+            schemaVersion: '0.1',
+            projectId: TEST_PROJECT,
+            eventId: 'event1',
+            runId: 'run1',
+            recommendationId: 'recommendation1',
+            question: 'Which reviewed option should be recorded?',
+            options: ['Continue monitoring', 'Proceed with review'],
+            status: 'open',
+            createdAt: 1785254400000
+          }
+        },
         idempotency: { key1: { runId: 'run1' } }
       }
     });
@@ -191,6 +203,12 @@ describe('ACPM AI service isolation', () => {
       const path = collection === 'uiStatus' ? 'ai/uiStatus' : `ai/${collection}/phase2-proof`;
       const value = collection === 'uiStatus'
         ? { schemaVersion: '0.1', uiEnabled: true, systemStatus: 'ready', updatedAt: 1785254400000 }
+        : collection === 'decisions'
+          ? {
+              schemaVersion: '0.1', projectId: TEST_PROJECT, eventId: 'event1', runId: 'run1',
+              recommendationId: 'recommendation1', question: 'Record a reviewed option?',
+              options: ['Continue monitoring'], status: 'open', createdAt: 1785254400000
+            }
         : { source: 'emulator', createdAt: 1785254400000 };
       await assertSucceeds(set(ref(db, path), value));
     }
@@ -252,6 +270,34 @@ describe('ACPM AI service isolation', () => {
     ]);
     expect(left.snapshot.val()).toEqual(right.snapshot.val());
     expect(['left', 'right']).toContain(left.snapshot.child('owner').val());
+  });
+
+  it('allows the service to atomically resolve only schema-valid decision fields', async () => {
+    const db = testEnv.authenticatedContext(AI_SERVICE_UID).database();
+    const decisionRef = ref(db, 'ai/decisions/decision1');
+    await assertSucceeds(runTransaction(decisionRef, current => ({
+      ...current,
+      status: 'resolved',
+      resolvedAt: 1785254401000,
+      resolvedBy: USERS.pm,
+      resolvedByRole: 'pm',
+      resolution: 'Continue monitoring',
+      resolutionNotes: 'Reviewed.',
+      history: {
+        'submission-0001': {
+          decisionId: 'decision1', projectId: TEST_PROJECT, action: 'choose',
+          selectedOptionId: 'Continue monitoring', actorUid: USERS.pm, actorRole: 'pm',
+          timestamp: 1785254401000, notes: 'Reviewed.'
+        }
+      }
+    })));
+    await assertFails(set(ref(db, 'ai/decisions/decision1/status'), 'open'));
+    await assertFails(set(ref(db, 'ai/decisions/invalid-resolution'), {
+      schemaVersion: '0.1', projectId: TEST_PROJECT, eventId: 'event1', runId: 'run1',
+      recommendationId: 'recommendation1', question: 'Invalid?', options: ['Valid'],
+      status: 'resolved', createdAt: 1785254400000, resolvedAt: 1785254401000,
+      resolvedBy: USERS.pm, resolvedByRole: 'apm', resolution: 'Not stored'
+    }));
   });
 
   it('denies the service from unknown AI children and bulk namespace writes', async () => {
@@ -369,7 +415,16 @@ describe('ACPM browser AI permissions', () => {
         ref(testEnv.authenticatedContext(uid).database(), `ai/projectTargets/browser-${uid}`),
         { schemaVersion: '0.1', enabled: false, scanTasks: false, scanMaterials: false, scanIssues: false }
       ));
+      await assertFails(set(
+        ref(testEnv.authenticatedContext(uid).database(), 'ai/decisions/decision1/status'),
+        'resolved'
+      ));
     }
+  });
+
+  it('denies APM and anonymous decision submissions at the database boundary', async () => {
+    await assertFails(set(ref(testEnv.authenticatedContext(USERS.apm).database(), 'ai/decisions/decision1/status'), 'dismissed'));
+    await assertFails(set(ref(testEnv.unauthenticatedContext().database(), 'ai/decisions/decision1/status'), 'dismissed'));
   });
 
   it('denies APM, anonymous, and inactive users from AI V0.1', async () => {

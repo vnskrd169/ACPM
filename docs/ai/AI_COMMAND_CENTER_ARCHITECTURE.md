@@ -337,8 +337,13 @@ mapping, and `store=false`. Production provider use and automatic scheduling
 remain disabled. A scheduler would require a separate export review and may
 iterate only enabled `/ai/projectTargets`.
 
-The read-only UI now supplies reviewed bounded read models and explicit
-provenance/uncertainty presentation. A future phase may add a separately
-reviewed, App Check-protected server callable for a server-owned human-decision
-mutation workflow. Browser resolution, automatic business actions, and
-Production enablement stay out of scope.
+The UI supplies reviewed bounded read models and explicit
+provenance/uncertainty presentation. Phase 6 adds the separately reviewed
+`submitAiDecision` callable for server-owned choose, defer, and dismiss intent.
+It verifies the caller's live active management profile, validates linked AI
+records, and transactionally updates only `/ai/decisions/{decisionId}` with an
+append-only child history event. Browser direct writes, automatic business
+actions, provider dependency, and Production enablement remain out of scope.
+Web App Check enforcement remains deferred until ACPM has a configured browser
+attestation provider; Firebase Authentication and live profile authorization
+are required now.

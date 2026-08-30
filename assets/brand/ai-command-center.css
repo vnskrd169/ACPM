@@ -517,6 +517,82 @@
 .ai-readonly-note strong { color: var(--purple-xxl); font-size: 12px; }
 .ai-readonly-note span { color: var(--muted); font-size: 11px; }
 
+.ai-decision-options {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ai-decision-options legend,
+.ai-decision-note > span {
+  margin-bottom: 8px;
+  color: var(--text2);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ai-decision-options label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+  color: var(--text2);
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.ai-decision-options input { flex: 0 0 auto; margin-top: 2px; }
+
+.ai-decision-controls {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.ai-decision-note { display: grid; }
+.ai-decision-note textarea { min-height: 78px; resize: vertical; }
+.ai-decision-note small,
+.ai-intent-boundary { color: var(--muted2); font-size: 10px; line-height: 1.45; }
+
+.ai-decision-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ai-dismiss-button { color: var(--red-t); }
+
+.ai-decision-submit-state {
+  min-height: 18px;
+  color: var(--blue-t);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-decision-result,
+.ai-deferred-note {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--green);
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+}
+
+.ai-decision-result-dismissed { border-left-color: var(--muted); }
+.ai-decision-result > span,
+.ai-deferred-note strong { color: var(--green-t); font-size: 11px; font-weight: 900; text-transform: uppercase; }
+.ai-decision-result-dismissed > span { color: var(--text2); }
+.ai-decision-result p,
+.ai-decision-result small,
+.ai-deferred-note span { color: var(--text2); font-size: 11px; line-height: 1.45; }
+.ai-deferred-note { margin-top: 0; border-left-color: var(--amber); }
+
 @media (max-width: 1050px) {
   .ai-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ai-agent-grid { grid-template-columns: 1fr; }
