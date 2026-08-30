@@ -183,6 +183,41 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitS
             window.__mockCallableCalls.push({ name: name, input: JSON.parse(JSON.stringify(input || {})) });
             await new Promise(function (resolve) { setTimeout(resolve, 25); });
             if (__callableError) throw { code: __callableError.code, message: __callableError.message };
+            if (name === 'reviewAiActionDraft') {
+              const drafts = __extraDbData['ai/actionDrafts'] || {};
+              const currentDraft = drafts[input.draftId];
+              if (!currentDraft) throw { code: 'functions/not-found', message: 'action_draft_not_found' };
+              if (currentDraft.status !== 'draft') throw { code: 'functions/failed-precondition', message: 'action_draft_already_final' };
+              const draftTimestamp = Date.now();
+              if (input.action === 'review') {
+                currentDraft.status = 'reviewed';
+                currentDraft.reviewedAt = draftTimestamp;
+                currentDraft.reviewedBy = __pmosTestUser.uid;
+                currentDraft.reviewedByRole = __pmosTestUser.role;
+              } else if (input.action === 'cancel') {
+                currentDraft.status = 'cancelled';
+                currentDraft.cancelledAt = draftTimestamp;
+                currentDraft.cancelledBy = __pmosTestUser.uid;
+                currentDraft.cancelledByRole = __pmosTestUser.role;
+              } else {
+                throw { code: 'functions/invalid-argument', message: 'invalid_action_draft_request' };
+              }
+              currentDraft.lastEventId = input.submissionId;
+              __extraDbData['ai/actionDrafts/' + input.draftId] = currentDraft;
+              notifyDbPath('ai/actionDrafts');
+              return { data: {
+                draftId: input.draftId,
+                status: currentDraft.status,
+                reviewedAt: currentDraft.reviewedAt || null,
+                reviewedBy: currentDraft.reviewedBy || null,
+                reviewedByRole: currentDraft.reviewedByRole || null,
+                cancelledAt: currentDraft.cancelledAt || null,
+                cancelledBy: currentDraft.cancelledBy || null,
+                cancelledByRole: currentDraft.cancelledByRole || null,
+                auditEventId: input.submissionId,
+                replayed: false,
+              } };
+            }
             if (name !== 'submitAiDecision') throw { code: 'functions/not-found', message: 'callable_not_found' };
             const decisions = __extraDbData['ai/decisions'] || {};
             const current = decisions[input.decisionId];

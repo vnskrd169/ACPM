@@ -2,7 +2,13 @@ import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 
 import { FirebaseAiPipelineStore } from './ai/firebase-store.js';
+import { FirebaseActionDraftStore } from './ai/firebase-action-draft-store.js';
 import { FirebaseDecisionWorkflowStore } from './ai/firebase-decision-store.js';
+import {
+  createActionDraftFromDecision,
+  mapActionDraftError,
+  reviewActionDraft
+} from './ai/action-draft-workflow.js';
 import {
   mapDecisionWorkflowError,
   submitHumanDecision
@@ -94,15 +100,54 @@ export const submitAiDecision = onCall({
   }
 
   const database = getAiDatabase();
-  const store = new FirebaseDecisionWorkflowStore(database);
+  const decisionStore = new FirebaseDecisionWorkflowStore(database);
+  const draftStore = new FirebaseActionDraftStore(database);
+  const actor = {
+    uid: request.auth.uid,
+    role: typeof profile?.role === 'string' ? profile.role.trim().toLowerCase() : '',
+    status: typeof profile?.status === 'string' ? profile.status.trim().toLowerCase() : ''
+  };
   try {
-    return await submitHumanDecision(request.data, {
+    const result = await submitHumanDecision(request.data, actor, decisionStore, Date.now());
+    const draft = result.status === 'resolved'
+      ? await createActionDraftFromDecision(result.decisionId, draftStore)
+      : { draftId: null, created: false };
+    return { ...result, actionDraftId: draft.draftId, actionDraftCreated: draft.created };
+  } catch (error) {
+    const actionDraftMapped = mapActionDraftError(error);
+    if (actionDraftMapped.safeCode !== 'action_draft_request_failed') {
+      throw new HttpsError(actionDraftMapped.httpsCode, actionDraftMapped.safeCode);
+    }
+    const mapped = mapDecisionWorkflowError(error);
+    throw new HttpsError(mapped.httpsCode, mapped.safeCode);
+  }
+});
+
+export const reviewAiActionDraft = onCall({
+  region: 'asia-southeast1',
+  enforceAppCheck: false,
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  minInstances: 0,
+  maxInstances: 5
+}, async request => {
+  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'unauthenticated');
+
+  let profile: Record<string, unknown> | null;
+  try {
+    profile = await readAiActorProfile(request.auth.uid);
+  } catch {
+    throw new HttpsError('internal', 'actor_verification_failed');
+  }
+
+  try {
+    return await reviewActionDraft(request.data, {
       uid: request.auth.uid,
       role: typeof profile?.role === 'string' ? profile.role.trim().toLowerCase() : '',
       status: typeof profile?.status === 'string' ? profile.status.trim().toLowerCase() : ''
-    }, store, Date.now());
+    }, new FirebaseActionDraftStore(getAiDatabase()), Date.now());
   } catch (error) {
-    const mapped = mapDecisionWorkflowError(error);
+    const mapped = mapActionDraftError(error);
     throw new HttpsError(mapped.httpsCode, mapped.safeCode);
   }
 });

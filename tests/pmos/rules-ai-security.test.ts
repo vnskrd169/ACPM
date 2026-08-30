@@ -29,7 +29,9 @@ const AI_OUTPUT_COLLECTIONS = [
   'runs',
   'findings',
   'recommendations',
-  'decisions'
+  'decisions',
+  'actionDrafts',
+  'actionDraftEvents'
 ];
 
 const AI_SERVICE_WRITE_COLLECTIONS = [
@@ -42,6 +44,8 @@ const AI_SERVICE_WRITE_COLLECTIONS = [
   'findings',
   'recommendations',
   'decisions',
+  'actionDrafts',
+  'actionDraftEvents',
   'conditions',
   'idempotency'
 ];
@@ -68,6 +72,49 @@ function profile(role: string, status = 'active') {
     status,
     projects: { [TEST_PROJECT]: true },
     profileComplete: true
+  };
+}
+
+function actionDraft(status: 'draft' | 'reviewed' | 'cancelled' = 'draft') {
+  const base = {
+    schemaVersion: '0.1',
+    decisionId: 'decision1',
+    recommendationId: 'recommendation1',
+    eventId: 'event1',
+    projectId: TEST_PROJECT,
+    actionType: 'prepare_material_request',
+    title: 'Prepare reviewed material request',
+    summary: 'Draft intent only.',
+    status,
+    createdAt: 1785254401000,
+    createdBy: USERS.pm,
+    sourceDecisionOptionId: 'prepare-material',
+    payload: {
+      schemaVersion: '0.1',
+      materialReference: 'material-1',
+      reason: 'Validated material follow-up.',
+      sourceEvidenceRefs: [{ path: `projects/${TEST_PROJECT}/purchaseRequests`, recordId: 'request1', field: 'status' }]
+    },
+    lastEventId: status === 'draft' ? 'draft-created-event' : `draft-${status}-event`
+  };
+  if (status === 'reviewed') {
+    return { ...base, reviewedAt: 1785254402000, reviewedBy: USERS.pm, reviewedByRole: 'pm' };
+  }
+  if (status === 'cancelled') {
+    return { ...base, cancelledAt: 1785254402000, cancelledBy: USERS.pm, cancelledByRole: 'pm' };
+  }
+  return base;
+}
+
+function actionDraftEvent(action: 'created' | 'reviewed' | 'cancelled' = 'created') {
+  return {
+    draftId: 'draft1',
+    decisionId: 'decision1',
+    projectId: TEST_PROJECT,
+    action,
+    actorUid: USERS.pm,
+    actorRole: 'pm',
+    timestamp: 1785254401000
   };
 }
 
@@ -209,6 +256,10 @@ describe('ACPM AI service isolation', () => {
               recommendationId: 'recommendation1', question: 'Record a reviewed option?',
               options: ['Continue monitoring'], status: 'open', createdAt: 1785254400000
             }
+        : collection === 'actionDrafts'
+          ? actionDraft()
+        : collection === 'actionDraftEvents'
+          ? actionDraftEvent()
         : { source: 'emulator', createdAt: 1785254400000 };
       await assertSucceeds(set(ref(db, path), value));
     }
@@ -297,6 +348,34 @@ describe('ACPM AI service isolation', () => {
       recommendationId: 'recommendation1', question: 'Invalid?', options: ['Valid'],
       status: 'resolved', createdAt: 1785254400000, resolvedAt: 1785254401000,
       resolvedBy: USERS.pm, resolvedByRole: 'apm', resolution: 'Not stored'
+    }));
+  });
+
+  it('allows the service to create and finalize only allowlisted action drafts', async () => {
+    const db = testEnv.authenticatedContext(AI_SERVICE_UID).database();
+    const draftRef = ref(db, 'ai/actionDrafts/draft-review-proof');
+    await assertSucceeds(set(draftRef, actionDraft()));
+    await assertSucceeds(runTransaction(draftRef, current => ({
+      ...current,
+      status: 'reviewed',
+      reviewedAt: 1785254402000,
+      reviewedBy: USERS.pm,
+      reviewedByRole: 'pm',
+      lastEventId: 'submission-review-proof'
+    })));
+    await assertFails(set(ref(db, 'ai/actionDrafts/draft-review-proof/status'), 'cancelled'));
+    await assertFails(set(ref(db, 'ai/actionDrafts/disallowed-type'), {
+      ...actionDraft(), actionType: 'approve_purchase'
+    }));
+  });
+
+  it('keeps action-draft events append-only and schema-limited', async () => {
+    const db = testEnv.authenticatedContext(AI_SERVICE_UID).database();
+    const eventRef = ref(db, 'ai/actionDraftEvents/draft-review-event');
+    await assertSucceeds(set(eventRef, actionDraftEvent('reviewed')));
+    await assertFails(set(eventRef, actionDraftEvent('cancelled')));
+    await assertFails(set(ref(db, 'ai/actionDraftEvents/unsafe-event'), {
+      ...actionDraftEvent(), prompt: 'raw provider data must be rejected'
     }));
   });
 
@@ -419,12 +498,32 @@ describe('ACPM browser AI permissions', () => {
         ref(testEnv.authenticatedContext(uid).database(), 'ai/decisions/decision1/status'),
         'resolved'
       ));
+      await assertFails(set(
+        ref(testEnv.authenticatedContext(uid).database(), `ai/actionDrafts/browser-${uid}`),
+        actionDraft()
+      ));
     }
+  });
+
+  it('denies PM browser draft creation while allowing management draft reads', async () => {
+    const pmDb = testEnv.authenticatedContext(USERS.pm).database();
+    await assertSucceeds(get(ref(pmDb, 'ai/actionDrafts')));
+    await assertFails(set(ref(pmDb, 'ai/actionDrafts/pm-direct'), actionDraft()));
   });
 
   it('denies APM and anonymous decision submissions at the database boundary', async () => {
     await assertFails(set(ref(testEnv.authenticatedContext(USERS.apm).database(), 'ai/decisions/decision1/status'), 'dismissed'));
     await assertFails(set(ref(testEnv.unauthenticatedContext().database(), 'ai/decisions/decision1/status'), 'dismissed'));
+  });
+
+  it('denies APM and anonymous action-draft access at the database boundary', async () => {
+    for (const db of [
+      testEnv.authenticatedContext(USERS.apm).database(),
+      testEnv.unauthenticatedContext().database()
+    ]) {
+      await assertFails(get(ref(db, 'ai/actionDrafts')));
+      await assertFails(set(ref(db, 'ai/actionDrafts/blocked'), actionDraft()));
+    }
   });
 
   it('denies APM, anonymous, and inactive users from AI V0.1', async () => {

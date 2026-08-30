@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import {
   AGENT_IDS,
+  AI_ACTION_TYPES,
   AI_EVENT_STATUSES,
   AI_EVENT_TYPES,
   AI_RUN_STATUSES,
@@ -63,6 +64,45 @@ export const aiDecisionActionSchema = z.enum(['choose', 'defer', 'dismiss']);
 const safeDecisionTextSchema = z.string().trim().min(1).max(500)
   .refine(value => !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value), 'control characters are not allowed');
 
+const safeReferenceSchema = z.string().trim().min(1).max(160).nullable();
+const nullableReferenceFieldSchema = safeReferenceSchema.optional().transform(value => value ?? null);
+const nullableQuantityFieldSchema = z.number().nonnegative().finite().nullable().optional().transform(value => value ?? null);
+const nullableReasonFieldSchema = safeDecisionTextSchema.nullable().optional().transform(value => value ?? null);
+export const aiActionTypeSchema = z.enum(AI_ACTION_TYPES);
+export const aiActionDraftPayloadSchema = z.object({
+  schemaVersion: z.literal('0.1'),
+  materialReference: nullableReferenceFieldSchema,
+  requestedQuantity: nullableQuantityFieldSchema,
+  supplierReference: nullableReferenceFieldSchema,
+  taskReference: nullableReferenceFieldSchema,
+  siteIssueReference: nullableReferenceFieldSchema,
+  noteReference: nullableReferenceFieldSchema,
+  reason: nullableReasonFieldSchema,
+  sourceEvidenceRefs: z.array(z.object({
+    path: z.string().trim().min(1).max(240),
+    recordId: z.string().trim().min(1).max(160),
+    field: z.string().trim().min(1).max(160)
+  }).strict()).max(50).optional().transform(value => value ?? [])
+}).strict();
+
+export const aiActionIntentSchema = z.object({
+  type: aiActionTypeSchema,
+  title: safeDecisionTextSchema,
+  summary: safeDecisionTextSchema,
+  payload: aiActionDraftPayloadSchema
+}).strict();
+
+export const aiStructuredDecisionOptionSchema = z.object({
+  id: z.string().trim().regex(/^[A-Za-z0-9_-]{1,160}$/),
+  label: safeDecisionTextSchema,
+  actionIntent: aiActionIntentSchema.optional()
+}).strict();
+
+export const aiDecisionOptionSchema = z.union([
+  safeDecisionTextSchema,
+  aiStructuredDecisionOptionSchema
+]);
+
 export const aiDecisionHistoryEventSchema = z.object({
   decisionId: z.string().trim().min(1).max(160),
   projectId: z.string().trim().min(1).max(160),
@@ -88,7 +128,10 @@ export const aiDecisionRecordSchema = z.object({
   runId: z.string().trim().min(1).max(160),
   recommendationId: z.string().trim().min(1).max(160),
   question: safeDecisionTextSchema,
-  options: z.array(safeDecisionTextSchema).min(1).max(20).refine(options => new Set(options).size === options.length),
+  options: z.array(aiDecisionOptionSchema).min(1).max(20).refine(options => {
+    const ids = options.map(option => typeof option === 'string' ? option : option.id);
+    return new Set(ids).size === ids.length;
+  }),
   status: z.enum(['open', 'resolved', 'dismissed']),
   createdAt: z.number().int().nonnegative(),
   resolvedAt: z.number().int().nonnegative().nullable().optional(),
@@ -104,7 +147,7 @@ export const aiDecisionRecordSchema = z.object({
   if (decision.status === 'resolved') {
     if (!decision.resolvedAt || !decision.resolvedBy || !decision.resolvedByRole || !decision.resolution) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['status'], message: 'resolved decisions require immutable resolution fields' });
-    } else if (!decision.options.includes(decision.resolution)) {
+    } else if (!decision.options.some(option => (typeof option === 'string' ? option : option.id) === decision.resolution)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['resolution'], message: 'resolution must be a stored option' });
     }
   }
@@ -112,6 +155,58 @@ export const aiDecisionRecordSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['status'], message: 'dismissed decisions require immutable resolution fields' });
   }
 });
+
+export const aiActionDraftEventSchema = z.object({
+  draftId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,160}$/),
+  decisionId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,160}$/),
+  projectId: z.string().trim().min(1).max(160),
+  action: z.enum(['created', 'reviewed', 'cancelled']),
+  actorUid: z.string().trim().min(1).max(128),
+  actorRole: aiDecisionRoleSchema,
+  timestamp: z.number().int().nonnegative()
+}).strict();
+
+export const aiActionDraftRecordSchema = z.object({
+  schemaVersion: z.literal('0.1'),
+  decisionId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,160}$/),
+  recommendationId: z.string().trim().min(1).max(160),
+  eventId: z.string().trim().min(1).max(160),
+  projectId: z.string().trim().min(1).max(160),
+  actionType: aiActionTypeSchema,
+  title: safeDecisionTextSchema,
+  summary: safeDecisionTextSchema,
+  status: z.enum(['draft', 'reviewed', 'cancelled']),
+  createdAt: z.number().int().nonnegative(),
+  createdBy: z.string().trim().min(1).max(128),
+  reviewedAt: z.number().int().nonnegative().nullable().optional().transform(value => value ?? null),
+  reviewedBy: z.string().trim().min(1).max(128).nullable().optional().transform(value => value ?? null),
+  reviewedByRole: aiDecisionRoleSchema.nullable().optional().transform(value => value ?? null),
+  cancelledAt: z.number().int().nonnegative().nullable().optional().transform(value => value ?? null),
+  cancelledBy: z.string().trim().min(1).max(128).nullable().optional().transform(value => value ?? null),
+  cancelledByRole: aiDecisionRoleSchema.nullable().optional().transform(value => value ?? null),
+  sourceDecisionOptionId: z.string().trim().min(1).max(160),
+  payload: aiActionDraftPayloadSchema,
+  lastEventId: z.string().trim().regex(/^[A-Za-z0-9_-]{8,160}$/)
+}).strict().superRefine((draft, ctx) => {
+  const reviewed = draft.reviewedAt !== null && draft.reviewedBy !== null && draft.reviewedByRole !== null;
+  const cancelled = draft.cancelledAt !== null && draft.cancelledBy !== null && draft.cancelledByRole !== null;
+  if (draft.status === 'draft' && (reviewed || cancelled)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['status'], message: 'draft status cannot contain a final review' });
+  }
+  if (draft.status === 'reviewed' && (!reviewed || cancelled)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['status'], message: 'reviewed status requires only reviewed audit fields' });
+  }
+  if (draft.status === 'cancelled' && (!cancelled || reviewed)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['status'], message: 'cancelled status requires only cancelled audit fields' });
+  }
+});
+
+export const aiActionDraftReviewInputSchema = z.object({
+  draftId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,160}$/),
+  submissionId: z.string().trim().regex(/^[A-Za-z0-9_-]{8,128}$/),
+  action: z.enum(['review', 'cancel']),
+  expectedCreatedAt: z.number().int().nonnegative()
+}).strict();
 
 export const aiDecisionSubmissionSchema = z.object({
   decisionId: z.string().trim().regex(/^[A-Za-z0-9_-]{1,160}$/),

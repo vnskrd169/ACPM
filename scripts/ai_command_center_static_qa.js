@@ -15,6 +15,7 @@ const specPath = path.join(root, 'tests', 'e2e', 'ai-command-center.spec.ts');
 const qaPath = path.join(root, 'docs', 'qa', 'QA_AI_COMMAND_CENTER_UI.md');
 const zeroBudgetDocPath = path.join(root, 'docs', 'ai', 'AI_ZERO_BUDGET_MODE.md');
 const humanDecisionDocPath = path.join(root, 'docs', 'ai', 'AI_HUMAN_DECISIONS.md');
+const actionDraftDocPath = path.join(root, 'docs', 'ai', 'AI_ACTION_DRAFTS.md');
 const failures = [];
 let gates = 0;
 
@@ -44,22 +45,22 @@ gate(Boolean(source && attention && styles), 'AI Command Center, attention model
 gate(
   occurrences(dashboard, 'ai-attention.js?v=2') === 1
     && occurrences(workspace, 'ai-attention.js?v=2') === 1
-    && occurrences(dashboard, 'ai-command-center.js?v=5') === 1
-    && occurrences(workspace, 'ai-command-center.js?v=5') === 1
-    && dashboard.indexOf('ai-attention.js?v=2') < dashboard.indexOf('ai-command-center.js?v=5')
-    && workspace.indexOf('ai-attention.js?v=2') < workspace.indexOf('ai-command-center.js?v=5'),
+    && occurrences(dashboard, 'ai-command-center.js?v=6') === 1
+    && occurrences(workspace, 'ai-command-center.js?v=6') === 1
+    && dashboard.indexOf('ai-attention.js?v=2') < dashboard.indexOf('ai-command-center.js?v=6')
+    && workspace.indexOf('ai-attention.js?v=2') < workspace.indexOf('ai-command-center.js?v=6'),
   'dashboard/workspace must each contain exactly one versioned AI browser module reference'
 );
 gate(
-  occurrences(dashboard, 'assets/brand/ai-command-center.css?v=4') === 1
-    && occurrences(workspace, 'assets/brand/ai-command-center.css?v=4') === 1,
+  occurrences(dashboard, 'assets/brand/ai-command-center.css?v=5') === 1
+    && occurrences(workspace, 'assets/brand/ai-command-center.css?v=5') === 1,
   'dashboard/workspace must each contain exactly one versioned AI stylesheet reference'
 );
 gate(
-  /const CACHE_NAME = 'acpm-v146';/.test(sw)
+  /const CACHE_NAME = 'acpm-v147';/.test(sw)
     && occurrences(sw, './ai-attention.js?v=2') === 1
-    && occurrences(sw, './ai-command-center.js?v=5') === 1
-    && occurrences(sw, './assets/brand/ai-command-center.css?v=4') === 1,
+    && occurrences(sw, './ai-command-center.js?v=6') === 1
+    && occurrences(sw, './assets/brand/ai-command-center.css?v=5') === 1,
   'service-worker cache name/assets are stale, missing, or duplicated'
 );
 gate(
@@ -134,7 +135,7 @@ gate(
 );
 gate(
   (source.match(/limitToLast\(/g) || []).length >= 2
-    && /LIMITS\s*=\s*\{\s*runs:\s*100, events:\s*100, findings:\s*60, recommendations:\s*100, decisions:\s*100\s*\}/.test(source),
+    && /LIMITS\s*=\s*\{\s*runs:\s*100, events:\s*100, findings:\s*60, recommendations:\s*100, decisions:\s*100, actionDrafts:\s*100\s*\}/.test(source),
   'AI output queries must use explicit bounded limits'
 );
 gate(
@@ -143,6 +144,15 @@ gate(
     && /No business action was performed/.test(source)
     && !/data-ai-(?:approve-purchase|update-task|change-schedule|send-message|create-po)/i.test(source),
   'decision workflow must use only the server callable, lock duplicate UI submission, and preserve the human-intent boundary'
+);
+gate(
+  /httpsCallable\('reviewAiActionDraft'\)/.test(source)
+    && /function setActionDraftSubmitting\(/.test(source)
+    && /Reviewed — not executed/.test(source)
+    && /data-ai-draft-action="review"/.test(source)
+    && /data-ai-draft-action="cancel"/.test(source)
+    && !/data-ai-draft-action="(?:execute|send|create-po|create-task|apply|approve-purchase|update-schedule)"/i.test(source),
+  'action drafts must use the reviewed callable, expose review/cancel only, and label review as not executed'
 );
 gate(
   ['A_HEALTHY_NO_ISSUES', 'B_ACTIVE_RUNS', 'C_ONE_OPEN_RECOMMENDATION', 'D_TWO_WAITING_DECISIONS',
@@ -154,21 +164,23 @@ gate(
   ['Z1_NO_ATTENTION', 'Z2_OVERDUE_TASK', 'Z3_BLOCKED_TASK', 'Z4_UNRESOLVED_ATTENDANCE',
     'Z5_PARTIAL_DELIVERY', 'Z6_OPEN_SITE_ISSUE', 'Z7_AGING_SITE_ISSUE', 'Z8_MULTIPLE_PROJECTS',
     'Z9_PROVIDER_OFF_MONITORING', 'Z10_AI_DECISION_AND_ATTENTION', 'Z11_DAILY_BRIEF',
-    'Z12_PROVIDER_OFF_DECISIONS'].every(name => fixtures.includes(name)),
-  'all twelve zero-budget UI scenarios must exist'
+    'Z12_PROVIDER_OFF_DECISIONS', 'Z13_ACTION_DRAFTS', 'Z14_PROVIDER_OFF_ACTION_DRAFTS'].every(name => fixtures.includes(name)),
+  'all fourteen zero-budget and action-draft UI scenarios must exist'
 );
 gate(
-  (spec.match(/\btest\('/g) || []).length === 48
+  (spec.match(/\btest\('/g) || []).length === 57
     && (spec.match(/test\('[^']*Daily Brief/g) || []).length === 3
     && (spec.match(/test\('[^']*Human decision workflow/g) || []).length === 12
+    && (spec.match(/test\('[^']*Action Draft workflow/g) || []).length === 9
     && /PM browser never attempts \/ai\/config read/.test(spec),
-  'Playwright suite must contain 48 Command Center checks, including Daily Brief and twelve human-decision checks'
+  'Playwright suite must contain 57 Command Center checks, including Daily Brief, human-decision, and nine action-draft checks'
 );
 gate(
   fs.existsSync(qaPath)
     && fs.existsSync(path.join(root, 'docs', 'ai', 'AI_COMMAND_CENTER_ARCHITECTURE.md'))
     && fs.existsSync(zeroBudgetDocPath)
-    && fs.existsSync(humanDecisionDocPath),
+    && fs.existsSync(humanDecisionDocPath)
+    && fs.existsSync(actionDraftDocPath),
   'Command Center QA and architecture documentation must exist'
 );
 
@@ -179,4 +191,4 @@ if (failures.length) {
 }
 
 console.log(`AI Command Center static QA passed (${gates} gates).`);
-console.log('Verified: assets/cache, fail-closed role and uiStatus gating, no provider SDK/config read/direct AI writes/evidence fetch, snapshot-only deterministic detection, callable-only human decisions with duplicate-submit protection, allowlisted navigation, bounded detachable AI listeners, A-H and zero-budget fixtures, and 48 browser checks.');
+console.log('Verified: assets/cache, fail-closed role and uiStatus gating, no provider SDK/config read/direct AI writes/evidence fetch, snapshot-only deterministic detection, callable-only human decisions and action-draft review with duplicate-submit protection, allowlisted navigation, bounded detachable AI listeners, and 57 browser checks.');

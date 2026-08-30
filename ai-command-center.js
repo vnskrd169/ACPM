@@ -7,7 +7,7 @@
     { id: 'planning', label: 'Planning Monitor', description: 'Task and schedule rule monitoring.' },
     { id: 'materials', label: 'Materials Monitor', description: 'Request and delivery rule monitoring.' }
   ];
-  var LIMITS = { runs: 100, events: 100, findings: 60, recommendations: 100, decisions: 100 };
+  var LIMITS = { runs: 100, events: 100, findings: 60, recommendations: 100, decisions: 100, actionDrafts: 100 };
   var RUNTIME_STALE_MS = 60 * 60 * 1000;
   var SEVERITY_RANK = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 
@@ -25,6 +25,9 @@
     decisionReturnFocus: null,
     decisionSubmitting: false,
     pendingDecisionSubmission: null,
+    draftReturnFocus: null,
+    draftSubmitting: false,
+    pendingDraftSubmission: null,
     data: emptyData()
   };
 
@@ -36,6 +39,7 @@
       findings: {},
       recommendations: [],
       decisions: [],
+      actionDrafts: [],
       projects: [],
       attention: [],
       projectSummaries: []
@@ -206,6 +210,14 @@
               <div id="aiDecisionList" class="ai-card-list"></div>
             </section>
 
+            <section class="ai-panel ai-action-drafts-panel" aria-labelledby="aiActionDraftsTitle">
+              <div class="ai-panel-head">
+                <div><span class="ai-panel-kicker">Human-approved intent · no execution</span><h3 id="aiActionDraftsTitle">Action Drafts</h3></div>
+                <span id="aiActionDraftCount" class="ai-count-badge">0</span>
+              </div>
+              <div id="aiActionDraftList" class="ai-card-list"></div>
+            </section>
+
             <section class="ai-panel">
               <div class="ai-panel-head ai-panel-head-wrap">
                 <div><span class="ai-panel-kicker">Generative analysis output</span><h3>Recommendations</h3></div>
@@ -244,6 +256,16 @@
             <div id="aiDecisionModalBody"></div>
           </div>
         </div>
+
+        <div id="aiActionDraftModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="aiActionDraftModalTitle" data-escape-owner="ai">
+          <div class="modal-box modal-wide ai-decision-modal ai-action-draft-modal">
+            <div class="ai-modal-head">
+              <div><span class="ai-panel-kicker">Structured proposal · review only</span><h3 id="aiActionDraftModalTitle">Action Draft Detail</h3></div>
+              <button id="aiActionDraftModalClose" class="btn-ws-secondary" type="button">Close</button>
+            </div>
+            <div id="aiActionDraftModalBody"></div>
+          </div>
+        </div>
       </section>
     `);
 
@@ -256,6 +278,18 @@
     el('aiDecisionModalBody').addEventListener('click', function (event) {
       var button = event.target.closest('[data-ai-decision-action]');
       if (button) submitDecision(button.dataset.aiDecisionAction);
+    });
+    el('aiActionDraftModalClose').addEventListener('click', closeActionDraft);
+    el('aiActionDraftModal').addEventListener('click', function (event) {
+      if (event.target === el('aiActionDraftModal')) closeActionDraft();
+    });
+    el('aiActionDraftModalBody').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-ai-draft-action]');
+      if (button) submitActionDraftReview(button.dataset.aiDraftAction);
+    });
+    el('aiActionDraftList').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-ai-draft-review]');
+      if (button) openActionDraft(button.dataset.aiDraftReview);
     });
     el('aiRecommendationFilters').addEventListener('click', function (event) {
       var button = event.target.closest('[data-ai-filter]');
@@ -283,6 +317,7 @@
 
   function removeView() {
     closeDecision();
+    closeActionDraft();
     el('aiCommandCenterView')?.remove();
   }
 
@@ -349,6 +384,7 @@
   function close() {
     stopOutputListeners();
     closeDecision();
+    closeActionDraft();
     el('aiCommandCenterView')?.classList.add('hidden');
     state.active = false;
     if (state.previousViewId === 'pmosOfficeView' && typeof window.openPmosOffice === 'function') {
@@ -381,6 +417,7 @@
     state.profileTimer = null;
     stopOutputListeners();
     closeDecision();
+    closeActionDraft();
     state.uiStatus = null;
     state.authUid = '';
     removeNavigation();
@@ -431,6 +468,9 @@
     });
     listenValue('decisions', recentQuery('ai/decisions', LIMITS.decisions), function (snapshot) {
       state.data.decisions = snapshotRows(snapshot).sort(oldestFirst);
+    });
+    listenValue('actionDrafts', recentQuery('ai/actionDrafts', LIMITS.actionDrafts), function (snapshot) {
+      state.data.actionDrafts = snapshotRows(snapshot).sort(newestFirst);
     });
   }
 
@@ -535,6 +575,7 @@
     renderProjectSummaries();
     renderAgents();
     renderDecisions();
+    renderActionDrafts();
     renderRecommendations();
     renderRuntime();
     renderRuns();
@@ -740,6 +781,182 @@
     }).join('');
   }
 
+  function actionTypeLabel(value) {
+    return {
+      follow_up_supplier: 'Follow up supplier',
+      prepare_material_request: 'Prepare material request',
+      prepare_task_update: 'Prepare task update',
+      prepare_site_follow_up: 'Prepare site follow-up',
+      prepare_internal_note: 'Prepare internal note'
+    }[value] || 'Unsupported draft type';
+  }
+
+  function actionDraftStatusLabel(draft) {
+    if (draft.status === 'reviewed') return 'Reviewed — not executed';
+    if (draft.status === 'cancelled') return 'Cancelled';
+    return 'Draft — awaiting review';
+  }
+
+  function renderActionDrafts() {
+    var drafts = state.data.actionDrafts.slice().sort(function (a, b) {
+      if (a.status === 'draft' && b.status !== 'draft') return -1;
+      if (a.status !== 'draft' && b.status === 'draft') return 1;
+      return newestFirst(a, b);
+    });
+    el('aiActionDraftCount').textContent = String(drafts.filter(function (draft) { return draft.status === 'draft'; }).length);
+    if (!drafts.length) {
+      el('aiActionDraftList').innerHTML = emptyMarkup('No action drafts', 'Resolved structured options may create review-only drafts. No business action runs here.');
+      return;
+    }
+    el('aiActionDraftList').innerHTML = drafts.map(function (draft) {
+      return '<article class="ai-action-draft-card" data-ai-draft-status="' + h(draft.status) + '">' +
+        '<div class="ai-card-meta"><span>' + h(projectName(draft.projectId)) + '</span><span class="ai-draft-status ai-draft-status-' + h(draft.status) + '">' + h(actionDraftStatusLabel(draft)) + '</span></div>' +
+        '<h4>' + h(draft.title || 'Structured action draft') + '</h4>' +
+        '<p>' + h(draft.summary || 'No validated summary was provided.') + '</p>' +
+        '<dl class="ai-draft-card-fields"><div><dt>Action type</dt><dd>' + h(actionTypeLabel(draft.actionType)) + '</dd></div><div><dt>Source decision</dt><dd>' + h(draft.decisionId || 'Unavailable') + '</dd></div></dl>' +
+        '<div class="ai-card-foot"><span>' + h(formatWhen(draft.createdAt)) + '</span><span>No execution</span></div>' +
+        '<div class="ai-card-actions"><button type="button" class="btn-ws-secondary" data-ai-draft-review="' + h(draft.id) + '">Review Draft</button></div>' +
+      '</article>';
+    }).join('');
+  }
+
+  function draftPayloadMarkup(payload) {
+    var data = payload && typeof payload === 'object' ? payload : {};
+    var fields = [
+      ['Material reference', data.materialReference],
+      ['Requested quantity', data.requestedQuantity],
+      ['Supplier reference', data.supplierReference],
+      ['Task reference', data.taskReference],
+      ['Site issue reference', data.siteIssueReference],
+      ['Note reference', data.noteReference],
+      ['Reason', data.reason]
+    ];
+    var details = fields.map(function (field) {
+      var present = field[1] !== null && field[1] !== undefined && field[1] !== '';
+      return '<div><dt>' + h(field[0]) + '</dt><dd>' + h(present ? field[1] : 'Unknown') + '</dd></div>';
+    }).join('');
+    var refs = Array.isArray(data.sourceEvidenceRefs) ? data.sourceEvidenceRefs : [];
+    return '<dl class="ai-draft-detail-fields">' + details + '</dl>' +
+      '<section class="ai-detail-section"><h4>Source evidence references</h4>' + evidenceMarkup(refs) + '</section>';
+  }
+
+  function renderActionDraftDetail(draft) {
+    var finalDetail = draft.status === 'reviewed'
+      ? '<section class="ai-decision-result ai-decision-result-resolved" data-ai-draft-result="reviewed"><span>Reviewed — not executed</span><p>Reviewed by: ' + h(draft.reviewedByRole || 'authorized manager') + '</p><p>Reviewed at: ' + h(formatWhen(draft.reviewedAt)) + '</p></section>'
+      : draft.status === 'cancelled'
+        ? '<section class="ai-decision-result ai-decision-result-dismissed" data-ai-draft-result="cancelled"><span>Cancelled</span><p>Cancelled by: ' + h(draft.cancelledByRole || 'authorized manager') + '</p><p>Cancelled at: ' + h(formatWhen(draft.cancelledAt)) + '</p><small>The draft remains preserved for history.</small></section>'
+        : '<section class="ai-decision-controls ai-draft-controls" data-ai-draft-id="' + h(draft.id) + '">' +
+          '<div id="aiDraftSubmitState" class="ai-decision-submit-state" role="status" aria-live="polite"></div>' +
+          '<div class="ai-decision-actions"><button type="button" class="btn-ws-primary" data-ai-draft-action="review">Mark Reviewed</button><button type="button" class="btn-ws-secondary ai-dismiss-button" data-ai-draft-action="cancel">Cancel Draft</button></div>' +
+          '<p class="ai-intent-boundary">Review changes this AI draft only. It does not create or update tasks, purchase orders, schedules, billing, payments, or messages.</p></section>';
+    el('aiActionDraftModalBody').innerHTML =
+      '<section class="ai-detail-section"><h4>Draft title</h4><h3>' + h(draft.title || 'Structured action draft') + '</h3><p>' + h(draft.summary || 'No validated summary was provided.') + '</p></section>' +
+      '<dl class="ai-draft-detail-fields"><div><dt>Project</dt><dd>' + h(projectName(draft.projectId)) + '</dd></div><div><dt>Source decision</dt><dd>' + h(draft.decisionId || 'Unavailable') + '</dd></div><div><dt>Source option</dt><dd>' + h(draft.sourceDecisionOptionId || 'Unavailable') + '</dd></div><div><dt>Action type</dt><dd>' + h(actionTypeLabel(draft.actionType)) + '</dd></div><div><dt>Status</dt><dd>' + h(actionDraftStatusLabel(draft)) + '</dd></div><div><dt>Created</dt><dd>' + h(formatWhen(draft.createdAt)) + '</dd></div></dl>' +
+      '<section class="ai-detail-section"><h4>Structured payload</h4>' + draftPayloadMarkup(draft.payload) + '</section>' +
+      '<p class="ai-draft-execution-boundary"><strong>Draft only.</strong> No business action has executed.</p>' +
+      finalDetail;
+  }
+
+  function openActionDraft(draftId) {
+    var draft = state.data.actionDrafts.find(function (item) { return item.id === draftId; });
+    if (!draft) return;
+    state.draftReturnFocus = document.activeElement;
+    state.pendingDraftSubmission = null;
+    renderActionDraftDetail(draft);
+    el('aiActionDraftModal').classList.remove('hidden');
+    el('aiActionDraftModal').setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(function () { el('aiActionDraftModalClose')?.focus(); });
+  }
+
+  function closeActionDraft() {
+    var modal = el('aiActionDraftModal');
+    var wasOpen = modal && !modal.classList.contains('hidden');
+    modal?.classList.add('hidden');
+    modal?.setAttribute('aria-hidden', 'true');
+    if (wasOpen && state.draftReturnFocus && state.draftReturnFocus.isConnected) state.draftReturnFocus.focus();
+    state.draftReturnFocus = null;
+    state.pendingDraftSubmission = null;
+  }
+
+  function actionDraftFailureMessage(error) {
+    var safeCode = String(error && error.message || '').split(/\s+/).pop();
+    var code = String(error && error.code || '').replace(/^functions\//, '');
+    return {
+      unauthenticated: 'Your session expired. Sign in and try again.',
+      inactive_user: 'Your account is not active.',
+      unauthorized_role: 'Your role cannot review action drafts.',
+      invalid_action_draft_request: 'The draft review request is invalid.',
+      action_draft_not_found: 'This action draft is no longer available.',
+      action_draft_malformed: 'This action draft cannot be safely reviewed.',
+      stale_action_draft: 'This action draft changed. Refresh before reviewing.',
+      action_draft_already_final: 'Another manager already completed this draft review.',
+      duplicate_request_conflict: 'This review could not be safely retried.',
+      action_draft_transaction_failed: 'The draft review could not be saved. Please try again.'
+    }[safeCode] || ({
+      unauthenticated: 'Your session expired. Sign in and try again.',
+      'permission-denied': 'You are not authorized to review action drafts.',
+      unavailable: 'The draft review service is currently unavailable.'
+    }[code] || 'The draft review could not be recorded. No business action was taken.');
+  }
+
+  function setActionDraftSubmitting(submitting) {
+    state.draftSubmitting = submitting;
+    document.querySelectorAll('#aiActionDraftModalBody [data-ai-draft-action]').forEach(function (control) {
+      control.disabled = submitting;
+    });
+    var closeButton = el('aiActionDraftModalClose');
+    if (closeButton) closeButton.disabled = submitting;
+  }
+
+  function mergeActionDraftResult(draftId, result) {
+    var index = state.data.actionDrafts.findIndex(function (item) { return item.id === draftId; });
+    if (index === -1) return null;
+    state.data.actionDrafts[index] = Object.assign({}, state.data.actionDrafts[index], result, { id: draftId });
+    return state.data.actionDrafts[index];
+  }
+
+  async function submitActionDraftReview(action) {
+    if (state.draftSubmitting || ['review', 'cancel'].indexOf(action) === -1) return;
+    var controls = document.querySelector('#aiActionDraftModalBody [data-ai-draft-id]');
+    var draftId = controls && controls.dataset.aiDraftId;
+    var draft = state.data.actionDrafts.find(function (item) { return item.id === draftId; });
+    if (!draft || draft.status !== 'draft') return;
+    var status = el('aiDraftSubmitState');
+    var signature = [draft.id, action, draft.createdAt].join('|');
+    if (!state.pendingDraftSubmission || state.pendingDraftSubmission.signature !== signature) {
+      state.pendingDraftSubmission = { signature: signature, id: submissionId().replace(/^decision-/, 'draft-') };
+    }
+    var service = callableService();
+    if (!service || typeof service.httpsCallable !== 'function') {
+      if (status) status.textContent = 'The draft review service is currently unavailable.';
+      return;
+    }
+    setActionDraftSubmitting(true);
+    if (status) status.textContent = action === 'review' ? 'Recording review…' : 'Cancelling draft…';
+    try {
+      var response = await service.httpsCallable('reviewAiActionDraft')({
+        draftId: draft.id,
+        submissionId: state.pendingDraftSubmission.id,
+        action: action,
+        expectedCreatedAt: draft.createdAt
+      });
+      var result = response && response.data;
+      if (!result || result.draftId !== draft.id || ['reviewed', 'cancelled'].indexOf(result.status) === -1) {
+        throw { code: 'functions/internal', message: 'action_draft_request_failed' };
+      }
+      state.pendingDraftSubmission = null;
+      var updated = mergeActionDraftResult(draft.id, result);
+      renderAll();
+      if (updated && el('aiActionDraftModal') && !el('aiActionDraftModal').classList.contains('hidden')) {
+        renderActionDraftDetail(updated);
+      }
+    } catch (error) {
+      if (status) status.textContent = actionDraftFailureMessage(error);
+    } finally {
+      setActionDraftSubmitting(false);
+    }
+  }
+
   function renderRecommendations() {
     var filters = el('aiRecommendationFilters');
     filters.querySelectorAll('[data-ai-filter]').forEach(function (button) {
@@ -883,14 +1100,26 @@
 
   function decisionOptions(decision) {
     return (Array.isArray(decision.options) ? decision.options : [])
-      .filter(function (item) { return typeof item === 'string' && item.trim(); })
+      .map(function (item) {
+        if (typeof item === 'string' && item.trim()) return { id: item, label: item, hasActionIntent: false };
+        if (!item || typeof item !== 'object') return null;
+        var id = typeof item.id === 'string' ? item.id.trim() : '';
+        var label = typeof item.label === 'string' ? item.label.trim() : '';
+        return id && label ? { id: id, label: label, hasActionIntent: !!item.actionIntent } : null;
+      })
+      .filter(Boolean)
       .slice(0, 20);
+  }
+
+  function decisionOptionLabel(decision, optionId) {
+    var option = decisionOptions(decision).find(function (item) { return item.id === optionId; });
+    return option ? option.label : optionId;
   }
 
   function decisionStatusMarkup(decision) {
     if (decision.status === 'resolved') {
       return '<section class="ai-decision-result ai-decision-result-resolved" data-ai-decision-result="resolved">' +
-        '<span>Resolved</span><h4>Selected: ' + h(decision.resolution || 'Recorded option unavailable') + '</h4>' +
+        '<span>Resolved</span><h4>Selected: ' + h(decisionOptionLabel(decision, decision.resolution) || 'Recorded option unavailable') + '</h4>' +
         '<p>Resolved by: ' + h(decision.resolvedByRole || 'authorized manager') + '</p>' +
         '<p>Resolved at: ' + h(formatWhen(decision.resolvedAt)) + '</p>' +
         (decision.resolutionNotes ? '<p>Note: ' + h(decision.resolutionNotes) + '</p>' : '') +
@@ -913,7 +1142,8 @@
       : '';
     var optionMarkup = options.length
       ? '<fieldset class="ai-decision-options"><legend>Choose one stored option</legend>' + options.map(function (item, index) {
-          return '<label><input type="radio" name="aiDecisionOption" value="' + index + '"><span>' + h(item) + '</span></label>';
+          return '<label><input type="radio" name="aiDecisionOption" value="' + index + '"><span>' + h(item.label) + '</span>' +
+            (item.hasActionIntent ? '<small>May create a structured action draft for separate review.</small>' : '') + '</label>';
         }).join('') + '</fieldset>'
       : '<p class="ai-empty-inline">No structured options were provided. You may defer or dismiss this decision.</p>';
     return deferred + '<section class="ai-decision-controls" data-ai-decision-id="' + h(decision.id) + '">' +
@@ -1035,7 +1265,8 @@
     if (!decision || decision.status !== 'open') return;
     var options = decisionOptions(decision);
     var selected = document.querySelector('#aiDecisionModalBody input[name="aiDecisionOption"]:checked');
-    var selectedOptionId = action === 'choose' && selected ? options[Number(selected.value)] : undefined;
+    var selectedOption = action === 'choose' && selected ? options[Number(selected.value)] : undefined;
+    var selectedOptionId = selectedOption && selectedOption.id;
     var status = el('aiDecisionSubmitState');
     if (action === 'choose' && !selectedOptionId) {
       if (status) status.textContent = 'Choose one option before submitting.';
@@ -1130,6 +1361,12 @@
 
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') return;
+    if (el('aiActionDraftModal') && !el('aiActionDraftModal').classList.contains('hidden')) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeActionDraft();
+      return;
+    }
     if (el('aiDecisionModal') && !el('aiDecisionModal').classList.contains('hidden')) {
       event.preventDefault();
       event.stopPropagation();

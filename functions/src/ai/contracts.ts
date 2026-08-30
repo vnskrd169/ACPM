@@ -228,6 +228,42 @@ export interface AiRecommendationRecord {
   createdAt: number;
 }
 
+export const AI_ACTION_TYPES = [
+  'follow_up_supplier',
+  'prepare_material_request',
+  'prepare_task_update',
+  'prepare_site_follow_up',
+  'prepare_internal_note'
+] as const;
+export type AiActionType = (typeof AI_ACTION_TYPES)[number];
+
+export interface AiActionDraftPayload {
+  schemaVersion: '0.1';
+  materialReference: string | null;
+  requestedQuantity: number | null;
+  supplierReference: string | null;
+  taskReference: string | null;
+  siteIssueReference: string | null;
+  noteReference: string | null;
+  reason: string | null;
+  sourceEvidenceRefs: EvidenceReference[];
+}
+
+export interface AiActionIntent {
+  type: AiActionType;
+  title: string;
+  summary: string;
+  payload: AiActionDraftPayload;
+}
+
+export interface AiStructuredDecisionOption {
+  id: string;
+  label: string;
+  actionIntent?: AiActionIntent;
+}
+
+export type AiDecisionOption = string | AiStructuredDecisionOption;
+
 export interface AiDecisionRecord {
   schemaVersion: '0.1';
   projectId: string;
@@ -235,7 +271,7 @@ export interface AiDecisionRecord {
   runId: string;
   recommendationId: string;
   question: string;
-  options: string[];
+  options: AiDecisionOption[];
   status: 'open' | 'resolved' | 'dismissed';
   createdAt: number;
   resolvedAt?: number | null;
@@ -247,6 +283,39 @@ export interface AiDecisionRecord {
   deferredBy?: string | null;
   deferredByRole?: 'boss' | 'owner' | 'admin' | 'pm' | null;
   history?: Record<string, AiDecisionHistoryEvent>;
+}
+
+export interface AiActionDraftRecord {
+  schemaVersion: '0.1';
+  decisionId: string;
+  recommendationId: string;
+  eventId: string;
+  projectId: string;
+  actionType: AiActionType;
+  title: string;
+  summary: string;
+  status: 'draft' | 'reviewed' | 'cancelled';
+  createdAt: number;
+  createdBy: string;
+  reviewedAt?: number | null;
+  reviewedBy?: string | null;
+  reviewedByRole?: 'boss' | 'owner' | 'admin' | 'pm' | null;
+  cancelledAt?: number | null;
+  cancelledBy?: string | null;
+  cancelledByRole?: 'boss' | 'owner' | 'admin' | 'pm' | null;
+  sourceDecisionOptionId: string;
+  payload: AiActionDraftPayload;
+  lastEventId: string;
+}
+
+export interface AiActionDraftEvent {
+  draftId: string;
+  decisionId: string;
+  projectId: string;
+  action: 'created' | 'reviewed' | 'cancelled';
+  actorUid: string;
+  actorRole: 'boss' | 'owner' | 'admin' | 'pm';
+  timestamp: number;
 }
 
 export interface AiDecisionHistoryEvent {

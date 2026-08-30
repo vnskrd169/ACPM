@@ -120,6 +120,10 @@ function validateRelationships(
   }
 }
 
+function hasStoredOption(decision: AiDecisionRecord, selectedOptionId: string): boolean {
+  return decision.options.some(option => (typeof option === 'string' ? option : option.id) === selectedOptionId);
+}
+
 function publicResult(
   decisionId: string,
   decision: AiDecisionRecord,
@@ -176,7 +180,7 @@ export async function submitHumanDecision(
     return publicResult(input.decisionId, decision, input.submissionId, true);
   }
   if (decision.status !== 'open') fail('decision_already_resolved');
-  if (input.action === 'choose' && !decision.options.includes(input.selectedOptionId ?? '')) {
+  if (input.action === 'choose' && !hasStoredOption(decision, input.selectedOptionId ?? '')) {
     fail('invalid_option');
   }
 
@@ -214,7 +218,7 @@ export async function submitHumanDecision(
         abortCode = 'decision_already_resolved';
         return undefined;
       }
-      if (input.action === 'choose' && !currentDecision.options.includes(input.selectedOptionId ?? '')) {
+      if (input.action === 'choose' && !hasStoredOption(currentDecision, input.selectedOptionId ?? '')) {
         abortCode = 'invalid_option';
         return undefined;
       }

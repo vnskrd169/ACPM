@@ -26,6 +26,7 @@ function base(now: number, systemStatus = 'ready'): AiFixtureData {
     'ai/findings': {},
     'ai/recommendations': {},
     'ai/decisions': {},
+    'ai/actionDrafts': {},
   };
 }
 
@@ -105,6 +106,73 @@ function decision(id: string, recommendationId: string, runId: string, now: numb
     status: 'open',
     createdAt: now,
   };
+}
+
+function actionDrafts(now: number, providerOff = false): AiFixtureData {
+  const data = base(now, providerOff ? 'not_configured' : 'ready');
+  if (providerOff) data['ai/runtimeStatus'] = null;
+  data['ai/decisions'] = {
+    'decision-draft-source': {
+      schemaVersion: '0.1',
+      projectId: PROJECT_ID,
+      eventId: 'event-draft-source',
+      runId: 'run-draft-source',
+      recommendationId: 'rec-draft-source',
+      question: 'Prepare the validated follow-up draft?',
+      options: [{
+        id: 'prepare-alternate-source',
+        label: 'Prepare alternate sourcing',
+        actionIntent: {
+          type: 'prepare_material_request',
+          title: 'Prepare alternate material request',
+          summary: 'Prepare a review-only alternate sourcing draft.',
+          payload: {
+            schemaVersion: '0.1',
+            materialReference: 'material-42', requestedQuantity: null, supplierReference: null,
+            taskReference: null, siteIssueReference: null, noteReference: null,
+            reason: 'Validated need <img src=x onerror=alert(1)>',
+            sourceEvidenceRefs: [{ path: 'projects/test-project-1/materials', recordId: 'material-42', field: 'status' }],
+          },
+        },
+      }],
+      status: 'resolved',
+      createdAt: now - 120_000,
+      resolvedAt: now - 60_000,
+      resolvedBy: 'test-pm-user-uid',
+      resolvedByRole: 'pm',
+      resolution: 'prepare-alternate-source',
+    },
+  };
+  data['ai/recommendations'] = {
+    'rec-draft-source': recommendation('draft-source', now - 120_000, {
+      title: 'Alternate sourcing review', needsHumanDecision: true, decisionId: 'decision-draft-source',
+    }),
+  };
+  data['ai/actionDrafts'] = {
+    'action-draft-1': {
+      schemaVersion: '0.1',
+      decisionId: 'decision-draft-source',
+      recommendationId: 'rec-draft-source',
+      eventId: 'event-draft-source',
+      projectId: PROJECT_ID,
+      actionType: 'prepare_material_request',
+      title: 'Prepare alternate material request',
+      summary: 'Prepare a review-only alternate sourcing draft.',
+      status: 'draft',
+      createdAt: now - 60_000,
+      createdBy: 'test-pm-user-uid',
+      sourceDecisionOptionId: 'prepare-alternate-source',
+      payload: {
+        schemaVersion: '0.1',
+        materialReference: 'material-42', requestedQuantity: null, supplierReference: null,
+        taskReference: null, siteIssueReference: null, noteReference: null,
+        reason: 'Validated need <img src=x onerror=alert(1)>',
+        sourceEvidenceRefs: [{ path: 'projects/test-project-1/materials', recordId: 'material-42', field: 'status' }],
+      },
+      lastEventId: 'action-draft-created-1',
+    },
+  };
+  return data;
 }
 
 function activeRuns(now: number): AiFixtureData {
@@ -282,6 +350,8 @@ export function zeroBudgetScenarios(now = Date.now()) {
   const providerOffDecisions = decisions(now);
   providerOffDecisions['ai/uiStatus'] = uiStatus(now, 'not_configured');
   providerOffDecisions['ai/runtimeStatus'] = null;
+  const drafts = actionDrafts(now);
+  const providerOffDrafts = actionDrafts(now, true);
   const dailyBrief = operationalProject('test-project-1', 'RCBC Plaza', {
     workers: { w1: { name: 'Ana', active: true }, w2: { name: 'Ben', active: true } },
     attendance: { w1: { [yesterday]: { status: 'present', date: yesterday } } },
@@ -329,5 +399,7 @@ export function zeroBudgetScenarios(now = Date.now()) {
       'test-project-2': operationalProject('test-project-2', 'Coffee Bay'),
     }),
     Z12_PROVIDER_OFF_DECISIONS: withProjects(providerOffDecisions, { 'test-project-1': calm }),
+    Z13_ACTION_DRAFTS: withProjects(drafts, { 'test-project-1': calm }),
+    Z14_PROVIDER_OFF_ACTION_DRAFTS: withProjects(providerOffDrafts, { 'test-project-1': calm }),
   };
 }

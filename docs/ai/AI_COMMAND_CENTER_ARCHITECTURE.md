@@ -264,7 +264,7 @@ never attempt the gate or output reads.
 
 Opening the view rechecks `uiStatus`, then attaches one bounded listener to
 sanitized runtime status and bounded collections for runs, events, findings,
-recommendations, and decisions. Closing, logout, account change, environment
+recommendations, decisions, and action drafts. Closing, logout, account change, environment
 reinitialization, and cleanup detach every listener. Refresh detaches the old
 set before creating a new set. The module exposes lifecycle methods so Office
 can initialize, open, close, refresh, or clean up deterministically.
@@ -282,11 +282,10 @@ Project names are reused only from metadata Office has already loaded, with a
 identifiers, credentials, raw internal errors, and unrestricted database paths
 are not exposed.
 
-Phase 5 remains read-only. Review opens an informational detail surface with no
-approve, reject, resolve, acknowledge, dismiss, provider-call, or business-write
-action. Browser code imports no provider SDK, reads no `/ai/config`, and performs
-no `/ai` write. Query indexes on `createdAt` support the bounded reads without
-changing any Phase 2/3/5A read or write permission.
+The browser remains read-only at the database boundary. Human decision and
+action-draft review controls call narrowly scoped server functions; browser code
+imports no provider SDK, reads no `/ai/config`, and performs no direct `/ai`
+write. Query indexes on `createdAt` support bounded reads.
 
 The named Firebase Admin app uses `databaseAuthVariableOverride` with UID
 `acpm-ai-service`, so rules still constrain it. Its reads are limited to these
@@ -303,7 +302,7 @@ already reviewed paths:
 - `projects/{projectId}/pmosIssues`
 - `pmosIssues`
 
-It cannot list projects or read a whole project. It can write only the twelve
+It cannot list projects or read a whole project. It can write only the fourteen
 explicit `/ai` children. Supplier reads are deliberately not granted because
 parent RTDB reads would expose sensitive siblings. Existing human-role
 branches remain unchanged.
@@ -344,6 +343,12 @@ It verifies the caller's live active management profile, validates linked AI
 records, and transactionally updates only `/ai/decisions/{decisionId}` with an
 append-only child history event. Browser direct writes, automatic business
 actions, provider dependency, and Production enablement remain out of scope.
+Phase 7A adds optional deterministic `/ai/actionDrafts` creation only when the
+resolved stored option contains a validated structured action intent. Review
+and cancellation use `reviewAiActionDraft`, affect only the AI draft, retain
+append-only `/ai/actionDraftEvents`, and never infer an action from option text.
+Reviewed means reviewed, not executed; no execution adapter or business write
+exists.
 Web App Check enforcement remains deferred until ACPM has a configured browser
 attestation provider; Firebase Authentication and live profile authorization
 are required now.

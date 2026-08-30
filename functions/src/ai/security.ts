@@ -25,6 +25,8 @@ export const AI_WRITABLE_COLLECTIONS = [
   'findings',
   'recommendations',
   'decisions',
+  'actionDrafts',
+  'actionDraftEvents',
   'idempotency'
 ] as const;
 

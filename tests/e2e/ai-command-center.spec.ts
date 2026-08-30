@@ -9,6 +9,7 @@ const OUTPUT_PATHS = [
   'ai/findings',
   'ai/recommendations',
   'ai/decisions',
+  'ai/actionDrafts',
 ];
 
 type TestUser = 'field' | 'reviewer' | 'pm' | 'boss';
@@ -33,7 +34,7 @@ async function openCommandCenter(page: Page, workspace = false) {
   await expect(button).toBeVisible();
   await button.click();
   await expect(page.locator('#aiCommandCenterView')).toBeVisible();
-  await page.waitForFunction(() => window.getAiCommandCenterDiagnostics?.().listenerCount === 6);
+  await page.waitForFunction(() => window.getAiCommandCenterDiagnostics?.().listenerCount === 7);
 }
 
 async function captureIfRequested(page: Page, path: string) {
@@ -528,6 +529,95 @@ test.describe('AI Command Center read-only Office UI', () => {
     await page.getByLabel('Continue monitoring').check();
     await page.getByRole('button', { name: 'Submit Decision' }).click();
     await expect(page.locator('[data-ai-decision-result="resolved"]')).toContainText('Selected: Continue monitoring');
+  });
+
+  test('49. Action Draft workflow list renders structured drafts', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z13_ACTION_DRAFTS);
+    await openCommandCenter(page);
+    await expect(page.getByRole('heading', { name: 'Action Drafts' })).toBeVisible();
+    await expect(page.locator('#aiActionDraftCount')).toHaveText('1');
+    await expect(page.locator('#aiActionDraftList')).toContainText('Prepare alternate material request');
+    await expect(page.locator('#aiActionDraftList')).toContainText('Prepare material request');
+  });
+
+  test('50. Action Draft workflow Review Draft opens read-only detail', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z13_ACTION_DRAFTS);
+    await openCommandCenter(page);
+    await page.getByRole('button', { name: 'Review Draft' }).click();
+    await expect(page.locator('#aiActionDraftModal')).toBeVisible();
+    await expect(page.locator('#aiActionDraftModalBody')).toContainText('Structured payload');
+    await expect(page.locator('#aiActionDraftModalBody')).toContainText('Draft only. No business action has executed.');
+  });
+
+  test('51. Action Draft workflow renders structured payload safely', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z13_ACTION_DRAFTS);
+    await openCommandCenter(page);
+    await page.getByRole('button', { name: 'Review Draft' }).click();
+    const modal = page.locator('#aiActionDraftModal');
+    await expect(modal).toContainText('material-42');
+    await expect(modal).toContainText('Validated need <img src=x onerror=alert(1)>');
+    await expect(modal.locator('img')).toHaveCount(0);
+    await expect(modal).toContainText('Requested quantityUnknown');
+  });
+
+  test('52. Action Draft workflow Mark Reviewed uses only the callable', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z13_ACTION_DRAFTS);
+    await openCommandCenter(page);
+    const writesBefore = await page.evaluate(() => window.__mockDbWrites.length);
+    await page.getByRole('button', { name: 'Review Draft' }).click();
+    await page.getByRole('button', { name: 'Mark Reviewed' }).click();
+    await expect(page.locator('[data-ai-draft-result="reviewed"]')).toBeVisible();
+    expect(await page.evaluate(() => window.__mockCallableCalls.at(-1).name)).toBe('reviewAiActionDraft');
+    expect(await page.evaluate(() => window.__mockDbWrites.length)).toBe(writesBefore);
+  });
+
+  test('53. Action Draft workflow labels reviewed as not executed', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z13_ACTION_DRAFTS);
+    await openCommandCenter(page);
+    await page.getByRole('button', { name: 'Review Draft' }).click();
+    await page.getByRole('button', { name: 'Mark Reviewed' }).click();
+    await expect(page.locator('[data-ai-draft-result="reviewed"]')).toContainText('Reviewed — not executed');
+    await expect(page.locator('#aiActionDraftList')).toContainText('Reviewed — not executed');
+  });
+
+  test('54. Action Draft workflow Cancel preserves the draft', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z13_ACTION_DRAFTS);
+    await openCommandCenter(page);
+    await page.getByRole('button', { name: 'Review Draft' }).click();
+    await page.getByRole('button', { name: 'Cancel Draft' }).click();
+    await expect(page.locator('[data-ai-draft-result="cancelled"]')).toContainText('Cancelled');
+    await expect(page.locator('[data-ai-draft-result="cancelled"]')).toContainText('preserved for history');
+    await expect(page.locator('#aiActionDraftList .ai-action-draft-card')).toHaveCount(1);
+  });
+
+  test('55. Action Draft workflow exposes no execution controls', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z13_ACTION_DRAFTS);
+    await openCommandCenter(page);
+    await page.getByRole('button', { name: 'Review Draft' }).click();
+    for (const name of ['Send', 'Execute', 'Create PO', 'Create Task', 'Apply', 'Approve Purchase', 'Update Schedule']) {
+      await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
+    }
+  });
+
+  test('56. Action Draft workflow works with provider off', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z14_PROVIDER_OFF_ACTION_DRAFTS);
+    await openCommandCenter(page);
+    await expect(page.locator('#aiCommandNotice')).toContainText('Advanced AI analysis is not configured');
+    await expect(page.locator('#aiActionDraftList')).toContainText('Prepare alternate material request');
+    await page.getByRole('button', { name: 'Review Draft' }).click();
+    await page.getByRole('button', { name: 'Mark Reviewed' }).click();
+    await expect(page.locator('[data-ai-draft-result="reviewed"]')).toBeVisible();
+  });
+
+  test('57. Action Draft workflow preserves decision and option linkage', async ({ page }) => {
+    await setup(page, 'pm', zeroBudgetScenarios().Z13_ACTION_DRAFTS);
+    await openCommandCenter(page);
+    await page.getByRole('button', { name: 'Review Draft' }).click();
+    const modal = page.locator('#aiActionDraftModal');
+    await expect(modal).toContainText('decision-draft-source');
+    await expect(modal).toContainText('prepare-alternate-source');
+    await page.getByRole('button', { name: 'Cancel Draft' }).click();
+    await expect(page.getByRole('button', { name: 'View recorded decision' })).toBeVisible();
   });
 
   test('21. listener/data failure does not break Office', async ({ page }) => {
