@@ -149,6 +149,60 @@ The Production script is pinned to `acpm-project-system`, requires
 `-ConfirmProduction`, rejects conflicting database switches, and has no
 Functions target. `.firebaserc` has no default project alias.
 
+## Production deployment record
+
+Production Pilot RC1 was deployed on 2026-08-30 at 21:52 PHT
+(2026-08-30T13:52:46Z) from
+`origin/feature/acpm-ai-command-center`.
+
+- Reviewed application commit: `2ee29817eea52ff73a27073abd8d075eb37982b1`
+- Hosting safety amendment: `c2abc77787bbd8ca7103e2e1b3ef66afa52c6134`
+- Production project: `acpm-project-system`
+- Production URL: `https://acpm-project-system.web.app`
+- Deployed: Production Hosting, Office/APM Workspace assets, PMOS assets,
+  zero-budget Command Center assets, PWA cache `acpm-v147`, and reviewed RTDB
+  rules/indexes
+- Withheld: all Cloud Functions/callables, Human Decision mutations, Action
+  Draft mutations, Staging OpenAI dry run, provider secret/configuration,
+  Secret Manager changes, Cloud Scheduler, and real provider activation
+
+The live smoke found that the prior wildcard Hosting ignore did not exclude
+root repository/tool directories. The first Hosting release exposed root
+`.git` and `.vscode` files. Pilot activation was held, explicit exclusions and
+a static gate were added in the Hosting safety amendment, and Hosting was
+immediately redeployed. The corrected release contains 163 intended files;
+probes for `.git`, `.firebase`, `.vscode`, development shell, and test paths
+all return 404. No exposed credential or provider secret was identified.
+
+| Check | Result |
+| --- | --- |
+| Git branch push | PASS |
+| Production Hosting | PASS |
+| Production RTDB rules | PASS |
+| Login and anonymous protected-route redirect | PASS |
+| Dashboard/workspace/PMOS/APM/AI/PWA asset integrity | PASS; live bytes match the reviewed local files and use `no-cache` |
+| Service worker | PASS; live `sw.js` is the reviewed `acpm-v147` asset and the browser reported no console errors |
+| Existing project data | PASS; read-only shallow verification found the existing projects node with 80 keys |
+| APM Workspace role smoke | NOT LIVE VERIFIED; no legitimate Production smoke account was available |
+| PMOS authenticated role smoke | NOT LIVE VERIFIED; no legitimate Production smoke account was available |
+| Zero-budget Command Center | HIDDEN; `/ai/uiStatus`, `/ai/config`, and `/ai/runtimeStatus` are absent |
+| Human Decision mutation | DISABLED; Functions/App Check unavailable |
+| Action Draft mutation | DISABLED; Functions/App Check unavailable |
+| Real OpenAI | NOT CONFIGURED / DEFERRED |
+| Browser console | NONE observed on the public login and anonymous protected-route smoke |
+
+The deployed RTDB rules are an exact canonical match for
+`database.rules.json` (SHA-256
+`50e2f1921d1dd49f8d15fd947271505bd7793df1299cb51afbd0178598dce572`).
+This preserves anonymous-write denial, AI browser-write denial, existing
+business permissions, and unchanged APM permissions. Role-specific live reads
+remain intentionally unclaimed because no Production account was available.
+
+No `/ai` record was seeded. The Command Center therefore remains hidden and
+fail closed. Generative processing remains disabled, there is no deployed
+callable or scheduler, and autonomous execution remains impossible. The smoke
+created no synthetic records and intentionally modified no business data.
+
 ## Rollback
 
 1. Immediately set `/ai/uiStatus/uiEnabled` to `false` through a trusted
