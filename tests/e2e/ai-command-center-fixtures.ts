@@ -27,6 +27,7 @@ function base(now: number, systemStatus = 'ready'): AiFixtureData {
     'ai/recommendations': {},
     'ai/decisions': {},
     'ai/actionDrafts': {},
+    'ai/actionDraftEvents': {},
   };
 }
 

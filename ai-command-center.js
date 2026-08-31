@@ -3,11 +3,12 @@
 
   var MANAGEMENT_ROLES = ['boss', 'owner', 'admin', 'pm'];
   var AGENTS = [
-    { id: 'pm', label: 'PM Agent', description: 'Advanced cross-discipline analysis.' },
-    { id: 'planning', label: 'Planning Monitor', description: 'Task and schedule rule monitoring.' },
-    { id: 'materials', label: 'Materials Monitor', description: 'Request and delivery rule monitoring.' }
+    { id: 'pm', label: 'PM Agent', description: 'Company synthesis, recommendations, and decision framing.' },
+    { id: 'planning', label: 'Planning Monitor', description: 'Tasks, deadlines, blocked work, and verification.' },
+    { id: 'materials', label: 'Materials Monitor', description: 'Requests, quantities, and partial deliveries.' },
+    { id: 'site', label: 'Site / QA Monitor', description: 'Open and aging site concerns and punch signals.' }
   ];
-  var LIMITS = { runs: 100, events: 100, findings: 60, recommendations: 100, decisions: 100, actionDrafts: 100 };
+  var LIMITS = { runs: 100, events: 100, findings: 60, recommendations: 100, decisions: 100, actionDrafts: 100, actionDraftEvents: 100 };
   var RUNTIME_STALE_MS = 60 * 60 * 1000;
   var SEVERITY_RANK = { critical: 5, high: 4, medium: 3, low: 2, info: 1 };
 
@@ -28,6 +29,9 @@
     draftReturnFocus: null,
     draftSubmitting: false,
     pendingDraftSubmission: null,
+    section: 'overview',
+    selectedProjectId: '',
+    lastAnswer: null,
     data: emptyData()
   };
 
@@ -40,6 +44,7 @@
       recommendations: [],
       decisions: [],
       actionDrafts: [],
+      actionDraftEvents: [],
       projects: [],
       attention: [],
       projectSummaries: []
@@ -158,9 +163,9 @@
       <section id="aiCommandCenterView" class="view-workspace ai-command-center hidden" aria-labelledby="aiCommandTitle">
         <div class="ai-command-hero ai-command-hero-operational">
           <div>
-            <div class="ws-kicker">Construction operations intelligence</div>
+            <div class="ws-kicker">AI operations team · construction intelligence</div>
             <h2 id="aiCommandTitle">AI Command Center</h2>
-            <p>What needs attention across your projects, using stored ACPM records and clearly identified detection methods.</p>
+            <p>Your company operations room for grounded project signals, specialized monitors, management decisions, and read-only questions.</p>
           </div>
           <div class="ai-command-hero-actions">
             <span id="aiSystemStatus" class="ai-status-pill ai-status-deterministic">DETERMINISTIC INTELLIGENCE</span>
@@ -171,12 +176,47 @@
 
         <div id="aiCommandNotice" class="ai-command-notice hidden" role="status"></div>
 
-        <section class="ai-daily-brief" aria-labelledby="aiDailyBriefTitle">
-          <div class="ai-daily-brief-head">
-            <div><span class="ai-panel-kicker">Deterministic daily brief</span><h3 id="aiDailyBriefTitle">Operational Brief</h3></div>
-            <span class="ai-rule-badge">Rule-based · no AI generation</span>
+        <nav id="aiCommandSections" class="ai-v2-nav" aria-label="Command Center sections">
+          <button type="button" class="is-active" data-ai-v2-section="overview">Overview</button>
+          <button type="button" data-ai-v2-section="projects">Projects</button>
+          <button type="button" data-ai-v2-section="team">AI Team</button>
+          <button type="button" data-ai-v2-section="activity">Activity</button>
+        </nav>
+
+        <div data-ai-v2-panel="overview">
+        <section class="ai-company-pulse" aria-labelledby="aiCompanyPulseTitle">
+          <div class="ai-panel-head ai-company-pulse-head">
+            <div><span class="ai-panel-kicker">Company-wide operational picture</span><h3 id="aiCompanyPulseTitle">Company Pulse</h3></div>
+            <span class="ai-truth-label">Grounded in current ACPM records</span>
           </div>
-          <div id="aiDailyBriefLines" class="ai-daily-brief-lines"></div>
+          <div id="aiCompanyPulseMetrics" class="ai-pulse-metrics" aria-label="Company pulse metrics"></div>
+          <div id="aiCompanyPriority" class="ai-company-priority"></div>
+          <div class="ai-daily-brief" aria-labelledby="aiDailyBriefTitle">
+            <div class="ai-daily-brief-head">
+              <div><span class="ai-panel-kicker">Deterministic daily brief</span><h3 id="aiDailyBriefTitle">Daily Brief</h3></div>
+              <span class="ai-rule-badge">Rule-based · no AI generation</span>
+            </div>
+            <div id="aiDailyBriefLines" class="ai-daily-brief-lines"></div>
+          </div>
+        </section>
+
+        <section class="ai-panel ai-ask-panel" aria-labelledby="aiAskTitle">
+          <div class="ai-panel-head">
+            <div><span class="ai-panel-kicker">Read-only · zero-budget query engine</span><h3 id="aiAskTitle">Ask Command Center</h3></div>
+            <span class="ai-rule-badge">Deterministic answers</span>
+          </div>
+          <form id="aiAskForm" class="ai-ask-form">
+            <label for="aiAskInput">Ask about current project operations</label>
+            <div class="ai-ask-input-row"><input id="aiAskInput" type="text" maxlength="240" autocomplete="off" placeholder="Ano kailangan kong unahin ngayon?"><button type="submit" class="btn-ws-primary">Ask</button></div>
+            <p>Supported questions use explicit intents and already-authorized snapshots. Questions never become database paths or commands.</p>
+          </form>
+          <div class="ai-ask-suggestions" aria-label="Suggested questions">
+            <button type="button" data-ai-question="Which project needs the most attention?">Company priority</button>
+            <button type="button" data-ai-question="Show blocked tasks.">Blocked tasks</button>
+            <button type="button" data-ai-question="May pending deliveries ba?">Pending deliveries</button>
+            <button type="button" data-ai-question="What changed today?">What changed</button>
+          </div>
+          <div id="aiAskAnswer" class="ai-ask-answer hidden" aria-live="polite"></div>
         </section>
 
         <section class="ai-today-panel" aria-labelledby="aiTodayHeading">
@@ -189,7 +229,7 @@
           <div class="ai-command-primary">
             <section class="ai-panel ai-needs-action-panel">
               <div class="ai-panel-head">
-                <div><span class="ai-panel-kicker">System detected · rule-based</span><h3>Needs Action</h3></div>
+                <div><span class="ai-panel-kicker">System detected · rule-based</span><h3>Operations Attention</h3></div>
                 <span id="aiNeedsActionCount" class="ai-count-badge">0</span>
               </div>
               <div id="aiAttentionList" class="ai-card-list"></div>
@@ -233,19 +273,29 @@
 
           <aside class="ai-command-side ai-command-secondary">
             <section class="ai-panel">
-              <div class="ai-panel-head"><div><span class="ai-panel-kicker">Recent record</span><h3>Activity</h3></div></div>
-              <div id="aiRunActivity" class="ai-activity-list"></div>
-            </section>
-            <section class="ai-panel">
               <div class="ai-panel-head"><div><span class="ai-panel-kicker">Secondary</span><h3>System</h3></div></div>
               <div id="aiRuntimeHealth"></div>
             </section>
-            <section class="ai-panel">
-              <div class="ai-panel-head"><div><span class="ai-panel-kicker">Secondary</span><h3>Monitors &amp; Agents</h3></div></div>
-              <div id="aiAgentStatus" class="ai-agent-grid" aria-label="Operational monitors and AI agents"></div>
-            </section>
           </aside>
         </div>
+        </div>
+
+        <section id="aiV2ProjectsPanel" class="ai-v2-section hidden" data-ai-v2-panel="projects" aria-labelledby="aiV2ProjectsTitle">
+          <div class="ai-v2-section-head"><div><span class="ai-panel-kicker">Project drill-down</span><h3 id="aiV2ProjectsTitle">Project Intelligence</h3></div><p>Current attention, domain signals, management items, and recent intelligence—without invented health scores.</p></div>
+          <div class="ai-v2-project-layout"><div id="aiV2ProjectGrid" class="ai-v2-project-grid"></div><div id="aiProjectIntelligence" class="ai-project-intelligence"></div></div>
+        </section>
+
+        <section id="aiV2TeamPanel" class="ai-v2-section hidden" data-ai-v2-panel="team" aria-labelledby="aiV2TeamTitle">
+          <div class="ai-v2-section-head"><div><span class="ai-panel-kicker">Specialized operational monitors</span><h3 id="aiV2TeamTitle">AI Team</h3></div><p>States reflect real rule monitoring, provider configuration, and active recorded runs only.</p></div>
+          <div id="aiAgentStatus" class="ai-agent-grid ai-agent-grid-v2" aria-label="Operational monitors and AI agents"></div>
+          <div id="aiHandoffView" class="ai-handoff-view"></div>
+        </section>
+
+        <section id="aiV2ActivityPanel" class="ai-v2-section hidden" data-ai-v2-panel="activity" aria-labelledby="aiV2ActivityTitle">
+          <div class="ai-v2-section-head"><div><span class="ai-panel-kicker">Live and recent intelligence</span><h3 id="aiV2ActivityTitle">Intelligence Timeline</h3></div><p>Independent records stay independent. Workflow links appear only when stored IDs prove the relationship.</p></div>
+          <div id="aiIntelligenceTimeline" class="ai-intelligence-timeline"></div>
+          <details class="ai-panel ai-advanced-activity"><summary>Advanced AI run history</summary><div id="aiRunActivity" class="ai-activity-list"></div></details>
+        </section>
 
         <div id="aiDecisionModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="aiDecisionModalTitle" data-escape-owner="ai">
           <div class="modal-box modal-wide ai-decision-modal">
@@ -312,6 +362,24 @@
     el('aiProjectSummary').addEventListener('click', function (event) {
       var button = event.target.closest('[data-ai-project-open]');
       if (button) navigateToDestination(button.dataset.aiProjectOpen, 'project');
+    });
+    el('aiCommandSections').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-ai-v2-section]');
+      if (button) setV2Section(button.dataset.aiV2Section);
+    });
+    el('aiV2ProjectGrid').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-ai-intelligence-project]');
+      if (button) selectProjectIntelligence(button.dataset.aiIntelligenceProject);
+    });
+    el('aiAskForm').addEventListener('submit', function (event) {
+      event.preventDefault();
+      submitAskQuestion(el('aiAskInput').value);
+    });
+    document.querySelector('.ai-ask-suggestions').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-ai-question]');
+      if (!button) return;
+      el('aiAskInput').value = button.dataset.aiQuestion;
+      submitAskQuestion(button.dataset.aiQuestion);
     });
   }
 
@@ -472,6 +540,9 @@
     listenValue('actionDrafts', recentQuery('ai/actionDrafts', LIMITS.actionDrafts), function (snapshot) {
       state.data.actionDrafts = snapshotRows(snapshot).sort(newestFirst);
     });
+    listenValue('actionDraftEvents', database().ref('ai/actionDraftEvents').orderByChild('timestamp').limitToLast(LIMITS.actionDraftEvents), function (snapshot) {
+      state.data.actionDraftEvents = snapshotRows(snapshot).sort(newestFirst);
+    });
   }
 
   function refreshOperationalData() {
@@ -563,12 +634,187 @@
     }
   }
 
+  function v2Context() {
+    return {
+      projects: state.data.projects,
+      attention: state.data.attention,
+      projectSummaries: state.data.projectSummaries,
+      runs: state.data.runs,
+      events: state.data.events,
+      findings: state.data.findings,
+      recommendations: state.data.recommendations,
+      decisions: state.data.decisions,
+      actionDrafts: state.data.actionDrafts,
+      actionDraftEvents: state.data.actionDraftEvents,
+      uiStatus: state.uiStatus,
+      runtimeStatus: state.data.runtimeStatus
+    };
+  }
+
+  function v2Model() {
+    return window.ACPMCommandCenterV2 || null;
+  }
+
+  function setV2Section(section) {
+    var allowed = ['overview', 'projects', 'team', 'activity'];
+    state.section = allowed.indexOf(section) === -1 ? 'overview' : section;
+    document.querySelectorAll('[data-ai-v2-panel]').forEach(function (panel) {
+      panel.classList.toggle('hidden', panel.dataset.aiV2Panel !== state.section);
+    });
+    document.querySelectorAll('[data-ai-v2-section]').forEach(function (button) {
+      var active = button.dataset.aiV2Section === state.section;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-current', active ? 'page' : 'false');
+    });
+  }
+
+  function renderCompanyPulse() {
+    var model = v2Model();
+    if (!model) return;
+    var pulse = model.buildCompanyPulse(v2Context(), { now: Date.now() });
+    var metrics = [
+      ['Active projects', pulse.activeProjects],
+      ['Need attention', pulse.projectsNeedingAttention],
+      ['Open findings', pulse.openFindings],
+      ['High / critical', pulse.highCriticalAttention],
+      ['Waiting on you', pulse.waitingDecisions],
+      ['Drafts to review', pulse.pendingActionDrafts],
+      ['Recorded today', pulse.recentIntelligenceToday]
+    ];
+    el('aiCompanyPulseMetrics').innerHTML = metrics.map(function (metric) {
+      return '<div><strong>' + h(metric[1]) + '</strong><span>' + h(metric[0]) + '</span></div>';
+    }).join('');
+    el('aiCompanyPriority').innerHTML = pulse.priority
+      ? '<span>Current priority</span><strong>' + h(pulse.priority.projectName) + ' · ' + h(pulse.priority.title) + '</strong><p>' + h(pulse.priority.summary) + '</p>'
+      : '<span>Current priority</span><strong>No operational attention item detected</strong><p>ACPM has no current deterministic exception to prioritize.</p>';
+  }
+
+  function projectSignalMarkup(label, items, emptyText) {
+    return '<section class="ai-project-signal"><h4>' + h(label) + '</h4>' +
+      (items.length
+        ? '<ul>' + items.slice(0, 8).map(function (item) { return '<li><strong>' + h(item.title) + '</strong><span>' + h(item.summary) + '</span></li>'; }).join('') + '</ul>'
+        : '<p>' + h(emptyText) + '</p>') + '</section>';
+  }
+
+  function renderProjectIntelligence() {
+    var model = v2Model();
+    if (!model) return;
+    var projects = model.buildProjectIntelligence(v2Context(), { now: Date.now() });
+    if (!projects.length) {
+      el('aiV2ProjectGrid').innerHTML = emptyMarkup('No active projects available', 'Project intelligence uses already-authorized Office snapshots.');
+      el('aiProjectIntelligence').innerHTML = '';
+      return;
+    }
+    if (!projects.some(function (project) { return project.projectId === state.selectedProjectId; })) {
+      state.selectedProjectId = projects[0].projectId;
+    }
+    el('aiV2ProjectGrid').innerHTML = projects.map(function (project) {
+      return '<button type="button" class="ai-v2-project-card' + (project.projectId === state.selectedProjectId ? ' is-selected' : '') + '" data-ai-intelligence-project="' + h(project.projectId) + '">' +
+        '<span>' + h(project.projectName) + '</span><strong>' + h(project.attentionCount) + '</strong><small>' +
+        (project.attentionCount ? 'Needs attention' : 'No detected attention') + '</small></button>';
+    }).join('');
+    var selected = projects.find(function (project) { return project.projectId === state.selectedProjectId; }) || projects[0];
+    var management = [];
+    if (selected.recommendations.length) management.push(selected.recommendations.length + ' recommendation' + (selected.recommendations.length === 1 ? '' : 's'));
+    if (selected.waitingDecisions.length) management.push(selected.waitingDecisions.length + ' decision' + (selected.waitingDecisions.length === 1 ? '' : 's') + ' waiting');
+    if (selected.actionDrafts.length) management.push(selected.actionDrafts.length + ' action draft' + (selected.actionDrafts.length === 1 ? '' : 's'));
+    el('aiProjectIntelligence').innerHTML = '<div class="ai-project-intelligence-head"><div><span class="ai-panel-kicker">Project intelligence</span><h3>' + h(selected.projectName) + '</h3><p>' + h(selected.attentionCount) + ' current attention item' + (selected.attentionCount === 1 ? '' : 's') + '</p></div><button type="button" class="btn-ws-secondary" data-ai-project-open="' + h(selected.projectId) + '">Open Project</button></div>' +
+      '<div class="ai-project-signal-grid">' +
+      projectSignalMarkup('Planning', selected.planning, 'No current planning attention items.') +
+      projectSignalMarkup('Materials', selected.materials, 'No current materials attention items.') +
+      projectSignalMarkup('Site / QA', selected.site, 'No current site or QA attention items.') +
+      '<section class="ai-project-signal"><h4>Management</h4><p>' + h(management.length ? management.join(' · ') : 'No recommendations, decisions, or drafts currently recorded.') + '</p></section>' +
+      '</div><section class="ai-project-recent"><h4>Recent intelligence activity</h4>' +
+      (selected.recentActivity.length ? '<ul>' + selected.recentActivity.slice(0, 6).map(function (item) { return '<li><span>' + h(item.actor) + '</span><strong>' + h(item.title) + '</strong><small>' + h(formatWhen(item.timestamp)) + '</small></li>'; }).join('') + '</ul>' : '<p>No recent intelligence activity is recorded for this project.</p>') + '</section>';
+    el('aiProjectIntelligence').querySelector('[data-ai-project-open]').addEventListener('click', function (event) {
+      navigateToDestination(event.currentTarget.dataset.aiProjectOpen, 'project');
+    });
+  }
+
+  function selectProjectIntelligence(projectId) {
+    var model = v2Model();
+    if (!model) return;
+    var valid = model.buildProjectIntelligence(v2Context(), { now: Date.now() })
+      .some(function (project) { return project.projectId === String(projectId || ''); });
+    if (!valid) return;
+    state.selectedProjectId = String(projectId);
+    renderProjectIntelligence();
+    setV2Section('projects');
+  }
+
+  function timelineTypeLabel(value) {
+    return {
+      SYSTEM_DETECTED: 'System detected', RULE_BASED_MONITOR: 'Rule-based monitor',
+      AI_ANALYSIS: 'AI analysis', HUMAN_DECISION: 'Human decision', ACTION_DRAFT: 'Action draft'
+    }[value] || 'Recorded activity';
+  }
+
+  function renderTimeline() {
+    var model = v2Model();
+    if (!model) return;
+    var timeline = model.normalizeTimeline(v2Context(), { now: Date.now(), limit: 40 });
+    if (!timeline.length) {
+      el('aiIntelligenceTimeline').innerHTML = emptyMarkup('No intelligence activity yet', 'Real detections, runs, findings, recommendations, decisions, and drafts will appear here.');
+      return;
+    }
+    el('aiIntelligenceTimeline').innerHTML = timeline.map(function (item) {
+      return '<article class="ai-timeline-item ai-timeline-' + h(item.type.toLowerCase().replace(/_/g, '-')) + '"><div class="ai-timeline-marker"></div><div class="ai-timeline-copy"><div class="ai-timeline-meta"><span>' + h(timelineTypeLabel(item.type)) + '</span><time>' + h(formatWhen(item.timestamp)) + '</time></div><strong>' + h(item.actor) + '</strong><h4>' + h(item.title) + '</h4>' + (item.summary ? '<p>' + h(item.summary) + '</p>' : '') + '<small>' + h(item.projectName) + '</small></div></article>';
+    }).join('');
+  }
+
+  function renderHandoffs() {
+    var model = v2Model();
+    if (!model) return;
+    var timeline = model.normalizeTimeline(v2Context(), { now: Date.now(), limit: 60 });
+    var links = model.buildHandoffs(timeline);
+    var records = {};
+    timeline.forEach(function (item) { records[item.id] = item; });
+    if (!links.length) {
+      el('aiHandoffView').innerHTML = '<div class="ai-handoff-empty"><strong>No explicit handoff chain recorded</strong><p>Current findings remain independent unless stored IDs prove a workflow relationship.</p></div>';
+      return;
+    }
+    el('aiHandoffView').innerHTML = '<div class="ai-panel-head"><div><span class="ai-panel-kicker">Explicit stored relationships</span><h3>Verified Handoffs</h3></div></div><div class="ai-handoff-list">' + links.slice(0, 12).map(function (link) {
+      var from = records[link.fromId];
+      var to = records[link.toId];
+      return '<div><span>' + h(from.actor) + '</span><i aria-hidden="true">→</i><span>' + h(to.actor) + '</span><small>Linked by stored record ID</small></div>';
+    }).join('') + '</div>';
+  }
+
+  function renderAskAnswer() {
+    var container = el('aiAskAnswer');
+    var answer = state.lastAnswer;
+    if (!container) return;
+    if (!answer) {
+      container.className = 'ai-ask-answer hidden';
+      container.innerHTML = '';
+      return;
+    }
+    container.className = 'ai-ask-answer';
+    container.dataset.generatedBy = answer.generatedBy;
+    container.innerHTML = '<div class="ai-ask-answer-head"><span>' + h(answer.generatedBy === 'ai' ? 'AI-generated · grounded output' : 'Rule-based · deterministic') + '</span><small>' + h(answer.scope === 'project' ? 'Project scope' : 'Company scope') + '</small></div><h4>' + h(answer.title) + '</h4><p>' + h(answer.summary) + '</p>' +
+      (answer.facts.length ? '<ul>' + answer.facts.map(function (fact) { return '<li>' + h(fact) + '</li>'; }).join('') + '</ul>' : '') +
+      '<small class="ai-answer-boundary">Read-only answer. No business action was created or changed.</small>';
+  }
+
+  function submitAskQuestion(question) {
+    var model = v2Model();
+    var safeQuestion = String(question || '').trim().slice(0, 240);
+    if (!model || !safeQuestion) {
+      state.lastAnswer = null;
+      renderAskAnswer();
+      return;
+    }
+    state.lastAnswer = model.answer(safeQuestion, v2Context(), { now: Date.now() });
+    renderAskAnswer();
+  }
+
   function renderAll() {
     if (!el('aiCommandCenterView')) return;
     var status = el('aiSystemStatus');
     status.textContent = 'DETERMINISTIC INTELLIGENCE';
     status.className = 'ai-status-pill ai-status-deterministic';
     renderNotice();
+    renderCompanyPulse();
     renderDailyBrief();
     renderSummary();
     renderAttention();
@@ -579,6 +825,11 @@
     renderRecommendations();
     renderRuntime();
     renderRuns();
+    renderProjectIntelligence();
+    renderTimeline();
+    renderHandoffs();
+    renderAskAnswer();
+    setV2Section(state.section);
   }
 
   function renderNotice() {
@@ -710,9 +961,11 @@
   }
 
   function renderAgents() {
-    el('aiAgentStatus').innerHTML = AGENTS.map(function (agent) {
-      var current = agentState(agent.id);
-      return '<article class="ai-agent-card"><div class="ai-agent-icon" aria-hidden="true">' + (agent.id === 'pm' ? 'AI' : 'OP') + '</div><div><h3>' + h(agent.label) + '</h3><p>' + h(agent.description) + '</p></div><span class="ai-agent-state ai-agent-' + h(current.className) + '"><i></i>' + h(current.label) + '</span></article>';
+    var model = v2Model();
+    var agents = model ? model.buildAiTeam(v2Context()) : [];
+    el('aiAgentStatus').innerHTML = agents.map(function (agent) {
+      var statusClassName = String(agent.status || 'IDLE').toLowerCase().replace(/_/g, '-');
+      return '<article class="ai-agent-card ai-agent-card-v2" data-ai-agent="' + h(agent.id) + '" data-ai-agent-status="' + h(agent.status) + '"><div class="ai-agent-icon" aria-hidden="true">' + (agent.id === 'pm' ? 'AI' : agent.id === 'site' ? 'QA' : 'OP') + '</div><div class="ai-agent-copy"><span class="ai-agent-role">' + h(agent.id === 'pm' ? 'Synthesis agent' : 'Specialized monitor') + '</span><h3>' + h(agent.label) + '</h3><p>' + h(agent.description) + '</p><small>' + h(agent.findingCount) + ' current finding' + (agent.findingCount === 1 ? '' : 's') + '</small></div><div class="ai-agent-state ai-agent-' + h(statusClassName) + '"><i></i><strong>' + h(agent.status) + '</strong><span>' + h(agent.statusDetail) + '</span></div></article>';
     }).join('');
   }
 

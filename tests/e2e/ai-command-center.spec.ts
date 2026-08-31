@@ -10,6 +10,7 @@ const OUTPUT_PATHS = [
   'ai/recommendations',
   'ai/decisions',
   'ai/actionDrafts',
+  'ai/actionDraftEvents',
 ];
 
 type TestUser = 'field' | 'reviewer' | 'pm' | 'boss';
@@ -34,7 +35,7 @@ async function openCommandCenter(page: Page, workspace = false) {
   await expect(button).toBeVisible();
   await button.click();
   await expect(page.locator('#aiCommandCenterView')).toBeVisible();
-  await page.waitForFunction(() => window.getAiCommandCenterDiagnostics?.().listenerCount === 7);
+  await page.waitForFunction(() => window.getAiCommandCenterDiagnostics?.().listenerCount === 8);
 }
 
 async function captureIfRequested(page: Page, path: string) {
@@ -86,7 +87,8 @@ test.describe('AI Command Center read-only Office UI', () => {
     await expect(page.locator('#aiWaitingCount')).toHaveText('2');
     await expect(page.locator('#aiRecommendationList .ai-recommendation-card')).toHaveCount(2);
     await expect(page.locator('#aiTodayHeading')).toHaveText('Everything looks on track.');
-    await expect(page.locator('#aiAgentStatus')).toContainText('Advanced analysis working');
+    await expect(page.locator('#aiAgentStatus [data-ai-agent="pm"]')).toHaveAttribute('data-ai-agent-status', 'ANALYZING');
+    await expect(page.locator('#aiAgentStatus [data-ai-agent="pm"]')).toContainText('A recorded analysis run is active');
   });
 
   test('6. open decisions populate Waiting On You', async ({ page }) => {
@@ -189,11 +191,15 @@ test.describe('AI Command Center read-only Office UI', () => {
   test('17. logout cleanup', async ({ page }) => {
     await setup(page, 'pm', aiScenarios().B_ACTIVE_RUNS);
     await openCommandCenter(page);
-    await page.evaluate(() => window.firebase.auth().signOut());
-    await page.waitForFunction(() => !document.querySelector('#openAiCommandCenterBtn'));
-    await expect(page.locator('#aiCommandCenterView')).toHaveCount(0);
-    const activeOutput = await page.evaluate(() => window.getAiCommandCenterDiagnostics?.().listenerCount || 0);
-    expect(activeOutput).toBe(0);
+    const cleanupState = await page.evaluate(async () => {
+      await window.firebase.auth().signOut();
+      return {
+        navigationRemoved: !document.querySelector('#openAiCommandCenterBtn'),
+        viewRemoved: !document.querySelector('#aiCommandCenterView'),
+        listenerCount: window.getAiCommandCenterDiagnostics?.().listenerCount || 0,
+      };
+    });
+    expect(cleanupState).toEqual({ navigationRemoved: true, viewRemoved: true, listenerCount: 0 });
   });
 
   test('18. dashboard -> Command Center -> dashboard', async ({ page }) => {
@@ -332,11 +338,12 @@ test.describe('AI Command Center read-only Office UI', () => {
     await setup(page, 'pm', zeroBudgetScenarios().Z9_PROVIDER_OFF_MONITORING);
     await openCommandCenter(page);
     await expect(page.locator('#aiAgentStatus')).toContainText('PM Agent');
-    await expect(page.locator('#aiAgentStatus')).toContainText('Advanced analysis unavailable');
+    await expect(page.locator('#aiAgentStatus')).toContainText('Advanced analysis not configured');
     await expect(page.locator('#aiAgentStatus')).toContainText('Planning Monitor');
     await expect(page.locator('#aiAgentStatus')).toContainText('Materials Monitor');
-    await expect(page.locator('#aiAgentStatus').getByText('Rule-based monitoring active', { exact: true })).toHaveCount(2);
-    await expect(page.locator('#aiAgentStatus')).not.toContainText(/\bWorking\b/);
+    await expect(page.locator('#aiAgentStatus')).toContainText('Site / QA Monitor');
+    await expect(page.locator('#aiAgentStatus').getByText('Rule-based monitoring active', { exact: true })).toHaveCount(3);
+    await expect(page.locator('#aiAgentStatus')).not.toContainText(/\bWorking\b/i);
   });
 
   test('33. zero-budget mobile view keeps navigation and document width intact', async ({ page }) => {

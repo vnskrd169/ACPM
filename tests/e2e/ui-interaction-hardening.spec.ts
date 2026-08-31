@@ -43,7 +43,7 @@ async function setupOffice(page: Page, data: Record<string, unknown>) {
 async function openAi(page: Page) {
   await page.locator('#openAiCommandCenterBtn').click();
   await expect(page.locator('#aiCommandCenterView')).toBeVisible();
-  await page.waitForFunction(() => (window as any).getAiCommandCenterDiagnostics?.().listenerCount === 7);
+  await page.waitForFunction(() => (window as any).getAiCommandCenterDiagnostics?.().listenerCount === 8);
 }
 
 async function scrollPageToBottom(page: Page) {
@@ -208,7 +208,7 @@ test.describe('UI integrity and interaction hardening', () => {
     await page.evaluate(() => (window as any).openAiCommandCenter());
     await expect(page.locator('#aiCommandCenterView')).toBeVisible();
     expect(await page.evaluate(() => (window as any).getPmosOfficeDiagnostics().listenerCount)).toBe(0);
-    await page.waitForFunction(() => (window as any).getAiCommandCenterDiagnostics?.().listenerCount === 7);
+    await page.waitForFunction(() => (window as any).getAiCommandCenterDiagnostics?.().listenerCount === 8);
 
     await page.locator('#aiCommandBackBtn').click();
     await expect(page.locator('#pmosOfficeView')).toBeVisible();

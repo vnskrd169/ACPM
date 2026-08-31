@@ -14,6 +14,7 @@
     "test:ai:ui:static": "node scripts/ai_command_center_static_qa.js",
     "test:ai:release:static": "node scripts/ai_rc1_static_qa.js",
     "test:ai:attention": "vitest run tests/pmos/ai-attention.test.ts",
+    "test:ai:v2": "vitest run tests/pmos/ai-command-center-v2.test.ts",
     "test:apm:static": "node scripts/apm_workspace_static_qa.js",
     "test:ui:static": "node scripts/ui_interaction_static_qa.js",
     "test:environments": "node scripts/environment_static_qa.js",
