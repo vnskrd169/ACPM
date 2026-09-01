@@ -1,6 +1,6 @@
 # ACPM Production Pilot RC1
 
-Audit date: 2026-08-30
+Audit date: 2026-09-01
 
 ## Pilot decision
 
@@ -70,7 +70,8 @@ Firebase Auth and live server-side role/status verification remain mandatory.
 
 ## Production default and data safety
 
-Production fails closed before deliberate pilot activation:
+Before deliberate pilot activation, Production fails closed with these
+defaults:
 
 - `enabled = false`
 - `generationEnabled = false`
@@ -198,10 +199,67 @@ This preserves anonymous-write denial, AI browser-write denial, existing
 business permissions, and unchanged APM permissions. Role-specific live reads
 remain intentionally unclaimed because no Production account was available.
 
-No `/ai` record was seeded. The Command Center therefore remains hidden and
-fail closed. Generative processing remains disabled, there is no deployed
-callable or scheduler, and autonomous execution remains impossible. The smoke
-created no synthetic records and intentionally modified no business data.
+For the 2026-08-30 deployment, no `/ai` record was seeded. The Command Center
+therefore remained hidden and fail closed. Generative processing remained
+disabled, there was no deployed callable or scheduler, and autonomous
+execution remained impossible. That smoke created no synthetic records and
+intentionally modified no business data.
+
+## AI Command Center V2 Production release
+
+AI Command Center V2 was released on 2026-09-01 at 11:33 PHT
+(2026-09-01T03:33:00Z) from
+`origin/feature/ai-command-center-v2`.
+
+- V2 source and deployed commit:
+  `2dbc246bc5b572b11520c8420d45e7ba0f85e113`
+- Release ref: `feature/ai-command-center-v2`
+- Production project: `acpm-project-system`
+- Production URL: `https://acpm-project-system.web.app`
+- Hosting: PASS; 164 intended files released with PWA cache `acpm-v150` and
+  `ai-command-center.js?v=9`
+- RTDB rules: UNCHANGED; the reviewed V2 branch contains no rules difference
+  from the existing Production release. Current reviewed rules SHA-256 is
+  `43047db388775fd535e2c8aaf541b22a8d5aa435b22907b35017a8fa1f404843`.
+- Command Center activation: ACTIVE through the authenticated Firebase
+  administrative CLI path. `/ai/uiStatus` contains exactly schema version
+  `0.1`, `uiEnabled: true`, `systemStatus: not_configured`, and integer
+  `updatedAt: 1788233669136`.
+- `/ai/config`: absent. Processing and generation retain fail-closed defaults.
+- Functions: NOT DEPLOYED.
+- App Check: NOT CONFIGURED.
+- Provider/OpenAI: NOT CONFIGURED; observed OpenAI calls: ZERO.
+
+The release gate passed with 112 root unit tests, 101 Functions tests,
+Functions type-check, 220 Database/Storage emulator tests with four intentional
+Storage-runtime skips, all static QA and deployment guards, 91 tracked
+JavaScript syntax checks, and dependency audits with no high/critical
+vulnerabilities. Full Playwright produced 119 immediate passes and identified
+three stale V2 test expectations; those expectations were corrected and all
+four affected interaction/history checks passed. No release-gate application
+failure remained.
+
+Public Production smoke passed: Hosting redirected safely to login, the V2
+HTML/JS/CSS/PWA assets returned 200, `sw.js` exposed the reviewed `acpm-v150`
+shell, `.git`, `.firebase`, `.vscode`, and `test-results` probes returned 404,
+and no fatal browser console error was observed. No legitimate authenticated
+Production session was available, so APM Workspace, PMOS, management Command
+Center, Ask, AI Team, and real-data views are **DEPLOYED / NOT LIVE VERIFIED**.
+No account or fixture was created for smoke testing.
+
+Production now renders legitimate Human Decision and Action Draft history as
+read-only. Submit, defer, dismiss, review, and cancel mutation controls are
+absent in Production and are guarded again at their JavaScript submission
+entrypoints. APM access remains denied, browser `/ai` writes remain denied, and
+Ask remains deterministic, snapshot-based, read-only, and unable to convert a
+question into a path, provider call, draft, decision, or business mutation.
+
+Before release, a current full RTDB restore export was saved outside the
+repository as `acpm-project-system-rtdb-20260901-113233.json`. Rollback is
+ready: set the sanitized projection's `uiEnabled` to false through the same
+trusted administrative path, keep processing/generation disabled, and roll
+Hosting back independently. No synthetic Production data was created and no
+business record was intentionally modified.
 
 ## Rollback
 
