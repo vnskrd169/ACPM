@@ -325,12 +325,34 @@
 
   function findProject(question, projects) {
     var query = normalized(question);
-    var generic = { project: true, projects: true, plaza: true, site: true, construction: true };
-    var matches = rows(projects).filter(function (project) {
+    var projectRows = rows(projects);
+    var fullMatches = projectRows.filter(function (project) {
       var name = normalized(project.name);
-      if (!name) return false;
-      if (query.indexOf(name) !== -1) return true;
-      return name.split(' ').some(function (token) { return token.length >= 4 && !generic[token] && query.split(' ').indexOf(token) !== -1; });
+      return name && query.indexOf(name) !== -1;
+    });
+    fullMatches.sort(function (a, b) { return normalized(b.name).length - normalized(a.name).length; });
+    if (fullMatches.length === 1 || (fullMatches.length > 1 && normalized(fullMatches[0].name).length > normalized(fullMatches[1].name).length)) {
+      return fullMatches[0];
+    }
+
+    var generic = {
+      project: true, projects: true, plaza: true, site: true, construction: true,
+      company: true, priority: true, attention: true, need: true, needs: true,
+      most: true, highest: true, what: true, which: true, dapat: true, unahin: true
+    };
+    var tokenOwners = {};
+    projectRows.forEach(function (project) {
+      Array.from(new Set(normalized(project.name).split(' ').filter(function (token) {
+        return token.length >= 4 && !generic[token];
+      }))).forEach(function (token) {
+        tokenOwners[token] = (tokenOwners[token] || 0) + 1;
+      });
+    });
+    var queryTokens = query.split(' ');
+    var matches = projectRows.filter(function (project) {
+      return normalized(project.name).split(' ').some(function (token) {
+        return token.length >= 4 && !generic[token] && tokenOwners[token] === 1 && queryTokens.indexOf(token) !== -1;
+      });
     });
     return matches.length === 1 ? matches[0] : null;
   }
@@ -339,8 +361,11 @@
     var query = normalized(question);
     var project = findProject(question, projects);
     function has(pattern) { return pattern.test(query); }
-    if (project && has(/\b(problem|problema|issue|issues|attention|nangyayari|happening)\b/)) return { intent: 'project_attention', projectId: text(project.id) };
-    if (has(/\b(most attention|highest priority|priority|unahin|uuna|kailangan.*unahin)\b/)) return { intent: 'company_priority', projectId: null };
+    var priorityQuestion = has(/\b(most attention|needs? (?:the )?most attention|highest priority|company priority|what needs attention|priority|unahin|uuna|kailangan.*unahin|ano.*dapat.*unahin)\b/);
+    if (project && (priorityQuestion || has(/\b(problem|problema|issue|issues|attention|nangyayari|happening|wrong)\b/))) {
+      return { intent: 'project_attention', projectId: text(project.id) };
+    }
+    if (priorityQuestion) return { intent: 'company_priority', projectId: null };
     if (has(/\b(blocked|blocking|naka block|nakablock|harang)\b/)) return { intent: 'blocked_tasks', projectId: project && text(project.id) };
     if (has(/\b(overdue|late task|past due|lampas.*due)\b/)) return { intent: 'overdue_tasks', projectId: project && text(project.id) };
     if (has(/\b(verification|verify|for review|ipa verify)\b/)) return { intent: 'verification_tasks', projectId: project && text(project.id) };
@@ -420,7 +445,17 @@
           || (Number(b.age) || 0) - (Number(a.age) || 0);
       }).slice(0, 1);
       title = 'Current company priority';
-      summary = selected.length ? selected[0].projectName + ' has the highest-ranked current attention item.' : 'No operational attention items are currently detected.';
+      if (selected.length) {
+        var attentionProjectIds = {};
+        attention.forEach(function (item) { if (text(item.projectId)) attentionProjectIds[text(item.projectId)] = true; });
+        var attentionProjectCount = Object.keys(attentionProjectIds).length;
+        var highestProjectName = text(selected[0].projectName) || projectName(map, selected[0].projectId);
+        summary = attention.length + ' current attention item' + (attention.length === 1 ? '' : 's') + ' detected across '
+          + attentionProjectCount + ' project' + (attentionProjectCount === 1 ? '' : 's') + '. '
+          + highestProjectName + ' has the highest-ranked current attention item.';
+      } else {
+        summary = 'No operational attention items are currently detected.';
+      }
     } else if (detected.intent === 'project_attention') {
       selected = attention;
       title = scopeName + ' attention';

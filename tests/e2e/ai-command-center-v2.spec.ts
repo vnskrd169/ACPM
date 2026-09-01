@@ -10,6 +10,7 @@ function v2Scenario(now = Date.now()): AiFixtureData {
   const drafts = zeroBudgetScenarios(now).Z13_ACTION_DRAFTS;
   return {
     ...operational,
+    'projects/legacy-attention': { name: 'Attention Archive', status: 'archived' },
     'ai/runtimeStatus': intelligence['ai/runtimeStatus'],
     'ai/runs': intelligence['ai/runs'],
     'ai/events': intelligence['ai/events'],
@@ -137,14 +138,26 @@ test.describe('AI Command Center V2 vision alignment', () => {
   });
 
   test('7. Ask answers a known company question deterministically', async ({ page }) => {
+    const providerRequests: string[] = [];
+    page.on('request', (request) => {
+      if (/openai|anthropic|generativelanguage|gemini/i.test(request.url())) providerRequests.push(request.url());
+    });
     await setup(page, 'pm', v2Scenario());
     await openCommandCenter(page);
-    await page.locator('#aiAskInput').fill('Which project needs the most attention?');
-    await page.locator('#aiAskInput').press('Enter');
+    await page.getByRole('button', { name: 'Company priority', exact: true }).click();
     const answer = page.locator('#aiAskAnswer');
     await expect(answer).toHaveAttribute('data-generated-by', 'deterministic');
+    await expect(answer).toContainText('Company scope');
     await expect(answer).toContainText('Current company priority');
+    await expect(answer).toContainText('4 current attention items detected across 1 project.');
     await expect(answer).toContainText('RCBC Plaza');
+    await expect(answer).not.toContainText('No current attention items');
+
+    await page.getByRole('button', { name: 'Pending deliveries', exact: true }).click();
+    await expect(answer).toContainText('Company scope');
+    await expect(answer).toContainText('1 matching current item detected for the company.');
+    await expect(answer).toContainText('Gypsum Board');
+    expect(providerRequests).toEqual([]);
     await capture(page, 'ai-v2-final-ask');
   });
 

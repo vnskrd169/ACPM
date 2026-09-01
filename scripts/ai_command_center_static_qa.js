@@ -50,14 +50,14 @@ gate(Boolean(source && attention && v2Model && styles), 'AI Command Center, atte
 gate(
   occurrences(dashboard, 'ai-attention.js?v=2') === 1
     && occurrences(workspace, 'ai-attention.js?v=2') === 1
-    && occurrences(dashboard, 'ai-command-center-v2.js?v=1') === 1
-    && occurrences(workspace, 'ai-command-center-v2.js?v=1') === 1
+    && occurrences(dashboard, 'ai-command-center-v2.js?v=2') === 1
+    && occurrences(workspace, 'ai-command-center-v2.js?v=2') === 1
     && occurrences(dashboard, 'ai-command-center.js?v=9') === 1
     && occurrences(workspace, 'ai-command-center.js?v=9') === 1
-    && dashboard.indexOf('ai-attention.js?v=2') < dashboard.indexOf('ai-command-center-v2.js?v=1')
-    && dashboard.indexOf('ai-command-center-v2.js?v=1') < dashboard.indexOf('ai-command-center.js?v=9')
-    && workspace.indexOf('ai-attention.js?v=2') < workspace.indexOf('ai-command-center-v2.js?v=1')
-    && workspace.indexOf('ai-command-center-v2.js?v=1') < workspace.indexOf('ai-command-center.js?v=9'),
+    && dashboard.indexOf('ai-attention.js?v=2') < dashboard.indexOf('ai-command-center-v2.js?v=2')
+    && dashboard.indexOf('ai-command-center-v2.js?v=2') < dashboard.indexOf('ai-command-center.js?v=9')
+    && workspace.indexOf('ai-attention.js?v=2') < workspace.indexOf('ai-command-center-v2.js?v=2')
+    && workspace.indexOf('ai-command-center-v2.js?v=2') < workspace.indexOf('ai-command-center.js?v=9'),
   'dashboard/workspace must each contain exactly one versioned AI browser module reference'
 );
 gate(
@@ -66,9 +66,9 @@ gate(
   'dashboard/workspace must each contain exactly one versioned AI stylesheet reference'
 );
 gate(
-  /const CACHE_NAME = 'acpm-v150';/.test(sw)
+  /const CACHE_NAME = 'acpm-v151';/.test(sw)
     && occurrences(sw, './ai-attention.js?v=2') === 1
-    && occurrences(sw, './ai-command-center-v2.js?v=1') === 1
+    && occurrences(sw, './ai-command-center-v2.js?v=2') === 1
     && occurrences(sw, './ai-command-center.js?v=9') === 1
     && occurrences(sw, './assets/brand/ai-command-center.css?v=7') === 1,
   'service-worker cache name/assets are stale, missing, or duplicated'

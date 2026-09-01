@@ -147,6 +147,45 @@ describe('Ask Command Center deterministic query engine', () => {
     expect(V2.detectIntent(question, context().projects).intent).toBe(expectedIntent);
   });
 
+  it.each([
+    'Company priority',
+    'What needs attention?',
+    'Which project needs the most attention?',
+    'Ano ang dapat unahin?',
+  ])('keeps company-wide priority phrasing in company scope: %s', (question) => {
+    expect(V2.detectIntent(question, context().projects)).toEqual({ intent: 'company_priority', projectId: null });
+    expect(V2.answer(question, context(), { now: NOW })).toMatchObject({
+      intent: 'company_priority', scope: 'company', projectId: null, generatedBy: 'deterministic',
+    });
+  });
+
+  it('uses project scope only when a known project is explicitly identified', () => {
+    expect(V2.detectIntent('What is wrong with RCBC?', context().projects)).toEqual({ intent: 'project_attention', projectId: 'p1' });
+    expect(V2.detectIntent('RCBC blocked tasks', context().projects)).toEqual({ intent: 'blocked_tasks', projectId: 'p1' });
+  });
+
+  it('keeps delivery questions company-wide unless a project is explicit', () => {
+    expect(V2.detectIntent('Pending deliveries', context().projects)).toEqual({ intent: 'partial_deliveries', projectId: null });
+    expect(V2.detectIntent('Pending deliveries in RCBC Plaza', context().projects)).toEqual({ intent: 'partial_deliveries', projectId: 'p1' });
+  });
+
+  it('does not let intent words in a project name override company scope or contradict Company Pulse', () => {
+    const snapshot = context({
+      projects: [
+        ...context().projects,
+        { id: 'legacy', name: 'Attention Archive', status: 'archived' },
+      ],
+    });
+    const pulse = V2.buildCompanyPulse(snapshot, { now: NOW });
+    const result = V2.answer('Which project needs the most attention?', snapshot, { now: NOW });
+
+    expect(pulse.openFindings).toBeGreaterThan(0);
+    expect(result).toMatchObject({ intent: 'company_priority', scope: 'company', projectId: null });
+    expect(result.summary).toContain(`${pulse.openFindings} current attention items detected across ${pulse.projectsNeedingAttention} projects.`);
+    expect(result.summary).not.toBe('No operational attention items are currently detected.');
+    expect(result.facts[0]).toContain('RCBC Plaza');
+  });
+
   it('matches known project names without turning text into a data path', () => {
     const detected = V2.detectIntent('Ano ang issues sa RCBC?', context().projects);
     expect(detected).toEqual({ intent: 'project_attention', projectId: 'p1' });
@@ -173,6 +212,8 @@ describe('Ask Command Center deterministic query engine', () => {
     const low = attention({ id: 'low', projectId: 'p2', projectName: 'Coffee Bay', severity: 'low', title: 'Open site issue', category: 'site_issue' });
     const critical = attention({ id: 'critical', severity: 'critical', title: 'Blocked overdue task' });
     const result = V2.answer('Which project needs the most attention?', context({ attention: [low, critical] }), { now: NOW });
+    expect(result).toMatchObject({ scope: 'company', projectId: null });
+    expect(result.summary).toContain('2 current attention items detected across 2 projects.');
     expect(result.facts[0]).toContain('RCBC Plaza');
     expect(result.facts[0]).toContain('Blocked overdue task');
   });

@@ -36,7 +36,7 @@ gate(
     && occurrences(sw, './apm-workspace-vnext.js?v=1') === 1,
   'APM vNext module must load and be cached exactly once'
 );
-gate(/const CACHE_NAME = 'acpm-v150';/.test(sw), 'APM release must use acpm-v150');
+gate(/const CACHE_NAME = 'acpm-v151';/.test(sw), 'APM release must use acpm-v151');
 gate(/function isApm\(\)/.test(apm) && /if \(!isApm\(\)\) return false;/.test(apm), 'APM workspace rendering must fail closed by role');
 gate(/renderApmHome/.test(main) && /renderApmProjectHome/.test(main), 'dashboard and project home must route through APM vNext');
 gate(/Needs attention/.test(apm) && /Everything is on track/.test(apm), 'home must provide exception and calm states');
