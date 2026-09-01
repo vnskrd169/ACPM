@@ -52,6 +52,7 @@ type InitScriptOptions = {
   databaseData?: Record<string, unknown>;
   failReadPaths?: string[];
   callableError?: { code: string; message: string };
+  productionMode?: boolean;
 };
 
 export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitScriptOptions = {}): string {
@@ -60,7 +61,9 @@ export function buildInitScript(userKey: keyof typeof TEST_USERS, options: InitS
   const databaseData = options.databaseData || {};
   const failReadPaths = options.failReadPaths || [];
   const callableError = options.callableError || null;
+  const productionMode = options.productionMode === true;
   return `
+    ${productionMode ? "Object.defineProperty(window, 'ACPM_IS_STAGING', { configurable: true, get: function () { return false; }, set: function () {} });" : ''}
     window._currentUser = ${JSON.stringify(user)};
     window._currentPid = 'test-project-1';
     window.__ACPM_DISABLE_SW_FOR_E2E__ = ${disableServiceWorker ? 'true' : 'false'};

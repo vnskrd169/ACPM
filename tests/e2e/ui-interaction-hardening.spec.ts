@@ -192,7 +192,7 @@ test.describe('UI integrity and interaction hardening', () => {
     await expect(page.locator('#aiCommandCenterView')).toBeVisible();
     await expect(review).toBeFocused();
     await expect(page.locator('body')).not.toHaveClass(/overlay-scroll-locked/);
-    expect(await page.evaluate(() => (window as any).getAiCommandCenterDiagnostics().listenerCount)).toBe(7);
+    expect(await page.evaluate(() => (window as any).getAiCommandCenterDiagnostics().listenerCount)).toBe(8);
 
     await page.keyboard.press('Escape');
     await expect(page.locator('#hubView')).toBeVisible();

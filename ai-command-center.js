@@ -1075,6 +1075,16 @@
     return actions[0] || 'No validated action was provided.';
   }
 
+  function mutationWorkflowsAvailable() {
+    return window.ACPM_IS_STAGING === true;
+  }
+
+  function productionReadOnlyMarkup(kind) {
+    return '<section class="ai-decision-controls ai-production-read-only" data-ai-production-read-only="' + h(kind) + '">' +
+      '<p><strong>Read-only in Production.</strong> Mutation controls require the secured Functions and App Check service, which is not available in this Production pilot.</p>' +
+      '</section>';
+  }
+
   function renderDecisions() {
     var decisions = state.data.decisions.filter(function (item) { return item.status === 'open'; });
     decisions.sort(function (a, b) {
@@ -1097,7 +1107,7 @@
         '<h4>' + h(recommendation.title || 'Human decision required') + '</h4>' +
         '<p>' + h(recommendation.summary || decision.question || 'No validated summary was provided.') + '</p>' +
         '<div class="ai-recommended"><span>Recommended action</span><strong>' + h(firstAction(recommendation)) + '</strong></div>' +
-        '<div class="ai-card-actions"><button type="button" class="btn-ws-secondary" data-ai-review="' + h(decision.id) + '">Review</button></div>' +
+        '<div class="ai-card-actions"><button type="button" class="btn-ws-secondary" data-ai-review="' + h(decision.id) + '">' + (mutationWorkflowsAvailable() ? 'Review' : 'View details') + '</button></div>' +
       '</article>';
     }).join('');
   }
@@ -1136,7 +1146,7 @@
         '<p>' + h(draft.summary || 'No validated summary was provided.') + '</p>' +
         '<dl class="ai-draft-card-fields"><div><dt>Action type</dt><dd>' + h(actionTypeLabel(draft.actionType)) + '</dd></div><div><dt>Source decision</dt><dd>' + h(draft.decisionId || 'Unavailable') + '</dd></div></dl>' +
         '<div class="ai-card-foot"><span>' + h(formatWhen(draft.createdAt)) + '</span><span>No execution</span></div>' +
-        '<div class="ai-card-actions"><button type="button" class="btn-ws-secondary" data-ai-draft-review="' + h(draft.id) + '">Review Draft</button></div>' +
+        '<div class="ai-card-actions"><button type="button" class="btn-ws-secondary" data-ai-draft-review="' + h(draft.id) + '">' + (mutationWorkflowsAvailable() ? 'Review Draft' : 'View Draft') + '</button></div>' +
       '</article>';
     }).join('');
   }
@@ -1166,7 +1176,9 @@
       ? '<section class="ai-decision-result ai-decision-result-resolved" data-ai-draft-result="reviewed"><span>Reviewed — not executed</span><p>Reviewed by: ' + h(draft.reviewedByRole || 'authorized manager') + '</p><p>Reviewed at: ' + h(formatWhen(draft.reviewedAt)) + '</p></section>'
       : draft.status === 'cancelled'
         ? '<section class="ai-decision-result ai-decision-result-dismissed" data-ai-draft-result="cancelled"><span>Cancelled</span><p>Cancelled by: ' + h(draft.cancelledByRole || 'authorized manager') + '</p><p>Cancelled at: ' + h(formatWhen(draft.cancelledAt)) + '</p><small>The draft remains preserved for history.</small></section>'
-        : '<section class="ai-decision-controls ai-draft-controls" data-ai-draft-id="' + h(draft.id) + '">' +
+        : !mutationWorkflowsAvailable()
+          ? productionReadOnlyMarkup('action-draft')
+          : '<section class="ai-decision-controls ai-draft-controls" data-ai-draft-id="' + h(draft.id) + '">' +
           '<div id="aiDraftSubmitState" class="ai-decision-submit-state" role="status" aria-live="polite"></div>' +
           '<div class="ai-decision-actions"><button type="button" class="btn-ws-primary" data-ai-draft-action="review">Mark Reviewed</button><button type="button" class="btn-ws-secondary ai-dismiss-button" data-ai-draft-action="cancel">Cancel Draft</button></div>' +
           '<p class="ai-intent-boundary">Review changes this AI draft only. It does not create or update tasks, purchase orders, schedules, billing, payments, or messages.</p></section>';
@@ -1237,6 +1249,7 @@
   }
 
   async function submitActionDraftReview(action) {
+    if (!mutationWorkflowsAvailable()) return;
     if (state.draftSubmitting || ['review', 'cancel'].indexOf(action) === -1) return;
     var controls = document.querySelector('#aiActionDraftModalBody [data-ai-draft-id]');
     var draftId = controls && controls.dataset.aiDraftId;
@@ -1457,6 +1470,7 @@
   }
 
   function decisionControlsMarkup(decision) {
+    if (!mutationWorkflowsAvailable()) return productionReadOnlyMarkup('human-decision');
     var options = decisionOptions(decision);
     var deferred = decision.deferredAt
       ? '<div class="ai-deferred-note" data-ai-decision-result="deferred"><strong>Deferred</strong><span>By ' + h(decision.deferredByRole || 'authorized manager') + ' · ' + h(formatWhen(decision.deferredAt)) + '</span></div>'
@@ -1579,6 +1593,7 @@
   }
 
   async function submitDecision(action) {
+    if (!mutationWorkflowsAvailable()) return;
     if (state.decisionSubmitting || ['choose', 'defer', 'dismiss'].indexOf(action) === -1) return;
     var controls = document.querySelector('#aiDecisionModalBody [data-ai-decision-id]');
     var decisionId = controls && controls.dataset.aiDecisionId;

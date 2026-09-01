@@ -233,4 +233,22 @@ test.describe('AI Command Center V2 vision alignment', () => {
     const metrics = await page.evaluate(() => ({ body: document.body.scrollWidth, viewport: document.documentElement.clientWidth }));
     expect(metrics.body).toBeLessThanOrEqual(metrics.viewport + 1);
   });
+
+  test('17. Production exposes decision and draft history without mutation controls', async ({ page }) => {
+    await page.addInitScript(buildInitScript('pm', { databaseData: v2Scenario(), productionMode: true }));
+    await navigateToDashboard(page);
+    expect(await page.evaluate(() => window.ACPM_IS_STAGING)).toBe(false);
+    await openCommandCenter(page);
+    await page.locator('#aiSupportingWorkflows summary').click();
+
+    await page.getByRole('button', { name: 'View details' }).first().click();
+    await expect(page.locator('#aiDecisionModalBody [data-ai-production-read-only="human-decision"]')).toBeVisible();
+    await expect(page.locator('#aiDecisionModalBody [data-ai-decision-action]')).toHaveCount(0);
+    await page.locator('#aiDecisionModalClose').click();
+
+    await page.getByRole('button', { name: 'View Draft' }).first().click();
+    await expect(page.locator('#aiActionDraftModalBody [data-ai-production-read-only="action-draft"]')).toBeVisible();
+    await expect(page.locator('#aiActionDraftModalBody [data-ai-draft-action]')).toHaveCount(0);
+    expect(await page.evaluate(() => window.__mockCallableCalls)).toEqual([]);
+  });
 });

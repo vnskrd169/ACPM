@@ -463,6 +463,8 @@ test.describe('AI Command Center read-only Office UI', () => {
     await expect(result).toContainText('Resolved by: pm');
     await expect(result).toContainText('Resolved at:');
     await expect(result).toContainText('Note: Reviewed with operations.');
+    await page.locator('#aiDecisionModalClose').click();
+    await openSupportingWorkflows(page);
     await expect(page.getByRole('button', { name: 'View recorded decision' })).toBeVisible();
   });
 
@@ -476,6 +478,8 @@ test.describe('AI Command Center read-only Office UI', () => {
     await expect(result).toContainText('Dismissed');
     await expect(result).toContainText('No decision required.');
     await expect(page.locator('#aiWaitingCount')).toHaveText('1');
+    await page.locator('#aiDecisionModalClose').click();
+    await openSupportingWorkflows(page);
     await expect(page.getByRole('button', { name: 'View recorded decision' })).toBeVisible();
   });
 

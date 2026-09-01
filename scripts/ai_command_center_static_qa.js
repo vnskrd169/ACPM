@@ -52,12 +52,12 @@ gate(
     && occurrences(workspace, 'ai-attention.js?v=2') === 1
     && occurrences(dashboard, 'ai-command-center-v2.js?v=1') === 1
     && occurrences(workspace, 'ai-command-center-v2.js?v=1') === 1
-    && occurrences(dashboard, 'ai-command-center.js?v=8') === 1
-    && occurrences(workspace, 'ai-command-center.js?v=8') === 1
+    && occurrences(dashboard, 'ai-command-center.js?v=9') === 1
+    && occurrences(workspace, 'ai-command-center.js?v=9') === 1
     && dashboard.indexOf('ai-attention.js?v=2') < dashboard.indexOf('ai-command-center-v2.js?v=1')
-    && dashboard.indexOf('ai-command-center-v2.js?v=1') < dashboard.indexOf('ai-command-center.js?v=8')
+    && dashboard.indexOf('ai-command-center-v2.js?v=1') < dashboard.indexOf('ai-command-center.js?v=9')
     && workspace.indexOf('ai-attention.js?v=2') < workspace.indexOf('ai-command-center-v2.js?v=1')
-    && workspace.indexOf('ai-command-center-v2.js?v=1') < workspace.indexOf('ai-command-center.js?v=8'),
+    && workspace.indexOf('ai-command-center-v2.js?v=1') < workspace.indexOf('ai-command-center.js?v=9'),
   'dashboard/workspace must each contain exactly one versioned AI browser module reference'
 );
 gate(
@@ -66,10 +66,10 @@ gate(
   'dashboard/workspace must each contain exactly one versioned AI stylesheet reference'
 );
 gate(
-  /const CACHE_NAME = 'acpm-v149';/.test(sw)
+  /const CACHE_NAME = 'acpm-v150';/.test(sw)
     && occurrences(sw, './ai-attention.js?v=2') === 1
     && occurrences(sw, './ai-command-center-v2.js?v=1') === 1
-    && occurrences(sw, './ai-command-center.js?v=8') === 1
+    && occurrences(sw, './ai-command-center.js?v=9') === 1
     && occurrences(sw, './assets/brand/ai-command-center.css?v=7') === 1,
   'service-worker cache name/assets are stale, missing, or duplicated'
 );
@@ -165,6 +165,12 @@ gate(
   'action drafts must use the reviewed callable, expose review/cancel only, and label review as not executed'
 );
 gate(
+  /function mutationWorkflowsAvailable\(\)[\s\S]{0,100}window\.ACPM_IS_STAGING === true/.test(source)
+    && /data-ai-production-read-only/.test(source)
+    && /if \(!mutationWorkflowsAvailable\(\)\) return;/.test(source),
+  'Production must render decisions and action drafts read-only and guard callable submission paths'
+);
+gate(
   ['A_HEALTHY_NO_ISSUES', 'B_ACTIVE_RUNS', 'C_ONE_OPEN_RECOMMENDATION', 'D_TWO_WAITING_DECISIONS',
     'E_UNKNOWN_IMPACTS', 'F_CRITICAL_GROUNDED', 'G_PROVIDER_DEGRADED', 'H_AI_DISABLED']
     .every(name => fixtures.includes(name)),
@@ -234,12 +240,12 @@ gate(
   'V2 must not invent health/risk metrics or cross the no-execution boundary'
 );
 gate(
-  (v2Spec.match(/\btest\('/g) || []).length === 16
+  (v2Spec.match(/\btest\('/g) || []).length === 17
     && /APM access remains denied/.test(v2Spec)
     && /unsupported question returns/.test(v2Spec)
     && /mobile layout/.test(v2Spec)
     && /document overflow/.test(v2Spec),
-  'V2 Playwright suite must contain the sixteen focused security, query, hierarchy, and responsive checks'
+  'V2 Playwright suite must contain the seventeen focused security, query, hierarchy, responsive, and Production capability checks'
 );
 gate(
   fs.existsSync(qaPath)
@@ -258,4 +264,4 @@ if (failures.length) {
 }
 
 console.log(`AI Command Center static QA passed (${gates} gates).`);
-console.log('Verified: V2 hierarchy/query models, assets/cache, fail-closed role and uiStatus gating, no provider SDK/config read/direct AI writes/evidence fetch, snapshot-only deterministic detection, truthful agent states, explicit-link-only handoffs, callable-only human decisions and action-draft review, allowlisted navigation, bounded detachable AI listeners, and 73 focused browser checks.');
+console.log('Verified: V2 hierarchy/query models, assets/cache, fail-closed role and uiStatus gating, no provider SDK/config read/direct AI writes/evidence fetch, snapshot-only deterministic detection, truthful agent states, explicit-link-only handoffs, Production read-only decision/draft controls, callable-only Staging workflows, allowlisted navigation, bounded detachable AI listeners, and 74 focused browser checks.');
