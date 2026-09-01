@@ -24,23 +24,30 @@ recorded.
 
 The primary navigation is intentionally shallow:
 
-1. **Overview** — Company Pulse, deterministic Daily Brief, Ask Command
-   Center, Operations Attention, project summary, Waiting On You, Action
-   Drafts, recommendations, and system status.
+1. **Overview** — Company Pulse and Daily Brief, Ask Command Center,
+   management decisions, prioritized Operations Attention, compact AI Team and
+   intelligence previews, and Project Intelligence. Supporting workflows and
+   system status use progressive disclosure so implementation detail does not
+   compete with current management attention.
 2. **Projects** — company project list and selected Project Intelligence.
 3. **AI Team** — responsibilities, truthful states, finding counts, and only
    explicitly linked handoffs.
 4. **Activity** — provenance-labeled intelligence timeline plus progressively
    disclosed run history.
 
-Waiting On You remains restricted to actual `/ai/decisions`. Deterministic
-operational exceptions remain in Operations Attention. Action Drafts remain a
-separate review-only queue.
+Waiting On You remains restricted to actual `/ai/decisions` and appears before
+the operational exception queue when management opens Overview. Deterministic
+exceptions remain in Operations Attention. Only the three highest-ranked items
+are initially expanded; additional items remain available through a native
+disclosure. Action Drafts remain a separate review-only queue.
 
 ## Company Pulse
 
-Company Pulse uses only canonical counts from already-authorized snapshots and
-bounded AI records:
+Company Pulse leads with three management-level counts from already-authorized
+snapshots: active projects, projects needing attention, and decisions waiting.
+One quiet supporting line retains the open-finding, high/critical, and recorded
+today counts without turning them into equal-weight KPI cards. The underlying
+model still provides:
 
 - active projects;
 - projects with current deterministic attention;
@@ -57,6 +64,10 @@ contract explicitly supplies and validates it.
 
 The Daily Brief remains inside Company Pulse and retains the label
 `Rule-based · no AI generation`.
+
+Ask Command Center follows Company Pulse and is presented as a question for the
+ACPM operations team. Its engine, finite intent set, grounding contract, and
+unsupported-question fallback are unchanged.
 
 ## AI Team and responsibilities
 

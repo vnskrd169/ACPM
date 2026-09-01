@@ -183,13 +183,14 @@
           <button type="button" data-ai-v2-section="activity">Activity</button>
         </nav>
 
-        <div data-ai-v2-panel="overview">
+        <div data-ai-v2-panel="overview" tabindex="-1">
         <section class="ai-company-pulse" aria-labelledby="aiCompanyPulseTitle">
           <div class="ai-panel-head ai-company-pulse-head">
             <div><span class="ai-panel-kicker">Company-wide operational picture</span><h3 id="aiCompanyPulseTitle">Company Pulse</h3></div>
             <span class="ai-truth-label">Grounded in current ACPM records</span>
           </div>
           <div id="aiCompanyPulseMetrics" class="ai-pulse-metrics" aria-label="Company pulse metrics"></div>
+          <p id="aiCompanyPulseMeta" class="ai-pulse-meta"></p>
           <div id="aiCompanyPriority" class="ai-company-priority"></div>
           <div class="ai-daily-brief" aria-labelledby="aiDailyBriefTitle">
             <div class="ai-daily-brief-head">
@@ -202,13 +203,13 @@
 
         <section class="ai-panel ai-ask-panel" aria-labelledby="aiAskTitle">
           <div class="ai-panel-head">
-            <div><span class="ai-panel-kicker">Read-only · zero-budget query engine</span><h3 id="aiAskTitle">Ask Command Center</h3></div>
+            <div><span class="ai-panel-kicker">Ask Command Center</span><h3 id="aiAskTitle">Ask your ACPM operations team</h3></div>
             <span class="ai-rule-badge">Deterministic answers</span>
           </div>
           <form id="aiAskForm" class="ai-ask-form">
-            <label for="aiAskInput">Ask about current project operations</label>
+            <label for="aiAskInput">What would you like to understand?</label>
             <div class="ai-ask-input-row"><input id="aiAskInput" type="text" maxlength="240" autocomplete="off" placeholder="Ano kailangan kong unahin ngayon?"><button type="submit" class="btn-ws-primary">Ask</button></div>
-            <p>Supported questions use explicit intents and already-authorized snapshots. Questions never become database paths or commands.</p>
+            <p>Read-only answers from current ACPM records. Questions never become commands.</p>
           </form>
           <div class="ai-ask-suggestions" aria-label="Suggested questions">
             <button type="button" data-ai-question="Which project needs the most attention?">Company priority</button>
@@ -219,14 +220,19 @@
           <div id="aiAskAnswer" class="ai-ask-answer hidden" aria-live="polite"></div>
         </section>
 
-        <section class="ai-today-panel" aria-labelledby="aiTodayHeading">
-          <span class="ai-panel-kicker">Today</span>
-          <h3 id="aiTodayHeading">Everything looks on track.</h3>
-          <p id="aiTodaySummary">No operational issues currently need your attention.</p>
-        </section>
-
-        <div class="ai-command-layout">
-          <div class="ai-command-primary">
+        <section class="ai-management-overview" aria-labelledby="aiTodayHeading">
+          <div class="ai-management-heading">
+            <div><span class="ai-panel-kicker">Management attention</span><h3 id="aiTodayHeading">Everything looks on track.</h3></div>
+            <p id="aiTodaySummary">No operational issues currently need your attention.</p>
+          </div>
+          <div class="ai-command-layout ai-management-layout">
+            <section class="ai-panel ai-waiting-panel">
+              <div class="ai-panel-head">
+                <div><span class="ai-panel-kicker">Human judgment</span><h3>Waiting On You</h3></div>
+                <span id="aiWaitingCount" class="ai-count-badge">0</span>
+              </div>
+              <div id="aiDecisionList" class="ai-card-list ai-decision-list"></div>
+            </section>
             <section class="ai-panel ai-needs-action-panel">
               <div class="ai-panel-head">
                 <div><span class="ai-panel-kicker">System detected · rule-based</span><h3>Operations Attention</h3></div>
@@ -234,22 +240,37 @@
               </div>
               <div id="aiAttentionList" class="ai-card-list"></div>
             </section>
+          </div>
+        </section>
 
-            <section class="ai-panel">
-              <div class="ai-panel-head">
-                <div><span class="ai-panel-kicker">Operational summary</span><h3>Projects</h3></div>
-              </div>
-              <div id="aiProjectSummary" class="ai-project-list"></div>
-            </section>
+        <div class="ai-overview-intelligence-grid">
+          <section class="ai-panel ai-overview-team" aria-labelledby="aiTeamPreviewTitle">
+            <div class="ai-panel-head">
+              <div><span class="ai-panel-kicker">Coordinated operations team</span><h3 id="aiTeamPreviewTitle">AI Team</h3></div>
+              <button type="button" class="ai-text-button" data-ai-v2-jump="team">View team</button>
+            </div>
+            <div id="aiTeamPreview" class="ai-team-preview"></div>
+          </section>
+          <section class="ai-panel ai-overview-activity" aria-labelledby="aiActivityPreviewTitle">
+            <div class="ai-panel-head">
+              <div><span class="ai-panel-kicker">Latest grounded signals</span><h3 id="aiActivityPreviewTitle">Recent Intelligence</h3></div>
+              <button type="button" class="ai-text-button" data-ai-v2-jump="activity">View activity</button>
+            </div>
+            <div id="aiActivityPreview" class="ai-activity-preview"></div>
+          </section>
+        </div>
 
-            <section class="ai-panel ai-waiting-panel">
-              <div class="ai-panel-head">
-                <div><span class="ai-panel-kicker">Actual AI decisions · human judgment</span><h3>Waiting On You</h3></div>
-                <span id="aiWaitingCount" class="ai-count-badge">0</span>
-              </div>
-              <div id="aiDecisionList" class="ai-card-list"></div>
-            </section>
+        <section class="ai-panel ai-overview-projects" aria-labelledby="aiProjectsPreviewTitle">
+          <div class="ai-panel-head">
+            <div><span class="ai-panel-kicker">Where attention is concentrated</span><h3 id="aiProjectsPreviewTitle">Project Intelligence</h3></div>
+            <button type="button" class="ai-text-button" data-ai-v2-jump="projects">View projects</button>
+          </div>
+          <div id="aiProjectSummary" class="ai-project-list"></div>
+        </section>
 
+        <details id="aiSupportingWorkflows" class="ai-overview-disclosure ai-supporting-workflows">
+          <summary><span>Supporting workflows</span><small>Recommendations and review-only action drafts</small></summary>
+          <div class="ai-secondary-workflow-grid">
             <section class="ai-panel ai-action-drafts-panel" aria-labelledby="aiActionDraftsTitle">
               <div class="ai-panel-head">
                 <div><span class="ai-panel-kicker">Human-approved intent · no execution</span><h3 id="aiActionDraftsTitle">Action Drafts</h3></div>
@@ -257,10 +278,9 @@
               </div>
               <div id="aiActionDraftList" class="ai-card-list"></div>
             </section>
-
             <section class="ai-panel">
               <div class="ai-panel-head ai-panel-head-wrap">
-                <div><span class="ai-panel-kicker">Generative analysis output</span><h3>Recommendations</h3></div>
+                <div><span class="ai-panel-kicker">Current and recorded guidance</span><h3>Recommendations</h3></div>
                 <div id="aiRecommendationFilters" class="ai-filter-group" aria-label="Recommendation status filters">
                   <button type="button" data-ai-filter="open" class="is-active">Open</button>
                   <button type="button" data-ai-filter="acknowledged">Acknowledged</button>
@@ -270,28 +290,26 @@
               <div id="aiRecommendationList" class="ai-card-list"></div>
             </section>
           </div>
+        </details>
 
-          <aside class="ai-command-side ai-command-secondary">
-            <section class="ai-panel">
-              <div class="ai-panel-head"><div><span class="ai-panel-kicker">Secondary</span><h3>System</h3></div></div>
-              <div id="aiRuntimeHealth"></div>
-            </section>
-          </aside>
-        </div>
+        <details class="ai-overview-disclosure ai-system-disclosure">
+          <summary><span>System status</span><small>Operational monitoring and optional advanced analysis</small></summary>
+          <div id="aiRuntimeHealth"></div>
+        </details>
         </div>
 
-        <section id="aiV2ProjectsPanel" class="ai-v2-section hidden" data-ai-v2-panel="projects" aria-labelledby="aiV2ProjectsTitle">
+        <section id="aiV2ProjectsPanel" class="ai-v2-section hidden" data-ai-v2-panel="projects" aria-labelledby="aiV2ProjectsTitle" tabindex="-1">
           <div class="ai-v2-section-head"><div><span class="ai-panel-kicker">Project drill-down</span><h3 id="aiV2ProjectsTitle">Project Intelligence</h3></div><p>Current attention, domain signals, management items, and recent intelligence—without invented health scores.</p></div>
           <div class="ai-v2-project-layout"><div id="aiV2ProjectGrid" class="ai-v2-project-grid"></div><div id="aiProjectIntelligence" class="ai-project-intelligence"></div></div>
         </section>
 
-        <section id="aiV2TeamPanel" class="ai-v2-section hidden" data-ai-v2-panel="team" aria-labelledby="aiV2TeamTitle">
+        <section id="aiV2TeamPanel" class="ai-v2-section hidden" data-ai-v2-panel="team" aria-labelledby="aiV2TeamTitle" tabindex="-1">
           <div class="ai-v2-section-head"><div><span class="ai-panel-kicker">Specialized operational monitors</span><h3 id="aiV2TeamTitle">AI Team</h3></div><p>States reflect real rule monitoring, provider configuration, and active recorded runs only.</p></div>
           <div id="aiAgentStatus" class="ai-agent-grid ai-agent-grid-v2" aria-label="Operational monitors and AI agents"></div>
           <div id="aiHandoffView" class="ai-handoff-view"></div>
         </section>
 
-        <section id="aiV2ActivityPanel" class="ai-v2-section hidden" data-ai-v2-panel="activity" aria-labelledby="aiV2ActivityTitle">
+        <section id="aiV2ActivityPanel" class="ai-v2-section hidden" data-ai-v2-panel="activity" aria-labelledby="aiV2ActivityTitle" tabindex="-1">
           <div class="ai-v2-section-head"><div><span class="ai-panel-kicker">Live and recent intelligence</span><h3 id="aiV2ActivityTitle">Intelligence Timeline</h3></div><p>Independent records stay independent. Workflow links appear only when stored IDs prove the relationship.</p></div>
           <div id="aiIntelligenceTimeline" class="ai-intelligence-timeline"></div>
           <details class="ai-panel ai-advanced-activity"><summary>Advanced AI run history</summary><div id="aiRunActivity" class="ai-activity-list"></div></details>
@@ -365,7 +383,11 @@
     });
     el('aiCommandSections').addEventListener('click', function (event) {
       var button = event.target.closest('[data-ai-v2-section]');
-      if (button) setV2Section(button.dataset.aiV2Section);
+      if (button) setV2Section(button.dataset.aiV2Section, true);
+    });
+    document.querySelector('[data-ai-v2-panel="overview"]').addEventListener('click', function (event) {
+      var button = event.target.closest('[data-ai-v2-jump]');
+      if (button) setV2Section(button.dataset.aiV2Jump, true);
     });
     el('aiV2ProjectGrid').addEventListener('click', function (event) {
       var button = event.target.closest('[data-ai-intelligence-project]');
@@ -655,17 +677,24 @@
     return window.ACPMCommandCenterV2 || null;
   }
 
-  function setV2Section(section) {
+  function setV2Section(section, focusPanel) {
     var allowed = ['overview', 'projects', 'team', 'activity'];
     state.section = allowed.indexOf(section) === -1 ? 'overview' : section;
+    var activePanel = null;
     document.querySelectorAll('[data-ai-v2-panel]').forEach(function (panel) {
-      panel.classList.toggle('hidden', panel.dataset.aiV2Panel !== state.section);
+      var active = panel.dataset.aiV2Panel === state.section;
+      panel.classList.toggle('hidden', !active);
+      if (active) activePanel = panel;
     });
     document.querySelectorAll('[data-ai-v2-section]').forEach(function (button) {
       var active = button.dataset.aiV2Section === state.section;
       button.classList.toggle('is-active', active);
       button.setAttribute('aria-current', active ? 'page' : 'false');
     });
+    if (focusPanel && activePanel) {
+      activePanel.focus({ preventScroll: true });
+      activePanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }
 
   function renderCompanyPulse() {
@@ -675,18 +704,44 @@
     var metrics = [
       ['Active projects', pulse.activeProjects],
       ['Need attention', pulse.projectsNeedingAttention],
-      ['Open findings', pulse.openFindings],
-      ['High / critical', pulse.highCriticalAttention],
-      ['Waiting on you', pulse.waitingDecisions],
-      ['Drafts to review', pulse.pendingActionDrafts],
-      ['Recorded today', pulse.recentIntelligenceToday]
+      ['Waiting on you', pulse.waitingDecisions]
     ];
     el('aiCompanyPulseMetrics').innerHTML = metrics.map(function (metric) {
       return '<div><strong>' + h(metric[1]) + '</strong><span>' + h(metric[0]) + '</span></div>';
     }).join('');
+    el('aiCompanyPulseMeta').textContent = pulse.openFindings + ' open finding' + (pulse.openFindings === 1 ? '' : 's') +
+      ' · ' + pulse.highCriticalAttention + ' high or critical · ' + pulse.recentIntelligenceToday + ' recorded today';
     el('aiCompanyPriority').innerHTML = pulse.priority
       ? '<span>Current priority</span><strong>' + h(pulse.priority.projectName) + ' · ' + h(pulse.priority.title) + '</strong><p>' + h(pulse.priority.summary) + '</p>'
       : '<span>Current priority</span><strong>No operational attention item detected</strong><p>ACPM has no current deterministic exception to prioritize.</p>';
+  }
+
+  function agentStatusLabel(status) {
+    return {
+      ANALYZING: 'Analysis active', MONITORING: 'Monitoring', NOT_CONFIGURED: 'Not configured',
+      DEGRADED: 'Degraded', IDLE: 'Idle', WAITING_FOR_PROVIDER: 'Waiting for provider'
+    }[status] || 'Status unavailable';
+  }
+
+  function agentIcon(agentId) {
+    return { pm: 'AI', planning: 'PL', materials: 'MT', site: 'QA' }[agentId] || 'AI';
+  }
+
+  function findingLabel(count) {
+    return count ? count + ' current finding' + (count === 1 ? '' : 's') : 'No current findings';
+  }
+
+  function renderOverviewPreviews() {
+    var model = v2Model();
+    if (!model) return;
+    var agents = model.buildAiTeam(v2Context());
+    el('aiTeamPreview').innerHTML = agents.map(function (agent) {
+      return '<article class="ai-team-preview-row ai-team-preview-' + h(agent.id) + '"><span class="ai-agent-icon" aria-hidden="true">' + h(agentIcon(agent.id)) + '</span><div><strong>' + h(agent.label) + '</strong><small>' + h(findingLabel(agent.findingCount)) + '</small></div><span class="ai-preview-state ai-agent-' + h(String(agent.status).toLowerCase().replace(/_/g, '-')) + '">' + h(agentStatusLabel(agent.status)) + '</span></article>';
+    }).join('');
+    var timeline = model.normalizeTimeline(v2Context(), { now: Date.now(), limit: 5 });
+    el('aiActivityPreview').innerHTML = timeline.length ? timeline.map(function (item) {
+      return '<article><time>' + h(formatWhen(item.timestamp)) + '</time><div><strong>' + h(item.actor) + '</strong><span>' + h(item.title) + '</span></div><small>' + h(item.projectName) + '</small></article>';
+    }).join('') : '<p class="ai-quiet-empty">No recent intelligence activity is recorded.</p>';
   }
 
   function projectSignalMarkup(label, items, emptyText) {
@@ -752,13 +807,13 @@
   function renderTimeline() {
     var model = v2Model();
     if (!model) return;
-    var timeline = model.normalizeTimeline(v2Context(), { now: Date.now(), limit: 40 });
+    var timeline = model.normalizeTimeline(v2Context(), { now: Date.now(), limit: 16 });
     if (!timeline.length) {
       el('aiIntelligenceTimeline').innerHTML = emptyMarkup('No intelligence activity yet', 'Real detections, runs, findings, recommendations, decisions, and drafts will appear here.');
       return;
     }
     el('aiIntelligenceTimeline').innerHTML = timeline.map(function (item) {
-      return '<article class="ai-timeline-item ai-timeline-' + h(item.type.toLowerCase().replace(/_/g, '-')) + '"><div class="ai-timeline-marker"></div><div class="ai-timeline-copy"><div class="ai-timeline-meta"><span>' + h(timelineTypeLabel(item.type)) + '</span><time>' + h(formatWhen(item.timestamp)) + '</time></div><strong>' + h(item.actor) + '</strong><h4>' + h(item.title) + '</h4>' + (item.summary ? '<p>' + h(item.summary) + '</p>' : '') + '<small>' + h(item.projectName) + '</small></div></article>';
+      return '<article class="ai-timeline-item ai-timeline-' + h(item.type.toLowerCase().replace(/_/g, '-')) + '"><div class="ai-timeline-marker"></div><time>' + h(formatWhen(item.timestamp)) + '</time><div class="ai-timeline-source"><span>' + h(timelineTypeLabel(item.type)) + '</span><strong>' + h(item.actor) + '</strong></div><div class="ai-timeline-event"><h4>' + h(item.title) + '</h4>' + (item.summary ? '<p>' + h(item.summary) + '</p>' : '') + '</div><small>' + h(item.projectName) + '</small></article>';
     }).join('');
   }
 
@@ -773,11 +828,15 @@
       el('aiHandoffView').innerHTML = '<div class="ai-handoff-empty"><strong>No explicit handoff chain recorded</strong><p>Current findings remain independent unless stored IDs prove a workflow relationship.</p></div>';
       return;
     }
-    el('aiHandoffView').innerHTML = '<div class="ai-panel-head"><div><span class="ai-panel-kicker">Explicit stored relationships</span><h3>Verified Handoffs</h3></div></div><div class="ai-handoff-list">' + links.slice(0, 12).map(function (link) {
+    function handoffMarkup(link) {
       var from = records[link.fromId];
       var to = records[link.toId];
       return '<div><span>' + h(from.actor) + '</span><i aria-hidden="true">→</i><span>' + h(to.actor) + '</span><small>Linked by stored record ID</small></div>';
-    }).join('') + '</div>';
+    }
+    var primary = links.slice(0, 5);
+    var remaining = links.slice(5, 12);
+    el('aiHandoffView').innerHTML = '<div class="ai-panel-head"><div><span class="ai-panel-kicker">Explicit stored relationships</span><h3>Verified Handoffs</h3></div></div><div class="ai-handoff-list">' + primary.map(handoffMarkup).join('') + '</div>' +
+      (remaining.length ? '<details class="ai-list-disclosure ai-handoff-more"><summary>Show ' + h(remaining.length) + ' more verified relationship' + (remaining.length === 1 ? '' : 's') + '</summary><div class="ai-handoff-list">' + remaining.map(handoffMarkup).join('') + '</div></details>' : '');
   }
 
   function renderAskAnswer() {
@@ -828,6 +887,7 @@
     renderProjectIntelligence();
     renderTimeline();
     renderHandoffs();
+    renderOverviewPreviews();
     renderAskAnswer();
     setV2Section(state.section);
   }
@@ -896,12 +956,14 @@
 
   function renderAttention() {
     var items = state.data.attention;
+    var panel = el('aiAttentionList').closest('.ai-needs-action-panel');
+    panel.classList.toggle('ai-is-empty', !items.length);
     el('aiNeedsActionCount').textContent = String(items.length);
     if (!items.length) {
-      el('aiAttentionList').innerHTML = emptyMarkup('No action needed', 'Everything looks on track. Rule-based monitoring found no current operational exceptions.');
+      el('aiAttentionList').innerHTML = '<p class="ai-quiet-empty"><strong>Everything looks on track.</strong><span>No operational issues currently need your attention.</span></p>';
       return;
     }
-    el('aiAttentionList').innerHTML = items.map(function (item) {
+    function attentionMarkup(item) {
       var meta = [item.projectName, ageLabel(item)].filter(Boolean).join(' · ');
       return '<article class="ai-attention-card ai-severity-border-' + h(item.severity) + '">' +
         '<div class="ai-card-meta"><span>' + h(meta) + '</span><span class="ai-severity ai-severity-' + h(item.severity) + '">' + h(item.severity) + '</span></div>' +
@@ -909,7 +971,12 @@
         '<h4>' + h(item.title) + '</h4><p>' + h(item.summary) + '</p>' +
         '<div class="ai-card-actions"><button type="button" class="btn-ws-secondary" data-project-id="' + h(item.projectId) + '" data-ai-destination="' + h(item.recommendedDestination) + '">' + h(actionLabel(item.recommendedDestination)) + '</button></div>' +
       '</article>';
-    }).join('');
+    }
+    var primary = items.slice(0, 3).map(attentionMarkup).join('');
+    var remaining = items.slice(3);
+    el('aiAttentionList').innerHTML = primary + (remaining.length
+      ? '<details class="ai-list-disclosure"><summary>Show ' + h(remaining.length) + ' more attention item' + (remaining.length === 1 ? '' : 's') + '</summary><div class="ai-card-list">' + remaining.map(attentionMarkup).join('') + '</div></details>'
+      : '');
   }
 
   function renderProjectSummaries() {
@@ -965,7 +1032,7 @@
     var agents = model ? model.buildAiTeam(v2Context()) : [];
     el('aiAgentStatus').innerHTML = agents.map(function (agent) {
       var statusClassName = String(agent.status || 'IDLE').toLowerCase().replace(/_/g, '-');
-      return '<article class="ai-agent-card ai-agent-card-v2" data-ai-agent="' + h(agent.id) + '" data-ai-agent-status="' + h(agent.status) + '"><div class="ai-agent-icon" aria-hidden="true">' + (agent.id === 'pm' ? 'AI' : agent.id === 'site' ? 'QA' : 'OP') + '</div><div class="ai-agent-copy"><span class="ai-agent-role">' + h(agent.id === 'pm' ? 'Synthesis agent' : 'Specialized monitor') + '</span><h3>' + h(agent.label) + '</h3><p>' + h(agent.description) + '</p><small>' + h(agent.findingCount) + ' current finding' + (agent.findingCount === 1 ? '' : 's') + '</small></div><div class="ai-agent-state ai-agent-' + h(statusClassName) + '"><i></i><strong>' + h(agent.status) + '</strong><span>' + h(agent.statusDetail) + '</span></div></article>';
+      return '<article class="ai-agent-card ai-agent-card-v2 ai-agent-card-' + h(agent.id) + '" data-ai-agent="' + h(agent.id) + '" data-ai-agent-status="' + h(agent.status) + '"><div class="ai-agent-icon" aria-hidden="true">' + h(agentIcon(agent.id)) + '</div><div class="ai-agent-copy"><span class="ai-agent-role">' + h(agent.id === 'pm' ? 'Synthesis agent' : 'Domain monitor') + '</span><h3>' + h(agent.label) + '</h3><p>' + h(agent.description) + '</p><small>' + h(findingLabel(agent.findingCount)) + '</small></div><div class="ai-agent-state ai-agent-' + h(statusClassName) + '"><i></i><strong>' + h(agentStatusLabel(agent.status)) + '</strong><span>' + h(agent.statusDetail) + '</span></div></article>';
     }).join('');
   }
 
@@ -1016,8 +1083,10 @@
       return severityDifference || oldestFirst(a, b);
     });
     el('aiWaitingCount').textContent = String(decisions.length);
+    var panel = el('aiDecisionList').closest('.ai-waiting-panel');
+    panel.classList.toggle('ai-is-empty', !decisions.length);
     if (!decisions.length) {
-      el('aiDecisionList').innerHTML = emptyMarkup('No decisions are waiting', 'Open human decisions will appear here after validated AI review.');
+      el('aiDecisionList').innerHTML = '<p class="ai-quiet-empty"><strong>No decisions are waiting.</strong><span>Management is clear for now.</span></p>';
       return;
     }
     el('aiDecisionList').innerHTML = decisions.map(function (decision) {
@@ -1027,7 +1096,6 @@
         '<div class="ai-card-meta"><span>' + h(projectName(decision.projectId || recommendation.projectId)) + '</span><span class="ai-severity ai-severity-' + level + '">' + h(level) + '</span></div>' +
         '<h4>' + h(recommendation.title || 'Human decision required') + '</h4>' +
         '<p>' + h(recommendation.summary || decision.question || 'No validated summary was provided.') + '</p>' +
-        '<div class="ai-impact-row">' + impactMarkup('Schedule impact', recommendation.scheduleImpact, 'schedule') + impactMarkup('Cost impact', recommendation.costImpact, 'cost') + '</div>' +
         '<div class="ai-recommended"><span>Recommended action</span><strong>' + h(firstAction(recommendation)) + '</strong></div>' +
         '<div class="ai-card-actions"><button type="button" class="btn-ws-secondary" data-ai-review="' + h(decision.id) + '">Review</button></div>' +
       '</article>';

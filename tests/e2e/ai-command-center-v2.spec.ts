@@ -40,7 +40,7 @@ async function openCommandCenter(page: Page, workspace = false) {
   await page.waitForFunction(() => window.getAiCommandCenterDiagnostics?.().listenerCount === 8);
 }
 
-async function capture(page: Page, name: string) {
+async function capture(page: Page, name: string, fullPage = true) {
   if (process.env.ACPM_CAPTURE_SCREENSHOTS !== '1') return;
   const dismiss = page.locator('.toast-msg .toast-dismiss');
   if (await dismiss.isVisible().catch(() => false)) {
@@ -48,40 +48,54 @@ async function capture(page: Page, name: string) {
     await expect(page.locator('.toast-msg')).toHaveCount(0);
   }
   await page.addStyleTag({ content: '.acpm-staging-marker { position: absolute !important; }' });
-  await page.screenshot({ path: `test-results/${name}.png`, fullPage: true });
+  await page.screenshot({ path: `test-results/${name}.png`, fullPage });
 }
 
 test.describe('AI Command Center V2 vision alignment', () => {
   test('1. Overview loads as the default operations view', async ({ page }) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
     await setup(page, 'pm', v2Scenario());
     await openCommandCenter(page);
     await expect(page.locator('[data-ai-v2-panel="overview"]')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Company Pulse' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Ask Command Center' })).toBeVisible();
-    await capture(page, 'ai-v2-desktop-overview');
+    await expect(page.getByRole('heading', { name: 'Ask your ACPM operations team' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Waiting On You' })).toBeVisible();
+    const hierarchy = await page.evaluate(() => ['.ai-company-pulse', '.ai-ask-panel', '.ai-management-overview', '.ai-overview-team']
+      .map((selector) => document.querySelector(selector)!.getBoundingClientRect().top));
+    expect(hierarchy).toEqual([...hierarchy].sort((a, b) => a - b));
+    await expect(page.locator('#aiSupportingWorkflows')).not.toHaveAttribute('open', '');
+    await expect(page.locator('.ai-system-disclosure')).not.toHaveAttribute('open', '');
+    await capture(page, 'ai-v2-final-desktop', false);
   });
 
   test('2. Company Pulse renders canonical counts and no fake percentages', async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
     await setup(page, 'pm', v2Scenario());
     await openCommandCenter(page);
     const pulse = page.locator('#aiCompanyPulseMetrics');
     await expect(pulse).toContainText('Active projects');
     await expect(pulse).toContainText('Need attention');
     await expect(pulse).toContainText('Waiting on you');
+    await expect(pulse.locator(':scope > div')).toHaveCount(3);
+    await expect(page.locator('#aiCompanyPulseMeta')).toContainText('open findings');
     await expect(page.locator('#aiCompanyPriority')).toContainText('RCBC Plaza');
     await expect(page.locator('.ai-company-pulse')).not.toContainText(/health|risk %|confidence|financial exposure|completion score/i);
+    await expect(page.locator('#aiTeamPreview .ai-team-preview-row')).toHaveCount(4);
+    await expect(page.locator('#aiActivityPreview article')).toHaveCount(5);
+    await capture(page, 'ai-v2-final-populated-overview');
   });
 
   test('3. AI Team renders four specialized truthful agents', async ({ page }) => {
     await setup(page, 'pm', v2Scenario());
     await openCommandCenter(page);
-    await page.getByRole('button', { name: 'AI Team', exact: true }).click();
+    await page.getByRole('button', { name: 'View team' }).click();
     await expect(page.locator('#aiV2TeamPanel')).toBeVisible();
+    await expect(page.locator('#aiV2TeamPanel')).toBeFocused();
     await expect(page.locator('#aiAgentStatus .ai-agent-card')).toHaveCount(4);
     for (const name of ['PM Agent', 'Planning Monitor', 'Materials Monitor', 'Site / QA Monitor']) {
       await expect(page.locator('#aiAgentStatus')).toContainText(name);
     }
-    await capture(page, 'ai-v2-ai-team');
+    await capture(page, 'ai-v2-final-team');
   });
 
   test('4. provider-off states never claim unrecorded work', async ({ page }) => {
@@ -98,7 +112,7 @@ test.describe('AI Command Center V2 vision alignment', () => {
   test('5. intelligence timeline distinguishes recorded provenance', async ({ page }) => {
     await setup(page, 'pm', v2Scenario());
     await openCommandCenter(page);
-    await page.getByRole('button', { name: 'Activity', exact: true }).click();
+    await page.getByRole('button', { name: 'View activity' }).click();
     const timeline = page.locator('#aiIntelligenceTimeline');
     await expect(timeline).toBeVisible();
     await expect(timeline).toContainText('System detected');
@@ -106,32 +120,32 @@ test.describe('AI Command Center V2 vision alignment', () => {
     await expect(timeline).toContainText('AI analysis');
     await expect(timeline).toContainText('Human decision');
     await expect(timeline).toContainText('Action draft');
-    await capture(page, 'ai-v2-activity');
+    await capture(page, 'ai-v2-final-activity');
   });
 
   test('6. project drill-down groups planning, materials, site, and management', async ({ page }) => {
     await setup(page, 'pm', v2Scenario());
     await openCommandCenter(page);
-    await page.getByRole('button', { name: 'Projects', exact: true }).click();
+    await page.getByRole('button', { name: 'View projects' }).click();
     await page.locator('[data-ai-intelligence-project="test-project-1"]').click();
     const detail = page.locator('#aiProjectIntelligence');
     await expect(detail).toContainText('RCBC Plaza');
     for (const section of ['Planning', 'Materials', 'Site / QA', 'Management']) await expect(detail).toContainText(section);
     await expect(detail).toContainText('Gypsum Board');
     await expect(detail).not.toContainText(/health score|% health|risk %/i);
-    await capture(page, 'ai-v2-project-intelligence');
+    await capture(page, 'ai-v2-final-project');
   });
 
   test('7. Ask answers a known company question deterministically', async ({ page }) => {
     await setup(page, 'pm', v2Scenario());
     await openCommandCenter(page);
     await page.locator('#aiAskInput').fill('Which project needs the most attention?');
-    await page.locator('#aiAskForm').getByRole('button', { name: 'Ask' }).click();
+    await page.locator('#aiAskInput').press('Enter');
     const answer = page.locator('#aiAskAnswer');
     await expect(answer).toHaveAttribute('data-generated-by', 'deterministic');
     await expect(answer).toContainText('Current company priority');
     await expect(answer).toContainText('RCBC Plaza');
-    await capture(page, 'ai-v2-ask-command-center');
+    await capture(page, 'ai-v2-final-ask');
   });
 
   test('8. Ask supports a project-specific Tagalog question', async ({ page }) => {
@@ -168,7 +182,7 @@ test.describe('AI Command Center V2 vision alignment', () => {
     await expect(page.locator('#aiNeedsActionCount')).toHaveText('4');
     await expect(page.locator('#aiWaitingCount')).toHaveText('2');
     await expect(page.locator('.ai-needs-action-panel')).toContainText('System detected');
-    await expect(page.locator('.ai-waiting-panel')).toContainText('Actual AI decisions');
+    await expect(page.locator('.ai-waiting-panel')).toContainText('Human judgment');
   });
 
   test('12. Action Drafts remain a separate controlled queue', async ({ page }) => {
@@ -202,7 +216,11 @@ test.describe('AI Command Center V2 vision alignment', () => {
     await expect(page.locator('#aiCommandSections')).toBeVisible();
     const width = await page.evaluate(() => ({ body: document.body.scrollWidth, viewport: document.documentElement.clientWidth }));
     expect(width.body).toBeLessThanOrEqual(width.viewport + 1);
-    await capture(page, 'ai-v2-mobile');
+    await page.setViewportSize({ width: 390, height: 700 });
+    await expect(page.locator('#aiAskInput')).toBeVisible();
+    const compactWidth = await page.evaluate(() => ({ body: document.body.scrollWidth, viewport: document.documentElement.clientWidth }));
+    expect(compactWidth.body).toBeLessThanOrEqual(compactWidth.viewport + 1);
+    await capture(page, 'ai-v2-final-mobile');
   });
 
   test('16. section switching creates no blocking overlay or document overflow', async ({ page }) => {

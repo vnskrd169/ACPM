@@ -7,7 +7,7 @@
 // -----------------------------------------------------------------------------
 
 // Bump this EVERY time you deploy changed files.
-const CACHE_NAME = 'acpm-v148';
+const CACHE_NAME = 'acpm-v149';
 
 const ASSETS = [
   './',
@@ -18,7 +18,7 @@ const ASSETS = [
   './workspace.html',
   './environment.js?v=1',
   './style.css?v=114',
-  './assets/brand/ai-command-center.css?v=6',
+  './assets/brand/ai-command-center.css?v=7',
   './utils.js?v=87',
   './auth.js?v=99',
   './main.js?v=112',
@@ -42,7 +42,7 @@ const ASSETS = [
   './pmos-office.js?v=5',
   './ai-attention.js?v=2',
   './ai-command-center-v2.js?v=1',
-  './ai-command-center.js?v=7',
+  './ai-command-center.js?v=8',
   './apm-workspace-vnext.js?v=1',
   './face-attendance.js?v=1',
   './pmos-task-adapter.js?v=2',
