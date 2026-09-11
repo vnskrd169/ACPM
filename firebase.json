@@ -15,6 +15,7 @@
       ".env.*",
       "**/.*",
       "**/node_modules/**",
+      "functions/**",
       "docs/**",
       "scripts/**",
       "tests/**",

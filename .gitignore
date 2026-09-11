@@ -27,3 +27,6 @@ functions/lib/
 
 # Standalone experimental face-attendance prototype (kept on feature/pmos-face-attendance-assist branch)
 line17-face-attendance/
+
+# Generated local materials preview; rebuild with scripts/build_materials_preview.py
+dev/materials-preview.html

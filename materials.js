@@ -104,6 +104,7 @@ function toggleApmMaterialsAdvanced() {
 function initMaterials(pid) {
   _mpid = pid; _draftItems = []; _purchaseOrders = [];
   detachMatListeners();
+  initMaterialsWorkspace(pid);
   renderDraft();
   watchMatBudget(pid);
   watchLedger(pid);
@@ -112,20 +113,21 @@ function initMaterials(pid) {
   watchMaterialMovements(pid);
   loadGlobalSuppliersForPO();
   ensureApmMaterialsUi();
+  alignMaterialApmFlow();
 
   // Set default PO date to today
   const poDate = $('poDate');
-  if (poDate && !poDate.value) poDate.value = new Date().toISOString().slice(0, 10);
+  if (poDate && !poDate.value) poDate.value = materialToday();
 }
 
 function detachMatListeners() {
-  _matListeners.forEach(ref => ref.off());
+  _matListeners.forEach(({ ref, cb }) => ref.off('value', cb));
   _matListeners = [];
 }
 
 function matListen(ref, cb) {
   ref.on('value', cb);
-  _matListeners.push(ref);
+  _matListeners.push({ ref, cb });
 }
 
 // ── Budget KPIs ─────────────────────────────────────────────
@@ -157,10 +159,7 @@ function watchMatBudget(pid) {
 function watchInventory(pid) {
   const ref = firebase.database().ref(`projects/${pid}/inventory`);
   matListen(ref, snap => {
-    _inventory = {};
-    snap.forEach(c => {
-      _inventory[c.key] = c.val();
-    });
+    _inventory = materialInventoryMap(snap);
     renderInventoryList(snap);
     renderInventoryAlerts(snap);
     renderMaterialIssueOptions();
@@ -177,10 +176,7 @@ function renderInventoryList(snap) {
     return;
   }
 
-  const items = [];
-  snap.forEach(c => {
-    items.push({ key: c.key, ...c.val() });
-  });
+  const items = materialInventoryRows(snap.val());
   items.sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
 
   const table = document.createElement('table');
@@ -192,7 +188,7 @@ function renderInventoryList(snap) {
     </tr></thead>
     <tbody>
       ${items.map(item => {
-        const isLow = item.qtyOnHand <= (item.reorderPoint || 0);
+        const isLow = item.reorderPoint > 0 && item.qtyOnHand <= item.reorderPoint;
         return `<tr class="s-row ${isLow ? 'inventory-low' : ''}">
           <td class="s-cell s-bold">${escapeHtml(item.item)}</td>
           <td class="s-cell">${escapeHtml(item.size) || '\u2014'}</td>
@@ -214,9 +210,8 @@ function renderInventoryAlerts(snap) {
   container.innerHTML = '';
 
   const alerts = [];
-  snap.forEach(c => {
-    const item = c.val();
-    if (item.qtyOnHand <= (item.reorderPoint || 0)) {
+  materialInventoryRows(snap.val()).forEach(item => {
+    if (item.reorderPoint > 0 && item.qtyOnHand <= item.reorderPoint) {
       alerts.push(`${escapeHtml(item.item)} (${item.qtyOnHand} ${escapeHtml(item.unit)})`);
     }
   });
@@ -354,7 +349,7 @@ function materialUserId() {
 }
 
 function materialUserName() {
-  return window._currentUser?.name || window._currentUser?.email || 'System';
+  return window._currentUser?.name || window._currentUser?.displayName || 'Name unavailable';
 }
 
 function materialItemsArray(items) {
@@ -363,7 +358,7 @@ function materialItemsArray(items) {
 }
 
 function buildMaterialItemKey(item) {
-  return item.itemKey || normalizeInvKey(item.desc || item.description, item.size);
+  return item.itemKey || encodeURIComponent(materialIdentity(item)).replace(/\./g, '%2E');
 }
 
 function buildPoItem(raw, index = 0) {
@@ -374,7 +369,7 @@ function buildPoItem(raw, index = 0) {
   const itemId = raw.itemId || `item_${String(index + 1).padStart(3, '0')}`;
   const itemKey = buildMaterialItemKey({ ...raw, desc, size });
   const qtyReceived = parseFloat(raw.qtyReceived) || 0;
-  const qtyAccepted = parseFloat(raw.qtyAccepted) || qtyReceived || 0;
+  const qtyAccepted = parseFloat(raw.qtyAccepted ?? qtyReceived) || 0;
   const qtyRejected = parseFloat(raw.qtyRejected) || 0;
   const qtyCancelled = parseFloat(raw.qtyCancelled) || 0;
 
@@ -404,9 +399,13 @@ function materialMovementPayload(data) {
   const now = Date.now();
   return {
     type: data.type,
-    date: data.date || new Date(now).toISOString().slice(0, 10),
+    date: data.date || materialToday(new Date(now)),
     createdAt: data.createdAt || now,
     createdBy: data.createdBy || materialUserId(),
+    createdByName: data.createdByName || (data.createdBy && data.createdBy !== materialUserId() ? '' : materialUserName()),
+    poNo: data.poNo || '',
+    deliveryNo: data.deliveryNo || '',
+    issueNo: data.issueNo || '',
     itemKey: data.itemKey || '',
     description: data.description || data.desc || '',
     size: data.size || '',
@@ -509,10 +508,7 @@ async function createPurchaseOrder(pid, input) {
   };
 
   const invSnap = await firebase.database().ref(`projects/${pid}/inventory`).once('value');
-  const liveInv = {};
-  invSnap.forEach(c => {
-    liveInv[c.key] = c.val();
-  });
+  const liveInv = materialInventoryMap(invSnap);
 
   const updates = {};
   updates[`projects/${pid}/purchaseOrders/${poId}`] = po;
@@ -534,7 +530,7 @@ async function createPurchaseOrder(pid, input) {
       createdAt: now
     };
 
-    if (!liveInv[item.itemKey]) {
+    if (!liveInv[item.itemKey] && !Object.values(liveInv).some(stock => materialIdentity(stock) === materialIdentity(item))) {
       updates[`projects/${pid}/inventory/${item.itemKey}`] = {
         itemKey: item.itemKey,
         item: item.desc,
@@ -605,26 +601,32 @@ async function receiveDelivery(pid, poId, input) {
   if (!pid || !poId) throw new Error('Project and PO are required.');
   const po = await getPurchaseOrder(pid, poId);
   if (!po) throw new Error('Purchase order not found.');
+  if (!['approved', 'ordered', 'partially_delivered'].includes(po.status)) throw new Error('Only approved orders with outstanding quantities can receive a delivery.');
 
   const poItems = materialItemsArray(po.items).map((item, index) => ({ ...buildPoItem(item, index), _index: index }));
   const receivedMap = await calculateReceivedQtyByPOItem(pid, poId);
-  const date = input.date || input.deliveryDate || new Date().toISOString().slice(0, 10);
+  const date = input.date || input.deliveryDate || materialToday();
   const deliveryId = firebase.database().ref(`projects/${pid}/deliveries`).push().key;
   const updates = {};
   const deliveryItems = [];
   let allGood = true;
+  const seenItems = new Set();
 
   materialItemsArray(input.items).forEach(raw => {
     const index = Number.isInteger(raw.index) ? raw.index : parseInt(raw.index, 10);
     const poItem = poItems[index] || poItems.find(item => item.itemId === raw.poItemId || item.itemKey === raw.itemKey);
-    if (!poItem) return;
+    if (!poItem) throw new Error('A delivery line does not match this purchase order.');
+    if (seenItems.has(poItem.itemId)) throw new Error('A material may only appear once in a delivery.');
+    seenItems.add(poItem.itemId);
 
     const qtyReceived = parseFloat(raw.qtyReceived) || 0;
-    if (qtyReceived <= 0) return;
+    if (!Number.isFinite(qtyReceived) || qtyReceived < 0) throw new Error('Received quantities must be positive numbers.');
+    if (qtyReceived === 0) { if (Number(raw.qtyRejected) > 0) throw new Error('Enter the total received before the damaged quantity.'); return; }
 
     const condition = raw.condition || 'good';
-    const qtyAccepted = condition === 'damaged' ? 0 : qtyReceived;
-    const qtyRejected = condition === 'damaged' ? qtyReceived : 0;
+    const qtyRejected = condition === 'damaged' ? qtyReceived : Number(raw.qtyRejected || 0);
+    if (!Number.isFinite(qtyRejected) || qtyRejected < 0 || qtyRejected > qtyReceived) throw new Error('Damaged quantity must be between zero and the quantity received.');
+    const qtyAccepted = qtyReceived - qtyRejected;
     const prior = receivedMap[poItem.itemId] || receivedMap[poItem.itemKey] || {};
     const priorAccepted = parseFloat(prior.qtyAccepted) || parseFloat(poItem.qtyAccepted) || 0;
     const ordered = parseFloat(poItem.qtyOrdered ?? poItem.qty) || 0;
@@ -633,7 +635,7 @@ async function receiveDelivery(pid, poId, input) {
     if (qtyReceived > remaining) {
       throw new Error(`${poItem.desc} exceeds remaining PO quantity. Remaining: ${remaining}.`);
     }
-    if (condition !== 'good') allGood = false;
+    if (condition !== 'good' || qtyRejected > 0) allGood = false;
 
     deliveryItems.push({
       poItemId: poItem.itemId,
@@ -662,6 +664,22 @@ async function receiveDelivery(pid, poId, input) {
   });
 
   if (!deliveryItems.length) throw new Error('Enter quantities received.');
+  const deliveryCounter = await firebase.database().ref(`projects/${pid}/deliveryCounter`).transaction(value => (Number(value) || 0) + 1);
+  const deliveryNo = `DR-${String(deliveryCounter.snapshot.val()).padStart(3, '0')}`;
+  const ledgerSnap = await firebase.database().ref(`projects/${pid}/ledger`).orderByChild('poId').equalTo(poId).once('value');
+  ledgerSnap.forEach(child => {
+    const row = child.val();
+    if (row.status === 'cancelled') return;
+    const item = poItems.find(item => item.itemId === row.poItemId) || poItems.find(item => materialIdentity(item) === materialIdentity(row));
+    const received = deliveryItems.find(line => line.poItemId === item?.itemId);
+    if (!item || !received) return;
+    const prior = receivedMap[item.itemId] || receivedMap[item.itemKey] || {};
+    const accepted = Number(prior.qtyAccepted ?? item.qtyAccepted) + received.qtyAccepted;
+    const base = `projects/${pid}/ledger/${child.key}`;
+    updates[`${base}/qtyAccepted`] = accepted;
+    updates[`${base}/deliveryStatus`] = accepted >= item.qtyOrdered ? 'delivered' : accepted > 0 ? 'partially_delivered' : 'ordered';
+    if (row.status !== 'paid') updates[`${base}/status`] = updates[`${base}/deliveryStatus`];
+  });
 
   const acceptedItems = deliveryItems.filter(item => item.qtyAccepted > 0);
   const inventoryResult = await updateInventoryFromReceiving(pid, acceptedItems, { updates, date });
@@ -683,6 +701,7 @@ async function receiveDelivery(pid, poId, input) {
       movementCost: item.movementCost,
       balanceAfter: item.balanceAfter,
       sourceType: 'delivery',
+      deliveryNo,
       sourceId: deliveryId,
       poId,
       deliveryId,
@@ -711,6 +730,8 @@ async function receiveDelivery(pid, poId, input) {
     .reduce((sum, order) => sum + (parseFloat(order.total) || 0), 0);
 
   updates[`projects/${pid}/deliveries/${deliveryId}`] = {
+    deliveryNo,
+    receivedByName: materialUserName(),
     poId,
     poNo: po.poNo || `PO-${String(po.seq || '???').padStart(3, '0')}`,
     date,
@@ -739,10 +760,7 @@ async function receiveDelivery(pid, poId, input) {
 
 async function updateInventoryFromReceiving(pid, receivedItems, options = {}) {
   const invSnap = await firebase.database().ref(`projects/${pid}/inventory`).once('value');
-  const liveInv = {};
-  invSnap.forEach(c => {
-    liveInv[c.key] = c.val();
-  });
+  const liveInv = materialInventoryMap(invSnap);
 
   const now = Date.now();
   const updates = options.updates || {};
@@ -751,7 +769,8 @@ async function updateInventoryFromReceiving(pid, receivedItems, options = {}) {
     const qtyAccepted = parseFloat(item.qtyAccepted ?? item.qtyReceived) || 0;
     if (qtyAccepted <= 0) return;
 
-    const key = item.itemKey || buildMaterialItemKey(item);
+    const preferredKey = item.itemKey || buildMaterialItemKey(item);
+    const key = liveInv[preferredKey] ? preferredKey : (Object.values(liveInv).find(stock => materialIdentity(stock) === materialIdentity(item))?.key || preferredKey);
     const current = liveInv[key] || {};
     const currentQty = parseFloat(current.qtyOnHand) || 0;
     const currentValue = parseFloat(current.totalValue) || ((parseFloat(current.avgCost) || 0) * currentQty);
@@ -772,12 +791,13 @@ async function updateInventoryFromReceiving(pid, receivedItems, options = {}) {
       avgCost,
       totalValue: nextValue,
       reorderPoint: parseFloat(current.reorderPoint) || parseFloat(item.reorderPoint) || 0,
-      lastReceived: options.date || item.date || new Date(now).toISOString().slice(0, 10),
+      lastReceived: options.date || item.date || materialToday(new Date(now)),
       lastReceivedAt: now,
       lastUpdated: now,
       lastMovementAt: now
     };
 
+    liveInv[key] = updates[`projects/${pid}/inventory/${key}`];
     results.push({
       ...item,
       itemKey: key,
@@ -796,10 +816,7 @@ async function updateInventoryFromReceiving(pid, receivedItems, options = {}) {
 
 async function validateStockAvailability(pid, issueItems) {
   const invSnap = await firebase.database().ref(`projects/${pid}/inventory`).once('value');
-  const inventory = {};
-  invSnap.forEach(c => {
-    inventory[c.key] = c.val();
-  });
+  const inventory = materialInventoryMap(invSnap);
 
   materialItemsArray(issueItems).forEach(item => {
     const itemKey = item.itemKey || buildMaterialItemKey(item);
@@ -871,14 +888,14 @@ async function issueMaterial(pid, input) {
   const inventory = await validateStockAvailability(pid, issueItems);
   const issueId = firebase.database().ref(`projects/${pid}/materialIssuances`).push().key;
   const now = Date.now();
-  const issueNo = input.issueNo || `ISS-${new Date(now).toISOString().slice(0, 10).replace(/-/g, '')}-${issueId.slice(-5)}`;
+  const issueNo = input.issueNo || `ISS-${materialToday(new Date(now)).replace(/-/g, '')}-${issueId.slice(-5)}`;
   const updates = {};
   const inventoryResult = await updateInventoryFromIssuance(pid, issueItems, { updates, inventory });
   const totalCost = inventoryResult.items.reduce((sum, item) => sum + item.movementCost, 0);
 
   updates[`projects/${pid}/materialIssuances/${issueId}`] = {
     issueNo,
-    date: input.date || new Date(now).toISOString().slice(0, 10),
+    date: input.date || materialToday(new Date(now)),
     issuedTo: input.issuedTo || '',
     requestedBy: input.requestedBy || '',
     location: input.location || '',
@@ -937,38 +954,41 @@ async function calculateMaterialBudgetSpent(pid, options = {}) {
 
 function renderDraft() {
   const el = $('draftList'); if (!el) return;
+  setText('materialDraftCount', String(_draftItems.length));
+  if ($('materialSaveDraftGroup')) $('materialSaveDraftGroup').disabled = !_draftItems.length;
   if (!_draftItems.length) {
-    el.innerHTML = '<p class="empty-hint">No items yet. Fill the form above and click + Add Item.</p>';
+    el.innerHTML = '<p class="empty-hint">Add a material above, or choose a material group.</p>';
     setText('draftTotal', peso(0)); return;
   }
-
-  const fragment = document.createDocumentFragment();
+  el.replaceChildren();
   _draftItems.forEach((item, i) => {
-    const row = document.createElement('div');
-    row.className = 'draft-row';
-    row.innerHTML = `
-      <span class="draft-desc">${escapeHtml(item.desc)}${item.size ? ` <span class="draft-size">[${escapeHtml(item.size)}]</span>` : ''}</span>
-      <span class="draft-qty">${item.qty} ${escapeHtml(item.unit)}</span>
-      <span class="draft-cost">${peso(item.cost)}/unit</span>
-      <span class="draft-total">${peso(item.total)}</span>
-      <button class="draft-del" aria-label="Remove item" data-index="${i}">\u2715</button>
-    `;
-    row.querySelector('.draft-del').addEventListener('click', () => removeDraftItem(i));
-    fragment.appendChild(row);
+    const row = document.createElement('div'); row.className = 'draft-row';
+    row.innerHTML = '<div class="draft-desc"><label>Material<input data-field="desc" maxlength="100" aria-label="Material name" value="' + escapeHtml(item.desc) + '"></label><label>Specification<input data-field="size" aria-label="Material specification" value="' + escapeHtml(item.size || '') + '"></label></div>' +
+      '<label>Quantity<input data-field="qty" type="number" min="0.001" step="any" aria-label="Draft quantity" value="' + item.qty + '"></label>' +
+      '<label>Unit<input data-field="unit" maxlength="30" aria-label="Draft unit" value="' + escapeHtml(item.unit || '') + '"></label>' +
+      '<label>Unit price<input data-field="cost" type="number" min="0.01" step="any" aria-label="Draft unit price" value="' + item.cost + '"></label>' +
+      '<span class="draft-total">' + peso(item.total) + '</span><button type="button" class="draft-del" aria-label="Remove ' + escapeHtml(item.desc) + '">×</button>';
+    row.querySelectorAll('[data-field]').forEach(input => input.addEventListener('input', () => editMaterialDraft(i, input.dataset.field, input)));
+    row.querySelector('.draft-del').addEventListener('click', () => removeDraftItem(i)); el.append(row);
   });
-  el.innerHTML = '';
-  el.appendChild(fragment);
-  setText('draftTotal', peso(_draftItems.reduce((s, x) => s + x.total, 0)));
+  setText('draftTotal', peso(_draftItems.reduce((sum, item) => sum + item.total, 0)));
 }
 
 // ── Submit PO with Approval Workflow ────────────────────────
 async function submitPO() {
+  if (submitPO.busy) return;
+  submitPO.busy = true;
+  try { return await submitPOOnce(); } finally { submitPO.busy = false; }
+}
+
+async function submitPOOnce() {
   if (!_mpid) return;
   if (!canTouchMaterialsProject()) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
   if (!_draftItems.length) { showToast('Add at least one item first.', 'error'); return; }
+  if (_draftItems.some(item => !item.desc || !item.unit || !Number.isFinite(item.qty) || item.qty <= 0 || !Number.isFinite(item.cost) || item.cost <= 0)) { showToast('Each draft item needs a material, unit, quantity and unit price greater than zero.', 'error'); return; }
 
   const supplier = $('poSupplier')?.value.trim();
   const supplierId = $('poSupplierId')?.value.trim() || '';
@@ -1105,17 +1125,19 @@ async function openDeliveryModal(poId) {
         <div class="delivery-item-row">
           <span class="delivery-item-name">${escapeHtml(item.desc)} ${item.size ? `[${escapeHtml(item.size)}]` : ''}</span>
           <span class="delivery-item-ordered">Ordered: ${item.qty} ${escapeHtml(item.unit)} &middot; Remaining: ${remaining} ${escapeHtml(item.unit)}</span>
-          <input type="number" class="delivery-qty-received" id="delQty_${i}" placeholder="Qty Received" inputmode="decimal" max="${remaining}" ${remaining <= 0 ? 'disabled' : ''} aria-label="Qty received for line ${i + 1}">
-          <select id="delCondition_${i}" aria-label="Delivery condition for line ${i + 1}">
+          <label>Received<input type="number" min="0" step="any" class="delivery-qty-received" id="delQty_${i}" placeholder="Qty Received" inputmode="decimal" max="${remaining}" ${remaining <= 0 ? 'disabled' : ''} aria-label="Qty received for line ${i + 1}"></label>
+          <label>Damaged / rejected<input type="number" min="0" step="any" class="delivery-qty-rejected" id="delRejected_${i}" value="0" max="${remaining}" ${remaining <= 0 ? 'disabled' : ''} aria-label="Damaged quantity for line ${i + 1}"></label>
+          <label>Condition<select id="delCondition_${i}" aria-label="Delivery condition for line ${i + 1}">
             <option value="good">Good</option>
             <option value="damaged">Damaged</option>
             <option value="incomplete">Incomplete</option>
-          </select>
+          </select></label>
         </div>
       `;
       }).join('');
     }
-    $('deliveryDate').value = new Date().toISOString().slice(0, 10);
+    $('deliveryRef').value = '';
+    $('deliveryDate').value = materialToday();
     $('deliveryModal').classList.remove('hidden');
   } catch (e) {
     console.error('openDeliveryModal failed:', e);
@@ -1129,6 +1151,12 @@ function closeDeliveryModal() {
 }
 
 async function confirmDelivery() {
+  if (confirmDelivery.busy) return;
+  confirmDelivery.busy = true;
+  try { return await confirmDeliveryOnce(); } finally { confirmDelivery.busy = false; }
+}
+
+async function confirmDeliveryOnce() {
   if (!_mpid || !_currentDeliveryPO) return;
   if (!canTouchMaterialsProject()) {
     showToast('You do not have edit access to this project.', 'error');
@@ -1152,8 +1180,9 @@ async function confirmDelivery() {
       poItemId: item.itemId || `item_${String(i + 1).padStart(3, '0')}`,
       itemKey: item.itemKey || buildMaterialItemKey(item),
       qtyReceived: parseFloat($(`delQty_${i}`)?.value) || 0,
-      condition: $(`delCondition_${i}`)?.value || 'good'
-    })).filter(item => item.qtyReceived > 0);
+      condition: $(`delCondition_${i}`)?.value || 'good',
+      qtyRejected: Number($(`delRejected_${i}`)?.value || 0)
+    }));
 
     const result = await receiveDelivery(_mpid, _currentDeliveryPO, {
       date: deliveryDate,
@@ -1183,7 +1212,7 @@ function openInvoiceModal(poId) {
   _currentInvoicePO = poId;
   $('invoicePoId').value = poId;
   $('invoiceNo').value = '';
-  $('invoiceDate').value = new Date().toISOString().slice(0, 10);
+  $('invoiceDate').value = materialToday();
   $('invoiceAmount').value = '';
   $('threeWayMatchResult').innerHTML = '';
   $('invoiceModal').classList.remove('hidden');
@@ -1270,13 +1299,16 @@ async function confirmInvoice() {
 // ══════════════════════════════════════════════════════
 function watchLedger(pid) {
   const ref = firebase.database().ref(`projects/${pid}/ledger`);
-  matListen(ref, snap => {
+  matListen(ref, snap => { _materialLedgerSnapshot = snap; renderMaterialLedger(snap); });
+}
+
+function renderMaterialLedger(snap) {
     const tbody = $('ledgerBody'); if (!tbody) return;
     tbody.innerHTML = '';
     let paidTotal = 0, orderCount = 0;
 
     if (!snap.exists()) {
-      tbody.innerHTML = `<tr><td colspan="9" class="empty-cell">No items yet. Create a Purchase Order above.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9" class="empty-cell">No items yet. Create a purchase order from New order.</td></tr>`;
       setText('ledgerTotal', peso(0));
       setText('ledgerCount', '0 items');
       updateMaterialsSummary(snap); return;
@@ -1286,8 +1318,9 @@ function watchLedger(pid) {
     snap.forEach(c => {
       const key = c.key, m = c.val();
       orderCount++;
-      const isPaid = m.status === 'paid' || m.status === 'delivered';
-      if (isPaid) paidTotal += m.total || 0;
+      const receipt = materialLedgerReceipt(m);
+      if (receipt && receipt.status !== 'Cancelled') paidTotal += receipt.accepted * (Number(m.cost) || 0);
+      else if (!receipt && (m.status === 'paid' || m.status === 'delivered')) paidTotal += Number(m.total) || 0;
 
       const statusOpts = ['pending_approval','ordered','delivered','paid','cancelled'].map(s =>
         `<option value="${s}" ${m.status === s ? 'selected' : ''}>${s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>`
@@ -1304,7 +1337,7 @@ function watchLedger(pid) {
         <td class="l-cell l-right">${peso(m.cost)}</td>
         <td class="l-cell l-right l-bold">${peso(m.total)}</td>
         <td class="l-cell">
-          <select class="status-sel" onchange="updateLedgerStatus('${key}',this.value)">${statusOpts}</select>
+          ${receipt ? `<span class="material-receipt-status">${receipt.status}</span><small class="material-receipt-qty">${receipt.accepted} / ${receipt.ordered} ${escapeHtml(m.unit)} received</small>` : `<select class="status-sel" aria-label="Legacy item status" onchange="updateLedgerStatus('${key}',this.value)">${statusOpts}</select>`}
         </td>
         <td class="l-cell l-center">
           <button class="del-item-btn" aria-label="Delete item" onclick="deleteLedgerItem('${key}','${escapeHtml(m.desc || '').replace(/'/g, "\\'")}')">\u2715</button>
@@ -1318,7 +1351,6 @@ function watchLedger(pid) {
     setText('ledgerCount', `${orderCount} item${orderCount !== 1 ? 's' : ''}`);
     _prevMatSpent = paidTotal;
     updateMaterialsSummary(snap);
-  });
 }
 
 async function updateLedgerStatus(key, status) {
@@ -1439,16 +1471,15 @@ function formatMaterialMovementQty(movement) {
 }
 
 function movementSourceLabel(movement) {
-  const sourceType = movement.sourceType || '';
-  const sourceId = movement.sourceId || movement.poId || movement.deliveryId || movement.issueId || '';
-  if (!sourceType && !sourceId) return '-';
-  const shortId = sourceId ? String(sourceId).slice(-6) : '';
-  return `${sourceType || 'source'}${shortId ? ' #' + shortId : ''}`;
+  return materialReadableSource(movement);
 }
 
 function watchMaterialMovements(pid) {
   const ref = firebase.database().ref(`projects/${pid}/materialMovements`).orderByChild('createdAt').limitToLast(80);
-  matListen(ref, snap => {
+  matListen(ref, snap => { _materialMovementSnapshot = snap; renderMaterialMovements(snap); });
+}
+
+function renderMaterialMovements(snap) {
     const tbody = $('materialMovementBody');
     if (!tbody) return;
     tbody.innerHTML = '';
@@ -1469,7 +1500,7 @@ function watchMaterialMovements(pid) {
     movements.forEach(movement => {
       const row = document.createElement('tr');
       row.className = 'led-row';
-      const itemName = movement.description || movement.supplierName || movement.poId || '-';
+      const itemName = movement.description || movement.supplierName || 'Material order';
       const size = movement.size ? ` <span class="po-item-size">[${escapeHtml(movement.size)}]</span>` : '';
       row.innerHTML = `
         <td class="l-cell">${formatMaterialMovementDate(movement.createdAt)}</td>
@@ -1478,14 +1509,13 @@ function watchMaterialMovements(pid) {
         <td class="l-cell l-center">${formatMaterialMovementQty(movement)}</td>
         <td class="l-cell l-right">${movement.movementCost ? peso(movement.movementCost) : '-'}</td>
         <td class="l-cell">${escapeHtml(movementSourceLabel(movement))}</td>
-        <td class="l-cell">${escapeHtml(String(movement.createdBy || '-').slice(0, 12))}</td>
+        <td class="l-cell">${escapeHtml(materialMovementPerson(movement))}</td>
       `;
       fragment.appendChild(row);
     });
 
     tbody.appendChild(fragment);
     setText('materialMovementCount', `${movements.length} row${movements.length === 1 ? '' : 's'}`);
-  });
 }
 
 function poStatusLabel(status) {
@@ -1508,9 +1538,12 @@ function watchPOHistory(pid) {
     const container = $('poHistory'); if (!container) return;
     container.innerHTML = '';
     _purchaseOrders = [];
+    _materialOrders = [];
+    renderMaterialLibrary();
+    refreshMaterialHistoryViews();
 
     if (!snap.exists()) {
-      container.innerHTML = '<p class="empty-hint" style="padding:20px">No purchase orders yet. Create one above.</p>';
+      container.innerHTML = '<p class="empty-hint" style="padding:20px">No purchase orders yet. Choose New order to get started.</p>';
       renderApmMaterialsFlow();
       return;
     }
@@ -1520,6 +1553,9 @@ function watchPOHistory(pid) {
       entries.unshift({ id: c.key, ...c.val() });
     });
     _purchaseOrders = entries;
+    _materialOrders = entries;
+    renderMaterialLibrary();
+    refreshMaterialHistoryViews();
     renderApmMaterialsFlow();
 
     const byMonth = {};
@@ -1551,7 +1587,7 @@ function watchPOHistory(pid) {
       monthGroup.appendChild(monthHeader);
 
       byMonth[monthKey].forEach(po => {
-        const itemRows = (po.items || []).map(it => {
+        const itemRows = materialItemsArray(po.items).map(it => {
           const orderedQty = parseFloat(it.qtyOrdered ?? it.qty) || 0;
           const acceptedQty = parseFloat(it.qtyAccepted) || 0;
           const remainingQty = Math.max(0, parseFloat(it.qtyRemaining ?? (orderedQty - acceptedQty)) || 0);
@@ -1620,23 +1656,26 @@ function watchPOHistory(pid) {
               <span class="po-total">${peso(po.total)}</span>
               <div class="po-btns">
                 ${actions}
+                <button class="po-export-btn" data-po="${po.id}" data-action="group">Use as material group</button>
                 ${po.invoiceNo || po.invoiceStatus === 'matched' || po.threeWayMatch ? `<button class="po-rfp-btn" data-po="${po.id}" data-action="inv-rfp">&#x1F4C4; Invoice RFP</button>` : ''}
                 <button class="po-rfp-btn" data-po="${po.id}" data-action="rfp">&#x1F4C4; RFP</button>
                 <button class="po-export-btn" data-po="${po.id}" data-action="export">Image</button>
               </div>
             </div>
           </div>
+          <details class="po-items-detail"><summary>${materialItemsArray(po.items).length} materials · View quantities and prices</summary>
           <div class="po-item-hdr">
             <span>Item / Size</span><span>Qty</span><span>Unit Cost</span><span>Total</span>
           </div>
-          ${itemRows}`;
+          ${itemRows}</details>`;
 
         // Attach delegated events
         poCard.querySelectorAll('[data-action]').forEach(btn => {
           btn.addEventListener('click', (e) => {
-            const action = e.target.dataset.action;
-            const poId = e.target.dataset.po;
+            const action = e.currentTarget.dataset.action;
+            const poId = e.currentTarget.dataset.po;
             if (action === 'approve') approvePO(poId);
+            else if (action === 'group') openMaterialGroup('order', poId);
             else if (action === 'delivery') openDeliveryModal(poId);
             else if (action === 'invoice') openInvoiceModal(poId);
             else if (action === 'inv-rfp') generateInvoiceRFP(poId);

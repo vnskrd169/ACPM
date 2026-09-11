@@ -1,0 +1,118 @@
+/* Focused procurement workspace; uses ACPM's existing light/dark palette. */
+#materialsPanel [hidden], #materialGroupDialog [hidden] { display: none !important; }
+#materialsPanel { font-size: 1rem; }
+#materialsPanel .material-workspace-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; margin:0 0 24px; }
+#materialsPanel .material-workspace-heading h2 { font-size:1.7rem; margin:4px 0 0; letter-spacing:-.04em; }
+#materialsPanel .material-eyebrow { font-size:.75rem; letter-spacing:.13em; color:var(--muted2); font-weight:700; }
+#materialsPanel .kpi-row { gap:12px; margin-bottom:24px; }
+#materialsPanel .kpi-card { border-radius:12px; padding:18px 22px; box-shadow:none; border:1px solid var(--border); }
+#materialsPanel .kpi-label { font-size:.75rem; letter-spacing:.06em; }
+#materialsPanel .kpi-num { font-size:1.5rem; }
+#materialsPanel .material-workspace-nav { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:22px; border-bottom:1px solid var(--border); }
+#materialsPanel .material-workspace-nav button { min-height:48px; padding:12px 20px; color:var(--muted2); background:transparent; border:0; border-bottom:3px solid transparent; border-radius:0; font:600 .95rem inherit; cursor:pointer; }
+#materialsPanel .material-workspace-nav button[aria-pressed="true"] { border-bottom-color:var(--purple); color:var(--text); }
+#materialsPanel .material-workspace-nav span { display:inline-block; margin-left:6px; padding:1px 7px; border-radius:6px; background:var(--surface3); font-size:.75rem; }
+#materialsPanel .material-builder-grid { display:grid; grid-template-columns:260px minmax(0,1fr); gap:20px; align-items:start; }
+#materialsPanel .material-library { padding:20px; border:1px solid var(--border); border-radius:14px; background:var(--surface); }
+#materialsPanel .material-library h3 { font-size:1.05rem; margin:0; }
+#materialsPanel .material-library h4 { font-size:.75rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted2); margin:24px 0 10px; }
+.material-help { font-size:.875rem; color:var(--muted2); line-height:1.55; margin:8px 0 14px; }
+#materialsPanel .material-library-empty { font-size:.875rem; line-height:1.7; color:var(--muted2); padding:14px 0; }
+#materialsPanel .material-group-tile, #materialsPanel .material-previous-order { display:flex; flex-direction:column; gap:5px; width:100%; padding:14px; margin-bottom:8px; text-align:left; background:var(--surface2); color:var(--text); border:1px solid var(--border); border-radius:10px; cursor:pointer; overflow-wrap:anywhere; }
+#materialsPanel .material-group-tile:hover, #materialsPanel .material-previous-order:hover { border-color:var(--purple); }
+#materialsPanel .material-group-tile strong { font-size:.95rem; }
+#materialsPanel .material-group-tile>span { display:flex; justify-content:space-between; }
+#materialsPanel .material-group-tile span, #materialsPanel .material-previous-order span { font-size:.8rem; color:var(--muted2); }
+#materialsPanel .material-order-builder { min-width:0; padding:24px; border-radius:14px; }
+#materialsPanel .card-title { font-size:1.05rem; margin-bottom:20px; }
+#materialsPanel .po-meta-grid { grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr); gap:16px; margin-bottom:24px; }
+#materialsPanel .po-meta-grid>div { display:grid; gap:12px; grid-row:span 2; }
+#materialsPanel .po-meta-grid>label:last-child { grid-column:1/-1; }
+.material-field { display:flex; flex-direction:column; gap:7px; min-width:0; font-size:.875rem; color:var(--muted2); font-weight:500; }
+#materialsPanel .material-field input, #materialsPanel .material-field select, #materialGroupDialog input { width:100%; min-width:0; margin:0; font:400 1rem inherit; min-height:44px; padding:10px 12px; border:1px solid var(--border2); border-radius:8px; background:var(--surface2); color:var(--text); }
+#materialsPanel .po-item-form { display:grid; grid-template-columns:2fr 1.3fr .8fr .8fr 1fr auto; gap:10px; padding:18px 0; border-block:1px solid var(--border); align-items:end; }
+#materialsPanel button { font-family:inherit; }
+#materialsPanel .material-workspace-nav button { font-family:inherit; font-weight:600; font-size:.95rem; }
+#materialsPanel .material-group-tile, #materialsPanel .material-previous-order { align-items:flex-start; text-transform:none; letter-spacing:normal; }
+#materialsPanel .material-group-tile>span { width:100%; }
+#materialsPanel .btn-add, #materialsPanel .btn-ws-secondary, #materialsPanel .btn-submit-po { min-height:44px; font-size:.875rem; }
+#materialsPanel #materialSaveDraftGroup { margin:16px 0 4px; }
+#materialsPanel .po-draft-footer { margin-top:18px; border-top:1px solid var(--border); padding-top:20px; gap:16px; }
+#materialsPanel .po-total-display { font-size:1.7rem; }
+#materialsPanel .draft-row { display:grid; grid-template-columns:minmax(130px,2fr) minmax(70px,1fr) minmax(75px,1fr) minmax(80px,1fr) minmax(80px,1fr) 40px; gap:10px; padding:14px 0; align-items:center; border-bottom:1px solid var(--border); }
+#materialsPanel .draft-row input { width:100%; min-width:0; background:var(--surface2); color:var(--text); padding:9px; border:1px solid var(--border2); border-radius:7px; font-size:.95rem; }
+#materialsPanel .draft-row .draft-desc { display:flex; flex-direction:column; gap:6px; }
+#materialsPanel .draft-row label { font-size:.75rem; color:var(--muted2); display:flex; flex-direction:column; gap:5px; }
+#materialsPanel .draft-row .draft-total { font-size:.95rem; text-align:right; }
+#materialsPanel .draft-del { min-width:40px; min-height:44px; }
+#materialsPanel .material-stock-control { margin-top:24px; border:1px solid var(--border); border-radius:12px; padding:0 20px; background:var(--surface); }
+#materialsPanel .material-stock-control>summary { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:18px 0; cursor:pointer; font-size:.95rem; font-weight:600; list-style:none; }
+#materialsPanel .material-stock-control>summary::before { content:'+'; color:var(--purple); font-size:1.2rem; }
+#materialsPanel .material-stock-control[open]>summary::before { content:'−'; }
+#materialsPanel .material-stock-control>summary span { margin-right:auto; }
+#materialsPanel .material-stock-control small { color:var(--muted2); font-weight:400; font-size:.8rem; }
+#materialsPanel .material-stock-control .card { border:0; padding:12px 0; box-shadow:none; }
+#materialsPanel .po-card { box-shadow:none; border:1px solid var(--border); border-radius:12px; margin-bottom:16px; overflow:hidden; }
+#materialsPanel .po-card-hdr { padding:20px; gap:20px; }
+#materialsPanel .po-supplier { font-size:1.1rem; }
+#materialsPanel .po-total { font-size:1.3rem; }
+#materialsPanel .po-status-badge, #materialsPanel .po-mark-btn, #materialsPanel .po-export-btn { font-size:.8rem; }
+#materialsPanel .po-item-row, #materialsPanel .po-item-hdr { padding:12px 20px; font-size:.875rem; }
+#materialsPanel .po-items-detail summary { cursor:pointer; padding:14px 20px; color:var(--muted2); font-size:.875rem; border-top:1px solid var(--border); }
+#materialsPanel .po-btns button { min-height:40px; }
+#materialsPanel .led-table th, #materialsPanel .summary-table th { font-size:.75rem; padding:12px; }
+#materialsPanel .l-cell, #materialsPanel .s-cell { font-size:.875rem; padding:12px; }
+#materialsPanel .material-receipt-status { display:block; font-weight:600; }
+#materialsPanel .material-receipt-qty { display:block; margin-top:4px; color:var(--muted2); font-size:.8rem; }
+#materialsPanel .movement-table .l-cell:last-child { min-width:130px; }
+.material-delivery-modes { display:flex; flex-wrap:wrap; gap:10px; margin:12px 0; }
+.material-delivery-modes p { width:100%; margin:0 0 8px; }
+#deliveryItemsList .delivery-item-row { display:grid; grid-template-columns:1.5fr 1.3fr 1fr 1fr; gap:10px; padding:14px 0; border-bottom:1px solid var(--border); align-items:center; }
+#deliveryItemsList label { min-width:0; color:var(--muted2); font-size:.875rem; }
+#deliveryItemsList label input, #deliveryItemsList label select { width:100%; min-width:0; font-size:1rem; min-height:44px; }
+#deliveryItemsList .delivery-item-ordered { grid-column:1/-1; color:var(--muted2); font-size:.875rem; }
+#materialGroupDialog { width:min(840px,calc(100vw - 32px)); max-height:85vh; padding:24px; border:1px solid var(--border2); border-radius:16px; color:var(--text); background:var(--surface); }
+#materialGroupDialog::backdrop { background:rgba(0,0,0,.55); }
+#materialGroupDialog h2 { font-size:1.3rem; margin:0; }
+#materialGroupDialog .material-section-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:22px; }
+#materialGroupDialog .material-group-item { display:grid; grid-template-columns:2fr 1.4fr .8fr .8fr; gap:10px; padding:14px 0; border-bottom:1px solid var(--border); }
+#materialGroupDialog .material-group-check { grid-column:1/-1; display:flex; gap:10px; align-items:center; font-size:.95rem; }
+#materialGroupDialog input[type=checkbox] { width:20px; min-height:20px; accent-color:var(--purple); }
+#materialGroupDialog .material-group-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:12px; margin-top:20px; }
+#materialGroupError { color:var(--red); font-size:.875rem; }
+#materialsPanel .material-field input, #materialsPanel .material-field select, #materialGroupDialog input { font-family:inherit; font-size:1rem; font-weight:400; }
+#materialsPanel :focus-visible, #materialGroupDialog :focus-visible { outline:2px solid var(--purple); outline-offset:3px; }
+@media(max-width:1150px) {
+  #materialsPanel .material-builder-grid { grid-template-columns:220px minmax(0,1fr); }
+  #materialsPanel .po-item-form { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  #materialsPanel .draft-row { grid-template-columns: minmax(100px,2fr) 1fr 1fr 40px; }
+  #materialsPanel .draft-row .draft-desc { grid-column:1/-1; }
+  #materialsPanel .draft-total { grid-column:1/4; }
+}
+@media(max-width:760px) {
+  #materialsPanel .material-builder-grid { grid-template-columns:1fr; }
+  #materialsPanel .material-library { padding:16px; }
+  #materialsPanel #materialGroupList { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  #materialsPanel .material-order-builder { padding:16px; }
+  #materialsPanel .material-workspace-heading { margin-bottom:18px; }
+  #materialsPanel .material-workspace-heading h2 { font-size:1.5rem; }
+  #materialsPanel .kpi-card { padding:14px; }
+  #materialsPanel .kpi-num { font-size:1.25rem; }
+  #materialsPanel .po-card-hdr { padding:16px; flex-direction:column; }
+  #materialsPanel .po-card-right { width:100%; align-items:flex-start; }
+  #materialsPanel .po-btns { flex-wrap:wrap; }
+  #materialsPanel .po-item-row, #materialsPanel .po-item-hdr { padding:12px; }
+  #materialsPanel .po-meta-grid { grid-template-columns:1fr 1fr; }
+  #materialsPanel .po-meta-grid>div { grid-column:1/-1; grid-row:auto; }
+  #materialGroupDialog .material-group-item { grid-template-columns:1fr 1fr; }
+  #deliveryItemsList .delivery-item-row { grid-template-columns:1fr 1fr; }
+  #deliveryItemsList .delivery-item-name { grid-column:1/-1; }
+}
+@media(max-width:420px) {
+  #materialsPanel .material-workspace-nav button { padding:12px 10px; font-size:.875rem; }
+  #materialsPanel .po-item-form { grid-template-columns:1fr 1fr; }
+  #materialsPanel .po-item-form>label:first-child { grid-column:1/-1; }
+  #materialsPanel .po-draft-footer { align-items:stretch; flex-direction:column; }
+  #materialsPanel .material-stock-control { padding:0 14px; }
+  #materialsPanel .material-stock-control small { max-width:110px; text-align:right; }
+}

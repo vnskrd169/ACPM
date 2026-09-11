@@ -44,7 +44,8 @@
 <script src="main.js?v=112"></script>
 <script src="payroll-math.js?v=3"></script>
 <script src="labor.js?v=100"></script>
-<script src="materials.js?v=97"></script>
+<script src="materials.js?v=98"></script>
+<script src="materials-workspace.js?v=1"></script>
 <script src="sitelog.js?v=95"></script>
 <script src="suppliers.js?v=94"></script>
 <script src="billing.js?v=76"></script>
@@ -70,6 +71,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <link rel="stylesheet" href="style.css?v=114">
+<link rel="stylesheet" href="materials-workspace.css?v=1">
 <link rel="stylesheet" href="assets/brand/acpm-brand.css">
 <link rel="stylesheet" href="assets/brand/ai-command-center.css?v=7">
 
@@ -641,7 +643,7 @@ window.addEventListener('appinstalled', () => {
         <span class="kpi-num" id="mbBudget">&#x20B1;0.00</span>
       </div>
       <div class="kpi-card kpi-red">
-        <span class="kpi-label">Total Spent</span>
+        <span class="kpi-label">Materials received</span>
         <span class="kpi-num kpi-danger" id="mbSpent">&#x20B1;0.00</span>
       </div>
       <div class="kpi-card kpi-green">
@@ -723,13 +725,13 @@ window.addEventListener('appinstalled', () => {
           <thead><tr>
             <th>Date</th><th>Supplier</th><th>Description</th><th>Size</th>
             <th>Qty / Unit</th><th class="text-right">Unit Cost</th><th class="text-right">Total</th>
-            <th>Status</th><th style="text-align:center">Del</th>
+            <th>Delivery</th><th style="text-align:center">Cancel</th>
           </tr></thead>
           <tbody id="ledgerBody"><tr><td colspan="9" class="empty-cell">No items yet.</td></tr></tbody>
         </table>
       </div>
       <div class="led-footer">
-        <span class="footer-label">Total Paid / Delivered</span>
+        <span class="footer-label">Value received</span>
         <span class="footer-total" id="ledgerTotal">&#x20B1;0.00</span>
       </div>
     </div>

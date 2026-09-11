@@ -48,7 +48,7 @@ function main() {
   const indexHtml = read('index.html');
   const loginHtml = read('login.html');
 
-  assert(/const CACHE_NAME = 'acpm-v151'/.test(sw), 'service worker cache must be acpm-v151');
+  assert(/const CACHE_NAME = 'acpm-v152'/.test(sw), 'service worker cache must be acpm-v152');
   assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=114">'), 'login.html must load style.css?v=114');
   assert(extractScriptVersion(loginHtml, 'environment.js') === '1', 'login.html must load environment.js?v=1');
   assert(extractScriptVersion(loginHtml, 'utils.js') === '87', 'login.html must load utils.js?v=87');
@@ -65,7 +65,7 @@ function main() {
     assert(extractScriptVersion(content, 'suppliers.js') === '94', `${file} must load suppliers.js?v=94`);
     assert(extractScriptVersion(content, 'payroll-math.js') === '3', `${file} must load payroll-math.js?v=3`);
     assert(extractScriptVersion(content, 'labor.js') === '100', `${file} must load labor.js?v=100`);
-    assert(extractScriptVersion(content, 'materials.js') === '97', `${file} must load materials.js?v=97`);
+    assert(extractScriptVersion(content, 'materials.js') === '98', `${file} must load materials.js?v=98`);
     assert(extractScriptVersion(content, 'billing.js') === '76', `${file} must load billing.js?v=76`);
     assert(extractScriptVersion(content, 'notifications.js') === '86', `${file} must load notifications.js?v=86`);
     assert(extractScriptVersion(content, 'report.js') === '98', `${file} must load report.js?v=98`);
@@ -77,7 +77,7 @@ function main() {
   assert(sw.includes('./main.js?v=112'), 'service worker must cache main.js?v=112');
   assert(sw.includes('./payroll-math.js?v=3'), 'service worker must cache payroll-math.js?v=3');
   assert(sw.includes('./labor.js?v=100'), 'service worker must cache labor.js?v=100');
-  assert(sw.includes('./materials.js?v=97'), 'service worker must cache materials.js?v=97');
+  assert(sw.includes('./materials.js?v=98'), 'service worker must cache materials.js?v=98');
   assert(sw.includes('./billing.js?v=76'), 'service worker must cache billing.js?v=76');
   assert(sw.includes('./suppliers.js?v=94'), 'service worker must cache suppliers.js?v=94');
   assert(sw.includes('./report.js?v=98'), 'service worker must cache report.js?v=98');
