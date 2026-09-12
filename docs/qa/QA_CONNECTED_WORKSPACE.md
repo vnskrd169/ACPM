@@ -26,3 +26,5 @@ Photo metadata persistence is tested with fixtures. Actual uploads use the exist
 ## Deployment
 
 Run the existing staging Hosting-only script and guarded production Hosting script. Service worker cache: `acpm-v154`. Check served assets against the local release and inspect the live Seasons project without submitting records.
+
+Completed: staging and production Hosting deployments for commit `254c977`. Nine served assets matched the local release in both environments. The signed-in live Seasons workspace showed the new Mission Board, two delivery batches, the existing fully delivered PO-001 and all three saved material groups. No browser console errors were reported. No production records were submitted during verification.
