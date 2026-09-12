@@ -289,6 +289,7 @@ function buildTaskCard(task) {
       <span class="task-due ${overdue ? 'overdue' : ''}">${escapeHtml(due)}</span>
     </div>
     ${task.blockedReason ? `<div class="task-blocked-reason">${escapeHtml(task.blockedReason)}</div>` : ''}
+    ${task.returnReason && task.status === 'in_progress' ? `<div class="task-blocked-reason">Returned for revision: ${escapeHtml(task.returnReason)}</div>` : ''}
     ${task.completionNote ? `<div class="task-completion-note">${escapeHtml(task.completionNote)}</div>` : ''}
     <div class="task-progress">
       <div class="task-progress-bar" style="width:${task.progress}%"></div>
@@ -463,6 +464,12 @@ async function updateTaskStatus(taskId, requestedStatus, extra = {}) {
     showToast('Submit the task for verification. A PM or Admin completes it.', 'error');
     return false;
   }
+  if (fromStatus === 'for_verification' && toStatus === 'in_progress') {
+    if (!canVerifyTasks()) { showToast('A PM or Boss returns work for revision.', 'error'); return false; }
+    const reason = String(extra.reason || prompt('What needs to be revised before this task can be verified?') || '').trim();
+    if (!reason) { showToast('Enter a reason so the APM knows what to revise.', 'warn'); return false; }
+    extra = { ...extra, reason };
+  }
 
   const actor = taskActor();
   const now = Date.now();
@@ -478,12 +485,18 @@ async function updateTaskStatus(taskId, requestedStatus, extra = {}) {
     taskUpdate.performedByName = actor.name || task.assignedToName || '';
   }
   if (toStatus === 'blocked') taskUpdate.blockedReason = String(extra.reason || '').trim();
+  if (fromStatus === 'for_verification' && toStatus === 'in_progress') {
+    taskUpdate.returnReason = extra.reason;
+    taskUpdate.returnedAt = now;
+    taskUpdate.returnedByName = actor.name || 'PM';
+  }
   if (toStatus === 'for_verification') {
     taskUpdate.progress = 100;
     taskUpdate.submittedForVerificationAt = now;
     taskUpdate.submittedForVerificationBy = actor.uid || 'system';
     taskUpdate.completionNote = String(extra.completionNote || task.completionNote || '').trim();
     taskUpdate.completionProof = extra.completionProof || task.completionProof || null;
+    taskUpdate.returnReason = '';
   }
   if (toStatus === 'completed') {
     taskUpdate.progress = 100;
@@ -498,7 +511,7 @@ async function updateTaskStatus(taskId, requestedStatus, extra = {}) {
     taskUpdate.cancelledBy = actor.uid || 'system';
     taskUpdate.cancelReason = String(extra.reason || '').trim();
   }
-  const eventType = toStatus === 'completed'
+  const eventType = fromStatus === 'for_verification' && toStatus === 'in_progress' ? 'task.returned' : toStatus === 'completed'
     ? 'task.verified'
     : toStatus === 'for_verification'
       ? 'task.submitted_for_verification'
@@ -535,6 +548,9 @@ async function updateTaskStatus(taskId, requestedStatus, extra = {}) {
         link: `workspace.html?projectId=${encodeURIComponent(_tpid)}&tab=tasks&fromNotif=1`
       }
     }).catch(() => {});
+  }
+  if (fromStatus === 'for_verification' && toStatus === 'in_progress' && typeof createNotificationEvent === 'function') {
+    createNotificationEvent({projectId:_tpid,module:'tasks',type:'task_returned',payload:{recordId:taskId,taskId,recipientRole:task.assignedToUid?'':'apm',recipientUserId:task.assignedToUid || '',message:`${task.title || 'Task'} returned for revision: ${extra.reason}`,link:`workspace.html?projectId=${encodeURIComponent(_tpid)}&tab=tasks&fromNotif=1&recordCollection=tasks&recordId=${encodeURIComponent(taskId)}`}}).catch(()=>{});
   }
   return true;
 }

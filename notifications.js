@@ -374,7 +374,11 @@ function notificationTargetUrl(item = {}) {
     ? appUrl('workspace', { projectId: item.projectId })
     : `workspace.html?projectId=${encodeURIComponent(item.projectId)}`;
   const joiner = baseUrl.includes('?') ? '&' : '?';
-  return `${baseUrl}${joiner}fromNotif=1${tab ? `&tab=${encodeURIComponent(tab)}` : ''}`;
+  const raw = item.raw || item;
+  const recordId = raw.poId || raw.taskId || raw.logId || raw.recordId || '';
+  const collection = raw.poId ? 'purchaseOrders' : raw.taskId ? 'tasks' : raw.logId ? 'siteLogs' : tab === 'tasks' ? 'tasks' : '';
+  const record = recordId && collection ? `&recordCollection=${collection}&recordId=${encodeURIComponent(recordId)}` : '';
+  return `${baseUrl}${joiner}fromNotif=1${tab ? `&tab=${encodeURIComponent(tab)}` : ''}${record}`;
 }
 
 function notificationTargetTab(item = {}) {
@@ -546,7 +550,7 @@ async function sendNotification({ to, type, message, projectId, projectName, lin
   await safeDb(() => firebase.database().ref(`notifications/${to}`).push(notif), 'Failed to send notification');
 }
 
-async function notifyProject(projectId, { type, message }) {
+async function notifyProject(projectId, { type, message, link = '', recipientRoles = null }) {
   const sender = window._currentUser || {};
   if (!sender.uid) return;
   if (!(typeof isBoss === 'function' ? isBoss(sender.role) : sender.role === 'boss') && !canAccessProject(projectId)) {
@@ -563,13 +567,14 @@ async function notifyProject(projectId, { type, message }) {
   const promises = [];
   usersSnap.forEach(c => {
     const u = c.val();
+    if (recipientRoles && !recipientRoles.includes(notificationRole(u))) return false;
     const projects = notificationAssignedProjectIds(u);
     const bossOf = typeof normalizeProjectList === 'function'
       ? normalizeProjectList(u.bossOf)
       : Array.isArray(u.bossOf) ? u.bossOf : Object.keys(u.bossOf || {});
     if (projects.includes(projectId) || bossOf.includes(projectId) || (typeof isBoss === 'function' ? isBoss(u.role) : u.role === 'boss')) {
       promises.push(sendNotification({
-        to: c.key, type, message, projectId, projectName: name
+        to: c.key, type, message, projectId, projectName: name, link
       }));
     }
     return false;

@@ -102,6 +102,7 @@ function toggleApmMaterialsAdvanced() {
 }
 
 function initMaterials(pid) {
+  if (typeof saveMaterialDraft === 'function') saveMaterialDraft();
   _mpid = pid; _draftItems = []; _purchaseOrders = [];
   detachMatListeners();
   initMaterialsWorkspace(pid);
@@ -485,6 +486,7 @@ async function createPurchaseOrder(pid, input) {
     supplierId: input.supplierId || '',
     date: input.date,
     notes: input.notes || '',
+    expectedDeliveryDate: input.expectedDeliveryDate || '',
     urgency: input.urgency || 'normal',
     items,
     total,
@@ -725,9 +727,9 @@ async function receiveDelivery(pid, poId, input) {
   const deliveryStatus = totalAccepted >= totalOrdered ? 'fully_delivered' : 'partially_delivered';
   const orders = await listPurchaseOrders(pid);
   const nextCommitted = orders
-    .map(order => order.id === poId ? { ...order, status: deliveryStatus } : order)
+    .map(order => order.id === poId ? { ...order, status: deliveryStatus, items: poItems.map(item=>({...item,qtyAccepted:projectedTotals[item.itemId]})) } : order)
     .filter(order => ['approved', 'ordered', 'partially_delivered'].includes(order.status))
-    .reduce((sum, order) => sum + (parseFloat(order.total) || 0), 0);
+    .reduce((sum, order) => sum + materialOutstandingCost(order), 0);
 
   updates[`projects/${pid}/deliveries/${deliveryId}`] = {
     deliveryNo,
@@ -743,7 +745,8 @@ async function receiveDelivery(pid, poId, input) {
     supplierId: po.supplierId || '',
     supplierName: po.supplierName || po.supplier || '',
     status: allGood ? 'received' : 'received_with_issues',
-    notes: input.notes || ''
+    notes: input.notes || '',
+    media: Array.isArray(input.media) ? input.media : []
   };
   updates[`projects/${pid}/purchaseOrders/${poId}/deliveryStatus`] = deliveryStatus;
   updates[`projects/${pid}/purchaseOrders/${poId}/status`] = deliveryStatus;
@@ -953,6 +956,7 @@ async function calculateMaterialBudgetSpent(pid, options = {}) {
 }
 
 function renderDraft() {
+  if (typeof saveMaterialDraft === 'function') saveMaterialDraft();
   const el = $('draftList'); if (!el) return;
   setText('materialDraftCount', String(_draftItems.length));
   if ($('materialSaveDraftGroup')) $('materialSaveDraftGroup').disabled = !_draftItems.length;
@@ -983,6 +987,7 @@ async function submitPO() {
 
 async function submitPOOnce() {
   if (!_mpid) return;
+  const pid = _mpid;
   if (!canTouchMaterialsProject()) {
     showToast('You do not have edit access to this project.', 'error');
     return;
@@ -995,6 +1000,7 @@ async function submitPOOnce() {
   const date = $('poDate')?.value;
   const notes = $('poNotes')?.value.trim() || '';
   const urgency = $('poUrgency')?.value || 'normal';
+  const expectedDeliveryDate = $('poExpectedDate')?.value || '';
 
   if (!supplier) { setFieldError($('poSupplier'), 'Enter supplier name.'); return; }
   if (!date) { setFieldError($('poDate'), 'Enter PO date.'); return; }
@@ -1008,9 +1014,13 @@ async function submitPOOnce() {
   const total = _draftItems.reduce((s, x) => s + x.total, 0);
 
   // Budget check
-  const budgetSnap = await firebase.database().ref(`projects/${_mpid}`).once('value');
+  const budgetSnap = await firebase.database().ref(`projects/${pid}`).once('value');
+  if (_mpid !== pid) return;
   const budget = budgetSnap.val();
-  const remaining = ((parseFloat(budget.materialBudget) || 0) + (parseFloat(budget.materialBudgetDelta) || 0)) - (parseFloat(budget.materialSpent) || 0);
+  const duplicates = materialDuplicateOrders(budget, {supplier,supplierId,date,items:_draftItems});
+  if (duplicates.length && !confirm(`The same materials, quantities and prices already appear in ${duplicates.join(', ')} for this supplier and date. Submit another order?`)) return;
+  const outstanding = typeof ProjectInsights !== 'undefined' ? ProjectInsights.finance(budget).materialCommitted : (Number(budget.materialCommitted) || 0);
+  const remaining = ((parseFloat(budget.materialBudget) || 0) + (parseFloat(budget.materialBudgetDelta) || 0)) - (parseFloat(budget.materialSpent) || 0) - outstanding;
 
   if (total > remaining) {
     if (!confirm(`\u26A0\uFE0F This PO (${peso(total)}) exceeds remaining budget (${peso(remaining)}). Submit anyway?`)) return;
@@ -1024,16 +1034,19 @@ async function submitPOOnce() {
       date,
       notes,
       urgency,
+      expectedDeliveryDate,
       items: _draftItems
     });
 
     _draftItems = [];
-    ['poSupplier', 'poSupplierId', 'poDate', 'poNotes'].forEach(id => { const e = $(id); if (e) e.value = ''; });
+    ['poSupplier', 'poSupplierId', 'poDate', 'poNotes','poExpectedDate'].forEach(id => { const e = $(id); if (e) e.value = ''; });
     const sel = $('poSupplierSelect'); if (sel) sel.value = '';
     renderDraft();
     auditLog('create', 'purchaseOrder', result.poId, { seq: result.seq, supplier, total, projectId: _mpid });
     notifyProject(_mpid, {
-      type: 'billing',
+      type: 'materials',
+      recipientRoles: ['boss','owner','admin'],
+      link: `workspace.html?projectId=${encodeURIComponent(pid)}&tab=materials&fromNotif=1&recordCollection=purchaseOrders&recordId=${encodeURIComponent(result.poId)}`,
       message: `PO #${String(result.seq).padStart(3, '0')} (${peso(total)} to ${supplier}) needs your approval`
     }).catch(() => {});
     showToast(`PO #${String(result.seq).padStart(3, '0')} submitted for approval`);
@@ -1093,7 +1106,7 @@ async function approvePO(poId) {
     const orders = await listPurchaseOrders(_mpid);
     const committed = orders
       .filter(order => ['approved', 'ordered', 'partially_delivered'].includes(order.status))
-      .reduce((sum, order) => sum + (parseFloat(order.total) || 0), 0);
+      .reduce((sum, order) => sum + materialOutstandingCost(order), 0);
     await safeDb(() => firebase.database().ref(`projects/${_mpid}`).update({ materialCommitted: committed }), 'Failed to update committed materials');
 
     auditLog('approve', 'purchaseOrder', poId, { projectId: _mpid, ledgerItems: Object.keys(updates).length });
@@ -1138,6 +1151,8 @@ async function openDeliveryModal(poId) {
     }
     $('deliveryRef').value = '';
     $('deliveryDate').value = materialToday();
+    if ($('deliveryNotes')) $('deliveryNotes').value='';
+    if ($('deliveryPhotos')) $('deliveryPhotos').value='';
     $('deliveryModal').classList.remove('hidden');
   } catch (e) {
     console.error('openDeliveryModal failed:', e);
@@ -1162,9 +1177,13 @@ async function confirmDeliveryOnce() {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
+  const pid=_mpid,poId=_currentDeliveryPO;
 
   const deliveryDate = $('deliveryDate')?.value;
   const deliveryRef = $('deliveryRef')?.value.trim() || '';
+  const deliveryNotes=$('deliveryNotes')?.value.trim() || '';
+  const files=Array.from($('deliveryPhotos')?.files || []);
+  if(files.length>4 || files.some(file=>!file.type.startsWith('image/') || file.size>10*1024*1024)){showToast('Choose up to 4 image files, no larger than 10 MB each.','error');return;}
 
   if (!deliveryDate) { showToast('Enter delivery date.', 'error'); return; }
 
@@ -1174,7 +1193,8 @@ async function confirmDeliveryOnce() {
   if (inputDate > today) { showToast('Delivery date cannot be in the future.', 'error'); return; }
 
   try {
-    const po = await getPurchaseOrder(_mpid, _currentDeliveryPO);
+    const po = await getPurchaseOrder(pid, poId);
+    if(_mpid!==pid || _currentDeliveryPO!==poId)return;
     const items = materialItemsArray(po?.items || []).map((item, i) => ({
       index: i,
       poItemId: item.itemId || `item_${String(i + 1).padStart(3, '0')}`,
@@ -1184,20 +1204,25 @@ async function confirmDeliveryOnce() {
       qtyRejected: Number($(`delRejected_${i}`)?.value || 0)
     }));
 
-    const result = await receiveDelivery(_mpid, _currentDeliveryPO, {
+    if(!items.some(item=>item.qtyReceived>0)){showToast('Enter quantities received.','error');return;}
+    const media=[];
+    for(let i=0;i<files.length;i++)media.push(await uploadSiteLogPhoto(pid,`delivery-${poId}`,files[i],i));
+    const result = await receiveDelivery(pid, poId, {
       date: deliveryDate,
       reference: deliveryRef,
+      notes: deliveryNotes,
+      media,
       items
     });
 
-    auditLog('delivery', 'purchaseOrder', _currentDeliveryPO, {
+    auditLog('delivery', 'purchaseOrder', poId, {
       deliveryKey: result.deliveryId,
       items: result.items.length,
       acceptedCost: result.acceptedCost,
-      projectId: _mpid
+      projectId: pid
     });
 
-    closeDeliveryModal();
+    if(_mpid===pid && _currentDeliveryPO===poId)closeDeliveryModal();
     showToast(`Delivery recorded. Status: ${result.deliveryStatus.replace(/_/g, ' ')}`);
   } catch (e) {
     console.error('confirmDelivery failed:', e);

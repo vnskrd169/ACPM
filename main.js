@@ -1394,6 +1394,7 @@ function projectDateLabel(project = {}) {
 function renderProjectDashboard(projectId, project = {}) {
   ensureProjectDashboardUi();
   if (typeof window.renderApmProjectHome === 'function' && window.renderApmProjectHome(projectId, project)) {
+    window.renderConnectedWorkspace?.(projectId, project);
     return;
   }
   const trades = objectRows(project.trades).filter(t => t.active !== false && t.status !== 'inactive' && t.archived !== true);
@@ -1500,6 +1501,7 @@ function renderProjectDashboard(projectId, project = {}) {
         <small>${escapeHtml(item.createdByName || 'System')} | ${escapeHtml(dashboardActivityWhen(item.createdAt))}</small>
       </div>`).join('')
     : `<div class="project-mission-clear">No project activity recorded yet. Latest site log: ${escapeHtml(lastLog)}.</div>`);
+  window.renderConnectedWorkspace?.(projectId, project);
 }
 
 function countProjectOpenItems(project = {}) {

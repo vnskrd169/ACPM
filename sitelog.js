@@ -223,6 +223,7 @@ function canTouchSiteLogProject() {
 
 function initSiteLog(pid) {
   _slpid = pid;
+  window.setupApmSiteUpdate?.();
   if (_slListener) { _slListener.off(); _slListener = null; }
 
   // Clear any photo selections carried over from a previous project/form
@@ -230,7 +231,8 @@ function initSiteLog(pid) {
   renderLogPhotoPreviews();
 
   const dateInp = $('logDate');
-  if (dateInp) dateInp.value = new Date().toISOString().slice(0, 10);
+  if (dateInp) dateInp.value = typeof materialToday === 'function' ? materialToday() : new Date().toISOString().slice(0, 10);
+  ['logNotes','logWork','logManpower','logEquipment','logVisitors','logIssues','logDelays','logSafety','logSafetyIncidents','logPhotos','logWeather','logLinkedTask'].forEach(id=>{if($(id))$(id).value='';});
 
   watchSiteLog(pid);
 }
@@ -453,6 +455,8 @@ async function createSiteLog(projectId, data = {}) {
     weather: typeof data.weather === 'string' ? { summary: data.weather } : (data.weather || { summary: '' }),
     notes: data.notes || '',
     workAccomplished: data.workAccomplished || '',
+    linkedTaskId: data.linkedTaskId || '',
+    linkedTaskTitle: data.linkedTaskTitle || '',
     manpowerNotes: data.manpowerNotes || '',
     manpower: arrayToObject('manpower', linesToItems(data.manpowerNotes || '', (line, index) => ({
       entryNo: index + 1,
@@ -778,11 +782,21 @@ function renderSiteLogSummary(entries) {
 }
 
 async function saveLog() {
+  if (saveLog.busy) return;
+  saveLog.busy = true;
+  try { return await saveLogOnce(); }
+  catch(error) { showToast(error?.message || 'Could not save the site update. Your entries are still in the form.', 'error'); }
+  finally { saveLog.busy = false; }
+}
+
+async function saveLogOnce() {
   if (!_slpid) { showToast('No active project.', 'error'); return; }
   if (!canTouchSiteLogProject()) {
     showToast('You do not have edit access to this project.', 'error');
     return;
   }
+  const pid = _slpid;
+  const selectedPhotos = _slPendingPhotos.slice();
   const dateInp = $('logDate');
   const notesInp = $('logNotes');
   const weatherInp = $('logWeather');
@@ -813,6 +827,8 @@ async function saveLog() {
     notes,
     weather: { summary: weather },
     workAccomplished,
+    linkedTaskId: $('logLinkedTask')?.value || '',
+    linkedTaskTitle: $('logLinkedTask')?.value ? $('logLinkedTask').selectedOptions[0]?.textContent || '' : '',
     manpowerNotes: manpowerInp?.value.trim() || '',
     equipmentNotes: equipmentInp?.value.trim() || '',
     visitorNotes: visitorsInp?.value.trim() || '',
@@ -825,15 +841,15 @@ async function saveLog() {
 
   const doSave = async (data) => {
     let saveData = data;
-    if (_slPendingPhotos.length) {
+    if (selectedPhotos.length) {
       if (siteLogDriveAvailable()) {
         // Upload selected photos to Google Drive under a client-generated log
         // key, then create the log referencing the exact same key + photo URLs.
-        const logId = siteLogProjectRef(_slpid, 'siteLogs').push().key;
+        const logId = siteLogProjectRef(pid, 'siteLogs').push().key;
         const mediaRows = [];
-        for (let i = 0; i < _slPendingPhotos.length; i++) {
+        for (let i = 0; i < selectedPhotos.length; i++) {
           try {
-            mediaRows.push(await uploadSiteLogPhoto(_slpid, logId, _slPendingPhotos[i], i));
+            mediaRows.push(await uploadSiteLogPhoto(pid, logId, selectedPhotos[i], i));
           } catch (uploadError) {
             console.error('Site log photo upload failed:', uploadError?.code || uploadError?.message || uploadError);
             showToast(`Photo ${i + 1} failed to upload. Log not saved — fix the file or remove it and retry.`, 'error');
@@ -847,53 +863,34 @@ async function saveLog() {
         clearSelectedLogPhotos();
       }
     }
-    const saved = await safeDb(() => createSiteLog(_slpid, saveData), 'Failed to save log');
+    const saved = await safeDb(() => createSiteLog(pid, saveData), 'Failed to save log');
     if (!saved) return null;
+    if (_slpid !== pid) return saved;
     // Only clear the selected photos once the log (and its media) is saved.
     clearSelectedLogPhotos();
-    if (dateInp) dateInp.value = new Date().toISOString().slice(0, 10);
+    if (dateInp) dateInp.value = typeof materialToday === 'function' ? materialToday() : new Date().toISOString().slice(0, 10);
     if (notesInp) notesInp.value = '';
     if (weatherInp) weatherInp.value = '';
     [workInp, manpowerInp, equipmentInp, visitorsInp, issuesInp, delaysInp, safetyInp, incidentsInp, photosInp].forEach(inp => {
       if (inp) inp.value = '';
     });
+    if ($('logLinkedTask')) $('logLinkedTask').value='';
     return saved;
   };
 
   const afterSave = (saved) => {
     if (!saved) return;
-    auditLog('create', 'siteLog', saved.id, { date, hasLocation: !!logData.gps, projectId: _slpid });
+    auditLog('create', 'siteLog', saved.id, { date, hasLocation: !!logData.gps, projectId: pid });
   };
 
   if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      async pos => {
-        logData.location = `${pos.coords.latitude},${pos.coords.longitude}`;
-        logData.gps = {
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: pos.coords.accuracy || null,
-          capturedAt: Date.now()
-        };
-        const saved = await doSave(logData);
-        if (!saved) return;
-        afterSave(saved);
-        showToast('Log saved with location');
-      },
-      async () => {
-        const saved = await doSave(logData);
-        if (!saved) return;
-        afterSave(saved);
-        showToast('Log saved \u2713');
-      },
-      { timeout: 4000, enableHighAccuracy: true }
-    );
-  } else {
-    const saved = await doSave(logData);
-    if (!saved) return;
-    afterSave(saved);
-    showToast('Log saved \u2713');
+    const pos=await new Promise(resolve=>navigator.geolocation.getCurrentPosition(resolve,()=>resolve(null),{timeout:4000,enableHighAccuracy:true}));
+    if(pos){logData.location=`${pos.coords.latitude},${pos.coords.longitude}`;logData.gps={latitude:pos.coords.latitude,longitude:pos.coords.longitude,accuracy:pos.coords.accuracy || null,capturedAt:Date.now()};}
   }
+  const saved = await doSave(logData);
+  if (!saved) return;
+  afterSave(saved);
+  showToast('Site update posted');
 }
 
 async function deleteLog(key) {

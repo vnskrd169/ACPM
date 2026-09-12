@@ -30,3 +30,4 @@ line17-face-attendance/
 
 # Generated local materials preview; rebuild with scripts/build_materials_preview.py
 dev/materials-preview.html
+dev/connected-preview.html

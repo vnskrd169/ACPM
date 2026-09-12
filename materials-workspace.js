@@ -8,6 +8,10 @@ let _materialLedgerSnapshot = null;
 let _materialMovementSnapshot = null;
 let _materialGroupSelection = null;
 let _materialGroupSaving = false;
+let _materialCatalogProjects = [];
+let _materialCatalogEntries = [];
+let _materialDraftReady = false;
+let _materialDraftOwner = '';
 
 function materialToday(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -16,6 +20,11 @@ function materialToday(date = new Date()) {
 function materialIdentity(item) {
   return [item.desc || item.description || item.item, item.size, item.unit]
     .map(value => String(value || '').trim().toLowerCase()).join('||');
+}
+
+function materialOutstandingCost(po) {
+  if (!['approved','ordered','partially_delivered'].includes(po.status)) return 0;
+  return materialItemsArray(po.items).reduce((sum,item)=>sum+Math.max(0,(Number(item.qtyOrdered??item.qty)||0)-(Number(item.qtyAccepted??item.qtyReceived)||0))*(Number(item.unitCost??item.cost)||0),0);
 }
 
 // Older fractional sizes were written as nested Firebase paths (e.g. 1/8).
@@ -32,12 +41,13 @@ function materialInventoryMap(snap) {
 
 function materialPriceFor(item, supplierId = $('poSupplierId')?.value, supplierName = $('poSupplier')?.value) {
   const name = String(supplierName || '').trim().toLowerCase();
-  const orders = _materialOrders.filter(po => po.status !== 'cancelled' &&
+  const history = _materialOrders.concat(_materialCatalogProjects.filter(p => p.id !== _mpid).flatMap(p => Object.values(p.purchaseOrders || {}).map(po => ({ ...po, projectName: p.name || 'Another project' }))));
+  const orders = history.filter(po => !['cancelled','draft','rejected'].includes(po.status) &&
     (supplierId ? po.supplierId === supplierId : !po.supplierId && name && String(po.supplierName || po.supplier || '').trim().toLowerCase() === name));
   orders.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (b.createdAt || 0) - (a.createdAt || 0));
   for (const po of orders) {
     const match = materialItemsArray(po.items).find(row => materialIdentity(row) === materialIdentity(item));
-    if (match && Number(match.unitCost ?? match.cost) > 0) return { cost: Number(match.unitCost ?? match.cost), date: po.date, poNo: po.poNo || `PO-${String(po.seq || 0).padStart(3, '0')}` };
+    if (match && Number(match.unitCost ?? match.cost) > 0) return { cost: Number(match.unitCost ?? match.cost), date: po.date, projectName: po.projectName || '', poNo: po.poNo || `PO-${String(po.seq || 0).padStart(3, '0')}` };
   }
   return null;
 }
@@ -109,7 +119,11 @@ function setupMaterialsWorkspace() {
   const deliveryModes = document.createElement('div'); deliveryModes.className = 'material-delivery-modes';
   deliveryModes.innerHTML = '<button type="button" class="btn-add" onclick="fillRemainingDelivery()">Receive all remaining</button><button type="button" class="btn-ws-secondary" onclick="clearDeliveryQuantities()">Partial delivery / issues</button><p class="material-help">Check the quantities, then confirm this delivery.</p>';
   $('deliveryItemsList').before(deliveryModes);
+  const evidence=document.createElement('div');evidence.className='material-delivery-evidence';
+  evidence.innerHTML='<label class="material-field"><span>Delivery / issue notes</span><textarea id="deliveryNotes" rows="2" placeholder="Shortages, damaged items, or replacement arrangements"></textarea></label><label class="material-field"><span>Receipt or delivery photos (optional)</span><input id="deliveryPhotos" type="file" accept="image/*" multiple></label><p class="material-help">Up to 4 photos, 10 MB each. Photos are attached when you confirm this delivery.</p>';
+  $('deliveryItemsList').after(evidence);
   showMaterialsView('orders');
+  setupMaterialCatalog();
 }
 
 function showMaterialsView(view) {
@@ -129,9 +143,11 @@ function alignMaterialApmFlow() {
 function initMaterialsWorkspace(pid) {
   setupMaterialsWorkspace();
   _materialOrders = []; _materialGroups = {}; _materialDeliveries = {}; _materialIssues = {}; _materialPeople = {};
+  _materialCatalogProjects = []; _materialCatalogEntries = [];
   _materialLedgerSnapshot = null; _materialMovementSnapshot = null; _materialGroupSelection = null;
   $('materialGroupDialog')?.close();
   showMaterialsView('orders');
+  restoreMaterialDraft();
   renderMaterialLibrary();
   const subscribe = (path, apply) => {
     const ref = firebase.database().ref(path);
@@ -167,6 +183,7 @@ function renderMaterialLibrary() {
   });
   if (!previous.children.length) previous.innerHTML = '<p class="material-help">Submitted orders will appear here.</p>';
   setText('materialOrderCount', String(_materialOrders.length));
+  renderMaterialCatalog();
 }
 
 function openMaterialGroup(source, key = '') {
@@ -175,6 +192,7 @@ function openMaterialGroup(source, key = '') {
   if (source === 'new') items = [{ desc: '', size: '', unit: 'pcs', qty: 1 }];
   else if (source === 'draft') items = _draftItems;
   else if (source === 'saved') { const group = _materialGroups[key]; if (!group) return; items = materialItemsArray(group.items); name = group.name; }
+  else if (source === 'catalog') { const entry = _materialCatalogEntries[Number(key)]; if (!entry) return; items = entry.items; name = entry.groupName || ''; }
   else { const po = _materialOrders.find(order => order.id === key); if (!po) return; items = materialItemsArray(po.items); }
   if (!items?.length) { showToast('Add materials to your draft first.', 'warn'); return; }
   _materialGroupSelection = { pid: _mpid, key: source === 'saved' ? key : '', items: items.map(item => ({ desc: item.desc || item.description || '', size: item.size || '', unit: item.unit || '', qty: Number(item.qty ?? item.qtyOrdered) || 1 })) };
@@ -252,7 +270,7 @@ function recallMaterialPrice() {
   const price = materialPriceFor({ desc: $('poItemDesc')?.value, size: $('poItemSize')?.value, unit: $('poItemUnit')?.value });
   if (!price) return;
   $('poItemCost').value = price.cost;
-  setText('materialPriceHint', `Last ordered at ${peso(price.cost)} per ${$('poItemUnit').value} · ${price.date} · ${price.poNo}. Price is editable.`);
+  setText('materialPriceHint', `Last ordered at ${peso(price.cost)} per ${$('poItemUnit').value} · ${price.date} · ${price.poNo}${price.projectName ? ` · ${price.projectName}` : ''}. Price is editable.`);
 }
 
 function editMaterialDraft(index, field, input) {
@@ -262,6 +280,85 @@ function editMaterialDraft(index, field, input) {
   item.total = (Number(item.qty) || 0) * (Number(item.cost) || 0);
   const row = input.closest('.draft-row'); if (row) row.querySelector('.draft-total').textContent = peso(item.total);
   setText('draftTotal', peso(_draftItems.reduce((sum, value) => sum + value.total, 0)));
+  saveMaterialDraft();
+}
+
+// Private recovery on this device only, isolated by account and project.
+function materialDraftKey() { return `acpm:po-draft:v1:${window._currentUser?.uid || ''}:${_mpid || ''}`; }
+function saveMaterialDraft() {
+  if (!_materialDraftReady || !_mpid || !window._currentUser?.uid || _materialDraftOwner !== window._currentUser.uid) return;
+  const fields = Object.fromEntries(['poSupplier','poSupplierId','poDate','poNotes','poUrgency','poExpectedDate','poItemDesc','poItemSize','poItemUnit','poItemQty','poItemCost'].map(id => [id,$(id)?.value || '']));
+  try {
+    if (!_draftItems.length && !fields.poSupplier && !fields.poNotes && !fields.poItemDesc) localStorage.removeItem(materialDraftKey());
+    else localStorage.setItem(materialDraftKey(),JSON.stringify({ items:_draftItems, fields, savedAt:Date.now() }));
+    setText('materialDraftRecovery',_draftItems.length || fields.poSupplier || fields.poItemDesc ? 'Draft saved on this device. Only Submit Purchase Order sends it for approval.' : 'Your draft is saved on this device as you work.');
+  } catch (_) { setText('materialDraftRecovery','Draft recovery is unavailable on this device. Keep this tab open until you submit.'); }
+}
+function restoreMaterialDraft() {
+  _materialDraftReady=false;
+  _materialDraftOwner=window._currentUser?.uid || '';
+  ['poSupplier','poSupplierId','poSupplierSelect','poDate','poNotes','poItemDesc','poItemSize','poItemUnit','poItemQty','poItemCost','poExpectedDate'].forEach(id=>{if($(id))$(id).value='';});
+  if($('poUrgency'))$('poUrgency').value='normal';
+  try {
+    const data=JSON.parse(localStorage.getItem(materialDraftKey()) || 'null');
+    if(data && Array.isArray(data.items)) {
+      _draftItems=data.items.filter(item=>item&&typeof item.desc==='string').map(item=>({...item,total:(Number(item.qty)||0)*(Number(item.cost)||0)}));
+      for(const [id,value] of Object.entries(data.fields || {})) if(['poSupplier','poSupplierId','poDate','poNotes','poUrgency','poExpectedDate','poItemDesc','poItemSize','poItemUnit','poItemQty','poItemCost'].includes(id)&&$(id))$(id).value=String(value);
+      setText('materialDraftRecovery','Recovered your previous draft on this device. Review it before submitting.');
+    }
+  }catch(_){}
+  _materialDraftReady=true;
+}
+function setupMaterialCatalog() {
+  const library=document.querySelector('.material-library');if(!library || $('materialCatalogSearch'))return;
+  const catalog=document.createElement('section');catalog.className='material-catalog';
+  catalog.innerHTML='<h4>Material catalog</h4><label class="material-field"><span>Find a material or group</span><input id="materialCatalogSearch" type="search" placeholder="e.g. Gypsum or framing"></label><button type="button" class="btn-ws-secondary" id="materialCatalogLoad">Browse accessible projects</button><p id="materialCatalogStatus" class="material-help">Search this project’s previously ordered materials.</p><div id="materialCatalogResults"></div>';
+  library.append(catalog);$('materialCatalogSearch').oninput=renderMaterialCatalog;
+  $('materialCatalogLoad').onclick=async()=>{
+    const pid=_mpid,uid=window._currentUser?.uid,button=$('materialCatalogLoad');button.disabled=true;
+    setText('materialCatalogStatus','Loading materials from projects you can access…');
+    try{
+      const projects=await fetchAccessibleProjectsOnce();
+      if(pid!==_mpid || uid!==window._currentUser?.uid)return;
+      _materialCatalogProjects=projects;renderMaterialCatalog();
+      setText('materialCatalogStatus',`Loaded ${projects.length} accessible projects. Groups are copied into this project; prices retain their source and date.`);
+    }catch(error){setText('materialCatalogStatus','Could not load other projects. You can still use this project’s materials.');}
+    finally{button.disabled=false;}
+  };
+  const hint=document.createElement('p');hint.id='materialDraftRecovery';hint.className='material-help';hint.setAttribute('aria-live','polite');$('draftList').before(hint);
+  const expected=document.createElement('label');expected.className='material-field';expected.innerHTML='<span>Expected delivery (optional)</span><input id="poExpectedDate" type="date" aria-label="Expected delivery date">';
+  document.querySelector('#materialsPanel .po-meta-grid')?.append(expected);
+  document.querySelector('.material-order-builder')?.addEventListener('input',saveMaterialDraft);
+  document.querySelector('.material-order-builder')?.addEventListener('change',saveMaterialDraft);
+}
+function renderMaterialCatalog() {
+  const el=$('materialCatalogResults');if(!el)return;
+  const query=String($('materialCatalogSearch')?.value || '').trim().toLowerCase();
+  const projects=[{id:_mpid,name:'This project',purchaseOrders:Object.fromEntries(_materialOrders.map(po=>[po.id,po]))},..._materialCatalogProjects.filter(p=>p.id!==_mpid)];
+  const entries=[],seen=new Set();
+  projects.forEach(project=>{
+    if(project.id!==_mpid)Object.values(project.materialGroups || {}).filter(group=>!group.archived).forEach(group=>entries.push({title:group.name,groupName:group.name,source:project.name,items:materialItemsArray(group.items)}));
+    Object.values(project.purchaseOrders || {}).filter(po=>!['cancelled','rejected','draft'].includes(po.status)).forEach(po=>materialItemsArray(po.items).forEach(item=>{
+      const identity=materialIdentity(item);if(seen.has(identity))return;seen.add(identity);
+      entries.push({title:`${item.desc || item.description || item.item} ${item.size || ''}`.trim(),source:project.name,items:[{...item,qty:1}]});
+    }));
+  });
+  _materialCatalogEntries=entries;
+  el.replaceChildren();let count=0;
+  entries.forEach((entry,index)=>{
+    if(query&&!`${entry.title} ${entry.source} ${entry.items.map(i=>i.desc||i.description).join(' ')}`.toLowerCase().includes(query))return;
+    if(++count>12)return;
+    const button=document.createElement('button');button.type='button';button.className='material-previous-order';button.innerHTML=`<strong>${escapeHtml(entry.title)}</strong><span>${escapeHtml(entry.source)} · ${entry.items.length===1?escapeHtml(entry.items[0].unit || ''):`${entry.items.length} items`}</span>`;button.onclick=()=>openMaterialGroup('catalog',String(index));el.append(button);
+  });
+  if(!count)el.innerHTML='<p class="material-help">No matching materials yet.</p>';
+  if(count>12)el.insertAdjacentHTML('beforeend','<p class="material-help">Search to narrow the remaining results.</p>');
+}
+
+function materialDuplicateOrders(project, input) {
+  const signature=items=>materialItemsArray(items).map(item=>`${materialIdentity(item)}||${Number(item.qtyOrdered??item.qty)}||${Number(item.unitCost??item.cost)}`).sort().join('\n');
+  const match=signature(input.items);
+  return Object.entries(project.purchaseOrders || {}).filter(([,po])=>!['cancelled','rejected'].includes(po.status) && po.date===input.date &&
+    (input.supplierId ? po.supplierId===input.supplierId : String(po.supplierName || po.supplier || '').trim().toLowerCase()===input.supplier.toLowerCase()) && signature(po.items)===match).map(([,po])=>po.poNo || `PO-${String(po.seq || 0).padStart(3,'0')}`);
 }
 
 function fillRemainingDelivery() {
