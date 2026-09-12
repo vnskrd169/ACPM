@@ -71,7 +71,7 @@
 #deliveryItemsList label { min-width:0; color:var(--muted2); font-size:.875rem; }
 #deliveryItemsList label input, #deliveryItemsList label select { width:100%; min-width:0; font-size:1rem; min-height:44px; }
 #deliveryItemsList .delivery-item-ordered { grid-column:1/-1; color:var(--muted2); font-size:.875rem; }
-#materialGroupDialog { width:min(840px,calc(100vw - 32px)); max-height:85vh; padding:24px; border:1px solid var(--border2); border-radius:16px; color:var(--text); background:var(--surface); }
+#materialGroupDialog { position:fixed; inset:0; margin:auto; width:min(840px,calc(100vw - 32px)); max-height:85vh; overflow:auto; padding:24px; border:1px solid var(--border2); border-radius:16px; color:var(--text); background:var(--surface); }
 #materialGroupDialog::backdrop { background:rgba(0,0,0,.55); }
 #materialGroupDialog h2 { font-size:1.3rem; margin:0; }
 #materialGroupDialog .material-section-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:22px; }
