@@ -22,6 +22,9 @@ Implemented on `codex/materials-groups-ux`, based on the current Firebase-hosted
 - `node scripts/rc1_static_gate.js`: pass.
 - Browser inspection of the local preview at desktop and mobile widths; group selection, price-filled draft and direct group creation verified. No page horizontal overflow observed at 390px.
 - Staging hosting deployment completed; served workspace, dashboard, Materials modules/styles and service worker matched the tested files.
+- Production Firebase Hosting deployment completed on 2026-09-12 from commit `977f309`; served workspace, Materials scripts/styles and service worker matched the tested files.
+- Live Seasons 35D verification: PO-001 remains the sole order, eight ledger items show delivered, received value remains PHP 4,110, all eight stock descriptions render, and eleven movement rows show Benczar Raboy with PO/batch references.
+- Saved three reusable starter groups through the live UI from PO-001: Ceiling framing (2 materials), Boards & fasteners (3), and Consumables & tools (3). Verified all three appear under New order. No purchase orders or receipts were created during verification.
 
 The local preview is generated with `python scripts/build_materials_preview.py`. Serve the project root, then open `/dev/materials-preview.html`. Its sample data and all dev/test/backend sources are excluded from Firebase Hosting.
 
