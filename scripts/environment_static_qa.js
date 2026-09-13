@@ -30,7 +30,7 @@ function main() {
     const prefix = file.startsWith('pmos/') ? '../' : '';
     const environmentRef = `<script src="${prefix}environment.js?v=1"></script>`;
     assert(html.includes(environmentRef), `${file} must load environment.js`);
-    assert(html.indexOf(environmentRef) < html.indexOf(`${prefix}main.js?v=113`), `${file} must load environment.js before main.js`);
+    assert(html.indexOf(environmentRef) < html.indexOf(`${prefix}main.js?v=114`), `${file} must load environment.js before main.js`);
   });
 
   assert(firebaseRc.projects.production === 'acpm-project-system', 'production alias must target the live project');

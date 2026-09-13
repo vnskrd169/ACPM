@@ -1291,6 +1291,7 @@ function detachProjectNotesListener() {
 }
 
 function detachProjectDashboardListener() {
+  window.detachProjectControls?.();
   if (_projectDashboardListener) {
     _projectDashboardListener.off();
     _projectDashboardListener = null;

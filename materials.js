@@ -377,6 +377,8 @@ function buildPoItem(raw, index = 0) {
   return {
     itemId,
     itemKey,
+    planId: raw.planId || '',
+    planName: raw.planName || '',
     desc,
     description: desc,
     size,
@@ -972,6 +974,7 @@ function renderDraft() {
       '<label>Unit<input data-field="unit" maxlength="30" aria-label="Draft unit" value="' + escapeHtml(item.unit || '') + '"></label>' +
       '<label>Unit price<input data-field="cost" type="number" min="0.01" step="any" aria-label="Draft unit price" value="' + item.cost + '"></label>' +
       '<span class="draft-total">' + peso(item.total) + '</span><button type="button" class="draft-del" aria-label="Remove ' + escapeHtml(item.desc) + '">×</button>';
+    if (item.planName) { const label=document.createElement('small'); label.textContent='Work package: '+item.planName; row.querySelector('.draft-desc').prepend(label); }
     row.querySelectorAll('[data-field]').forEach(input => input.addEventListener('input', () => editMaterialDraft(i, input.dataset.field, input)));
     row.querySelector('.draft-del').addEventListener('click', () => removeDraftItem(i)); el.append(row);
   });

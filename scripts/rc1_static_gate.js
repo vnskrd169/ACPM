@@ -48,12 +48,12 @@ function main() {
   const indexHtml = read('index.html');
   const loginHtml = read('login.html');
 
-  assert(/const CACHE_NAME = 'acpm-v154'/.test(sw), 'service worker cache must be acpm-v154');
+  assert(/const CACHE_NAME = 'acpm-v155'/.test(sw), 'service worker cache must be acpm-v155');
   assert(loginHtml.includes('<link rel="stylesheet" href="style.css?v=114">'), 'login.html must load style.css?v=114');
   assert(extractScriptVersion(loginHtml, 'environment.js') === '1', 'login.html must load environment.js?v=1');
   assert(extractScriptVersion(loginHtml, 'utils.js') === '87', 'login.html must load utils.js?v=87');
   assert(extractScriptVersion(loginHtml, 'auth.js') === '99', 'login.html must load auth.js?v=99');
-  assert(extractScriptVersion(loginHtml, 'main.js') === '113', 'login.html must load main.js?v=113');
+  assert(extractScriptVersion(loginHtml, 'main.js') === '114', 'login.html must load main.js?v=114');
   assert(indexHtml.includes("window.location.replace('./login.html' + suffix)"), 'legacy index.html must redirect to the maintained login route');
   assert(!/<script\s+src=/.test(indexHtml), 'legacy index.html must not duplicate the private app shell');
   for (const [file, content] of Object.entries(html)) {
@@ -61,11 +61,11 @@ function main() {
     assert(extractScriptVersion(content, 'environment.js') === '1', `${file} must load environment.js?v=1`);
     assert(extractScriptVersion(content, 'utils.js') === '87', `${file} must load utils.js?v=87`);
     assert(extractScriptVersion(content, 'auth.js') === '99', `${file} must load auth.js?v=99`);
-    assert(extractScriptVersion(content, 'main.js') === '113', `${file} must load main.js?v=113`);
+    assert(extractScriptVersion(content, 'main.js') === '114', `${file} must load main.js?v=114`);
     assert(extractScriptVersion(content, 'suppliers.js') === '94', `${file} must load suppliers.js?v=94`);
     assert(extractScriptVersion(content, 'payroll-math.js') === '3', `${file} must load payroll-math.js?v=3`);
-    assert(extractScriptVersion(content, 'labor.js') === '100', `${file} must load labor.js?v=100`);
-    assert(extractScriptVersion(content, 'materials.js') === '99', `${file} must load materials.js?v=99`);
+    assert(extractScriptVersion(content, 'labor.js') === '101', `${file} must load labor.js?v=101`);
+    assert(extractScriptVersion(content, 'materials.js') === '100', `${file} must load materials.js?v=100`);
     assert(extractScriptVersion(content, 'billing.js') === '76', `${file} must load billing.js?v=76`);
     assert(extractScriptVersion(content, 'notifications.js') === '87', `${file} must load notifications.js?v=87`);
     assert(extractScriptVersion(content, 'report.js') === '98', `${file} must load report.js?v=98`);
@@ -74,10 +74,10 @@ function main() {
   assert(sw.includes('./environment.js?v=1'), 'service worker must cache environment.js?v=1');
   assert(sw.includes('./style.css?v=114'), 'service worker must cache style.css?v=114');
   assert(sw.includes('./auth.js?v=99'), 'service worker must cache auth.js?v=99');
-  assert(sw.includes('./main.js?v=113'), 'service worker must cache main.js?v=113');
+  assert(sw.includes('./main.js?v=114'), 'service worker must cache main.js?v=114');
   assert(sw.includes('./payroll-math.js?v=3'), 'service worker must cache payroll-math.js?v=3');
-  assert(sw.includes('./labor.js?v=100'), 'service worker must cache labor.js?v=100');
-  assert(sw.includes('./materials.js?v=99'), 'service worker must cache materials.js?v=99');
+  assert(sw.includes('./labor.js?v=101'), 'service worker must cache labor.js?v=101');
+  assert(sw.includes('./materials.js?v=100'), 'service worker must cache materials.js?v=100');
   assert(sw.includes('./billing.js?v=76'), 'service worker must cache billing.js?v=76');
   assert(sw.includes('./suppliers.js?v=94'), 'service worker must cache suppliers.js?v=94');
   assert(sw.includes('./report.js?v=98'), 'service worker must cache report.js?v=98');

@@ -1728,6 +1728,9 @@ function showPayrollModal() {
         <td class="s-cell s-trade">${escapeHtml(wp.trade)}</td>
         <td class="s-cell s-right">${peso(wp.rate)}</td>
         <td class="s-cell s-center">${wp.days}</td>
+        <td class="s-cell s-right">${peso(wp.regular)}</td>
+        <td class="s-cell s-right">${peso(wp.ot)}</td>
+        <td class="s-cell s-right">${peso(wp.night)}</td>
         <td class="s-cell s-right">${peso(wp.gross)}</td>
         <td class="s-cell s-right">${caDeduct > 0 ? `<span class="text-red">-${peso(caDeduct)}</span>` : peso(0)}</td>
         <td class="s-cell s-right s-bold">${peso(net)}</td>
@@ -1738,10 +1741,10 @@ function showPayrollModal() {
          <div class="payroll-review-scroll"><table class="payroll-review-table">
            <thead><tr>
              <th>Worker</th><th>Trade</th><th class="s-right">Rate</th><th class="s-center">Days</th>
-             <th class="s-right">Gross Pay</th><th class="s-right">Cash Adv. Deduct</th><th class="s-right">Net (after CA)</th>
+             <th class="s-right">Regular</th><th class="s-right">Overtime</th><th class="s-right">Night</th><th class="s-right">Gross Pay</th><th class="s-right">Cash Adv. Deduct</th><th class="s-right">Net (after CA)</th>
            </tr></thead>
            <tbody>${rows}</tbody>
-         </table></div>`
+         </table></div><p class="workspace-footnote">Review attendance, rates and deductions before finalizing. Any additional batch deduction below is separate from these worker amounts. Finalizing saves payroll; record actual payments separately in Payroll review &amp; payments.</p>`
       : '<p class="empty-hint">No workers with attendance this period.</p>';
   }
 

@@ -55,10 +55,10 @@ function main() {
   assert(mainJs.includes("navigator.serviceWorker.register('sw.js')"), 'main.js must register sw.js');
   assert(mainJs.includes('registration.update()'), 'main.js must actively check for service worker updates');
   assert(mainJs.includes("addEventListener('controllerchange'"), 'main.js must reload when a new service worker controls the page');
-  assert(JSON.stringify(localScripts(loginHtml)) === JSON.stringify(['environment.js?v=1', 'utils.js?v=87', 'auth.js?v=99', 'main.js?v=113']), 'login.html must include current environment/auth shell scripts');
+  assert(JSON.stringify(localScripts(loginHtml)) === JSON.stringify(['environment.js?v=1', 'utils.js?v=87', 'auth.js?v=99', 'main.js?v=114']), 'login.html must include current environment/auth shell scripts');
   assert(indexHtml.includes("window.location.replace('./login.html' + suffix)"), 'legacy index.html must redirect to login.html');
   assert(localScripts(indexHtml).length === 0, 'legacy index.html must not duplicate the private app shell');
-  assert(sw.includes("const CACHE_NAME = 'acpm-v154'"), 'service worker cache must be acpm-v154');
+  assert(sw.includes("const CACHE_NAME = 'acpm-v155'"), 'service worker cache must be acpm-v155');
   assert(sw.includes('caches.delete(k)'), 'service worker must purge stale caches on activate');
   assert(sw.includes('self.clients.claim()'), 'service worker must claim clients after activation');
 
@@ -72,7 +72,7 @@ function main() {
   const baseline = localScripts(pages[appHtmlFiles[0]]);
   const baselineStyles = localStyles(pages[appHtmlFiles[0]]);
   assert(baseline.length >= 10, 'dashboard.html must include local app scripts with versions');
-  assert(JSON.stringify(baselineStyles) === JSON.stringify(['style.css?v=114', 'materials-workspace.css?v=2', 'workspace-insights.css?v=1', 'assets/brand/ai-command-center.css?v=7']), 'dashboard.html must include current versioned styles');
+  assert(JSON.stringify(baselineStyles) === JSON.stringify(['style.css?v=114', 'materials-workspace.css?v=2', 'workspace-insights.css?v=1', 'project-controls.css?v=1', 'assets/brand/ai-command-center.css?v=7']), 'dashboard.html must include current versioned styles');
   for (const file of appHtmlFiles) {
     const scripts = localScripts(pages[file]);
     const styles = localStyles(pages[file]);
@@ -93,7 +93,7 @@ function main() {
 
   console.log(JSON.stringify({
     result: 'PASS',
-    cacheName: 'acpm-v154',
+    cacheName: 'acpm-v155',
     pages: appHtmlFiles,
     scriptCount: baseline.length,
     checks: [

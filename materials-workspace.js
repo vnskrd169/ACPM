@@ -250,7 +250,7 @@ function addMaterialGroupToDraft() {
     const items = selectedMaterialGroupItems();
     items.forEach(item => {
       const price = materialPriceFor(item);
-      const existing = _draftItems.find(row => materialIdentity(row) === materialIdentity(item));
+      const existing = _draftItems.find(row => !row.planId && materialIdentity(row) === materialIdentity(item));
       if (existing) { existing.qty += item.qty; existing.total = existing.qty * existing.cost; }
       else _draftItems.push({ ...item, cost: price?.cost || 0, total: item.qty * (price?.cost || 0), priceDate: price?.date || '' });
     });

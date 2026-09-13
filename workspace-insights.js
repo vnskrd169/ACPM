@@ -54,7 +54,7 @@
     push('siteLogs','sitelog','Site update',r=>`${r.logNo || 'Site update'} · ${r.date || ''}`,r=>r.updatedAt || r.createdAt || r.savedAt || r.date,r=>[r.workAccomplished,r.linkedTaskTitle,r.notes,...rows(r.issues).map(i=>i.description || i.title || i.issue),...rows(r.delays).map(i=>i.description || i.reason)].filter(Boolean).join(' · '));
     push('defects','defects','Punch item',r=>r.title || r.description || r.issue || 'Punch item',r=>r.updatedAt || r.createdAt || r.date,r=>[r.location,r.assignedToName,r.notes].filter(Boolean).join(' · '));
     push('changeOrders','changeorders','Change order',r=>`${r.coNo || r.changeOrderNo || 'Change order'} · ${r.title || r.description || ''}`,r=>r.updatedAt || r.createdAt || r.date,r=>r.reason || r.notes || '');
-    push('payrollLogs','labor','Payroll',r=>r.payrollNo || `Payroll · ${r.weekStart || r.date || 'Compiled'}`,r=>r.createdAt || r.compiledAt || r.date,r=>r.tradeName || r.trade || '');
+    push('payrollLogs','labor','Payroll',r=>r.payrollNo || `Payroll · ${r.weekStart || r.date || 'Compiled'}`,r=>r.createdAt || r.savedAt || r.compiledAt || r.date,r=>r.tradeName || r.trade || '');
     push('collections','billing','Client collection',r=>r.collectionNo || 'Client collection',r=>r.createdAt || r.date,r=>r.reference || r.notes || '');
     push('billings','billing','Client billing',r=>r.billingNo || 'Client billing',r=>r.createdAt || r.date,r=>r.description || r.notes || '');
     return result.sort((a,b)=>b.when-a.when || a.title.localeCompare(b.title));
@@ -109,6 +109,7 @@
     if(record.tab==='billing'&&!financial())return;
     if(['defects','changeorders'].includes(record.tab)) toggleExtraTabs(true);
     switchTab(record.tab);
+    if(record.collection==='payrollLogs'&&typeof root.openProjectPaymentRecord==='function'){root.openProjectPaymentRecord('payroll',record.id);return;}
     if(record.tab==='materials') {
       showMaterialsView('orders');
       const poId=record.collection==='deliveries'?record.poId:record.id;
@@ -193,7 +194,7 @@
     const routeKey=`${projectId}:${collection}:${recordId}`;
     if(params.get('fromNotif')==='1' && recordId && collection && routeKey!==routeHandled){const record=records(project).find(r=>r.id===recordId&&r.collection===collection);if(record && (record.tab!=='billing'||financial())){routeHandled=routeKey;showRecord(record);}}
   }
-  root.renderConnectedWorkspace=render;
+  root.renderConnectedWorkspace=(projectId,project)=>{render(projectId,project);root.renderProjectControls?.(projectId,project);};
   root.openProjectRecord=showRecord;
   root.openWorkspaceSource=openSource;
   function setupSiteUpdate() {

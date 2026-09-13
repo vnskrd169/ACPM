@@ -1,5 +1,21 @@
 {
   "rules": {
+    "projectPaymentEvents": {
+      "$pid": {
+        ".read": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && root.child('projects/' + $pid).exists()",
+        ".indexOn": [
+          "createdAt",
+          "sourceId"
+        ],
+        "$eventId": {
+          ".write": "auth != null && root.child('users/' + auth.uid + '/status').val() === 'active' && root.child('users/' + auth.uid + '/role').val().matches(/^(boss|owner|admin|pm)$/) && !data.exists() && newData.exists() && root.child('projects/' + $pid + '/status').val() === 'active'",
+          ".validate": "newData.hasChildren(['kind', 'sourceId', 'type', 'amountCents', 'date', 'payeeName', 'reference', 'method', 'notes', 'createdAt', 'createdBy', 'createdByName']) && newData.child('kind').val().matches(/^(payroll|supplier)$/) && newData.child('sourceId').isString() && ((newData.child('kind').val() === 'payroll' && root.child('projects/' + $pid + '/payrollLogs/' + newData.child('sourceId').val() + '/net').isNumber()) || (newData.child('kind').val() === 'supplier' && root.child('projects/' + $pid + '/purchaseOrders/' + newData.child('sourceId').val()).exists())) && newData.child('type').val().matches(/^(payment|credit|void)$/) && (newData.child('type').val() !== 'credit' || newData.child('kind').val() === 'supplier') && newData.child('amountCents').isNumber() && newData.child('amountCents').val() % 1 === 0 && newData.child('amountCents').val() <= 100000000000 && newData.child('createdBy').val() === auth.uid && newData.child('createdAt').isNumber() && newData.child('createdAt').val() <= now + 300000 && newData.child('createdAt').val() >= now - 300000 && newData.child('payeeName').isString() && newData.child('payeeName').val().length >= 1 && newData.child('payeeName').val().length <= 120 && newData.child('reference').isString() && newData.child('reference').val().length >= 1 && newData.child('reference').val().length <= 120 && newData.child('notes').isString() && newData.child('notes').val().length >= 0 && newData.child('notes').val().length <= 500 && newData.child('createdByName').isString() && newData.child('createdByName').val().length >= 1 && newData.child('createdByName').val().length <= 120 && newData.child('method').val().matches(/^(cash|bank|ewallet|other)$/) && newData.child('date').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) && ((newData.child('type').val() !== 'void' && newData.child('amountCents').val() > 0 && !newData.child('voids').exists() && !$eventId.beginsWith('void_')) || (newData.child('type').val() === 'void' && newData.child('amountCents').val() === 0 && newData.child('notes').val().length > 0 && $eventId === 'void_' + newData.child('voids').val() && root.child('projectPaymentEvents/' + $pid + '/' + newData.child('voids').val()).child('type').val().matches(/^(payment|credit)$/) && root.child('projectPaymentEvents/' + $pid + '/' + newData.child('voids').val()).child('sourceId').val() === newData.child('sourceId').val() && root.child('projectPaymentEvents/' + $pid + '/' + newData.child('voids').val()).child('kind').val() === newData.child('kind').val()))",
+          "$other": {
+            ".validate": "$other.matches(/^(kind|sourceId|type|amountCents|date|payeeName|reference|method|notes|createdAt|createdBy|createdByName|voids)$/)"
+          }
+        }
+      }
+    },
     ".read": false,
     ".write": false,
     "users": {
