@@ -26,3 +26,5 @@ No production payroll, payment, order or project-name records were modified duri
 The local Windows Java runtime initially could not initialize AF_UNIX loopback sockets. Running the emulator with `JAVA_TOOL_OPTIONS=-Djdk.net.unixdomain.tmpdir=E:/acpm-nonexistent-socket-dir` made Java fall back to TCP loopback. This setting is process-local, touches no app configuration and is used only for QA.
 
 Cache version: `acpm-v155`. Deploy database rules and Hosting together using the existing staging and guarded production scripts. Verify served assets and rules against this release before the live UI check.
+
+Deployed release `6bc117f` to staging and production. Ten production assets and the complete deployed database rules matched the release exactly. Signed-in live verification on Seasons 35D confirmed the name-only editor, supplier invoice/payment view, material-plan navigation and payroll payment section. The existing PO-001 and delivery history remained visible; the browser reported no console errors. No live form was submitted.
